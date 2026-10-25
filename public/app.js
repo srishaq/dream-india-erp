@@ -111,9 +111,11 @@
     { key: 'ledgers', label: 'Customer ledgers', show: () => can('ledger.view') },
     { key: 'letters', label: 'Demand letters', show: () => anyOf('demand.raise', 'ledger.view') },
     { key: 'followups', label: 'Follow-ups', show: () => can('ledger.view') },
+    { key: 'verify', label: 'Data to verify', show: () => anyOf('inventory.view', 'ledger.view') },
     { group: 'Set-up' },
     { key: 'projects', label: 'Companies & projects', show: () => true },
     { key: 'plans', label: 'Payment plans', show: () => true },
+    { key: 'import', label: 'Import from CRM sheet', show: () => can('users.manage') },
     { key: 'users', label: 'Logins', show: () => can('users.manage') },
     { key: 'audit', label: 'Audit log', show: () => can('audit.view') },
   ];
@@ -137,7 +139,7 @@
       </nav>
       <div class="main">
         <div class="top no-print"><div class="who">${projectList.length > 1 ? `<select id="proj" class="proj">${projectList.map((p) => `<option value="${p.id}" ${p.id === proj ? 'selected' : ''}>${esc(p.name)}</option>`).join('')}</select>` : `<b>${esc(projectList[0]?.name || '')}</b>`}
-          <span class="test-banner">Test version: sample data only</span></div>
+          <span class="test-banner">Test version: not live yet</span></div>
           <div class="who"><span><b>${esc(me.name)}</b> · ${esc(me.roleLabel)}</span>
             <button class="ghost small" id="cpw">Change password</button><button class="ghost small" id="out">Sign out</button></div></div>
         <div class="page" id="page"><p class="muted">Loading…</p></div>
@@ -145,7 +147,7 @@
     $('#out').onclick = signOut;
     $('#cpw').onclick = () => changePassword(false);
     if ($('#proj')) $('#proj').onchange = (e) => { proj = +e.target.value; store.set('erp_project', proj); shell(); };
-    const fn = { home, projects, plans, users, audit, units, bookings, demands, receipts, ledgers, letters, followups, booking: bookingPage, statement: statementPage, run: runPage };
+    const fn = { home, projects, plans, users, audit, units, bookings, demands, receipts, ledgers, letters, followups, verify, import: importPage, booking: bookingPage, statement: statementPage, run: runPage };
     const key = DETAIL[page] && arg ? page : cur.key;
     try { await fn[key](arg ? +arg : undefined); } catch (e) { $('#page').innerHTML = `<div class="err">${esc(e.message)}</div>`; }
   }
@@ -446,6 +448,9 @@
       <div class="panel"><h2>Receipts</h2><div class="table-wrap"><table><tr><th>Date</th><th>Bank / instrument</th><th class="num">Amount</th><th>Split</th><th>Status</th></tr>
         ${d.receipts.map((r) => `<tr><td>${fmtD(r.received_on)}</td><td>${esc([r.bank, r.instrument_no].filter(Boolean).join(' · ') || r.mode)}</td><td class="num">${inr(r.amount, 2)}</td>
           <td class="small">${Object.entries(r.splits).map(([h, v]) => `${HEAD[h] || h} ${inr(v, 2)}`).join(' · ')}</td><td>${rStatus(r)}</td></tr>`).join('') || '<tr><td colspan="5" class="muted">No receipts yet.</td></tr>'}</table></div></div>`;
+    const iv = await api(`/api/verify?booking=${b.id}`).catch(() => ({ rows: [] }));
+    const open = iv.rows.filter((x) => x.status === 'open');
+    if (open.length) $('.panel', $('#page')).insertAdjacentHTML('beforebegin', `<div class="note" style="margin-bottom:14px"><b>${open.length} item${open.length === 1 ? '' : 's'} to verify from the import:</b><ul class="small" style="margin:6px 0 0 18px;padding:0">${open.map((x) => `<li>${esc(x.detail)}</li>`).join('')}</ul><a href="#/verify">Open Data to verify</a></div>`);
     if (can('ledger.view')) {
       const f = await api(`/api/followups?booking=${b.id}`);
       $('#page').insertAdjacentHTML('beforeend', `<div class="panel"><h2>Follow-ups</h2><div class="table-wrap"><table><tr><th>When</th><th>How</th><th>Outcome</th><th>Note</th><th>Promise</th><th>Next</th><th>By</th></tr>
@@ -703,6 +708,78 @@
       <input type="date" name="nextDate" min="${todayIso()}" value="${plus(3)}">`,
     async (x) => { await api('/api/followups', { action: 'add', bookingId, ...x }); toast('Follow-up saved.'); after(); });
     dl.querySelectorAll('[data-n]').forEach((b) => (b.onclick = () => { dl.querySelector('[name=nextDate]').value = b.dataset.n; }));
+  }
+
+  // ---------- import from the CRM sheet ----------
+  const KIND = {
+    'crm-vs-ledger': 'CRM Follow up and Ledger differ', 'ledger-vs-bank': 'Ledger and bank statement differ', 'shared-instrument': 'Same payment on two units',
+    'ledger-total': 'Ledger lines do not match its total', 'ledger-unassigned': 'Ledger lines outside any total', 'no-ledger': 'No Ledger block', 'held-unit': 'Held / management unit',
+    'money-on-unsold': 'Money against an unsold unit', 'no-agreement-value': 'Sold without agreement value', 'bank-tag': 'Bank entry not tagged to a unit', 'ledger-orphan': 'Ledger block for unknown unit',
+    'due-pct-mismatch': 'Due % does not match the plan', 'no-due-pct': 'No Due %', 'no-booking-date': 'No booking date', 'no-buyer-name': 'No buyer name', 'bad-pan': 'PAN looks wrong',
+    'no-mobile': 'No mobile number', 'no-email': 'No email address', 'duplicate-unit': 'Unit listed twice', 'unknown-building': 'Wing not set up', 'no-dates': 'No dates at all',
+  };
+  async function importPage() {
+    if (!proj) return noProject();
+    const s = await api(`/api/import?project=${proj}`);
+    const page = $('#page');
+    page.innerHTML = `<div class="page-head"><div><h1>Import from the CRM sheet</h1><p class="muted">Reads the Master Dream Signature sheet (Developer's Bookings, CRM Follow up, Ledger and Rera Bank Stat.), shows what it found and everything that does not add up, then imports it. The sheet itself is never changed.</p></div></div>
+      ${!s.configured ? `<div class="err">The ERP is not connected to Google Sheets yet. In Vercel, add <b>GOOGLE_SERVICE_ACCOUNT_JSON</b> to the dream-india-erp project (the same value the staff portal uses), then redeploy.</div>` : ''}
+      ${s.last ? `<div class="ok">Imported on ${fmtD(s.last.created_at.slice(0, 10))} by ${esc(s.last.by_name || '')}: ${s.last.summary.bookings} bookings, ${s.last.summary.receipts} receipts, ${s.last.summary.issues} items to verify. <a href="#/verify">Open Data to verify</a></div>` : ''}
+      ${s.counts.real ? '' : `<div class="panel"><h2>Step 1: read the sheet</h2><p class="muted">Nothing is saved at this step.${s.counts.sample ? ' The sample data currently loaded will be removed when you import.' : ''}</p>
+        <div class="actions"><button id="read" ${s.configured ? '' : 'disabled'}>Read the sheet and check it</button></div></div><div id="preview"></div>`}`;
+    if (!$('#read')) return;
+    let dates = {};
+    $('#read').onclick = async () => {
+      $('#read').disabled = true; $('#read').textContent = 'Reading… (up to a minute)';
+      try { const p = await api('/api/import', { action: 'preview', projectId: proj, stageDates: dates }); dates = p.stageDates; showPreview(p); } catch (e) { alert(e.message); }
+      $('#read').disabled = false; $('#read').textContent = 'Read the sheet again';
+    };
+    function showPreview(p) {
+      const s = p.summary;
+      const keys = Object.keys(p.stageDates).sort();
+      $('#preview').innerHTML = `<div class="panel"><h2>Step 2: what the sheet holds</h2><div class="kpis">${kpi(s.units, 'units')}${kpi(s.bookings, 'bookings')}${kpi(s.registered, 'registered')}${kpi(cr(s.agreementValue), 'agreement value')}${kpi(cr(s.demanded), 'demanded')}
+          ${kpi(cr(s.receivedAv + s.receivedTds), 'received AV + TDS')}${kpi(cr(s.receivedGst), 'GST received')}${kpi(s.receipts, 'receipts')}</div>
+        <p class="small muted">Units: ${Object.entries(s.byStatus).map(([k, v]) => `${STATUS[k] || k} ${v}`).join(' · ')}</p></div>
+        <div class="panel"><h2>Step 3: confirm when each stage was demanded</h2><p class="muted">The sheet records only each buyer's latest demand date. These dates are the most common ones found; correct any that are wrong. A buyer booked after a stage date is demanded on their booking date instead.</p>
+          <table>${keys.map((k) => { const [w, st] = k.split('|'); return `<tr><td>${esc(w)} Wing</td><td>${esc(st)}</td><td><input type="date" data-k="${esc(k)}" value="${esc(p.stageDates[k] || '')}"></td></tr>`; }).join('')}</table></div>
+        <div class="panel"><h2>Step 4: items the team will verify (${s.issues})</h2><p class="muted">These are imported as they are and listed on the "Data to verify" page, where CRM and Accounts check and close each one.</p>
+          <table><tr><th>Type</th><th class="num">Count</th><th>Example</th></tr>${Object.entries(s.issuesByKind).sort((a, b) => b[1] - a[1]).map(([k, n]) => `<tr><td>${esc(KIND[k] || k)}</td><td class="num">${n}</td><td class="small">${esc((p.examples[k] || [])[0] ? `${p.examples[k][0].unit || ''} ${p.examples[k][0].detail}` : '')}</td></tr>`).join('')}</table></div>
+        <div class="panel"><h2>Step 5: import</h2><p class="muted">Imports all units, bookings, buyers, demands and receipts into Dream Signature. Receipts come in as approved (the money is already in the bank) and are marked as imported. This can only be done once.</p>
+          <div class="actions"><button id="go">Import ${s.bookings} bookings now</button></div><div id="result"></div></div>`;
+      document.querySelectorAll('[data-k]').forEach((i) => (i.onchange = () => { dates[i.dataset.k] = i.value; }));
+      $('#go').onclick = async () => {
+        if (keys.some((k) => !dates[k])) return alert('Enter a date for every stage first.');
+        if (!confirm(`Import ${s.bookings} bookings, ${s.receipts} receipts and ${s.issues} items to verify into the ERP?`)) return;
+        $('#go').disabled = true; $('#go').textContent = 'Importing…';
+        try { const r = await api('/api/import', { action: 'commit', projectId: proj, stageDates: dates }); toast(`Imported ${r.bookings} bookings and ${r.receipts} receipts.`); go('#/verify'); }
+        catch (e) { $('#go').disabled = false; $('#go').textContent = `Import ${s.bookings} bookings now`; alert(e.message); }
+      };
+    }
+  }
+
+  // ---------- data to verify ----------
+  async function verify() {
+    if (!proj) return noProject();
+    const tab = store.get('erp_vtab') || 'open';
+    const d = await api(`/api/verify?project=${proj}&status=${tab}`);
+    const kinds = [...new Set(d.rows.map((r) => r.kind))];
+    const kf = store.get('erp_vkind') || '';
+    const rows = d.rows.filter((r) => !kf || r.kind === kf);
+    $('#page').innerHTML = `<div class="page-head"><div><h1>Data to verify</h1><p class="muted">Everything the import found that does not add up. Check each against the documents and the bank, correct it in the ERP if needed, then close it with a note of what was done.</p></div></div>
+      <div class="panel"><div class="kpis">${kpi(d.counts.open, 'open')}${kpi(d.counts.money, 'involve money', d.counts.money ? 'bad' : '')}${kpi(d.counts.resolved, 'closed')}</div></div>
+      <div class="tabs">${[['open', 'Open'], ['resolved', 'Closed']].map(([k, l]) => `<button class="tab ${k === tab ? 'on' : ''}" data-t="${k}">${l}</button>`).join('')}
+        <select id="kind" class="proj" style="margin-left:8px"><option value="">All types</option>${kinds.map((k) => `<option value="${esc(k)}" ${k === kf ? 'selected' : ''}>${esc(KIND[k] || k)}</option>`).join('')}</select></div>
+      <div class="panel table-wrap"><input class="search" id="q" placeholder="Search unit or text"><table><tr><th>Unit</th><th>Type</th><th>What was found</th><th>${tab === 'open' ? '' : 'Resolution'}</th></tr>
+      ${rows.map((r) => `<tr data-s="${esc(((r.unit_no || '') + ' ' + r.detail).toLowerCase())}"><td style="white-space:nowrap">${r.booking_id ? `<a href="#/booking/${r.booking_id}">${esc(r.unit_no)}</a>` : esc(r.unit_no || 'Project')}</td>
+        <td class="small">${r.severity === 'money' ? '<span class="pill bad">money</span> ' : '<span class="pill grey">data</span> '}${esc(KIND[r.kind] || r.kind)}</td><td class="small">${esc(r.detail)}</td>
+        <td class="small">${tab === 'open' ? (d.canResolve ? `<button class="small" data-fix="${r.id}">Close</button>` : '') : `${esc(r.resolution || '')}<br><span class="muted">${esc(r.resolved_by_name || '')} · ${fmtD((r.resolved_at || '').slice(0, 10))}</span>${d.canResolve ? ` <a href="#" data-re="${r.id}">reopen</a>` : ''}`}</td></tr>`).join('') || '<tr><td colspan="4" class="muted">Nothing here.</td></tr>'}</table></div>`;
+    document.querySelectorAll('.tab[data-t]').forEach((t) => (t.onclick = () => { store.set('erp_vtab', t.dataset.t); verify(); }));
+    $('#kind').onchange = (e) => { store.set('erp_vkind', e.target.value); verify(); };
+    $('#q').oninput = (e) => { const q = e.target.value.toLowerCase(); document.querySelectorAll('tr[data-s]').forEach((tr) => (tr.style.display = tr.dataset.s.includes(q) ? '' : 'none')); };
+    document.querySelectorAll('[data-fix]').forEach((b) => (b.onclick = () => dialog(`<h2>Close this item</h2><p class="small">${esc(d.rows.find((r) => r.id === +b.dataset.fix).detail)}</p>
+      <label>What was checked or corrected</label><textarea name="resolution" rows="3" required placeholder="e.g. Checked bank statement: ₹1,50,000 received on 12 Mar into the collection account; receipt added in the ERP."></textarea>`,
+    async (x) => { await api('/api/verify', { action: 'resolve', id: +b.dataset.fix, ...x }); toast('Closed.'); verify(); })));
+    document.querySelectorAll('[data-re]').forEach((a) => (a.onclick = async (e) => { e.preventDefault(); await api('/api/verify', { action: 'reopen', id: +a.dataset.re }); verify(); }));
   }
 
   start();
