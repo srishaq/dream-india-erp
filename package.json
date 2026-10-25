@@ -3,7 +3,7 @@
   "version": "0.1.0",
   "private": true,
   "description": "Dream India ERP: booking-to-collection, contractor billing, project costing and RERA tracking. No outside packages.",
-  "engines": { "node": "22.x" },
+  "engines": { "node": "24.x" },
   "scripts": {
     "dev": "node scripts/dev-server.js",
     "test": "node scripts/test.js"
