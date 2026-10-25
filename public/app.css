@@ -170,3 +170,7 @@ table.lines th, table.lines td { padding: 6px 8px; }
 }
 .statement table.kv th { width: 16%; }
 .statement table.kv td { width: 34%; }
+.row4 { display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; }
+.quick { display: flex; gap: 6px; flex-wrap: wrap; margin-bottom: 8px; }
+textarea { resize: vertical; }
+@media (max-width: 820px) { .row4 { grid-template-columns: 1fr 1fr; } }

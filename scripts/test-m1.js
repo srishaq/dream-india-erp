@@ -3,13 +3,36 @@
 const assert = require('assert/strict');
 process.env.PORT = process.env.PORT || '3998';
 const server = require('./dev-server');
+// A fake mail server on this machine records who each email was addressed to.
+const net = require('net');
+const rcpts = [];
+const smtp = net.createServer((sock) => {
+  sock.setEncoding('utf8'); let data = false, buf = '';
+  sock.write('220 test\r\n');
+  sock.on('data', (d) => {
+    buf += d;
+    if (data) { if (buf.includes('\r\n.\r\n')) { data = false; buf = ''; sock.write('250 ok\r\n'); } return; }
+    let i; while ((i = buf.indexOf('\r\n')) >= 0) {
+      const line = buf.slice(0, i); buf = buf.slice(i + 2);
+      if (/^EHLO/i.test(line)) sock.write('250 hello\r\n');
+      else if (/^AUTH LOGIN/i.test(line)) sock.write('334 VXNlcm5hbWU6\r\n');
+      else if (/^RCPT TO:<(.+)>/i.test(line)) { rcpts.push(line.match(/<(.+)>/)[1]); sock.write('250 ok\r\n'); }
+      else if (/^MAIL FROM/i.test(line) || /^RSET/i.test(line)) sock.write('250 ok\r\n');
+      else if (/^DATA/i.test(line)) { data = true; sock.write('354 go\r\n'); if (buf.includes('\r\n.\r\n')) { data = false; buf = ''; sock.write('250 ok\r\n'); } return; }
+      else if (/^QUIT/i.test(line)) { sock.write('221 bye\r\n'); sock.end(); }
+      else if (line.length && !/^\s/.test(line)) sock.write(rcpts.authStep ? '235 ok\r\n' : ((rcpts.authStep = 1), '334 UGFzc3dvcmQ6\r\n'));
+    }
+  });
+}).listen(2526);
+Object.assign(process.env, { SMTP_HOST: '127.0.0.1', SMTP_PORT: '2526', SMTP_TLS: '0', SMTP_USER: 'crm@test.local', SMTP_PASS: 'x' });
 const BASE = `http://localhost:${process.env.PORT}`;
 
 function client() {
   let cookie = '';
-  return async (path, body) => {
+  return async (path, body, raw) => {
     const r = await fetch(BASE + path, { method: body ? 'POST' : 'GET', headers: { ...(body ? { 'Content-Type': 'application/json', Origin: BASE } : {}), ...(cookie ? { Cookie: cookie } : {}) }, body: body ? JSON.stringify(body) : undefined });
     const set = r.headers.get('set-cookie'); if (set) cookie = set.split(';')[0];
+    if (raw) return r;
     let j = {}; try { j = await r.json(); } catch {}
     return { status: r.status, ...j };
   };
@@ -127,15 +150,60 @@ const n = (v) => Number(v);
     assert.equal(r.booking.status, 'cancelled'); assert.ok(r.demands.every((d) => d.status === 'cancelled'));
     const u = await crm(`/api/units?project=${sig.id}`); assert.equal(u.units.find((x) => x.unit_no === 'A-1101').status, 'available');
   });
+  let bEmail, letterIds;
+  await step('Demand letters: CRM prepares letters with the ledger figures; Accounts cannot', async () => {
+    const r = await crm('/api/bookings', { action: 'create', unitId: unitsA['A-1102'].id, bookingDate: '2026-10-16', agreementValue: '7200000', applicants: [{ name: 'Email Buyer', email: 'real.buyer@example.com', address: 'Flat 1, Some Road, Mumbai' }] });
+    bEmail = r.id; await headcrm('/api/bookings', { action: 'approve', id: bEmail });
+    const q = await crm(`/api/letters?project=${sig.id}`);
+    assert.ok(q.rows.some((x) => x.booking_id === b1)); assert.ok(q.rows.find((x) => x.booking_id === bEmail).has_email);
+    assert.equal((await acc('/api/letters', { action: 'prepare', projectId: sig.id, bookingIds: [b1], letterType: 'Demand Letter' })).status, 403);
+    const p = await crm('/api/letters', { action: 'prepare', projectId: sig.id, bookingIds: [b1, bEmail], letterType: 'Demand Letter' });
+    assert.equal(p.letters.length, 2); letterIds = p.letters.map((l) => l.id);
+    const l1 = p.letters.find((l) => l.unit === 'A-1001'); assert.equal(l1.total, 1943000 + 97150);
+  });
+  await step('Letters open as PDF, singly and as one print file', async () => {
+    let r = await crm(`/api/letters?pdf=${letterIds[0]}`, null, true);
+    assert.equal(r.headers.get('content-type'), 'application/pdf'); assert.equal((await r.text()).slice(0, 5), '%PDF-');
+    r = await crm(`/api/letters?print=${letterIds.join(',')}`, null, true); assert.equal(r.headers.get('content-type'), 'application/pdf');
+    r = await crm(`/api/letters?preview=${b1}&type=Reminder%20I`, null, true); assert.equal(r.headers.get('content-type'), 'application/pdf');
+  });
+  await step('Test version: email refused until a test address is set, then goes ONLY there', async () => {
+    let r = await crm('/api/letters', { action: 'email', projectId: sig.id, letterIds });
+    assert.equal(r.status, 400); assert.match(r.error, /test email/);
+    assert.equal((await crm('/api/letters', { action: 'settings', testEmail: 'x@y.z' })).status, 403); // CRM cannot change settings
+    assert.equal((await headcrm('/api/letters', { action: 'settings', testEmail: 'tester@erp.test' })).ok, true);
+    r = await crm('/api/letters', { action: 'email', projectId: sig.id, letterIds });
+    assert.equal(r.results.filter((x) => !x.error).length, 2);
+    assert.ok(rcpts.length >= 2 && rcpts.every((x) => x === 'tester@erp.test'), 'emails went to: ' + rcpts.join(','));
+    assert.ok(!rcpts.includes('real.buyer@example.com'));
+  });
+  await step('Reminder adds delay charges; courier marking is recorded', async () => {
+    const p = await crm('/api/letters', { action: 'prepare', projectId: sig.id, bookingIds: [b1], letterType: 'Reminder I' });
+    const pdf = await crm(`/api/letters?project=${sig.id}`);
+    const row = pdf.rows.find((x) => x.booking_id === b1); assert.equal(row.letter_type, 'Reminder I');
+    assert.ok(p.letters[0].total > 1943000 + 97150, 'delay charges added');
+    assert.equal((await crm('/api/letters', { action: 'mark', projectId: sig.id, letterIds: [p.letters[0].id], via: 'courier' })).marked, 1);
+  });
+  await step('Follow-ups: CRM logs calls with promise and next date; Accounts can only read', async () => {
+    assert.equal((await crm('/api/followups', { action: 'add', bookingId: b1, kind: 'Call', outcome: 'Promised to pay' })).status, 400);
+    assert.equal((await crm('/api/followups', { action: 'add', bookingId: b1, kind: 'Call', outcome: 'Asked to call later', nextDate: '2020-01-01' })).status, 400);
+    const soon = new Date(Date.now() + 5.5 * 3600e3 + 3 * 864e5).toISOString().slice(0, 10);
+    assert.equal((await crm('/api/followups', { action: 'add', bookingId: b1, kind: 'Call', outcome: 'Promised to pay', promiseDate: soon, promiseAmount: '500000', nextDate: soon, note: 'Will pay after salary' })).ok, true);
+    assert.equal((await acc('/api/followups', { action: 'add', bookingId: b1, kind: 'Note', outcome: 'Other' })).status, 403);
+    const q = await acc(`/api/followups?project=${sig.id}`);
+    const row = q.rows.find((x) => x.booking_id === b1); assert.equal(row.outcome, 'Promised to pay'); assert.equal(row.broken, false); assert.equal(row.due, false);
+    assert.match(row.mobile || '•', /•/); // Accounts sees the mobile masked
+    const h = await crm(`/api/followups?booking=${b1}`); assert.equal(h.rows.length, 1);
+  });
   await step('Everything is in the audit log', async () => {
     const a = await admin('/api/audit?limit=500');
     const k = new Set(a.rows.map((r) => `${r.action}:${r.entity}`));
-    for (const x of ['generate:units', 'create:booking', 'approve:booking', 'register:booking', 'stage-complete:stage', 'create:demand-run', 'approve:demand-run', 'create:receipt', 'approve:receipt', 'bounce:receipt', 'cancel-request:booking', 'cancel:booking']) assert.ok(k.has(x), x);
+    for (const x of ['generate:units', 'create:booking', 'approve:booking', 'register:booking', 'stage-complete:stage', 'create:demand-run', 'approve:demand-run', 'create:receipt', 'approve:receipt', 'bounce:receipt', 'cancel-request:booking', 'cancel:booking', 'prepare:letter', 'send-email:letter', 'send-courier:letter', 'create:follow-up']) assert.ok(k.has(x), x);
   });
   await step('Sample data refuses a project that already has units', async () => {
     assert.equal((await admin('/api/sample', { action: 'load', projectId: sig.id })).status, 409);
     assert.equal((await admin('/api/sample', { action: 'clear', projectId: sig.id })).status, 409); // real (non-sample) data present
   });
   console.log(`\nAll ${passed} Module 1 checks passed.`);
-  server.close(); require('../lib/db').reset(); process.exit(0);
+  server.close(); smtp.close(); require('../lib/db').reset(); process.exit(0);
 })().catch((e) => { console.error('\nFAILED:', e); process.exit(1); });

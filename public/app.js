@@ -109,6 +109,8 @@
     { key: 'demands', label: 'Stages & demands', show: () => anyOf('demand.raise', 'demand.approve', 'stage.record', 'ledger.view') },
     { key: 'receipts', label: 'Receipts', show: () => anyOf('receipt.enter', 'receipt.approve', 'ledger.view') },
     { key: 'ledgers', label: 'Customer ledgers', show: () => can('ledger.view') },
+    { key: 'letters', label: 'Demand letters', show: () => anyOf('demand.raise', 'ledger.view') },
+    { key: 'followups', label: 'Follow-ups', show: () => can('ledger.view') },
     { group: 'Set-up' },
     { key: 'projects', label: 'Companies & projects', show: () => true },
     { key: 'plans', label: 'Payment plans', show: () => true },
@@ -143,7 +145,7 @@
     $('#out').onclick = signOut;
     $('#cpw').onclick = () => changePassword(false);
     if ($('#proj')) $('#proj').onchange = (e) => { proj = +e.target.value; store.set('erp_project', proj); shell(); };
-    const fn = { home, projects, plans, users, audit, units, bookings, demands, receipts, ledgers, booking: bookingPage, statement: statementPage, run: runPage };
+    const fn = { home, projects, plans, users, audit, units, bookings, demands, receipts, ledgers, letters, followups, booking: bookingPage, statement: statementPage, run: runPage };
     const key = DETAIL[page] && arg ? page : cur.key;
     try { await fn[key](arg ? +arg : undefined); } catch (e) { $('#page').innerHTML = `<div class="err">${esc(e.message)}</div>`; }
   }
@@ -420,6 +422,7 @@
     if (b.status === 'active' && !b.registration_date && can('booking.create')) actions.push('<button class="ghost" id="register">Record agreement and registration</button>');
     if (b.status === 'active' && can('receipt.enter')) actions.push('<button class="ghost" id="receipt">Enter a receipt</button>');
     if (b.status === 'active' && can('ledger.view')) actions.push(`<a class="btn ghost" href="#/statement/${b.id}">Statement of account</a>`);
+    if (b.status === 'active' && can('demand.raise')) actions.push('<button class="ghost" id="logf">Log a follow-up</button>');
     if (b.status === 'active' && !b.cancel_requested_at && can('booking.create')) actions.push('<button class="danger" id="cancelReq">Request cancellation</button>');
     if (b.status === 'active' && b.cancel_requested_at && can('cancellation.approve')) actions.push('<button class="danger" id="cancelOk">Approve cancellation</button><button class="ghost" id="cancelNo">Keep the booking</button>');
     const statusPill = { pending: '<span class="pill">waiting for approval</span>', active: '<span class="pill good">active</span>', cancelled: '<span class="pill bad">cancelled</span>', rejected: '<span class="pill bad">rejected</span>' }[b.status] || '';
@@ -443,6 +446,12 @@
       <div class="panel"><h2>Receipts</h2><div class="table-wrap"><table><tr><th>Date</th><th>Bank / instrument</th><th class="num">Amount</th><th>Split</th><th>Status</th></tr>
         ${d.receipts.map((r) => `<tr><td>${fmtD(r.received_on)}</td><td>${esc([r.bank, r.instrument_no].filter(Boolean).join(' · ') || r.mode)}</td><td class="num">${inr(r.amount, 2)}</td>
           <td class="small">${Object.entries(r.splits).map(([h, v]) => `${HEAD[h] || h} ${inr(v, 2)}`).join(' · ')}</td><td>${rStatus(r)}</td></tr>`).join('') || '<tr><td colspan="5" class="muted">No receipts yet.</td></tr>'}</table></div></div>`;
+    if (can('ledger.view')) {
+      const f = await api(`/api/followups?booking=${b.id}`);
+      $('#page').insertAdjacentHTML('beforeend', `<div class="panel"><h2>Follow-ups</h2><div class="table-wrap"><table><tr><th>When</th><th>How</th><th>Outcome</th><th>Note</th><th>Promise</th><th>Next</th><th>By</th></tr>
+        ${f.rows.map((x) => `<tr><td>${fmtD(x.created_at.slice(0, 10))}</td><td>${esc(x.kind)}</td><td>${esc(x.outcome)}</td><td class="small">${esc(x.note || '')}</td><td class="small">${x.promise_date ? fmtD(x.promise_date) + (x.promise_amount ? ' · ' + inr(x.promise_amount) : '') : ''}</td><td class="small">${x.next_date ? fmtD(x.next_date) : ''}</td><td>${esc(x.by_name || '')}</td></tr>`).join('') || '<tr><td colspan="7" class="muted">No follow-ups yet.</td></tr>'}</table></div></div>`);
+      if ($('#logf')) $('#logf').onclick = () => followupForm(b.id, d.unit.unit_no, f, () => bookingPage(id));
+    }
     const act = async (body, msg) => { try { await api('/api/bookings', { id: b.id, ...body }); if (msg) toast(msg); bookingPage(id); } catch (e) { alert(e.message); } };
     if ($('#approve')) $('#approve').onclick = () => confirm('Approve this booking? The booking-stage demand is raised now, plus any construction stages already completed in this building.') && act({ action: 'approve' }, 'Booking approved.');
     if ($('#reject')) $('#reject').onclick = () => { const r = prompt('Reason for rejecting:'); if (r !== null) act({ action: 'reject', reason: r }, 'Booking rejected; the unit is available again.'); };
@@ -591,6 +600,109 @@
         ${d.oldest ? `<p class="small">Oldest unpaid demand: ${esc(d.oldest.stage)}, due ${fmtD(d.oldest.since)} (${d.oldest.days} days ago).</p>` : ''}
         <p class="small muted">Stamp duty and registration charges are shown on receipts but are not part of the balance. Please report any difference to the CRM team.</p></div>`;
     $('#print').onclick = () => window.print();
+  }
+
+  // ---------- demand letters ----------
+  async function letters() {
+    if (!proj) return noProject();
+    const d = await api(`/api/letters?project=${proj}`);
+    const s = d.settings, m = d.mail;
+    const banner = !m.configured ? '<div class="note">The sending email account is not connected to the ERP yet, so letters can be printed or sent on WhatsApp, but not emailed.</div>'
+      : !m.live ? `<div class="note">Test version: emails go <b>only</b> to ${s.testEmail ? esc(s.testEmail) : 'the test address (not set yet: open Letter settings)'}, never to buyers.</div>` : '';
+    $('#page').innerHTML = `<div class="page-head"><div><h1>Demand letters</h1><p class="muted">Letters and reminders in the CRM team's format. Amounts come from the ledger: stages demanded minus (AV + TDS) received, plus GST due.</p></div>
+      ${s.canEdit ? '<div class="actions" style="margin:0"><button class="ghost" id="settings">Letter settings</button></div>' : ''}</div>
+      ${banner}
+      <div class="panel" style="margin-top:14px"><div class="row4">
+        <div><label>Letter type</label><select id="type">${d.types.map((t) => `<option>${esc(t)}</option>`).join('')}</select></div>
+        <div><label>Letter date (reminders)</label><input type="date" id="ldate" value="${todayIso()}" max="${todayIso()}"></div>
+        <div><label>Show</label><select id="show"><option value="all">All buyers with dues (${d.rows.length})</option><option value="none">Not sent a letter yet</option><option value="overdue">Overdue only</option></select></div>
+        <div style="align-self:end"><button id="prepare" ${can('demand.raise') ? '' : 'disabled'}>Prepare letters for ticked buyers</button></div></div>
+        <div id="prepared"></div></div>
+      <div class="panel table-wrap"><input class="search" id="q" placeholder="Search unit or buyer"><table><tr><th><input type="checkbox" id="all"></th><th>Unit</th><th>Buyer</th><th>Stage reached</th><th class="num">Flat cost due</th><th class="num">GST due</th><th class="num">Overdue</th><th>Last letter</th><th>Email</th><th></th></tr>
+      ${d.rows.map((r) => `<tr data-row="${r.booking_id}" data-sent="${r.letter_id ? 1 : 0}" data-over="${toNum(r.overdue) > 0 ? 1 : 0}" data-s="${esc((r.unit_no + ' ' + (r.buyers || '')).toLowerCase())}">
+        <td><input type="checkbox" class="pick" value="${r.booking_id}"></td><td><a href="#/booking/${r.booking_id}">${esc(r.unit_no)}</a></td><td>${esc(r.buyers || '')}</td>
+        <td>${esc(r.stage_words)} <span class="muted">(${toNum(r.cum_pct)}%)</span></td><td class="num">${inr(r.outstanding)}</td><td class="num">${inr(r.gst_outstanding)}</td><td class="num ${toNum(r.overdue) > 0 ? 'bad-t' : ''}">${inr(r.overdue)}</td>
+        <td class="small">${r.letter_id ? `<a href="/api/letters?pdf=${r.letter_id}" target="_blank" rel="noopener">${esc(r.letter_type)}</a><br>${fmtD((r.sent_at || r.letter_at || '').slice(0, 10))} · ${esc(r.sent_via || 'prepared, not sent')}` : '<span class="muted">none</span>'}</td>
+        <td>${r.has_email ? 'Yes' : '<span class="muted">No</span>'}</td><td><a class="small" href="#" data-prev="${r.booking_id}">Preview</a></td></tr>`).join('') || '<tr><td colspan="10" class="muted">No buyer has dues above the minimum.</td></tr>'}</table></div>`;
+    const visibleRows = () => [...document.querySelectorAll('tr[data-row]')].filter((tr) => tr.style.display !== 'none');
+    const apply = () => {
+      const q = $('#q').value.toLowerCase(), show = $('#show').value;
+      document.querySelectorAll('tr[data-row]').forEach((tr) => {
+        const ok = tr.dataset.s.includes(q) && (show === 'all' || (show === 'none' && tr.dataset.sent === '0') || (show === 'overdue' && tr.dataset.over === '1'));
+        tr.style.display = ok ? '' : 'none'; if (!ok) $('.pick', tr).checked = false;
+      });
+    };
+    $('#q').oninput = apply; $('#show').onchange = apply;
+    $('#all').onchange = (e) => visibleRows().forEach((tr) => ($('.pick', tr).checked = e.target.checked));
+    document.querySelectorAll('[data-prev]').forEach((a) => (a.onclick = (e) => { e.preventDefault(); window.open(`/api/letters?preview=${a.dataset.prev}&type=${encodeURIComponent($('#type').value)}`, '_blank', 'noopener'); }));
+    $('#prepare').onclick = async () => {
+      const ids = [...document.querySelectorAll('.pick:checked')].map((c) => +c.value);
+      if (!ids.length) return alert('Tick the buyers to prepare letters for.');
+      const btn = $('#prepare'); btn.disabled = true; btn.textContent = `Preparing ${ids.length}…`;
+      try {
+        const r = await api('/api/letters', { action: 'prepare', projectId: proj, bookingIds: ids, letterType: $('#type').value, letterDate: $('#ldate').value });
+        preparedPanel(r.letters, m);
+      } catch (e) { alert(e.message); }
+      btn.disabled = false; btn.textContent = 'Prepare letters for ticked buyers';
+    };
+    if ($('#settings')) $('#settings').onclick = () => dialog(`<h2>Letter settings</h2>
+      <div class="row"><div><label>Delay charges (% a year)</label><input name="delayRate" value="${esc(s.delayRate)}"></div><div><label>Leave out buyers owing less than (₹)</label><input name="minDue" value="${esc(s.minDue)}"></div></div>
+      <label>Signed for</label><input name="signedFor" value="${esc(s.signedFor)}">
+      <label>CC on every email (once live)</label><input name="cc" value="${esc(s.cc)}" placeholder="crm.prime@dreamindiagroup.com">
+      <label>Test email address (test version: all letters go here)</label><input name="testEmail" value="${esc(s.testEmail)}">`,
+    async (x) => { await api('/api/letters', { action: 'settings', ...x }); letters(); });
+  }
+  function preparedPanel(list, m) {
+    const ids = list.map((l) => l.id), withEmail = list.filter((l) => l.hasEmail).map((l) => l.id);
+    $('#prepared').innerHTML = `<div class="ok">${list.length} letter${list.length === 1 ? '' : 's'} prepared (total due ${inr(list.reduce((a, l) => a + l.total, 0))}). Choose how to send them:</div>
+      <div class="actions">${m.configured ? `<button id="em">Email ${m.live ? withEmail.length + ' with an email address' : 'all ' + ids.length + ' to the test address'}</button>` : ''}
+        <a class="btn ghost" href="/api/letters?print=${ids.join(',')}" target="_blank" rel="noopener">Open all as one PDF to print</a>
+        <button class="ghost" id="courier">Mark all sent by courier</button><button class="ghost" id="wa">Mark all sent on WhatsApp</button></div><div id="sendlog" class="small"></div>`;
+    const mark = async (via) => { try { await api('/api/letters', { action: 'mark', projectId: proj, letterIds: ids, via }); toast(`Marked ${ids.length} as sent by ${via}.`); letters(); } catch (e) { alert(e.message); } };
+    $('#courier').onclick = () => mark('courier'); $('#wa').onclick = () => mark('whatsapp');
+    if ($('#em')) $('#em').onclick = async () => {
+      const send = m.live ? withEmail : ids;
+      if (!send.length) return alert('None of these buyers has an email address.');
+      if (!confirm(`Send ${send.length} email${send.length === 1 ? '' : 's'}${m.live ? ' to buyers' : ' to the test address'}?`)) return;
+      $('#em').disabled = true; let ok = 0, bad = [];
+      for (let i = 0; i < send.length; i += 20) {
+        try { const r = await api('/api/letters', { action: 'email', projectId: proj, letterIds: send.slice(i, i + 20) }); for (const x of r.results) if (x.error) bad.push(`${x.unit}: ${x.error}`); else ok++; } catch (e) { bad.push(e.message); break; }
+        $('#sendlog').textContent = `Sent ${ok} of ${send.length}…`;
+      }
+      $('#sendlog').innerHTML = `Sent ${ok}.${bad.length ? ' Not sent: ' + esc(bad.join('; ')) : ''}`;
+    };
+  }
+
+  // ---------- follow-ups ----------
+  async function followups() {
+    if (!proj) return noProject();
+    const d = await api(`/api/followups?project=${proj}`);
+    const tab = store.get('erp_ftab') || 'due';
+    const rows = d.rows.filter((r) => tab === 'all' || (tab === 'due' ? r.due : tab === 'broken' ? r.broken : !r.count));
+    $('#page').innerHTML = `<div class="page-head"><div><h1>Follow-ups</h1><p class="muted">One shared list of every buyer with overdue dues. Log each call or WhatsApp with its outcome and the next follow-up date.</p></div></div>
+      <div class="panel"><div class="kpis">${kpi(d.summary.total, 'buyers owing')}${kpi(d.summary.due, 'to follow up today')}${kpi(d.summary.broken, 'broken promises', d.summary.broken ? 'bad' : '')}${kpi(d.summary.never, 'never contacted')}</div></div>
+      <div class="tabs">${[['due', 'Due today'], ['broken', 'Broken promises'], ['never', 'Never contacted'], ['all', 'All']].map(([k, l]) => `<button class="tab ${k === tab ? 'on' : ''}" data-t="${k}">${l}</button>`).join('')}</div>
+      <div class="panel table-wrap"><input class="search" id="q" placeholder="Search unit or buyer"><table><tr><th>Unit</th><th>Buyer</th><th class="num">Overdue</th><th>Last follow-up</th><th>Promise</th><th>Next</th><th>Contact</th><th></th></tr>
+      ${rows.map((r) => `<tr data-s="${esc((r.unit_no + ' ' + (r.buyers || '')).toLowerCase())}"><td><a href="#/booking/${r.booking_id}">${esc(r.unit_no)}</a></td><td>${esc(r.buyers || '')}</td><td class="num bad-t">${inr(r.overdue)}</td>
+        <td class="small">${r.count ? `${esc(r.kind)} · ${esc(r.outcome)}<br><span class="muted">${fmtD(r.last_at.slice(0, 10))} by ${esc(r.last_by || '')}${r.note ? ' · ' + esc(r.note.slice(0, 60)) : ''}</span>` : '<span class="muted">never</span>'}</td>
+        <td class="small">${r.promise_date ? `${fmtD(r.promise_date)}${r.promise_amount ? ' · ' + inr(r.promise_amount) : ''}${r.broken ? ' <span class="pill bad">broken</span>' : ''}` : ''}</td>
+        <td class="small">${r.next_date ? fmtD(r.next_date) : ''}</td>
+        <td class="small" style="white-space:nowrap">${r.mobile ? (r.wa ? `<a href="tel:+91${esc(r.mobile)}">Call</a> · <a href="${esc(r.wa)}" target="_blank" rel="noopener">WhatsApp</a>` : esc(r.mobile)) : '<span class="muted">no mobile</span>'}</td>
+        <td>${can('demand.raise') ? `<button class="small" data-log="${r.booking_id}" data-u="${esc(r.unit_no)}">Log</button>` : ''}</td></tr>`).join('') || '<tr><td colspan="8" class="muted">Nothing here.</td></tr>'}</table></div>`;
+    document.querySelectorAll('.tab[data-t]').forEach((t) => (t.onclick = () => { store.set('erp_ftab', t.dataset.t); followups(); }));
+    $('#q').oninput = (e) => { const q = e.target.value.toLowerCase(); document.querySelectorAll('tr[data-s]').forEach((tr) => (tr.style.display = tr.dataset.s.includes(q) ? '' : 'none')); };
+    document.querySelectorAll('[data-log]').forEach((b) => (b.onclick = () => followupForm(+b.dataset.log, b.dataset.u, d, followups)));
+  }
+  function followupForm(bookingId, unit, d, after) {
+    const plus = (n) => { const x = new Date(Date.now() + 5.5 * 3600e3); x.setUTCDate(x.getUTCDate() + n); return x.toISOString().slice(0, 10); };
+    const dl = dialog(`<h2>Log a follow-up · ${esc(unit)}</h2>
+      <div class="row"><div><label>How</label><select name="kind">${d.kinds.map((k) => `<option>${esc(k)}</option>`).join('')}</select></div><div><label>Outcome</label><select name="outcome">${d.outcomes.map((k) => `<option>${esc(k)}</option>`).join('')}</select></div></div>
+      <label>Note</label><textarea name="note" rows="2"></textarea>
+      <div class="row"><div><label>Promised to pay on</label><input type="date" name="promiseDate" min="${todayIso()}"></div><div><label>Promised amount (₹)</label><input name="promiseAmount" inputmode="decimal"></div></div>
+      <label>Next follow-up</label><div class="quick">${[[1, 'Tomorrow'], [3, 'In 3 days'], [7, 'In a week'], [15, 'In 15 days']].map(([n, l]) => `<button type="button" class="ghost small" data-n="${plus(n)}">${l}</button>`).join('')}</div>
+      <input type="date" name="nextDate" min="${todayIso()}" value="${plus(3)}">`,
+    async (x) => { await api('/api/followups', { action: 'add', bookingId, ...x }); toast('Follow-up saved.'); after(); });
+    dl.querySelectorAll('[data-n]').forEach((b) => (b.onclick = () => { dl.querySelector('[name=nextDate]').value = b.dataset.n; }));
   }
 
   start();
