@@ -228,6 +228,7 @@ let n = 0; const step = async (name, fn) => { await fn(); n++; console.log('  âœ
     assert.equal(pv.status, 200, pv.error); assert.equal(pv.summary.receipts, 3); assert.equal(pv.summary.payments, 2);
     const im = await admin('/api/accounts', { action: 'tally-import', files });
     assert.equal(im.ok, true, im.error);
+    const page = await admin('/api/accounts?view=import'); assert.equal(page.status, 200, page.error); assert.equal(page.lastTally.after.receipts, 3);
     const r = (await admin('/api/accounts?reg=receipts')).rows;
     assert.equal(r.length, 3);
     const a = r.find((x) => x.unit_no === 'A-1001'); assert.equal(a.payment_head, 'AV'); assert.equal(a.head, 'Receipts From Customers'); assert.equal(a.bank, 'Yes RERA Collection 100% (0700)');
