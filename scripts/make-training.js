@@ -113,14 +113,16 @@ async function play(page, steps) {
     try {
       if (op === 'title') { await ov(); await page.evaluate(([x, y, z]) => window.__title(x, y, z), [a, b, c]); await page.waitForTimeout(3600); await page.evaluate(() => window.__title()); }
       else if (op === 'go') { await page.goto(BASE + a); await page.waitForLoadState('networkidle').catch(() => {}); await page.waitForTimeout(700); await recap(); }
-      else if (op === 'hash') { await page.evaluate((h) => { location.hash = h; }, a); await page.waitForLoadState('networkidle').catch(() => {}); await page.waitForTimeout(1100); await recap(); }
+      else if (op === 'hash') { await page.evaluate((h) => { location.hash = h; }, a); await page.waitForTimeout(300); await page.waitForFunction(() => { const p = document.querySelector('#page'); return p && !/^Loading/.test(p.innerText.trim()); }, null, { timeout: 15000 }).catch(() => {}); await page.waitForTimeout(900); await recap(); }
+      else if (op === 'fill') { const { l } = await rect(a); await l.fill(b); await page.waitForTimeout(600); }
+      else if (op === 'key') { await page.keyboard.press(a); await page.waitForTimeout(b || 800); }
       else if (op === 'cap') { cap = a; await ov(); await page.evaluate((t) => window.__cap(t), a); await page.waitForTimeout(b || reading(a)); }
       else if (op === 'hl') { const { r } = await rect(a); await page.evaluate((q) => { window.__box(q); window.__ptr(q.x + Math.min(q.w / 2, 60), q.y + q.h / 2); }, r); await page.waitForTimeout(b || 1800); await page.evaluate(() => window.__box()); }
       else if (op === 'click') {
         const { l, r } = await rect(a);
         await page.evaluate((q) => window.__ptr(q.x + Math.min(q.w / 2, 60), q.y + q.h / 2), r); await page.waitForTimeout(800);
         await page.evaluate((q) => window.__ptr(q.x + Math.min(q.w / 2, 60), q.y + q.h / 2, true), r);
-        await l.click(); await page.waitForLoadState('networkidle').catch(() => {}); await page.waitForTimeout(b || 1200); await recap();
+        await l.click({ timeout: 8000 }); await page.waitForLoadState('networkidle').catch(() => {}); await page.waitForTimeout(b || 1200); await recap();
       }
       else if (op === 'type') { const { l, r } = await rect(a); await page.evaluate((q) => window.__ptr(q.x + 30, q.y + q.h / 2, true), r); await l.click(); await l.pressSequentially(b, { delay: 55 }); await page.waitForTimeout(500); }
       else if (op === 'select') { const { l } = await rect(a); await l.selectOption({ label: b }).catch(() => l.selectOption(b)); await page.waitForTimeout(700); }
@@ -170,6 +172,7 @@ const L = {
     ['click', '.tab[data-t=due]'], ['cap', 'Due today: these buyers must be called today.'],
     ['click', 'button[data-log] >> nth=0'], ['cap', 'After each call, tap Log. Choose how you contacted the buyer and what they said.'],
     ['select', 'dialog select[name=outcome]', 'Promised to pay'], ['type', 'dialog textarea[name=note]', 'Will pay the plinth demand by Friday'],
+    ['fill', 'dialog input[name=promiseDate]', addDays(ist(), 4)], ['type', 'dialog input[name=promiseAmount]', '250000'],
     ['click', 'dialog [data-n] >> nth=1'], ['cap', 'If they promise to pay, put the date and amount. Pick when to call next.'],
     ['click', 'dialog button[value=save]'], ['cap', 'Saved. The buyer moves off today’s list until the next follow-up date.'],
     ['click', '.tab[data-t=broken]'], ['cap', 'Broken promises: the promised date passed and nothing came in. Call these first.'],
@@ -179,10 +182,10 @@ const L = {
     ['title', 'Training · Sales & CRM', 'Units, bookings and ledgers', 'Finding a flat, its booking and the buyer’s statement'],
     ['hash', '#/units'], ['cap', 'Units & inventory shows every flat, floor by floor. The colour shows sold, available or held.'],
     ['hl', '.tabs'], ['cap', 'Pick a wing at the top.'], ['scroll', 300], ['click', 'button.unit.s-booked >> nth=5'],
-    ['cap', 'Tap a flat to see its buyer, agreement value and dues.'], ['wait', 1500],
+    ['cap', 'Tap a flat to see its buyer, agreement value and dues.'], ['wait', 1500], ['key', 'Escape'],
     ['hash', '#/bookings'], ['cap', 'Bookings lists every booking. New bookings wait here for Head CRM to approve.'],
     ['type', '#q', 'A-12'], ['cap', 'Search by flat or buyer.'],
-    ['click', '#tbl a >> nth=0'], ['cap', 'The booking page has the applicants, the payment plan, demands and receipts.'], ['scroll', 500],
+    ['click', 'tr[data-b] >> visible=true >> nth=0'], ['cap', 'The booking page has the applicants, the payment plan, demands and receipts.'], ['scroll', 500],
     ['hash', '#/ledgers'], ['cap', 'Customer ledgers: the statement of account for each buyer. Print it or save it as a PDF to send.'],
     ['end', 'Units, bookings and ledgers'],
   ] },
@@ -202,8 +205,7 @@ const L = {
     ['hl', '.td.hi >> nth=0', 2200], ['cap', 'Urgent lines first: a PDC due tomorrow, a late GST return, a bank that does not agree.'],
     ['click', '.td .td-title a >> nth=0'], ['cap', 'Each line opens the register where you fix it.'], ['hash', '#/acctodo'],
     ['type', '.note >> nth=0', 'Balance kept in RERA account'], ['click', '.tk >> nth=0'], ['cap', 'Tick it when done, with a note if useful.'],
-    ['cap', 'Head Accounts can run the audit again during the day. Lines that are fixed are cleared by themselves.'],
-    ['hl', '#rerun'],
+    ['cap', 'Head Accounts can run the audit again during the day with “Run the audit again”. Lines that are fixed are cleared by themselves.'],
     ['end', 'The 9 am audit'],
   ] },
   bank: { user: 'imran', steps: [
