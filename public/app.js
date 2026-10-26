@@ -131,6 +131,7 @@
     { key: 'reg-rentLinks', label: 'Tenant Rent Links', show: () => can('accounts.view') },
     { key: 'accreports', label: 'Reports & Tally', show: () => can('accounts.view') },
     { key: 'checks', label: 'Checks', show: () => can('accounts.view') },
+    { key: 'bookscrm', label: 'Tally vs CRM', show: () => anyOf('accounts.view', 'ledger.view') },
     { key: 'ca', label: 'CA / Tax', show: () => can('ca.view'), href: () => '/ca' },
     { key: 'accsetup', label: 'Banks, heads & import', show: () => can('accounts.manage') },
     { group: 'Set-up' },
@@ -192,7 +193,7 @@
     $('#cpw').onclick = () => changePassword(false);
     if ($('#proj')) $('#proj').onchange = (e) => { proj = +e.target.value; store.set('erp_project', proj); shell(); };
     if (/^reg-/.test(page || '') && can('accounts.view')) { try { await accRegister(page.slice(4)); } catch (e) { $('#page').innerHTML = `<div class="err">${esc(e.message)}</div>`; } return; }
-    const fn = { home, projects, plans, users, audit, units, bookings, demands, receipts, ledgers, letters, followups, verify, prices, partners, acc: accTodo, balances: accBalances, bankauto: bankAuto, accreports: accReports, checks: accChecks, accsetup: accSetup, import: importPage, booking: bookingPage, statement: statementPage, run: runPage };
+    const fn = { home, projects, plans, users, audit, units, bookings, demands, receipts, ledgers, letters, followups, verify, prices, partners, acc: accTodo, balances: accBalances, bankauto: bankAuto, bookscrm: booksCrm, accreports: accReports, checks: accChecks, accsetup: accSetup, import: importPage, booking: bookingPage, statement: statementPage, run: runPage };
     const key = DETAIL[page] && arg ? page : cur.key;
     try { await fn[key](arg ? +arg : undefined); } catch (e) { $('#page').innerHTML = `<div class="err">${esc(e.message)}</div>`; }
   }
@@ -1096,6 +1097,58 @@
     }
     if ($('#pdcSend')) $('#pdcSend').onclick = async () => { try { const r = await api('/api/bank-auto', { action: 'pdc-send' }); toast(r.reason || `Sent ${r.sent.length} reminder${r.sent.length === 1 ? '' : 's'}.`); bankAuto(); } catch (e) { alert(e.message); } };
     if ($('#bas')) $('#bas').onsubmit = async (ev) => { ev.preventDefault(); try { await api('/api/bank-auto', { action: 'settings', ...Object.fromEntries(new FormData(ev.target)) }); toast('Settings saved.'); bankAuto(); } catch (e) { showErr(ev.target, e); } };
+  }
+
+  async function booksCrm() {
+    const d = await api(`/api/books-crm?project=${proj || ''}`);
+    const T = d.totals, S = d.byState;
+    const st = store.get('erp_bc_state') || 'differ', q0 = store.get('erp_bc_q') || '';
+    const STATES = ['More in the books', 'More in the CRM', 'Only in the books', 'Only in the CRM', 'No booking in the CRM', 'Agrees', 'Nothing received'];
+    const pill = (s) => `<span class="pill ${s === 'Agrees' ? 'good' : s === 'Nothing received' ? 'grey' : 'bad'}">${esc(s)}</span>`;
+    const diffN = (v) => `<span class="${Math.abs(v) <= 1000 ? 'good-t' : 'bad-t'}">${v > 0 ? '+' : ''}${inr(v)}</span>`;
+    const src = d.source === 'Tally' ? 'Tally' : 'the accounts registers';
+    $('#page').innerHTML = `<div class="page-head"><div><h1>Tally vs CRM</h1><p class="muted">Money received from each flat's buyer: in ${esc(src)} (Receipts and Payments Out in the ERP) against the CRM ledger. Bounced cheques are left out on both sides. A flat agrees when the two are within ₹1,000. Tap a flat to see its receipts side by side.</p></div></div>
+      <div class="panel"><div class="kpis">${kpi(inr(T.books), 'received per ' + src)}${kpi(inr(T.crm), 'received per the CRM')}${kpi((T.books - T.crm > 0 ? '+' : '') + inr(T.books - T.crm), 'difference (books − CRM)', Math.abs(T.books - T.crm) > 1000 ? 'bad' : '')}${kpi(((S['Agrees'] || {}).n || 0) + ' of ' + d.rows.filter((r) => r.state !== 'Nothing received').length, 'flats that agree')}</div>
+        <div class="table-wrap" style="margin-top:12px"><table><tr><th></th><th class="num">Agreement value</th><th class="num">GST</th><th class="num">SDR</th><th class="num">Not split</th><th class="num">Total</th></tr>
+          <tr><td>${esc(src === 'Tally' ? 'Tally' : 'Books')}</td><td class="num">${inr(T.booksAv)}</td><td class="num">${inr(T.booksGst)}</td><td class="num">${inr(T.booksSdr)}</td><td class="num">${inr(T.booksUn)}</td><td class="num"><b>${inr(T.books)}</b></td></tr>
+          <tr><td>CRM</td><td class="num">${inr(T.crmAv)}</td><td class="num">${inr(T.crmGst)}</td><td class="num">${inr(T.crmSdr)}</td><td class="num">—</td><td class="num"><b>${inr(T.crm)}</b></td></tr>
+          <tr class="tot"><td>Difference</td><td class="num">${diffN(T.booksAv - T.crmAv)}</td><td class="num">${diffN(T.booksGst - T.crmGst)}</td><td class="num">${diffN(T.booksSdr - T.crmSdr)}</td><td class="num">${inr(T.booksUn)}</td><td class="num">${diffN(T.books - T.crm)}</td></tr></table></div>
+        <p class="small muted">Also in the books: ${inr(T.paidBack)} paid back to flats' ledgers (returned cheques and other payments to a flat), ${inr(T.refund)} refunds on cancelled flats, ${inr(T.other)} from earlier buyers of a flat, and ${d.noUnit.k} customer receipts with no flat (${inr(d.noUnit.amt)}). TDS by customers: ${inr(T.booksTds)} on the TDS Tracker, ${inr(T.crmTds)} in the CRM; it is not in either total. The split into AV, GST and SDR in Tally follows the bank account the money came into.</p></div>
+      <div class="panel"><div class="row" style="grid-template-columns:260px 1fr auto;align-items:end;gap:12px"><div><label>Show</label><select id="bcs"><option value="differ">Flats that differ (${d.rows.filter((r) => !['Agrees', 'Nothing received'].includes(r.state)).length})</option><option value="all">All flats (${d.rows.length})</option>${STATES.map((x) => `<option value="${esc(x)}">${esc(x)} (${(S[x] || {}).n || 0})</option>`).join('')}</select></div>
+        <div><label>Search flat or buyer</label><input id="bcq" value="${esc(q0)}" placeholder="A-1001 or name"></div><div><button class="ghost" id="bccsv">Download CSV</button></div></div>
+        <div class="table-wrap acc-grid" style="margin-top:12px"><table id="bct"></table></div><p class="small muted" id="bcn"></p></div>`;
+    $('#bcs').value = st;
+    const shown = () => { const s1 = $('#bcs').value, q = $('#bcq').value.trim().toLowerCase(); return d.rows.filter((r) => (s1 === 'all' ? true : s1 === 'differ' ? !['Agrees', 'Nothing received'].includes(r.state) : r.state === s1) && (!q || (r.unit + ' ' + r.buyer).toLowerCase().includes(q))); };
+    const draw = () => {
+      const rows = shown();
+      $('#bct').innerHTML = `<tr><th>Flat</th><th>Buyer</th><th class="num">AV books</th><th class="num">AV CRM</th><th class="num">GST books</th><th class="num">GST CRM</th><th class="num">SDR books</th><th class="num">SDR CRM</th><th class="num">Books total</th><th class="num">CRM total</th><th class="num">Difference</th><th>Result</th><th class="num">Paid back to flat</th></tr>`
+        + rows.slice(0, 600).map((r) => `<tr class="click" data-u="${esc(r.unit)}"><td><b>${esc(r.unit)}</b></td><td>${esc(r.buyer)}</td><td class="num">${inr(r.booksAv)}</td><td class="num">${inr(r.crmAv)}</td><td class="num">${inr(r.booksGst)}</td><td class="num">${inr(r.crmGst)}</td><td class="num">${inr(r.booksSdr)}</td><td class="num">${inr(r.crmSdr)}</td><td class="num"><b>${inr(r.books)}</b></td><td class="num"><b>${inr(r.crm)}</b></td><td class="num">${diffN(r.diff)}</td><td>${pill(r.state)}</td><td class="num">${r.paidBack ? inr(r.paidBack) : ''}</td></tr>`).join('');
+      $('#bcn').textContent = rows.length > 600 ? `Showing 600 of ${rows.length}; search to narrow.` : `${rows.length} flats, biggest difference first.`;
+      document.querySelectorAll('#bct tr[data-u]').forEach((tr) => (tr.onclick = () => flat(tr.dataset.u)));
+    };
+    $('#bcs').onchange = () => { store.set('erp_bc_state', $('#bcs').value); draw(); };
+    $('#bcq').oninput = () => { store.set('erp_bc_q', $('#bcq').value); draw(); };
+    $('#bccsv').onclick = () => {
+      const H = ['Flat', 'Buyer', 'CRM status', 'Agreement value', 'AV books', 'AV CRM', 'GST books', 'GST CRM', 'SDR books', 'SDR CRM', 'Not split (books)', 'Books total', 'CRM total', 'Difference', 'Result', 'Paid back to flat', 'Refunds', 'From earlier buyers', 'TDS (tracker)', 'TDS (CRM)'];
+      const K = ['unit', 'buyer', 'status', 'av', 'booksAv', 'crmAv', 'booksGst', 'crmGst', 'booksSdr', 'crmSdr', 'booksUn', 'books', 'crm', 'diff', 'state', 'paidBack', 'refund', 'other', 'booksTds', 'crmTds'];
+      const csv = '﻿' + [H, ...shown().map((r) => K.map((k) => r[k]))].map((r) => r.map((v) => /[",\n]/.test(String(v ?? '')) ? `"${String(v).replace(/"/g, '""')}"` : (v ?? '')).join(',')).join('\n');
+      const a = document.createElement('a'); a.href = URL.createObjectURL(new Blob([csv], { type: 'text/csv' })); a.download = `tally-vs-crm-${todayIso()}.csv`; document.body.appendChild(a); a.click(); a.remove();
+    };
+    draw();
+    async function flat(unit) {
+      const x = await api(`/api/books-crm?project=${proj || ''}&unit=${encodeURIComponent(unit)}`);
+      const bk = x.books, cr = x.crm;
+      const tag = (r) => r.pair ? (Math.abs(r.days) > 7 ? `<span class="pill grey">matched, ${Math.abs(r.days)} days apart</span>` : '<span class="pill good">matched</span>') : '<span class="pill bad">not on the other side</span>';
+      const dl = document.createElement('dialog'); dl.className = 'wide';
+      dl.innerHTML = `<form method="dialog"><h2>${esc(unit)} · ${esc(x.booking.buyer || '')}</h2><p class="muted">Agreement value ${inr(x.booking.av)} · ${esc(x.booking.status || '')}. ${x.unmatched.books} receipts in the books and ${x.unmatched.crm} in the CRM have no match on the other side.</p>
+        <h3>In the books (${bk.length})</h3><div class="table-wrap acc-grid"><table><tr><th>Date</th><th>ID</th><th>Bank</th><th>Head</th><th class="num">Amount</th><th>Ledger / payer</th><th></th></tr>
+        ${bk.map((r) => `<tr><td>${fmtD(r.date)}</td><td class="small">${esc(r.ref || '')}</td><td class="small">${esc(r.bank)}</td><td>${esc(r.head)}</td><td class="num">${inr(r.amount)}</td><td class="small">${esc(r.payer || r.desc || '')}</td><td>${r.bounced ? '<span class="pill grey">bounced</span>' : r.other ? '<span class="pill grey">earlier buyer</span>' : tag(r)}</td></tr>`).join('') || '<tr><td colspan="7" class="muted">None.</td></tr>'}</table></div>
+        ${x.paid.length ? `<h3>Paid to this flat's ledger in the books (${x.paid.length})</h3><div class="table-wrap acc-grid"><table><tr><th>Date</th><th>ID</th><th>Bank</th><th>Head</th><th class="num">Amount</th></tr>${x.paid.map((p) => `<tr><td>${fmtD(p.date)}</td><td class="small">${esc(p.ref || '')}</td><td class="small">${esc(p.bank)}</td><td>${esc(p.head)}</td><td class="num">${inr(p.amount)}</td></tr>`).join('')}</table></div>` : ''}
+        <h3>In the CRM ledger (${cr.length})</h3><div class="table-wrap acc-grid"><table><tr><th>Date</th><th>Mode</th><th>Bank</th><th>Cheque / UTR</th><th class="num">Amount (without TDS)</th><th>Split</th><th></th></tr>
+        ${cr.map((r) => `<tr><td>${fmtD(r.date)}</td><td>${esc(r.mode || '')}</td><td class="small">${esc(r.bank || '')}</td><td class="small">${esc(r.ref || '')}</td><td class="num">${inr(r.amount)}</td><td class="small">${esc(r.split || '')}</td><td>${r.status !== 'approved' ? `<span class="pill grey">${esc(r.status)}</span>` : r.amount > 0 ? tag(r) : ''}</td></tr>`).join('') || '<tr><td colspan="7" class="muted">None.</td></tr>'}</table></div>
+        <div class="actions"><button value="cancel">Close</button></div></form>`;
+      document.body.appendChild(dl); dl.addEventListener('close', () => dl.remove()); dl.showModal();
+    }
   }
 
   async function accChecks() {
