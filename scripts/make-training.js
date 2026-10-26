@@ -2,7 +2,8 @@
 // Runs the ERP against an EMPTY database, fills it with made-up sample data (Sample Buyer …, Sample Bank …), then plays
 // each lesson in a browser with captions and a pointer, and saves the recording. No real buyer or bank data is used.
 //   DATABASE_URL=postgres://…/empty_db node scripts/make-training.js [module ...]
-// Needs Playwright (Chromium) and ffmpeg.
+// Needs Playwright (Chromium) and ffmpeg. For the voice: PIPER=/path/to/piper PIPER_VOICE=/path/to/voice.onnx
+// (Piper and its voices: github.com/rhasspy/piper releases, e.g. v0.0.2 voice-en-us-lessac-medium).
 const fs = require('fs');
 const path = require('path');
 const { execFileSync } = require('child_process');
@@ -97,6 +98,31 @@ const OVERLAY = `(() => {
 
 function reading(t) { return Math.max(2600, Math.min(7000, String(t).split(/\s+/).length * 330)); }
 
+// ---------- the voice ----------
+// With PIPER (the piper program) and PIPER_VOICE (a .onnx voice) set, every caption and title is also spoken.
+// The lesson waits for the voice to finish, and the clips are laid on the video at the moment each caption appeared.
+const PIPER = process.env.PIPER, VOICE = process.env.PIPER_VOICE;
+const spoken = (t) => String(t)
+  .replace(/\b(\d{1,2}(?::\d{2})?) ?am\b/gi, '$1 A M').replace(/\b(\d{1,2}(?::\d{2})?) ?pm\b/gi, '$1 P M')
+  .replace(/\bTo-Do\b/g, 'to do').replace(/\bCA \/ Tax\b/g, 'C A and tax').replace(/\bvs\b/g, 'versus')
+  .replace(/\b([AB])-(\d{2})(\d{2})\b/g, '$1 $2 $3').replace(/\bPDCs?\b/g, (m) => (m.endsWith('s') ? 'P D Cs' : 'P D C')).replace(/\bTDS\b/g, 'T D S')
+  .replace(/\bGST\b/g, 'G S T').replace(/\bKYC\b/g, 'K Y C').replace(/\bRERA\b/g, 'Rera').replace(/\bERP\b/g, 'E R P').replace(/\bCRM\b/g, 'C R M')
+  .replace(/[“”]/g, '').replace(/·/g, ',').replace(/’/g, "'");
+const wavMs = (f) => { const b = fs.readFileSync(f); return Math.round(((b.length - 44) / b.readUInt32LE(28)) * 1000); };
+let clipN = 0;
+function say(text) {
+  if (!PIPER || !VOICE) return null;
+  const f = path.join(TMP, `clip-${++clipN}.wav`);
+  execFileSync(PIPER, ['-m', VOICE, '-f', f, '--length_scale', '1.12', '--sentence_silence', '0.3'], { input: spoken(text), stdio: ['pipe', 'ignore', 'ignore'] });
+  return { f, ms: wavMs(f) };
+}
+let T0 = 0; const CUES = [];
+async function speak(page, text, minMs) {
+  const c = say(text);
+  if (c) CUES.push({ t: Date.now() - T0, f: c.f });
+  await page.waitForTimeout(Math.max(minMs || 0, c ? c.ms + 450 : reading(text)));
+}
+
 async function play(page, steps) {
   const ov = () => page.evaluate(OVERLAY).catch(() => {});
   let cap = '';
@@ -111,12 +137,12 @@ async function play(page, steps) {
   for (const s of steps) {
     const [op, a, b, c] = s;
     try {
-      if (op === 'title') { await ov(); await page.evaluate(([x, y, z]) => window.__title(x, y, z), [a, b, c]); await page.waitForTimeout(3600); await page.evaluate(() => window.__title()); }
+      if (op === 'title') { await ov(); await page.evaluate(([x, y, z]) => window.__title(x, y, z), [a, b, c]); await speak(page, `${b}. ${c}.`, 3600); await page.evaluate(() => window.__title()); }
       else if (op === 'go') { await page.goto(BASE + a); await page.waitForLoadState('networkidle').catch(() => {}); await page.waitForTimeout(700); await recap(); }
       else if (op === 'hash') { await page.evaluate((h) => { location.hash = h; }, a); await page.waitForTimeout(300); await page.waitForFunction(() => { const p = document.querySelector('#page'); return p && !/^Loading/.test(p.innerText.trim()); }, null, { timeout: 15000 }).catch(() => {}); await page.waitForTimeout(900); await recap(); }
       else if (op === 'fill') { const { l } = await rect(a); await l.fill(b); await page.waitForTimeout(600); }
       else if (op === 'key') { await page.keyboard.press(a); await page.waitForTimeout(b || 800); }
-      else if (op === 'cap') { cap = a; await ov(); await page.evaluate((t) => window.__cap(t), a); await page.waitForTimeout(b || reading(a)); }
+      else if (op === 'cap') { cap = a; await ov(); await page.evaluate((t) => window.__cap(t), a); await speak(page, a, b); }
       else if (op === 'hl') { const { r } = await rect(a); await page.evaluate((q) => { window.__box(q); window.__ptr(q.x + Math.min(q.w / 2, 60), q.y + q.h / 2); }, r); await page.waitForTimeout(b || 1800); await page.evaluate(() => window.__box()); }
       else if (op === 'click') {
         const { l, r } = await rect(a);
@@ -129,7 +155,7 @@ async function play(page, steps) {
       else if (op === 'scroll') { await page.mouse.wheel(0, a); await page.waitForTimeout(b || 1200); }
       else if (op === 'top') { await page.evaluate(() => window.scrollTo({ top: 0, behavior: 'smooth' })); await page.waitForTimeout(800); }
       else if (op === 'wait') await page.waitForTimeout(a);
-      else if (op === 'end') { await page.evaluate(() => { window.__cap(); window.__box(); }); await page.evaluate(([x, y, z]) => window.__title(x, y, z), ['Dream India ERP · Training', a, b || 'Next: open the next video on the Training videos page.']); await page.waitForTimeout(3200); }
+      else if (op === 'end') { await page.evaluate(() => { window.__cap(); window.__box(); }); await page.evaluate(([x, y, z]) => window.__title(x, y, z), ['Dream India ERP · Training', a, b || 'Next: open the next video on the Training videos page.']); await speak(page, 'That is the end of this video. Open the next one on the Training videos page.', 3200); }
     } catch (e) { console.warn(`    step ${op} ${a || ''}: ${e.message.split('\n')[0]}`); }
   }
 }
@@ -254,12 +280,18 @@ const L = {
       await ctx.addCookies([{ name, value, url: BASE }]);
     }
     const page = await ctx.newPage();
+    T0 = Date.now(); CUES.length = 0;
     if (lesson.user) { await page.goto(BASE + '/#/home'); await page.waitForLoadState('networkidle').catch(() => {}); }
     await play(page, lesson.steps);
     const v = page.video(); await ctx.close();
     const webm = await v.path();
     const mp4 = path.join(OUT, m.id + '.mp4');
-    execFileSync('ffmpeg', ['-y', '-loglevel', 'error', '-i', webm, '-c:v', 'libx264', '-preset', 'veryfast', '-crf', '30', '-pix_fmt', 'yuv420p', '-movflags', '+faststart', '-an', mp4]);
+    const vin = ['-i', webm], aud = [];
+    if (CUES.length) {
+      const fc = CUES.map((c, i) => `[${i + 1}:a]adelay=${Math.max(0, c.t)}|${Math.max(0, c.t)}[a${i}]`).join(';') + ';' + CUES.map((_, i) => `[a${i}]`).join('') + `amix=inputs=${CUES.length}:normalize=0,loudnorm=I=-16:TP=-1.5,aresample=48000[aout]`;
+      aud.push(...CUES.flatMap((c) => ['-i', c.f]), '-filter_complex', fc, '-map', '0:v', '-map', '[aout]', '-c:a', 'aac', '-b:a', '96k', '-ac', '1');
+    } else aud.push('-an');
+    execFileSync('ffmpeg', ['-y', '-loglevel', 'error', ...vin, ...aud, '-c:v', 'libx264', '-preset', 'veryfast', '-crf', '30', '-pix_fmt', 'yuv420p', '-movflags', '+faststart', mp4]);
     execFileSync('ffmpeg', ['-y', '-loglevel', 'error', '-ss', '1.2', '-i', mp4, '-frames:v', '1', '-vf', 'scale=640:-2', '-q:v', '5', path.join(OUT, m.id + '.jpg')]);
     console.log('  saved', mp4, Math.round(fs.statSync(mp4).size / 1024) + ' KB');
   }
