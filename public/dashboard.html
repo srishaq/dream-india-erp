@@ -1,0 +1,430 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Collections dashboard · Dream India ERP</title>
+<meta name="robots" content="noindex,nofollow">
+<meta name="theme-color" content="#140C59">
+<link rel="icon" href="/icon.svg">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Schibsted+Grotesk:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
+<style>
+:root{
+  --ink:#140C59;--ink2:#241C6B;--accent:#64C2E6;--paper:#F3F4F1;--card:#fff;--line:#D9DDD6;--muted:#5E6A72;
+  --in:#117A65;--in2:#7FBFAE;--hold:#B9A77A;--due:#B7791F;--risk:#B42318;--wA:#2B5C8A;--wB:#7A5C99;
+  --r:10px;
+  font-family:"Schibsted Grotesk",system-ui,-apple-system,"Segoe UI",sans-serif;
+}
+/* No tnum: in Schibsted Grotesk it more than doubles the advance of . and , which
+   wrecks both prose and decimals (Rs 481 . 7 Cr). Numerals are right-aligned in the
+   tables anyway, which is where the alignment actually mattered. */
+*{box-sizing:border-box}
+html,body{margin:0;background:var(--paper);color:var(--ink);font-size:15px;line-height:1.45}
+body{padding-bottom:env(safe-area-inset-bottom)}
+button,input,select{font:inherit;color:inherit}
+:focus-visible{outline:2px solid var(--wA);outline-offset:2px}
+.hidden{display:none!important}
+
+/* login */
+#login{min-height:100vh;display:grid;place-items:center;padding:24px;background:var(--ink)}
+#login form{width:min(360px,100%);color:#fff}
+#login .logo{width:180px;height:auto;display:block;margin:0 0 22px}
+#login h1{font-size:34px;line-height:1.05;margin:0 0 6px;font-weight:800;letter-spacing:-.02em}
+#login p{color:#A9B4E0;margin:0 0 28px}
+#login input{width:100%;padding:14px 16px;border-radius:8px;border:1px solid #3B3486;background:var(--ink2);color:#fff;font-size:16px}
+#login button{margin-top:12px;width:100%;padding:14px;border:0;border-radius:8px;background:#fff;color:var(--ink);font-weight:700;cursor:pointer}
+#login .err{color:#FF9B8F;min-height:22px;margin-top:10px;font-size:14px}
+
+/* shell */
+header{position:sticky;top:0;z-index:20;background:var(--ink);color:#fff;padding:calc(10px + env(safe-area-inset-top)) 20px 0}
+.bar{display:flex;align-items:center;gap:16px;flex-wrap:wrap}
+.brand{display:flex;align-items:center;gap:14px;flex-wrap:wrap}
+.ptitle{margin:0;font-size:19px;line-height:1.2;font-weight:700;color:#fff;letter-spacing:.01em}.ptitle span{color:#A9B4E0;font-weight:500}
+.brand img{height:30px;width:auto;display:block}
+.sync{font-size:13px;color:#A9B4E0;display:flex;align-items:center;gap:8px;margin-left:auto}
+.dot{width:8px;height:8px;border-radius:50%;background:#4CC38A}
+.dot.snap{background:#E5A83A}
+.sync button{white-space:nowrap;background:none;border:1px solid #3B3486;color:#fff;border-radius:6px;padding:4px 10px;cursor:pointer;font-size:13px}
+.rangeLbl{display:inline-flex;align-items:center;gap:6px;font-size:13px;color:var(--muted)}
+.rangeLbl input{padding:7px 10px;border:1px solid var(--line);border-radius:8px;background:var(--card);color:inherit}
+.ccGrid{display:grid;grid-template-columns:1.6fr 1fr;gap:16px;align-items:start}
+.ccChart{height:190px}
+.ccDays table{font-size:13px}
+@media(max-width:900px){.ccGrid{grid-template-columns:1fr}}
+nav{display:flex;gap:2px;overflow-x:auto;margin-top:10px;scrollbar-width:none}
+nav::-webkit-scrollbar{display:none}
+nav button{background:none;border:0;color:#A9B4E0;padding:10px 14px;border-bottom:3px solid transparent;cursor:pointer;white-space:nowrap;font-weight:600}
+nav button[aria-selected=true]{color:#fff;border-bottom-color:var(--accent)}
+main{max-width:1320px;margin:0 auto;padding:22px 20px 60px}
+.banner{background:#FFF4DC;border:1px solid #EACB86;color:#6B4A07;border-radius:8px;padding:10px 14px;margin-bottom:18px;font-size:14px}
+h2{font-size:24px;margin:0 0 4px;letter-spacing:-.015em}
+h3{font-size:16px;margin:0 0 12px}
+.sub{color:var(--muted);margin:0 0 18px;font-size:14px}
+section.view{display:none}
+section.view.on{display:block}
+
+/* figures */
+.figs{display:grid;grid-template-columns:repeat(auto-fit,minmax(170px,1fr));gap:0;background:var(--card);border:1px solid var(--line);border-radius:var(--r);overflow:hidden;margin-bottom:22px}
+.fig{background:var(--card);padding:14px 16px;box-shadow:0 0 0 .5px var(--line)}
+.fig b{display:block;font-size:24px;font-weight:700;letter-spacing:-.02em}
+.fig span{font-size:13px;color:var(--muted)}
+.fig small{display:block;font-size:12px;color:var(--muted);margin-top:2px}
+.fig.in b{color:var(--in)} .fig.due b{color:var(--due)} .fig.risk b{color:var(--risk)}
+.fig[data-drill]:hover{box-shadow:0 0 0 2px var(--accent,#64C2E6) inset} .num{text-align:right;font-variant-numeric:tabular-nums;white-space:nowrap}
+
+.grid2{display:grid;grid-template-columns:1fr 1fr;gap:18px}
+.grid3{display:grid;grid-template-columns:2fr 1fr;gap:18px}
+@media(max-width:900px){.grid2,.grid3{grid-template-columns:1fr}}
+.panel{background:var(--card);border:1px solid var(--line);border-radius:var(--r);padding:16px;min-width:0}
+.panel+.panel{margin-top:0}
+.chart{position:relative;height:260px}
+
+/* tower */
+.tower-wrap{display:grid;grid-template-columns:1fr 1fr;gap:28px;align-items:end}
+@media(max-width:700px){.tower-wrap{gap:12px}}
+.tower h3{display:flex;justify-content:space-between;align-items:baseline;flex-wrap:wrap;gap:0 8px}
+@media(max-width:600px){.sync{margin-left:0;width:100%;font-size:12px}.sync span#syncText{flex:1}main{padding:16px 12px 48px}.fig b{font-size:20px}.floor{grid-template-columns:18px repeat(8,1fr)}.u{height:10px}}
+.tower h3 small{font-weight:500;color:var(--muted);font-size:13px}
+.floors{display:flex;flex-direction:column-reverse;gap:2px;border-bottom:4px solid var(--ink);padding-bottom:3px}
+.floor{display:grid;grid-template-columns:26px repeat(8,1fr);gap:2px;align-items:center}
+.floor i{font-style:normal;font-size:10px;color:var(--muted);text-align:right;padding-right:4px}
+.u{height:13px;border-radius:2px;border:0;padding:0;cursor:pointer;background:var(--avail,#fff);box-shadow:inset 0 0 0 1px #C3CAC4}
+.u:hover{outline:2px solid var(--ink);outline-offset:0}
+.u.reg{background:var(--in);box-shadow:none}
+.u.bkd{background:var(--in2);box-shadow:none}
+.u.hold{background:var(--hold);box-shadow:none}
+.u.ref{background:repeating-linear-gradient(45deg,#D9DDD6 0 3px,#EEF0EC 3px 6px);box-shadow:none;cursor:default}
+.u.d-risk{background:var(--risk);box-shadow:none}
+.u.d-due{background:var(--due);box-shadow:none}
+.u.d-tds{background:#E8C98C;box-shadow:none}
+.u.d-ok{background:var(--in);box-shadow:none}
+.u.d-na{background:#EEF0EC;box-shadow:none}
+.u.dim{opacity:.18}
+.legend{display:flex;flex-wrap:wrap;gap:14px;font-size:13px;color:var(--muted);margin:14px 0 0}
+.legend span{display:inline-flex;align-items:center;gap:6px}
+.legend i{width:12px;height:12px;border-radius:2px;display:inline-block}
+.seg{display:inline-flex;border:1px solid var(--line);border-radius:8px;overflow:hidden;background:var(--card)}
+.seg button{border:0;background:none;padding:6px 12px;cursor:pointer;font-size:13px;font-weight:600;color:var(--muted)}
+.seg button[aria-pressed=true]{background:var(--ink);color:#fff}
+.toolbar{display:flex;gap:10px;flex-wrap:wrap;align-items:center;margin-bottom:14px}
+.toolbar input,.toolbar select{padding:8px 12px;border:1px solid var(--line);border-radius:8px;background:var(--card);min-width:0}
+.toolbar input[type=search]{flex:1 1 220px}
+
+/* tables */
+.tbl{overflow-x:auto;border:1px solid var(--line);border-radius:var(--r);background:var(--card)}
+table{border-collapse:collapse;width:100%;font-size:14px}
+th{text-align:left;font-weight:600;color:var(--muted);font-size:12.5px;padding:9px 12px;border-bottom:1px solid var(--line);white-space:nowrap;background:#FAFBF9;position:sticky;top:0}
+td b{white-space:nowrap}
+td{padding:9px 12px;border-bottom:1px solid #EDF0EB;vertical-align:top}
+tr:last-child td{border-bottom:0}
+td.n,th.n{text-align:right;white-space:nowrap}
+tbody tr.click{cursor:pointer}
+tbody tr.click:hover{background:#F7F9F6}
+.rmk{color:var(--muted);font-size:13px;max-width:420px}
+.tag{display:inline-block;padding:1px 8px;border-radius:99px;font-size:12px;font-weight:600;background:#EEF0EC;white-space:nowrap}
+.tag.risk{background:#FBE4E1;color:var(--risk)}.tag.due{background:#FBEFD9;color:#8A5A10}.tag.ok{background:#DDF1EA;color:var(--in)}
+.more{margin-top:10px;background:none;border:1px solid var(--line);border-radius:8px;padding:8px 14px;cursor:pointer}
+.w-A{color:var(--wA);font-weight:700}.w-B{color:var(--wB);font-weight:700}
+
+/* queues */
+.queues{display:grid;grid-template-columns:260px 1fr;gap:18px}
+@media(max-width:900px){.queues{grid-template-columns:1fr}}
+.qlist{display:flex;flex-direction:column;gap:6px}
+.qlist button{display:flex;justify-content:space-between;gap:10px;text-align:left;padding:12px 14px;border:1px solid var(--line);border-radius:8px;background:var(--card);cursor:pointer}
+.qlist button[aria-pressed=true]{border-color:var(--ink);box-shadow:inset 3px 0 0 var(--ink)}
+.qlist b{font-size:18px}
+.qlist small{display:block;color:var(--muted);font-size:12.5px;font-weight:400}
+
+/* daily */
+.days{display:grid;grid-template-columns:300px 1fr;gap:18px}
+/* Grid/flex items default to min-width:auto, so long day labels push the track
+   wider than the viewport and the whole page scrolls sideways on a phone. */
+.days>*,.ccGrid>*,.grid2>*,.grid3>*,.queues>*{min-width:0}
+.daylist button>span{min-width:0;overflow-wrap:anywhere}
+@media(max-width:900px){.days{grid-template-columns:1fr}}
+.daylist{max-height:640px;overflow:auto;border:1px solid var(--line);border-radius:var(--r);background:var(--card)}
+.daylist button{display:grid;grid-template-columns:1fr auto;width:100%;text-align:left;border:0;border-bottom:1px solid #EDF0EB;background:none;padding:11px 14px;cursor:pointer}
+.daylist button[aria-pressed=true]{background:#EEF3F7;box-shadow:inset 3px 0 0 var(--wA)}
+.daylist small{color:var(--muted);font-size:12.5px}
+.daylist .amt{font-weight:700;text-align:right}
+
+/* drawer */
+#drawer{position:fixed;inset:0;z-index:50;display:none}
+#drawer.on{display:block}
+#drawer .scrim{position:absolute;inset:0;background:rgba(21,32,43,.45)}
+#drawer aside{position:absolute;right:0;top:0;bottom:0;width:min(460px,100%);background:var(--card);overflow:auto;padding:calc(20px + env(safe-area-inset-top)) 22px 40px}
+#drawer h2{font-size:30px}
+#drawer dl{display:grid;grid-template-columns:auto 1fr;gap:6px 16px;margin:14px 0 0;font-size:14px}
+#drawer dt{color:var(--muted)}#drawer dd{margin:0;text-align:right;font-weight:500}
+#drawer .close{float:right;border:1px solid var(--line);background:none;border-radius:8px;padding:6px 12px;cursor:pointer}
+.meter{height:10px;background:#EEF0EC;border-radius:99px;overflow:hidden;margin:14px 0 4px}
+.meter i{display:block;height:100%;background:var(--in)}
+.empty{padding:28px;text-align:center;color:var(--muted)}
+/* demand letters */
+.dm-grid{display:grid;grid-template-columns:300px 1fr;gap:18px;align-items:start}
+.dm-grid>*{min-width:0}
+@media(max-width:900px){.dm-grid{grid-template-columns:1fr}}
+.dm-form{display:grid;gap:10px}
+.dm-form [hidden]{display:none!important}
+.dm-form label{display:grid;gap:4px;font-size:12.5px;font-weight:600;color:var(--muted)}
+.dm-form select,.dm-form input{padding:8px 10px;border:1px solid var(--line);border-radius:8px;background:var(--card);font-size:14px;color:var(--ink);min-width:0;width:100%}
+.dm-form .row2{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+.btn{border:1px solid var(--line);background:var(--card);border-radius:8px;padding:8px 14px;cursor:pointer;font-weight:600;font-size:13.5px;white-space:nowrap}
+.btn.go{background:var(--ink);color:#fff;border-color:var(--ink)}
+.btn:disabled{opacity:.45;cursor:not-allowed}
+.dm-status{display:flex;flex-wrap:wrap;gap:8px;margin:0 0 16px}
+.dm-chip{display:inline-flex;align-items:center;gap:6px;font-size:13px;padding:5px 11px;border-radius:99px;background:#EEF0EC;color:var(--ink)}
+.dm-chip i{width:8px;height:8px;border-radius:50%;background:var(--in)}
+.dm-chip.off i{background:var(--due)}
+.dm-runs{display:flex;flex-direction:column;gap:6px;margin:18px 0}
+.dm-runs button{text-align:left;padding:11px 13px;border:1px solid var(--line);border-radius:8px;background:var(--card);cursor:pointer;display:grid;gap:2px}
+.dm-runs button[aria-pressed=true]{border-color:var(--ink);box-shadow:inset 3px 0 0 var(--ink)}
+.dm-runs b{font-size:14px}.dm-runs small{color:var(--muted);font-size:12.5px}
+.dm-head{display:flex;flex-wrap:wrap;justify-content:space-between;align-items:baseline;gap:6px 16px;margin-bottom:12px}
+.dm-head h3{margin:0;font-size:18px}
+.dm-head span{color:var(--muted);font-size:13.5px}
+.dm-actions{display:flex;flex-wrap:wrap;gap:8px;margin-bottom:12px}
+.dm-prog{background:#EEF3F7;border:1px solid #CFE0EC;border-radius:8px;padding:10px 14px;margin-bottom:12px;font-size:14px}
+.dm-prog.err{background:#FBE4E1;border-color:#F1B8B0;color:var(--risk)}
+#dmTbl td{vertical-align:middle}
+#dmTbl td.ck,#dmTbl th.ck{width:34px;padding-right:0}
+#dmTbl input[type=checkbox]{width:17px;height:17px}
+#dmTbl .acts{display:flex;gap:6px;justify-content:flex-end}
+#dmTbl .acts a,#dmTbl .acts button{font-size:12.5px;padding:5px 9px;border:1px solid var(--line);border-radius:7px;background:var(--card);color:var(--ink);text-decoration:none;cursor:pointer;white-space:nowrap;font-weight:600}
+.dm-sub{display:block;color:var(--muted);font-size:12.5px}
+.fu-bar{display:flex;flex-wrap:wrap;gap:8px;align-items:center;margin-bottom:12px}
+.fu-bar select,.fu-bar input{padding:7px 10px;border:1px solid var(--line);border-radius:8px;background:var(--card);font-size:14px;color:var(--ink)}
+.fu-bar input{flex:1;min-width:160px}
+#fuTbl td{vertical-align:top}
+#fuTbl .acts{display:flex;gap:6px;justify-content:flex-end;flex-wrap:wrap}
+#fuTbl .acts button{font-size:12.5px;padding:5px 9px;border:1px solid var(--line);border-radius:7px;background:var(--card);color:var(--ink);cursor:pointer;white-space:nowrap;font-weight:600}
+#fuTbl tr.open>td{background:#F6F7F4}
+#fuTbl tr.fu-detail>td{background:#F6F7F4;padding:14px 16px 18px}
+.fu-note{max-width:340px}
+.fu-note p{margin:3px 0 0;font-size:13px;line-height:1.4}
+.fu-wrap{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1.1fr);gap:18px}
+@media(max-width:900px){.fu-wrap{grid-template-columns:1fr}}
+.fu-wrap h4{margin:0 0 8px;font-size:14px}
+.fu-hist{display:grid;gap:8px;max-height:340px;overflow:auto}
+.fu-hist div{background:var(--card);border:1px solid var(--line);border-radius:8px;padding:8px 11px;font-size:13px}
+.fu-hist p{margin:3px 0 0}
+.fu-form{display:grid;gap:10px}
+.fu-form label{display:grid;gap:4px;font-size:12.5px;font-weight:600;color:var(--muted)}
+.fu-form select,.fu-form input,.fu-form textarea{padding:8px 10px;border:1px solid var(--line);border-radius:8px;background:var(--card);font-size:14px;color:var(--ink);width:100%;min-width:0;font-family:inherit}
+.fu-form textarea{min-height:64px;resize:vertical}
+.fu-form .row2{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+.fu-quick{display:flex;gap:6px;flex-wrap:wrap}
+.fu-quick button{font-size:12px;padding:3px 8px;border:1px solid var(--line);border-radius:6px;background:var(--card);cursor:pointer}
+.fu-msg{font-size:13px;color:var(--muted)}
+.fu-msg.err{color:var(--risk)}
+.dm-settings summary{cursor:pointer;font-weight:700}
+.dm-settings[open] summary{margin-bottom:12px}
+@media (prefers-reduced-motion:no-preference){.u{transition:opacity .2s}}
+.back{color:#A9B4E0;text-decoration:none;font-weight:600;font-size:14px;border:1px solid #3B3486;border-radius:6px;padding:4px 10px}
+.back:hover{color:#fff}
+.testtag{font-size:12px;font-weight:700;color:#6B4A07;background:#FFF4DC;border-radius:99px;padding:2px 10px}
+a.btn{display:inline-block;text-decoration:none}
+#gate{min-height:100vh;display:grid;place-items:center;padding:24px;text-align:center}
+</style>
+</head>
+<body>
+<div id="gate"><p class="sub" id="gateMsg">Loading the dashboard…</p></div>
+<div id="app" class="hidden">
+<header>
+  <div class="bar">
+    <div class="brand"><a href="/" class="back" title="Back to the ERP">← ERP</a><img src="/logo.svg" alt="Dream India Realty" width="115" height="30"><h1 class="ptitle"><span>Project –</span> <span id="projName" style="color:#fff">Dream Signature</span></h1><span class="testtag">Test version</span></div>
+    <div class="sync"><span class="dot" id="syncDot"></span><span id="syncText">Loading…</span>
+      <button id="refreshBtn" title="Reload the latest figures">Refresh</button>
+      <button id="logoutBtn">Sign out</button></div>
+  </div>
+  <nav role="tablist" id="tabs">
+    <button data-v="overview" aria-selected="true">Overview</button>
+    <button data-v="daily">Daily reports</button>
+    <button data-v="collections">Collections</button>
+    <button data-v="schedule">Payment schedule</button>
+    <button data-v="demands">Demand letters</button>
+    <button data-v="followups">Follow-ups</button>
+    <button data-v="dues">Dues &amp; actions</button>
+    <button data-v="dates">Important dates</button>
+    <button data-v="units">Units</button>
+    <button data-v="cps">Channel partners</button>
+    <button data-v="audit">Source audit</button>
+  </nav>
+</header>
+
+<main>
+  <div id="banner" class="banner hidden"></div>
+
+  <section class="view on" id="v-overview">
+    <div class="figs" id="topFigs"></div>
+    <div class="panel cc" style="margin-bottom:18px">
+      <div class="toolbar" style="justify-content:space-between;align-items:baseline">
+        <h3 style="margin:0">Daily collections</h3>
+        <button class="more" id="ccMore">Open daily reports</button>
+      </div>
+      <div class="figs" id="ccFigs"></div>
+      <div class="ccGrid">
+        <div class="chart ccChart"><canvas id="ccChart"></canvas></div>
+        <div class="tbl ccDays"><table id="ccTbl"></table></div>
+      </div>
+    </div>
+    <div class="grid3">
+      <div class="panel">
+        <div class="toolbar" style="justify-content:space-between">
+          <h3 style="margin:0">Tower status</h3>
+          <div class="seg" id="towerMode">
+            <button aria-pressed="true" data-m="status">Sales status</button>
+            <button aria-pressed="false" data-m="dues">Dues</button>
+          </div>
+        </div>
+        <div class="tower-wrap" id="tower"></div>
+        <div class="legend" id="towerLegend"></div>
+      </div>
+      <div>
+        <div class="panel" style="margin-bottom:18px">
+          <h3>Wing A vs Wing B</h3>
+          <div class="tbl" style="border:0"><table id="wingTbl"></table></div>
+        </div>
+        <div class="panel">
+          <h3>Inventory</h3>
+          <div class="tbl" style="border:0"><table id="invTbl"></table></div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section class="view" id="v-daily">
+    <h2>Daily reports</h2>
+    <p class="sub">Every receipt and cheque return landing in the RERA collection account, day by day, from the account statement held in the ERP. Internal 30/70 account transfers are excluded.</p>
+    <div class="panel" id="drPanel" style="margin-bottom:18px">
+      <h3 id="drTitle">Daily report</h3>
+      <div class="tbl" style="border:0"><table id="drTbl"></table></div>
+    </div>
+    <div class="toolbar" id="dayFilter" style="margin-bottom:16px">
+      <div class="seg" id="dayRange">
+        <button data-r="7">7 days</button>
+        <button data-r="30" aria-pressed="true">30 days</button>
+        <button data-r="90">90 days</button>
+        <button data-r="mtd">This month</button>
+        <button data-r="all">All</button>
+      </div>
+      <label class="rangeLbl">From <input type="date" id="dayFrom" aria-label="From date"></label>
+      <label class="rangeLbl">To <input type="date" id="dayTo" aria-label="To date"></label>
+      <button class="more" id="dayClear" hidden>Clear dates</button>
+      <span class="sub" id="dayScope" style="margin:0 0 0 auto;font-size:13px"></span>
+    </div>
+    <div class="figs" id="dailyFigs"></div>
+    <div class="panel" style="margin-bottom:18px"><h3 id="dailyChartTitle">Last 30 days</h3><div class="chart"><canvas id="dailyChart"></canvas></div></div>
+    <div class="days">
+      <div class="daylist" id="dayList"></div>
+      <div>
+        <div class="figs" id="dayFigs" style="margin-bottom:14px"></div>
+        <div class="tbl"><table id="dayTbl"></table></div>
+      </div>
+    </div>
+  </section>
+
+  <section class="view" id="v-collections">
+    <h2>Collections</h2>
+    <p class="sub">Monthly receipts in the RERA account by team, and what is still owed against agreement value.</p>
+    <div class="figs" id="colFigs"></div>
+    <div class="grid2">
+      <div class="panel"><h3>Monthly receipts by team</h3><div class="chart"><canvas id="monthChart"></canvas></div></div>
+      <div class="panel"><h3>Registrations per month</h3><div class="chart"><canvas id="regChart"></canvas></div></div>
+    </div>
+    <div class="panel" style="margin-top:18px"><h3>Month table</h3><div class="tbl" style="border:0"><table id="monthTbl"></table></div></div>
+  </section>
+
+  <section class="view" id="v-schedule">
+    <h2>Payment schedule</h2>
+    <p class="sub">What each stage of the payment plan is worth across all live bookings, and how much of it has come in. Each buyer's AV and TDS received is applied to their stages in order.</p>
+    <div class="panel" id="psPanel"><div class="tbl" style="border:0"><table id="psTbl"></table></div></div>
+  </section>
+
+  <section class="view" id="v-demands">
+    <h2>Demand letters</h2>
+    <p class="sub">Demand letters and reminders are prepared, emailed, printed and tracked in the ERP itself.</p>
+    <div class="panel"><a class="btn go" href="/#/letters">Open Demand letters in the ERP</a></div>
+  </section>
+
+  <section class="view" id="v-followups">
+    <h2>Follow-ups</h2>
+    <p class="sub">Calls, WhatsApps, visits and promises to pay are logged in the ERP against each buyer.</p>
+    <div class="panel"><a class="btn go" href="/#/followups">Open Follow-ups in the ERP</a></div>
+  </section>
+
+  <section class="view" id="v-dues">
+    <h2>Dues &amp; actions</h2>
+    <p class="sub">Outstanding balances grouped by follow-up status, and the lists the team should work today. "No Due", "GST Due" and "TDS Due Only" are worked out from the figures; Defaulter and other tags come from the CRM team.</p>
+    <div class="panel" style="margin-bottom:18px"><h3>Outstanding by follow-up status</h3><div class="tbl" style="border:0"><table id="followTbl"></table></div></div>
+    <div class="queues">
+      <div class="qlist" id="qList"></div>
+      <div><div class="toolbar"><input type="search" id="qSearch" placeholder="Filter by unit, name or remark" aria-label="Filter queue"></div><div class="tbl"><table id="qTbl"></table></div></div>
+    </div>
+  </section>
+
+  <section class="view" id="v-dates">
+    <h2>Important dates</h2>
+    <p class="sub">Registrations lined up, what is scheduled in the next 30 days, and what happened in the last 30.</p>
+    <div class="grid2">
+      <div class="panel"><h3>Next 30 days</h3><div class="tbl" style="border:0"><table id="upTbl"></table></div>
+        <h3 style="margin-top:20px">Registration line-up</h3><div class="tbl" style="border:0"><table id="lineTbl"></table></div></div>
+      <div class="panel"><h3>Last 30 days</h3><div class="tbl" style="border:0"><table id="recentTbl"></table></div></div>
+    </div>
+  </section>
+
+  <section class="view" id="v-units">
+    <h2>Units</h2>
+    <p class="sub">All flats with financials and workflow. Tap a row for the full file.</p>
+    <div class="toolbar">
+      <input type="search" id="uSearch" placeholder="Search unit, applicant, CP firm, RM" aria-label="Search units">
+      <select id="uWing" aria-label="Wing"><option value="">Both wings</option><option>A</option><option>B</option></select>
+      <select id="uInv" aria-label="Inventory status"><option value="">All statuses</option></select>
+      <select id="uFollow" aria-label="Follow-up status"><option value="">All follow-ups</option></select>
+      <select id="uReg" aria-label="Registration"><option value="">Registered or not</option><option value="y">Registered</option><option value="n">Not registered</option></select>
+    </div>
+    <div class="tbl"><table id="uTbl"></table></div>
+    <button class="more hidden" id="uMore">Show more</button>
+  </section>
+
+  <section class="view" id="v-cps">
+    <h2>Channel partners</h2>
+    <p class="sub">Who is bringing the business, whether their buyers pay, and what brokerage is owed against them. Firm names are matched ignoring case and spacing.</p>
+    <div class="figs" id="cpFigs"></div>
+    <div class="panel" id="cpNote" style="margin-bottom:18px"></div>
+    <div class="toolbar">
+      <input type="search" id="cpSearch" placeholder="Search channel partner" aria-label="Search channel partners">
+      <select id="cpSort" aria-label="Sort by">
+        <option value="agreementValue">Sort: agreement value</option>
+        <option value="units">Sort: units</option>
+        <option value="received">Sort: collected</option>
+        <option value="collectedPct">Sort: collection rate</option>
+        <option value="balanceDue">Sort: balance due</option>
+        <option value="brokerage">Sort: brokerage</option>
+        <option value="lastBooking">Sort: most recent booking</option>
+      </select>
+      <label class="rangeLbl"><input type="checkbox" id="cpMulti" style="width:auto"> Hide single-unit firms</label>
+    </div>
+    <div class="tbl"><table id="cpTbl"></table></div>
+    <button class="more hidden" id="cpMore">Show more</button>
+  </section>
+
+  <section class="view" id="v-audit">
+    <h2>Source audit</h2>
+    <p class="sub">What the import from the CRM sheet found that does not add up, and has not been checked yet. CRM and Accounts check each item and close it on the <a href="/#/verify">Data to verify</a> page.</p>
+    <div class="figs" id="auditFigs"></div>
+    <div class="grid2">
+      <div class="panel"><h3>By type</h3><div class="tbl" style="border:0"><table id="errTbl"></table></div></div>
+      <div class="panel"><h3>Items still open</h3><div class="tbl" style="border:0;max-height:620px"><table id="misTbl"></table></div></div>
+    </div>
+  </section>
+</main>
+</div>
+
+<div id="drawer" aria-hidden="true"><div class="scrim"></div><aside role="dialog" aria-modal="true" aria-labelledby="dTitle"><div id="dBody"></div></aside></div>
+<script src="/drill.js"></script>
+<script src="/dashboard.js"></script>
+</body>
+</html>

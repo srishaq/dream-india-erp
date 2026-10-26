@@ -71,6 +71,35 @@ const num = Number;
     const r = await admin('/api/import', { action: 'commit', projectId: sig.id, stageDates: { ...pv.stageDates, 'B|On Completion of Excavation': '2026-05-15' } });
     assert.equal(r.status, 409);
   });
+  await step('the dashboard works from ERP records: totals, follow-up status, daily collections, schedule', async () => {
+    const m = await admin(`/api/dashboard?project=${sig.id}`);
+    assert.equal(m.totals.booked, 6); assert.equal(m.totals.units, 8);
+    const a1 = m.units.find((u) => u.unit === 'A-1001'); assert.equal(a1.followStatus, 'No Due'); assert.equal(a1.receivedAV, 1943000); assert.equal(a1.tds, 97150); assert.equal(a1.tdsPaid, 4858);
+    assert.equal(m.units.find((u) => u.unit === 'A-1105').followStatus, 'Defaulter');
+    assert.equal(m.units.find((u) => u.unit === 'A-1006').inventory, 'Aslam/Management');
+    assert.equal(m.actions.defaulters.length, 1);
+    const day = m.daily.find((d) => d.date === '2026-01-01'); assert.equal(day.receipts, 594772); assert.equal(day.crm, 544772); assert.equal(day.sales, 50000);
+    assert.equal(m.daily.find((d) => d.date === '2026-01-02').returns, 50000); assert.ok(!m.daily.some((d) => d.date === '2026-01-03')); // internal transfer left out
+    assert.equal(m.daily.find((d) => d.date === '2026-01-01').items.find((i) => i.unit === 'A-1006').mode, 'Cheque');
+    const t = m.paymentSchedule.total; assert.ok(Math.abs(t.due - m.totals.agreementValue) < 1); assert.ok(Math.abs(t.received - (m.totals.receivedAV + m.totals.receivedTDS)) < 1);
+    assert.ok(m.checks.open > 5);
+  });
+  await step('the dashboard is closed to roles without access to dues', async () => {
+    const c = await admin('/api/users', { action: 'create', name: 'Sales One', username: 'sales1', role: 'sales', projects: [sig.id] });
+    const s = client(); await s('/api/session', { action: 'login', username: 'sales1', password: c.tempPassword });
+    await s('/api/session', { action: 'password', current: c.tempPassword, next: 'sales-password-1' });
+    const r = await s(`/api/dashboard?project=${sig.id}`); assert.equal(r.status, 403); assert.match(r.error, /role/);
+  });
+  await step('test version: the import can be cleared and run again', async () => {
+    assert.equal((await admin('/api/import', { action: 'reset', projectId: sig.id, confirm: 'nope' })).status, 400);
+    const r = await admin('/api/import', { action: 'reset', projectId: sig.id, confirm: 'CLEAR' }); assert.equal(r.ok, true, r.error); assert.equal(r.removedUnits, 8);
+    const s = await admin(`/api/import?project=${sig.id}`); assert.equal(s.counts.real, 0); assert.equal(s.last, null);
+    const again = await admin('/api/import', { action: 'commit', projectId: sig.id, stageDates: { ...pv.stageDates, 'B|On Completion of Excavation': '2026-05-15' } });
+    assert.equal(again.ok, true, again.error); assert.equal(again.bookings, 6);
+    process.env.ERP_LIVE = '1';
+    assert.equal((await admin('/api/import', { action: 'reset', projectId: sig.id, confirm: 'CLEAR' })).status, 403);
+    delete process.env.ERP_LIVE;
+  });
   console.log(`\nAll ${n} import checks passed.`);
   server.close(); require('../lib/db').reset(); process.exit(0);
 })().catch((e) => { console.error('\nFAILED:', e); process.exit(1); });

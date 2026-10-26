@@ -13,7 +13,8 @@ const bookings = [bh,
   b('B-1001','B','10','2BHK','58.06','625','0','Sold','2-Sep-25','Aziz Ahmed Shaikh','EEUPS5327Q','6397 5853 9071','NA','NA','NA','9167045682','er.shaikhaziz@gmail.com','B-10, Walkenose Villa, Marol Maroshi Road, Near Uttam Da Dhaba, ','Marol, J.B. Nagar, Mumbai, Maharashtra-400059.','11738739','586937','704400','30000','5-Jun-26','LIC Finance','krishna','Channel Partner','House Of Inani ','117387.39',''),
 ];
 const ch = ['Unit No.','Typology','Carpet Area Mtr.','Status','Primary Applicant','Contact No.','Booking Date','Reg Done','A.V Value','GST Amount','SDR Received','SDR Paid','SDR Difference','TDS','TDS Paid','TDS Due','Received In AV','Rece IN GST','Total Receive AV+TDS','Due %','Balance Due (AV)','GST Due','Funding Status','Remark','Registration Status','Booking Form Received Date','Status','GST Status','Wings','Demand Date','Demand Month'];
-const c = (no, sdr, tds, recAv, recGst, due, remark, dd) => [no, '', '', '', '', '', '', '', '', '', sdr, '', '', '', tds, '', recAv, recGst, '', due, '', '', '', remark, '', '', '', '', no[0], dd, ''];
+const FS = { 'A-1001': 'No Due', 'A-1105': 'Defaulter', 'A-1007': 'Part Payment & PDC' };
+const c = (no, sdr, tds, recAv, recGst, due, remark, dd) => [no, '', '', '', '', '', '', '', '', '', sdr, '', '', '', tds, '', recAv, recGst, '', due, '', '', '', remark, '', '', FS[no] || '', '', no[0], dd, ''];
 const crm = [ch,
   c('A-1001', '515800', '4858', '1943000', '  97,150.00 ', '20%', '29.08.26 Client will clear the TDS Due in Coming One week', '12-May-26'),
   c('A-1002', '462000', '72000', '1425600', '  72,000.00 ', '20%', '21.09.26 Calling done and TDS intimation given.', '15-July-26'),
@@ -47,8 +48,9 @@ const ledger = [
   ['Flat No.', 'A-1105', 'Carpert Area:', '411'], ['Date', 'Bank Name', 'Instrument No.', 'Amount'],
   L('9-Aug-2025', 'PhonePe', '522114473281', '13,000'), L('14-Aug-2025', 'PhonePe', '559252533888', '15,000'), L('5-Aug-2025', 'PhonePe', '558386127819', '40,000'), L('21-Sep-2026', 'State Bank of India', '955930', '2,30,000'), [], T('AV', '  298,000.00 '), T('GST', '  -   '),
 ];
-const bank = [['Value Date', 'Description', 'Cheque No', 'Dr/Cr', ' INWARD ', 'OUTWARD', ' Running Total ', 'FLAT NO'],
-  ['14-Mar-2026', 'x', '', '', '485700', '', '', 'A-1001'], ['16-Jul-2026', 'x', '', '', '1457300', '', '', 'A-1001'],
-  ['1-Jan-2026', 'x', '', '', '50000', '', '', 'A-1006'], ['1-Jan-2026', 'x', '', '', '394772', '', '', 'SUSPENSE'], ['1-Jan-2026', 'x', '', '', '150000', '', '', 'A-1002'],
+const bank = [['Value Date', 'Description', 'Cheque No', 'Dr/Cr', ' INWARD ', 'OUTWARD', ' Running Total ', 'FLAT NO', 'Customer Name By Lookup', 'CUSTOMER  NAME AS PER TALLY', 'Collection', 'Remarks'],
+  ['14-Mar-2026', 'NEFT x', '', 'C', '485700', '', '', 'A-1001', 'Rukhsana Soheb Shaikh', '', 'Sales Team', ''], ['16-Jul-2026', 'RTGS x', '', 'C', '1457300', '', '', 'A-1001', 'Rukhsana Soheb Shaikh', '', 'CRM Team', ''],
+  ['1-Jan-2026', 'CHQ DEPOSIT x', '', 'C', '50000', '', '', 'A-1006', '', '', 'Sales Team', ''], ['1-Jan-2026', 'x', '', 'C', '394772', '', '', 'SUSPENSE', '', '', 'CRM Team', ''], ['1-Jan-2026', 'UPI x', '', 'C', '150000', '', '', 'A-1002', '', '', 'CRM Team', ''],
+  ['2-Jan-2026', 'CHQ RETN x', '', 'D', '', '50000', '', '', '', '', 'Return - Sales', 'returned'], ['3-Jan-2026', 'FUNDS TRF TO DESIGNATED', '', 'D', '', '300000', '', '', '', '', '', ''],
 ];
 module.exports = { bookings, crm, ledger, bank };

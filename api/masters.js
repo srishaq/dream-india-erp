@@ -17,7 +17,7 @@ async function overview(u) {
                                  from projects p join companies c on c.id = p.company_id order by p.name`))
     .filter((p) => all || u.projects.includes(p.id));
   const ids = projects.map((p) => p.id);
-  const buildings = ids.length ? await db.q('select id, project_id, code, name, kind, floors from buildings where project_id = any($1::int[]) order by project_id, code', [ids]) : [];
+  const buildings = ids.length ? await db.q('select b.id, b.project_id, b.code, b.name, b.kind, b.floors, (select max(u.floor) from units u where u.building_id = b.id) as top_floor from buildings b where b.project_id = any($1::int[]) order by b.project_id, b.code', [ids]) : [];
   const plans = ids.length ? await db.q('select id, project_id, name, active from payment_plans where project_id = any($1::int[]) order by project_id, name', [ids]) : [];
   const stages = plans.length ? await db.q('select id, plan_id, seq, name, pct, construction_linked from plan_stages where plan_id = any($1::int[]) order by plan_id, seq', [plans.map((p) => p.id)]) : [];
   const units = ids.length ? await db.q('select project_id, status, count(*)::int as n from units where project_id = any($1::int[]) group by project_id, status', [ids]) : [];

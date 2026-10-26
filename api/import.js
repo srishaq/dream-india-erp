@@ -2,6 +2,7 @@
 // GET ?project=ID → connection status and what the project holds now.
 // POST {action:'preview', projectId, stageDates?} → reads and checks the sheet, saves nothing.
 // POST {action:'commit', projectId, stageDates} → imports (sample data is removed first).
+// POST {action:'reset', projectId, confirm:'CLEAR'} → test version only: removes the imported data so it can be imported again.
 const db = require('../lib/db');
 const auth = require('../lib/auth');
 const sheets = require('../lib/sheets');
@@ -10,6 +11,8 @@ const { commit } = require('../lib/import-commit');
 const { needProject } = require('../lib/access');
 const { daysToPay } = require('../lib/demands');
 const { route, fail, intOr } = require('../lib/http');
+const sample = require('../lib/sample');
+const audit = require('../lib/audit');
 
 const SOURCE_TABS = { bookings: ["Developer's Bookings", 'A:AS'], crm: ['CRM Follow up', 'A:AK'], ledger: ['Ledger', 'A:D'], bank: ['Rera Bank Stat.', 'A:P'] };
 const sheetId = () => process.env.CRM_SHEET_ID || sheets.SHEET_ID;
@@ -33,7 +36,7 @@ module.exports = route({
     const projectId = needProject(u, intOr(req.query.project));
     const counts = await db.one('select count(*) filter (where sample)::int as sample, count(*) filter (where not sample)::int as real from units where project_id = $1', [projectId]);
     const last = await db.one('select r.id, r.created_at, r.summary, x.name as by_name from import_runs r left join users x on x.id = r.created_by where r.project_id = $1 order by r.id desc limit 1', [projectId]);
-    return res.json({ configured: sheets.configured() || !!(process.env.IMPORT_FIXTURE && process.env.VERCEL !== '1'), serviceEmail: sheets.serviceEmail() || null, sheetId: sheetId(), counts, last });
+    return res.json({ canReset: process.env.ERP_LIVE !== '1', configured: sheets.configured() || !!(process.env.IMPORT_FIXTURE && process.env.VERCEL !== '1'), serviceEmail: sheets.serviceEmail() || null, sheetId: sheetId(), counts, last });
   },
   POST: async (req, res, b) => {
     const u = await auth.guard(req, res, 'users.manage'); if (!u) return;
@@ -49,6 +52,17 @@ module.exports = route({
       const days = await daysToPay(db);
       const out = await db.tx((t) => commit(t, p, { projectId, user: u, source: `CRM master sheet ${sheetId()}`, daysToPay: days }));
       return res.json({ ok: true, ...out });
+    }
+    if (b.action === 'reset') {
+      if (process.env.ERP_LIVE === '1') throw fail(403, 'The ERP is live, so imported data can no longer be cleared.');
+      if (b.confirm !== 'CLEAR') throw fail(400, 'Type CLEAR to confirm.');
+      const n = await db.tx(async (t) => {
+        const c = await t.one('select count(*)::int as units from units where project_id = $1', [projectId]);
+        await sample.wipe(t, projectId);
+        await audit.record(t.q, { user: u, action: 'clear-import', entity: 'project', entityId: projectId, projectId, after: c, note: 'Test version: imported data cleared to import again' });
+        return c.units;
+      });
+      return res.json({ ok: true, removedUnits: n });
     }
     throw fail(400, 'Unknown action.');
   },

@@ -18,6 +18,7 @@
   const can = (p) => !!me && me.perms.includes(p);
   function showErr(form, e) { let box = $('.err', form); if (!box) { box = document.createElement('div'); box.className = 'err'; form.appendChild(box); } box.textContent = e.message; }
   const logo = '<img src="/icon.svg" alt="">';
+  const wordmark = '<img class="wordmark" src="/logo.svg" alt="Dream India Realty" width="123" height="32">';
 
   // ---------- entry ----------
   async function start() {
@@ -103,6 +104,7 @@
   const anyOf = (...ps) => ps.some(can);
   const PAGES = [
     { key: 'home', label: 'Home', show: () => true },
+    { key: 'dashboard', label: 'Collections dashboard', show: () => can('ledger.view'), href: () => `/dashboard${proj ? '?project=' + proj : ''}` },
     { group: 'Booking-to-collection' },
     { key: 'units', label: 'Units & inventory', show: () => can('inventory.view') },
     { key: 'bookings', label: 'Bookings', show: () => anyOf('inventory.view', 'ledger.view') },
@@ -134,8 +136,8 @@
     const cur = PAGES.find((p) => p.key === curKey && p.show()) || PAGES[0];
     app.innerHTML = `<div class="shell">
       <nav class="side no-print">
-        <div class="logo">${logo}<div><b>Dream India ERP</b><span>Test version</span></div></div>
-        ${nav.map((p) => (p.group ? `<div class="group">${esc(p.group)}</div>` : `<a href="#/${p.key}" class="${p === cur ? 'on' : ''}">${esc(p.label)}</a>`)).join('')}
+        <a class="logo" href="#/home">${wordmark}<div><b>ERP</b><span>Test version</span></div></a>
+        ${nav.map((p) => (p.group ? `<div class="group">${esc(p.group)}</div>` : `<a href="${p.href ? p.href() : '#/' + p.key}" class="${p === cur ? 'on' : ''}">${esc(p.label)}</a>`)).join('')}
       </nav>
       <div class="main">
         <div class="top no-print"><div class="who">${projectList.length > 1 ? `<select id="proj" class="proj">${projectList.map((p) => `<option value="${p.id}" ${p.id === proj ? 'selected' : ''}>${esc(p.name)}</option>`).join('')}</select>` : `<b>${esc(projectList[0]?.name || '')}</b>`}
@@ -155,32 +157,68 @@
   window.addEventListener('hashchange', () => { if (me) shell(); });
 
   // ---------- pages ----------
+  const HP = 'viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"';
+  const HICON = {
+    tower: `<svg ${HP}><path d="M4 21h16M6 21V5l6-3v19M12 21V8l6 3v10"/></svg>`,
+    building: `<svg ${HP}><rect x="4" y="3" width="16" height="18" rx="1.5"/><path d="M9 7h1M14 7h1M9 11h1M14 11h1M9 15h1M14 15h1M10 21v-3h4v3"/></svg>`,
+    chart: `<svg ${HP}><path d="M4 20V10M10 20V4M16 20v-7M22 20H2"/></svg>`,
+    grid: `<svg ${HP}><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/></svg>`,
+    rupee: `<svg ${HP}><path d="M6 4h12M6 9h12M14 20 7 13h2a4 4 0 0 0 0-9"/></svg>`,
+    mail: `<svg ${HP}><rect x="3" y="5" width="18" height="14" rx="2"/><path d="m3 7 9 6 9-6"/></svg>`,
+    phone: `<svg ${HP}><path d="M22 16.9v3a2 2 0 0 1-2.2 2 19.8 19.8 0 0 1-8.6-3.1 19.5 19.5 0 0 1-6-6A19.8 19.8 0 0 1 2.1 4.2 2 2 0 0 1 4.1 2h3a2 2 0 0 1 2 1.7c.1 1 .4 1.9.7 2.8a2 2 0 0 1-.5 2.1L8 9.9a16 16 0 0 0 6 6l1.3-1.3a2 2 0 0 1 2.1-.4c.9.3 1.8.6 2.8.7a2 2 0 0 1 1.7 2z"/></svg>`,
+    check: `<svg ${HP}><path d="M9 11l3 3 8-8"/><path d="M20 12v7a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h9"/></svg>`,
+    book: `<svg ${HP}><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20V3H6.5A2.5 2.5 0 0 0 4 5.5z"/><path d="M4 19.5V21h16"/></svg>`,
+    hammer: `<svg ${HP}><path d="M15 12 6 21l-3-3 9-9M14 4l6 6-3 3-6-6z"/></svg>`,
+    cart: `<svg ${HP}><circle cx="9" cy="20" r="1.4"/><circle cx="18" cy="20" r="1.4"/><path d="M2 3h3l2.4 12.2a1.5 1.5 0 0 0 1.5 1.2h9.2a1.5 1.5 0 0 0 1.5-1.2L21 7H6"/></svg>`,
+    users: `<svg ${HP}><circle cx="9" cy="8" r="3.5"/><path d="M2.5 20a6.5 6.5 0 0 1 13 0M16 4.5a3.5 3.5 0 0 1 0 7M18.5 20a6.5 6.5 0 0 0-2.5-5"/></svg>`,
+  };
+  const TONES = ['#140C59', '#0E8C9B', '#2B5C8A', '#7A5C99', '#117A65', '#B7791F'];
+  const tile = (t) => {
+    const inner = `<span class="ic">${HICON[t.icon] || HICON.building}</span><span><h3>${esc(t.title)}</h3><p>${esc(t.sub || '')}</p></span>
+      ${t.soon ? '<span class="status">Coming soon</span>' : `<span class="open">Open →</span>`}`;
+    return t.soon ? `<div class="tile soon" style="--tone:${t.tone}">${inner}</div>`
+      : `<a class="tile" style="--tone:${t.tone}" href="${esc(t.href)}" ${t.proj ? `data-proj="${t.proj}"` : ''}>${inner}</a>`;
+  };
   async function home() {
     const d = await api('/api/masters');
     const total = (u) => Object.values(u || {}).reduce((a, b) => a + b, 0);
+    const now = new Date(), h = +now.toLocaleString('en-GB', { hour: 'numeric', hour12: false, timeZone: 'Asia/Kolkata' });
+    const first = (me.name || '').split(' ')[0];
     const cur = d.projects.find((p) => p.id === proj);
-    let summary = '';
-    if (cur && total(cur.units) && can('ledger.view')) {
-      const l = await api(`/api/ledger?project=${proj}`);
-      summary = `<div class="panel"><h2>${esc(cur.name)}: collections today</h2><div class="kpis">
-        ${kpi(l.totals.bookings, 'live bookings')}${kpi(cr(l.totals.demanded), 'demanded')}${kpi(cr(l.totals.received), 'received (AV + TDS)')}
-        ${kpi(cr(l.totals.overdue), 'overdue', toNum(l.totals.overdue) > 0 ? 'bad' : '')}${kpi(cr(l.totals.gstOutstanding), 'GST outstanding')}</div>
-        <div class="actions"><a class="btn ghost" href="#/ledgers">Open customer ledgers</a></div></div>`;
-    }
-    const sample = can('users.manage') && cur ? `<div class="panel"><h2>Sample data for testing</h2>
+    let open = 0;
+    if (cur && total(cur.units) && anyOf('inventory.view', 'ledger.view')) { try { open = (await api(`/api/verify?project=${proj}`)).counts.open; } catch {} }
+    const projTiles = d.projects.map((p, i) => {
+      const sale = p.buildings.filter((b) => b.kind !== 'rehab');
+      const floors = Math.max(0, ...p.buildings.map((b) => +b.floors || +b.top_floor || 0));
+      const n = total(p.units), sold = (p.units.booked || 0) + (p.units.registered || 0);
+      const sub = [p.location, p.buildings.length ? `${p.buildings.length} tower${p.buildings.length > 1 ? 's' : ''}${floors ? ' of ' + floors + ' floors' : ''}` : '', n ? `${sold} of ${n} units sold` : 'no units yet'].filter(Boolean).join(' · ');
+      return { title: p.name, sub, icon: i % 2 ? 'building' : 'tower', tone: TONES[i % TONES.length], proj: p.id,
+        href: n && can('ledger.view') ? `/dashboard?project=${p.id}` : '#/units' };
+    });
+    const tools = [
+      { title: 'Collections dashboard', sub: 'Daily collections, dues, tower status, channel partners', icon: 'chart', tone: '#2B5C8A', href: `/dashboard${proj ? '?project=' + proj : ''}`, show: can('ledger.view') },
+      { title: 'Units & inventory', sub: 'Every unit, floor by floor, both wings side by side', icon: 'grid', tone: '#140C59', href: '#/units', show: can('inventory.view') },
+      { title: 'Receipts', sub: 'Enter receipts; Head Accounts approves them', icon: 'rupee', tone: '#117A65', href: '#/receipts', show: anyOf('receipt.enter', 'receipt.approve', 'ledger.view') },
+      { title: 'Demand letters', sub: 'Stage demands and reminders, by email or courier', icon: 'mail', tone: '#0E8C9B', href: '#/letters', show: anyOf('demand.raise', 'ledger.view') },
+      { title: 'Follow-ups', sub: 'Calls, WhatsApps and promises to pay', icon: 'phone', tone: '#7A5C99', href: '#/followups', show: can('ledger.view') },
+      { title: 'Data to verify', sub: open ? `${open} items from the import still to check` : 'Items from the import to check and close', icon: 'check', tone: '#B7791F', href: '#/verify', show: anyOf('inventory.view', 'ledger.view') },
+      { title: 'Accounts', sub: 'Bank statements, payments, expenses, SRA rent, Tally export, GST and TDS', icon: 'book', tone: '#2B5C8A', soon: true, show: true },
+      { title: 'Contractor billing', sub: 'Work orders, running bills and retention', icon: 'hammer', tone: '#B7791F', soon: true, show: true },
+      { title: 'Purchase', sub: 'Indents, purchase orders and site stock', icon: 'cart', tone: '#117A65', soon: true, show: true },
+      { title: 'HR & Admin', sub: 'Staff records, leave, letters and HR policies', icon: 'users', tone: '#7A5C99', soon: true, show: true },
+    ].filter((t) => t.show);
+    const sample = can('users.manage') && cur && (!total(cur.units) || cur.sample) ? `<div class="panel"><h2>Sample data for testing</h2>
       <p class="muted">Loads Dream Signature A and B Wing (floors 10 to 45, 8 units a floor) with made-up "Sample Buyer" bookings, demands up to the stages the real project has reached, and receipts. It never touches real data and can be removed in one click.</p>
       <div class="actions">${total(cur.units) ? '<button class="danger" id="clearSample">Remove sample data</button>' : '<button id="loadSample">Load sample data</button>'}</div></div>` : '';
-    $('#page').innerHTML = `<div class="page-head"><div><h1>Welcome, ${esc(me.name)}</h1>
-      <p class="muted">This is the test version of the Dream India ERP. It is separate from the live staff portal.</p></div></div>
-      ${summary}
-      <div class="grid">${d.projects.map((p) => `<div class="panel">
-        <span class="pill grey">${esc(p.company)}</span>
-        <h2 style="margin-top:8px">${esc(p.name)}</h2>
-        <p class="muted">${esc(p.location || '')}${p.rera_no ? ' · RERA ' + esc(p.rera_no) : ''}</p>
-        <div class="kpis"><div class="kpi"><b>${p.buildings.length}</b><span>buildings</span></div>
-          <div class="kpi"><b>${total(p.units)}</b><span>units</span></div>
-          <div class="kpi"><b>${p.plans.reduce((a, pl) => a + pl.stages.length, 0)}</b><span>payment stages</span></div></div>
-      </div>`).join('') || '<p class="muted">No projects yet.</p>'}</div>${sample}`;
+    $('#page').innerHTML = `<div class="hero"><div class="hero-in"><span class="eyebrow">${esc(now.toLocaleDateString('en-IN', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric', timeZone: 'Asia/Kolkata' }))}</span>
+        <h1>${h < 12 ? 'Good morning' : h < 17 ? 'Good afternoon' : 'Good evening'}${first ? ', ' + esc(first) : ''}</h1>
+        <p>Your projects and tools in one place. Tap a tile to open it.</p></div></div>
+      <div class="hm">
+        <section class="hgroup"><h2>Projects</h2><div class="tiles">${projTiles.map(tile).join('') || '<p class="muted">No projects yet.</p>'}</div></section>
+        <section class="hgroup"><h2>Tools</h2><div class="tiles">${tools.map(tile).join('')}</div></section>
+        ${sample}
+      </div>`;
+    document.querySelectorAll('a.tile[data-proj]').forEach((a) => (a.onclick = () => { proj = +a.dataset.proj; store.set('erp_project', proj); }));
     if ($('#loadSample')) $('#loadSample').onclick = async (e) => { e.target.disabled = true; e.target.textContent = 'Loading… (about 20 seconds)'; try { const r = await api('/api/sample', { action: 'load', projectId: proj }); toast(`Loaded ${r.units} units, ${r.bookings} bookings, ${r.demands} demands and ${r.receipts} receipts.`); home(); } catch (x) { e.target.disabled = false; e.target.textContent = 'Load sample data'; alert(x.message); } };
     if ($('#clearSample')) $('#clearSample').onclick = async (e) => { if (!confirm('Remove all sample units, bookings, demands and receipts for this project?')) return; e.target.disabled = true; try { await api('/api/sample', { action: 'clear', projectId: proj }); home(); } catch (x) { e.target.disabled = false; alert(x.message); } };
   }
@@ -321,17 +359,25 @@
     const d = await api(`/api/units?project=${proj}`);
     const bTab = +(store.get('erp_bld') || 0);
     const blds = d.buildings.filter((b) => d.units.some((u) => u.building_id === b.id) || b.kind !== 'rehab');
-    const bld = blds.find((b) => b.id === bTab) || blds[0];
-    const list = bld ? d.units.filter((u) => u.building_id === bld.id) : [];
-    const counts = {}; for (const u of list) counts[u.status] = (counts[u.status] || 0) + 1;
-    const floors = [...new Set(list.map((u) => u.floor))].sort((a, b) => b - a);
+    // Default: all sale wings side by side. A single building can still be picked from the tabs.
+    const sideBySide = blds.filter((b) => b.kind !== 'rehab' && d.units.some((u) => u.building_id === b.id));
+    const one = blds.find((b) => b.id === bTab);
+    const shown = one ? [one] : sideBySide.length ? sideBySide : blds.slice(0, 1);
+    const bld = shown.length === 1 ? shown[0] : null;
     const cell = (u) => `<button class="unit s-${u.status}${toNum(u.overdue) > 0 ? ' overdue' : ''}" data-u="${u.id}" title="${esc(u.unit_no)} · ${esc(STATUS[u.status] || u.status)}${u.buyer ? ' · ' + esc(u.buyer) : ''}">${esc(u.unit_no.split('-').pop())}</button>`;
+    const legend = (list) => { const counts = {}; for (const u of list) counts[u.status] = (counts[u.status] || 0) + 1;
+      return `<div class="legend">${Object.keys(STATUS).filter((k) => counts[k]).map((k) => `<span><i class="sw s-${k}"></i>${STATUS[k]} <b>${counts[k]}</b></span>`).join('')}
+        ${list.some((u) => toNum(u.overdue) > 0) ? `<span><i class="sw overdue-sw"></i>Overdue <b>${list.filter((u) => toNum(u.overdue) > 0).length}</b></span>` : ''}</div>`; };
+    const tower = (b) => {
+      const list = d.units.filter((u) => u.building_id === b.id);
+      const floors = [...new Set(list.map((u) => u.floor))].sort((a, b2) => b2 - a);
+      return `<div class="panel tower">${shown.length > 1 ? `<h2>${esc(b.name)} <span class="muted small">${list.length} units</span></h2>` : ''}${legend(list)}
+        ${floors.length ? `<div class="floors">${floors.map((f) => `<div class="floor"><span class="fl">${f}</span>${list.filter((u) => u.floor === f).map(cell).join('')}</div>`).join('')}</div>` : '<p class="muted">No units yet in this building.' + (can('users.manage') ? ' For testing, load sample data from the Home page, or import from the CRM sheet.' : '') + '</p>'}</div>`;
+    };
     $('#page').innerHTML = `<div class="page-head"><div><h1>Units & inventory</h1><p class="muted">Every unit, floor by floor. A red corner means the buyer has overdue dues.</p></div>
       ${can('inventory.edit') && bld ? '<div class="actions" style="margin:0"><button class="ghost" id="gen">Add units</button></div>' : ''}</div>
-      <div class="tabs">${blds.map((b) => `<button class="tab ${b === bld ? 'on' : ''}" data-b="${b.id}">${esc(b.name)}</button>`).join('')}</div>
-      <div class="panel"><div class="legend">${Object.keys(STATUS).filter((k) => counts[k]).map((k) => `<span><i class="sw s-${k}"></i>${STATUS[k]} <b>${counts[k]}</b></span>`).join('')}
-        ${list.some((u) => toNum(u.overdue) > 0) ? `<span><i class="sw overdue-sw"></i>Overdue <b>${list.filter((u) => toNum(u.overdue) > 0).length}</b></span>` : ''}</div>
-      ${floors.length ? `<div class="floors">${floors.map((f) => `<div class="floor"><span class="fl">${f}</span>${list.filter((u) => u.floor === f).map(cell).join('')}</div>`).join('')}</div>` : '<p class="muted">No units yet in this building.' + (can('users.manage') ? ' For testing, load sample data from Home.' : '') + '</p>'}</div>`;
+      <div class="tabs">${sideBySide.length > 1 ? `<button class="tab ${!one ? 'on' : ''}" data-b="0">All wings</button>` : ''}${blds.map((b) => `<button class="tab ${b === one || (!one && shown.length === 1 && b === shown[0]) ? 'on' : ''}" data-b="${b.id}">${esc(b.name)}</button>`).join('')}</div>
+      <div class="towers">${shown.map(tower).join('')}</div>`;
     document.querySelectorAll('.tab[data-b]').forEach((t) => (t.onclick = () => { store.set('erp_bld', t.dataset.b); units(); }));
     document.querySelectorAll('[data-u]').forEach((c) => (c.onclick = () => unitDialog(d.units.find((u) => u.id === +c.dataset.u))));
     if ($('#gen')) $('#gen').onclick = () => dialog(`<h2>Add units to ${esc(bld.name)}</h2>
@@ -725,8 +771,15 @@
     page.innerHTML = `<div class="page-head"><div><h1>Import from the CRM sheet</h1><p class="muted">Reads the Master Dream Signature sheet (Developer's Bookings, CRM Follow up, Ledger and Rera Bank Stat.), shows what it found and everything that does not add up, then imports it. The sheet itself is never changed.</p></div></div>
       ${!s.configured ? `<div class="err">The ERP is not connected to Google Sheets yet. In Vercel, add <b>GOOGLE_SERVICE_ACCOUNT_JSON</b> to the dream-india-erp project (the same value the staff portal uses), then redeploy.</div>` : ''}
       ${s.last ? `<div class="ok">Imported on ${fmtD(s.last.created_at.slice(0, 10))} by ${esc(s.last.by_name || '')}: ${s.last.summary.bookings} bookings, ${s.last.summary.receipts} receipts, ${s.last.summary.issues} items to verify. <a href="#/verify">Open Data to verify</a></div>` : ''}
+      ${s.counts.real && s.canReset ? `<div class="panel"><h2>Import again</h2><p class="muted">Test version only. Removes everything imported into this project (units, bookings, buyers, demands, receipts, letters, follow-ups, bank entries and the items to verify) so you can read the sheet and import it again. The CRM sheet is not touched. Once the ERP is live this button disappears.</p>
+        <div class="actions"><button id="reset" class="danger">Clear imported data</button></div></div>` : ''}
       ${s.counts.real ? '' : `<div class="panel"><h2>Step 1: read the sheet</h2><p class="muted">Nothing is saved at this step.${s.counts.sample ? ' The sample data currently loaded will be removed when you import.' : ''}</p>
         <div class="actions"><button id="read" ${s.configured ? '' : 'disabled'}>Read the sheet and check it</button></div></div><div id="preview"></div>`}`;
+    if ($('#reset')) $('#reset').onclick = async () => {
+      const t = prompt('This removes all imported data for this project so it can be imported again. Type CLEAR to confirm.');
+      if (t === null) return;
+      try { const r = await api('/api/import', { action: 'reset', projectId: proj, confirm: t.trim().toUpperCase() }); toast(`Cleared ${r.removedUnits} units. You can import again now.`); importPage(); } catch (e) { alert(e.message); }
+    };
     if (!$('#read')) return;
     let dates = {};
     $('#read').onclick = async () => {
@@ -744,7 +797,7 @@
           <table>${keys.map((k) => { const [w, st] = k.split('|'); return `<tr><td>${esc(w)} Wing</td><td>${esc(st)}</td><td><input type="date" data-k="${esc(k)}" value="${esc(p.stageDates[k] || '')}"></td></tr>`; }).join('')}</table></div>
         <div class="panel"><h2>Step 4: items the team will verify (${s.issues})</h2><p class="muted">These are imported as they are and listed on the "Data to verify" page, where CRM and Accounts check and close each one.</p>
           <table><tr><th>Type</th><th class="num">Count</th><th>Example</th></tr>${Object.entries(s.issuesByKind).sort((a, b) => b[1] - a[1]).map(([k, n]) => `<tr><td>${esc(KIND[k] || k)}</td><td class="num">${n}</td><td class="small">${esc((p.examples[k] || [])[0] ? `${p.examples[k][0].unit || ''} ${p.examples[k][0].detail}` : '')}</td></tr>`).join('')}</table></div>
-        <div class="panel"><h2>Step 5: import</h2><p class="muted">Imports all units, bookings, buyers, demands and receipts into Dream Signature. Receipts come in as approved (the money is already in the bank) and are marked as imported. This can only be done once.</p>
+        <div class="panel"><h2>Step 5: import</h2><p class="muted">Imports all units, bookings, buyers, demands and receipts into Dream Signature. Receipts come in as approved (the money is already in the bank) and are marked as imported.</p>
           <div class="actions"><button id="go">Import ${s.bookings} bookings now</button></div><div id="result"></div></div>`;
       document.querySelectorAll('[data-k]').forEach((i) => (i.onchange = () => { dates[i.dataset.k] = i.value; }));
       $('#go').onclick = async () => {
