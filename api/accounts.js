@@ -10,6 +10,7 @@ const sheets = require('../lib/sheets');
 const acc = require('../lib/accounts');
 const accImport = require('../lib/acc-import');
 const tally = require('../lib/tally-import');
+const cancellations = require('../lib/cancellations');
 const { REGISTERS } = require('../lib/acc-schema');
 const { has } = require('../lib/roles');
 const { needProject } = require('../lib/access');
@@ -50,7 +51,8 @@ module.exports = route({
       case 'import': {
         const last = await db.one("select at as created_at, after, (select name from users where id = audit_log.user_id) as by_name from audit_log where action = 'import-accounts' order by id desc limit 1");
         const lastTally = await db.one("select at as created_at, after, (select name from users where id = audit_log.user_id) as by_name from audit_log where action = 'import-tally' order by id desc limit 1");
-        return res.json({ configured: sheets.configured() || !!(process.env.ACC_FIXTURE && process.env.VERCEL !== '1'), sheetId: accImport.SHEET_ID, last, lastTally, can, live: process.env.ERP_LIVE === '1' });
+        const lastRefunds = await db.one("select at as created_at, after, (select name from users where id = audit_log.user_id) as by_name from audit_log where action = 'import-refund-list' order by id desc limit 1");
+        return res.json({ configured: sheets.configured() || !!(process.env.ACC_FIXTURE && process.env.VERCEL !== '1'), sheetId: accImport.SHEET_ID, last, lastTally, lastRefunds, can, live: process.env.ERP_LIVE === '1' });
       }
       default: throw fail(400, 'Unknown view.');
     }
@@ -141,12 +143,27 @@ module.exports = route({
       });
       return res.json({ ok: true, summary: p.summary, problems: p.problems, ...r });
     }
+    if (b.action === 'refunds-preview' || b.action === 'refunds-import') {
+      need('accounts.manage');
+      const f = (Array.isArray(b.files) ? b.files : [])[0];
+      if (!f || !f.data) throw fail(400, 'Choose the refund list (.xlsx).');
+      const p = cancellations.parse(Buffer.from(String(f.data), 'base64'), str(f.name, 200));
+      const pend = p.rows.filter((r) => !cancellations.refunded(r.refund_status));
+      const info = { file: p.file, sheet: p.sheet, rows: p.rows.length, pending: pend.length, pendingAmount: pend.reduce((a, r) => a + (Number(r.received) || 0), 0), skipped: p.skipped };
+      if (b.action === 'refunds-preview') return res.json(info);
+      const r = await db.tx(async (t) => {
+        const out = await cancellations.commit(t, p, { user: u });
+        await audit.record(t.q, { user: u, action: 'import-refund-list', entity: 'accounts', entityId: 'signature', after: { ...info, ...out } });
+        return out;
+      });
+      return res.json({ ok: true, ...info, ...r });
+    }
     if (b.action === 'clear') {
       // Test version only: empty every accounts register (banks, cash flow heads and settings stay), to start again from another source.
       need('accounts.manage');
       if (process.env.ERP_LIVE === '1') throw fail(403, 'The ERP is live: accounts data is never cleared.');
       if (b.confirm !== 'CLEAR') throw fail(400, 'Type CLEAR to confirm.');
-      const T = ['acc_pdc_mail', 'acc_receipts', 'acc_payments', 'acc_daily_entries', 'acc_pdc', 'acc_tds_entries', 'acc_recon_items', 'acc_compliance', 'acc_rent_links', 'acc_sra_tenants', 'acc_bank_stated', 'acc_stmt_runs'];
+      const T = ['acc_pdc_mail', 'acc_receipts', 'acc_payments', 'acc_daily_entries', 'acc_pdc', 'acc_tds_entries', 'acc_recon_items', 'acc_compliance', 'acc_rent_links', 'acc_sra_tenants', 'acc_bank_stated', 'acc_stmt_runs', 'acc_cancellations'];
       const out = await db.tx(async (t) => {
         const n = {};
         for (const tb of T) n[tb] = (await t.q(`delete from ${tb} returning 1 as x`)).length;

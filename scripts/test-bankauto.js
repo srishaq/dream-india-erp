@@ -244,6 +244,16 @@ let n = 0; const step = async (name, fn) => { await fn(); n++; console.log('  âœ
     assert.equal(bc.status, 200, bc.error); assert.equal(bc.source, 'Tally');
     const a1 = bc.rows.find((x) => x.unit === 'A-1001'); assert.equal(a1.booksAv, 485700);
     const one = await admin(`/api/books-crm?project=${sig.id}&unit=A-1001`); assert.equal(one.status, 200); assert.equal(one.books.length, 1);
+    // the refund list: cancelled bookings, checked against the CRM and the books
+    const RL = makeXlsx('Unit Refund', [[null, null, null, null, null, null, null, null, null, null, null, 1],
+      ['Cancellation Date', 'Month', 'Booking Date', 'Unit', 'Refund Status', 'Typo', 'Area', 'Client Name', 'CP Firm Name', 'Final Closing Manager Name', 'Final AV', 'Cleared', 'RTGS', 'WHITE'],
+      ['2026-09-01', 'Sep', '2025-08-01', 'A-1001', 'To Be Processed', '1 BHK', 411, 'Rukhsana Soheb Shaikh', 'X', 'Y', 7500000, 485700, 0, 485700],
+      ['2026-09-02', 'Sep', '2025-08-02', 'B-1002', 'DONE', '1 BHK', 411, 'Somebody', 'X', 'Y', 7500000, 99900, 99900, 0]]);
+    const rl = await admin('/api/accounts', { action: 'refunds-import', files: [{ name: 'Unit Refund data.xlsx', data: b64(RL) }] });
+    assert.equal(rl.ok, true, rl.error); assert.equal(rl.rows, 2); assert.equal(rl.pending, 1);
+    const cl = await admin('/api/accounts?reg=cancellations&filter=');
+    const ca = cl.rows.find((x) => x.unit_no === 'A-1001'); assert.match(ca.crm_now, /CRM not cancelled/); assert.equal(Number(ca.books_received), 485700);
+    const bc2 = await admin(`/api/books-crm?project=${sig.id}`); assert.equal(bc2.rows.find((x) => x.unit === 'A-1001').booksAv, 485700); // the CRM still has this buyer, so his money stays
     const g = await admin('/api/bank-auto'); assert.equal(g.runs[0].trigger, 'compare'); assert.ok(!g.last || g.last.trigger !== 'compare');
   });
   console.log(`bank auto, PDC and CA: ${n} checks passed`);
