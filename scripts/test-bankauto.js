@@ -240,6 +240,10 @@ let n = 0; const step = async (name, fn) => { await fn(); n++; console.log('  âœ
     assert.deepEqual(what('In the books, not on the bank statement'), [99900]);
     assert.ok(c.differences.some((d) => d.what === 'On the bank statement, not in the books (money out)' && d.where === 'Transfer between own accounts' && Number(d.amount) === 400000));
     assert.equal((await admin('/api/accounts?reg=receipts')).rows.length, 3); // nothing added
+    const bc = await admin(`/api/books-crm?project=${sig.id}`);
+    assert.equal(bc.status, 200, bc.error); assert.equal(bc.source, 'Tally');
+    const a1 = bc.rows.find((x) => x.unit === 'A-1001'); assert.equal(a1.booksAv, 485700);
+    const one = await admin(`/api/books-crm?project=${sig.id}&unit=A-1001`); assert.equal(one.status, 200); assert.equal(one.books.length, 1);
     const g = await admin('/api/bank-auto'); assert.equal(g.runs[0].trigger, 'compare'); assert.ok(!g.last || g.last.trigger !== 'compare');
   });
   console.log(`bank auto, PDC and CA: ${n} checks passed`);
