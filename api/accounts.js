@@ -124,6 +124,21 @@ module.exports = route({
       await db.tx(async (t) => { await t.q("insert into acc_banks (book, name, account_no) values ('signature', $1, $2) on conflict (book, name) do update set account_no = excluded.account_no", [name, str(b.accountNo, 40) || null]); await audit.record(t.q, { user: u, action: 'bank', entity: 'acc-bank', entityId: name, after: b }); });
       return res.json({ ok: true });
     }
+    if (b.action === 'clear') {
+      // Test version only: empty every accounts register (banks, cash flow heads and settings stay), to start again from another source.
+      need('accounts.manage');
+      if (process.env.ERP_LIVE === '1') throw fail(403, 'The ERP is live: accounts data is never cleared.');
+      if (b.confirm !== 'CLEAR') throw fail(400, 'Type CLEAR to confirm.');
+      const T = ['acc_pdc_mail', 'acc_receipts', 'acc_payments', 'acc_daily_entries', 'acc_pdc', 'acc_tds_entries', 'acc_recon_items', 'acc_compliance', 'acc_rent_links', 'acc_sra_tenants', 'acc_bank_stated', 'acc_stmt_runs'];
+      const out = await db.tx(async (t) => {
+        const n = {};
+        for (const tb of T) n[tb] = (await t.q(`delete from ${tb} returning 1 as x`)).length;
+        n.cpPayments = (await t.q("delete from brokerage_entries where kind = 'payment' and reference = 'CP Commissions tab (accounts sheet)' returning 1 as x")).length;
+        await audit.record(t.q, { user: u, action: 'clear-accounts', entity: 'accounts', entityId: 'signature', before: n, note: 'Test version: accounts registers emptied' });
+        return n;
+      });
+      return res.json({ ok: true, removed: out });
+    }
     if (b.action === 'import-preview' || b.action === 'import') {
       need('accounts.manage');
       if (process.env.ERP_LIVE === '1') throw fail(403, 'The ERP is live: the accounts are kept in the ERP now, so the sheet is not imported again.');

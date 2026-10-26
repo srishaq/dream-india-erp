@@ -202,6 +202,15 @@ let n = 0; const step = async (name, fn) => { await fn(); n++; console.log('  âœ
     const s = client(); await s('/api/session', { action: 'login', username: 'sales1', password: 'sales-password-1' });
     assert.equal((await s('/api/acc-dashboard')).status, 403);
   });
+  await step('clear accounts data (test version): registers emptied, banks and heads kept, CRM untouched', async () => {
+    assert.equal((await admin('/api/accounts', { action: 'clear', confirm: 'no' })).status, 400);
+    const before = (await admin('/api/ledger?project=' + sig.id)).status;
+    const r = await admin('/api/accounts', { action: 'clear', confirm: 'CLEAR' });
+    assert.equal(r.ok, true); assert.ok(r.removed.acc_receipts > 0);
+    assert.equal((await admin('/api/accounts?reg=receipts')).rows.length, 0);
+    const L = await admin('/api/accounts?view=lists'); assert.ok(L.banks.length > 0 && L.heads.length > 0);
+    assert.equal((await admin('/api/ledger?project=' + sig.id)).status, before);
+  });
   console.log(`bank auto, PDC and CA: ${n} checks passed`);
   server.close(); process.exit(0);
 })().catch((e) => { console.error(e); process.exit(1); });
