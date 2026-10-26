@@ -207,3 +207,16 @@ a.tile:hover { border-color: var(--tone); transform: translateY(-2px); }
 .tile.soon .ic { opacity: .55; }
 @media (max-width: 700px) { .hero { margin: -16px -16px 0; padding: 20px 16px 70px; } }
 @media (prefers-reduced-motion: no-preference) { a.tile { transition: transform .15s, border-color .15s; } }
+
+/* accounts registers: wide sheet-like tables */
+.acc-grid { max-height: 70vh; overflow: auto; }
+.acc-grid th { position: sticky; top: 0; background: #fff; z-index: 1; white-space: nowrap; }
+.acc-grid td { white-space: nowrap; font-size: 12.5px; }
+.acc-grid td.wrap { white-space: normal; min-width: 220px; max-width: 360px; }
+.acc-grid tr[data-id] { cursor: pointer; }
+.acc-grid tr[data-id]:hover td { background: #f8fafc; }
+.acc-form { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 8px 12px; margin: 10px 0; }
+.acc-form .wide { grid-column: 1 / -1; }
+.good-t { color: var(--good); font-weight: 600; }
+tr.tot td { background: #f7f8fb; }
+dialog.wide { width: min(980px, 96vw); }

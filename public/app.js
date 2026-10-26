@@ -117,6 +117,20 @@
     { group: 'Sales' },
     { key: 'prices', label: 'Price list & cost sheet', show: () => can('inventory.view') },
     { key: 'partners', label: 'Channel partners', show: () => can('ledger.view') },
+    { group: 'Accounts' },
+    { key: 'acc', label: 'To Do', show: () => can('accounts.view') },
+    { key: 'balances', label: 'Daily Bank Balance', show: () => can('accounts.view') },
+    { key: 'reg-receipts', label: 'Receipts (bank)', show: () => can('accounts.view') },
+    { key: 'reg-payments', label: 'Payments Out', show: () => can('accounts.view') },
+    { key: 'reg-pdc', label: 'PDC', show: () => can('accounts.view') },
+    { key: 'reg-tds', label: 'TDS Tracker', show: () => can('accounts.view') },
+    { key: 'reg-recon', label: 'Reconciling Items', show: () => can('accounts.view') },
+    { key: 'reg-compliance', label: 'Compliance Calendar', show: () => can('accounts.view') },
+    { key: 'reg-tenants', label: 'SRA Tenants', show: () => can('accounts.view') },
+    { key: 'reg-rentLinks', label: 'Tenant Rent Links', show: () => can('accounts.view') },
+    { key: 'accreports', label: 'Reports & Tally', show: () => can('accounts.view') },
+    { key: 'checks', label: 'Checks', show: () => can('accounts.view') },
+    { key: 'accsetup', label: 'Banks, heads & import', show: () => can('accounts.manage') },
     { group: 'Set-up' },
     { key: 'projects', label: 'Companies & projects', show: () => true },
     { key: 'plans', label: 'Payment plans', show: () => true },
@@ -152,7 +166,8 @@
     $('#out').onclick = signOut;
     $('#cpw').onclick = () => changePassword(false);
     if ($('#proj')) $('#proj').onchange = (e) => { proj = +e.target.value; store.set('erp_project', proj); shell(); };
-    const fn = { home, projects, plans, users, audit, units, bookings, demands, receipts, ledgers, letters, followups, verify, prices, partners, import: importPage, booking: bookingPage, statement: statementPage, run: runPage };
+    if (/^reg-/.test(page || '') && can('accounts.view')) { try { await accRegister(page.slice(4)); } catch (e) { $('#page').innerHTML = `<div class="err">${esc(e.message)}</div>`; } return; }
+    const fn = { home, projects, plans, users, audit, units, bookings, demands, receipts, ledgers, letters, followups, verify, prices, partners, acc: accTodo, balances: accBalances, accreports: accReports, checks: accChecks, accsetup: accSetup, import: importPage, booking: bookingPage, statement: statementPage, run: runPage };
     const key = DETAIL[page] && arg ? page : cur.key;
     try { await fn[key](arg ? +arg : undefined); } catch (e) { $('#page').innerHTML = `<div class="err">${esc(e.message)}</div>`; }
   }
@@ -205,7 +220,8 @@
       { title: 'Demand letters', sub: 'Stage demands and reminders, by email or courier', icon: 'mail', tone: '#0E8C9B', href: '#/letters', show: anyOf('demand.raise', 'ledger.view') },
       { title: 'Follow-ups', sub: 'Calls, WhatsApps and promises to pay', icon: 'phone', tone: '#7A5C99', href: '#/followups', show: can('ledger.view') },
       { title: 'Data to verify', sub: open ? `${open} items from the import still to check` : 'Items from the import to check and close', icon: 'check', tone: '#B7791F', href: '#/verify', show: anyOf('inventory.view', 'ledger.view') },
-      { title: 'Accounts', sub: 'Bank statements, payments, expenses, SRA rent, Tally export, GST and TDS', icon: 'book', tone: '#2B5C8A', soon: true, show: true },
+      { title: 'Accounts', sub: 'To Do, Daily Bank Balance, Receipts, Payments Out, PDC, TDS, SRA rent, GST, SDR and Tally', icon: 'book', tone: '#2B5C8A', href: '#/acc', show: can('accounts.view') },
+      { title: 'Accounts', sub: 'Bank, payments, SRA rent, GST, TDS and Tally', icon: 'book', tone: '#2B5C8A', soon: true, show: !can('accounts.view') },
       { title: 'Contractor billing', sub: 'Work orders, running bills and retention', icon: 'hammer', tone: '#B7791F', soon: true, show: true },
       { title: 'Purchase', sub: 'Indents, purchase orders and site stock', icon: 'cart', tone: '#117A65', soon: true, show: true },
       { title: 'HR & Admin', sub: 'Staff records, leave, letters and HR policies', icon: 'users', tone: '#7A5C99', soon: true, show: true },
@@ -877,6 +893,198 @@
         ${pay && !r.eligible ? '<label class="check"><input type="checkbox" name="override"> Management has approved paying this early</label>' : ''}`,
       async (v) => { await api('/api/partners', { action: a, bookingId: r.booking_id, ...v, override: v.override === 'on' }); toast('Saved.'); partners(); });
     }));
+  }
+
+  // ---------- accounts (the Master Accounts sheet, tab for tab) ----------
+  const accFmt = (c, v) => {
+    if (v == null || v === '') return '';
+    if (c.type === 'money') return inr(v, Math.abs(toNum(v)) < 100 && toNum(v) % 1 ? 2 : 0);
+    if (c.type === 'date') return fmtD(String(v).slice(0, 10));
+    if (c.type === 'pct') return (toNum(v) * 100).toFixed(toNum(v) * 100 % 1 ? 1 : 0) + '%';
+    if (c.type === 'num') return String(toNum(v) % 1 ? toNum(v) : Math.round(toNum(v)));
+    return esc(v);
+  };
+  const ACC_FILTERS = {
+    receipts: [['', 'All'], ['noHead', 'No head'], ['noUnit', 'Customer, no unit'], ['customer', 'Customer receipts'], ['bounced', 'Bounced']],
+    payments: [['', 'All'], ['noHead', 'No head'], ['noPayee', 'No payee'], ['needsBill', 'Needs bill details']],
+    recon: [['open', 'Open'], ['', 'All']], compliance: [['pending', 'Pending'], ['', 'All']],
+  };
+  const ACC_SHOW = { // columns shown in the list (all columns are in the form)
+    receipts: ['ref_id', 'txn_date', 'bank', 'amount', 'head', 'payment_head', 'unit_no', 'payer_name', 'payer_type', 'cheque_status', 'description', 'remark'],
+    payments: ['ref_id', 'txn_date', 'bank', 'amount', 'head', 'unit_no', 'payee', 'remark', 'needs', 'description'],
+  };
+  async function accRegister(key, opts = {}) {
+    const st = JSON.parse(store.get('erp_acc_' + key) || '{}');
+    const f0 = ACC_FILTERS[key] ? ACC_FILTERS[key][0][0] : '';
+    const state = { q: st.q || '', from: st.from || '', to: st.to || '', filter: st.filter ?? f0, limit: 200, ...opts };
+    const qs = new URLSearchParams({ reg: key, q: state.q, from: state.from, to: state.to, filter: state.filter, limit: state.limit });
+    const d = await api('/api/accounts?' + qs);
+    const R = d.reg, cols = R.cols, show = ACC_SHOW[key] ? ACC_SHOW[key].map((k) => (k === 'ref_id' ? { key: 'ref_id', label: R.idLabel, type: 'text' } : cols.find((c) => c.key === k))) : [...(R.prefix ? [{ key: 'ref_id', label: R.idLabel, type: 'text' }] : []), ...cols];
+    $('#page').innerHTML = `<div class="page-head"><div><h1>${esc(R.title)}</h1><p class="muted">${esc(R.help)}</p></div>
+        ${d.can.enter ? `<div class="actions" style="margin:0"><button id="accNew">Add a row</button></div>` : ''}</div>
+      <div class="panel"><div class="row" style="align-items:end;gap:10px;grid-template-columns:2fr 1fr 1fr auto">
+        <div><label>Search</label><input id="aq" value="${esc(state.q)}" placeholder="Any word, name, unit or reference"></div>
+        ${R.cols.some((c) => c.type === 'date') ? `<div><label>From</label><input type="date" id="af" value="${esc(state.from)}"></div><div><label>To</label><input type="date" id="at" value="${esc(state.to)}"></div>` : '<div></div><div></div>'}
+        <div><button class="ghost" id="ago">Show</button></div></div>
+        ${ACC_FILTERS[key] ? `<div class="tabs" style="margin:12px 0 0">${ACC_FILTERS[key].map(([k, l]) => `<button class="tab ${k === state.filter ? 'on' : ''}" data-f="${k}">${l}</button>`).join('')}</div>` : ''}
+        <p class="small muted" style="margin:10px 0 0">${d.rows.length < d.total ? `Showing ${d.rows.length} of ` : ''}${d.total.toLocaleString('en-IN')} rows${d.amount != null ? ` · total ${inr(d.amount)}` : ''}. Tap a row to ${d.can.enter ? 'edit' : 'see'} it.</p></div>
+      <div class="panel"><div class="table-wrap acc-grid"><table><tr>${show.map((c) => `<th class="${['money', 'num', 'pct'].includes(c.type) ? 'num' : ''}">${esc(c.label)}</th>`).join('')}</tr>
+        ${d.rows.map((r) => `<tr data-id="${r.id}" class="${r.cheque_status === 'Bounced' ? 'dim' : ''}">${show.map((c) => `<td class="${['money', 'num', 'pct'].includes(c.type) ? 'num' : c.type === 'long' || c.key === 'needs' ? 'small wrap' : ''}">${c.key === 'needs' && r.needs ? `<span class="bad-t">${esc(r.needs)}</span>` : accFmt(c, r[c.key])}</td>`).join('')}</tr>`).join('') || `<tr><td colspan="${show.length}" class="muted">Nothing here.</td></tr>`}</table></div>
+        ${d.rows.length < d.total ? '<div class="actions"><button class="ghost" id="amore">Show more</button></div>' : ''}</div>`;
+    if (['tenants', 'rentLinks'].includes(key) && d.rows.length) $('.acc-grid table tr').insertAdjacentHTML('afterend', `<tr class="tot">${show.map((c, i) => `<td class="num"><b>${c.type === 'money' && !['monthly_rent', 'split_amount'].includes(c.key) ? inr(d.rows.reduce((a, r) => a + toNum(r[c.key]), 0)) : i === 0 ? 'Totals' : ''}</b></td>`).join('')}</tr>`);
+    const save = () => store.set('erp_acc_' + key, JSON.stringify({ q: state.q, from: state.from, to: state.to, filter: state.filter }));
+    const reload = (o = {}) => { Object.assign(state, o); save(); accRegister(key, { limit: state.limit }); };
+    $('#ago').onclick = () => reload({ q: $('#aq').value.trim(), from: $('#af') ? $('#af').value : '', to: $('#at') ? $('#at').value : '' });
+    $('#aq').onkeydown = (e) => { if (e.key === 'Enter') $('#ago').click(); };
+    document.querySelectorAll('.tab[data-f]').forEach((b) => (b.onclick = () => reload({ filter: b.dataset.f })));
+    if ($('#amore')) $('#amore').onclick = () => accRegister(key, { limit: state.limit + 400 });
+    const form = (row) => {
+      const v = (c) => (row ? row[c.key] : c.key === R.cols.find((x) => x.type === 'date')?.key ? todayIso() : '');
+      const field = (c) => {
+        if (c.calc) return row && row[c.key] != null && row[c.key] !== '' ? `<div><label>${esc(c.label)}</label><input value="${esc(c.type === 'money' ? inr(row[c.key]) : c.type === 'date' ? fmtD(String(row[c.key]).slice(0, 10)) : row[c.key])}" disabled></div>` : '';
+        const val = v(c) == null ? '' : v(c), req = c.required ? 'required' : '', dis = d.can.enter ? '' : 'disabled';
+        if (c.type === 'list') {
+          const L = d.lists[c.list] || [];
+          if (c.free || L.length > 40) return `<div><label>${esc(c.label)}</label><input name="${c.key}" list="dl_${c.key}" value="${esc(val)}" ${req} ${dis}><datalist id="dl_${c.key}">${L.slice(0, 3000).map((o) => `<option value="${esc(o)}">`).join('')}</datalist></div>`;
+          return `<div><label>${esc(c.label)}</label><select name="${c.key}" ${req} ${dis}><option value=""></option>${L.map((o) => `<option ${o === val ? 'selected' : ''}>${esc(o)}</option>`).join('')}${val && !L.includes(val) ? `<option selected>${esc(val)}</option>` : ''}</select></div>`;
+        }
+        if (c.type === 'long') return `<div class="wide"><label>${esc(c.label)}</label><textarea name="${c.key}" rows="2" ${req} ${dis}>${esc(val)}</textarea></div>`;
+        const t = c.type === 'date' ? 'date' : 'text', shown = c.type === 'pct' && val !== '' ? (toNum(val) * 100).toString() + '%' : c.type === 'date' ? String(val).slice(0, 10) : val;
+        return `<div><label>${esc(c.label)}${c.hint ? ` <span class="small muted">(${esc(c.hint)})</span>` : ''}</label><input type="${t}" name="${c.key}" value="${esc(shown)}" ${c.type === 'money' || c.type === 'num' ? 'inputmode="decimal"' : ''} ${c.unit ? 'placeholder="A-1001"' : ''} ${req} ${dis}></div>`;
+      };
+      const main = cols.filter((c) => !c.bill), bill = cols.filter((c) => c.bill);
+      const dl = dialog(`<h2>${row ? esc(R.title) + (row.ref_id ? ' · ' + esc(row.ref_id) : '') : 'New row · ' + esc(R.title)}</h2>
+        ${row && row.imported ? '<p class="small muted">Came in from the accounts sheet.</p>' : ''}
+        <div class="acc-form">${main.map(field).join('')}</div>
+        ${bill.length ? `<details ${row && row.needs ? 'open' : ''}><summary><b>Bill details</b>${row && row.needs ? ` <span class="bad-t small">${esc(row.needs)}</span>` : ''}</summary><div class="acc-form">${bill.map(field).join('')}</div></details>` : ''}`,
+      async (x) => { if (!d.can.enter) return; const data = {}; for (const c of cols) if (!c.calc && c.key in x) data[c.key] = x[c.key]; const r = await api('/api/accounts', { action: 'save', reg: key, id: row ? row.id : undefined, data }); toast(row ? 'Saved.' : `Added${r.ref_id ? ' as ' + r.ref_id : ''}.`); accRegister(key, { limit: state.limit }); });
+      dl.classList.add('wide');
+      if (!d.can.enter) $('[value=save]', dl).remove();
+    };
+    if ($('#accNew')) $('#accNew').onclick = () => form(null);
+    document.querySelectorAll('tr[data-id]').forEach((tr) => (tr.onclick = () => form(d.rows.find((r) => r.id === +tr.dataset.id))));
+  }
+
+  async function accTodo() {
+    const d = await api('/api/accounts?view=todo');
+    const go2 = (x) => (x.go === 'balances' ? '#/balances' : x.go === 'checks' ? '#/checks' : '#/reg-' + x.go);
+    const B = d.balances;
+    $('#page').innerHTML = `<div class="page-head"><div><h1>Accounts · To Do</h1><p class="muted">What is missing today. Work down the list every day: green = done, red = needs you. Tap a line to go there. Updated ${fmtD(d.today)}.</p></div></div>
+      <div class="panel"><div class="table-wrap"><table><tr><th>Task</th><th class="num">Number</th><th>What to do</th></tr>
+        ${d.items.map((x) => `<tr class="click" data-go="${go2(x)}" data-f="${esc(x.filter || '')}" data-k="${esc(x.go)}"><td>${esc(x.task)}</td><td class="num"><b class="${x.ok ? 'good-t' : 'bad-t'}">${x.n == null ? '—' : x.n.toLocaleString('en-IN')}</b></td><td class="small">${esc(x.what)}</td></tr>`).join('')}</table></div></div>
+      <div class="two"><div class="panel"><h2>Bank balances today</h2><div class="table-wrap"><table><tr><th>Group</th><th class="num">Closing</th></tr>${B.groups.map((g) => `<tr><td>${esc(g.grp)}</td><td class="num">${inr(g.closing)}</td></tr>`).join('')}
+          <tr><td><b>Grand total</b></td><td class="num"><b>${inr(B.groups.reduce((a, g) => a + g.closing, 0))}</b></td></tr></table></div><div class="actions"><a class="btn ghost" href="#/balances">Open Daily Bank Balance</a></div></div>
+        <div class="panel"><h2>Compliance: overdue or due in 7 days</h2><div class="table-wrap"><table><tr><th>Compliance</th><th>Period</th><th>Due</th><th class="num">Days late</th></tr>
+          ${d.compliance.map((c) => `<tr><td>${esc(c.compliance)}</td><td>${esc(c.period || '')}</td><td>${fmtD(c.due_date)}</td><td class="num ${c.late ? 'bad-t' : ''}">${c.late || ''}</td></tr>`).join('') || '<tr><td colspan="4" class="muted">Nothing due.</td></tr>'}</table></div></div></div>
+      <div class="panel"><h2>Payments needing bill details (newest 25)</h2><div class="table-wrap"><table><tr><th>Payment ID</th><th>Date</th><th>Payee</th><th class="num">Amount</th><th>Head</th><th>What is missing</th></tr>
+        ${d.needBill.map((p) => `<tr><td>${esc(p.ref_id || '')}</td><td>${fmtD(p.txn_date)}</td><td>${esc(p.payee || '')}</td><td class="num">${inr(p.amount)}</td><td>${esc(p.head || '')}</td><td class="small">${esc(p.needs)}</td></tr>`).join('')}</table></div></div>`;
+    document.querySelectorAll('tr[data-go]').forEach((tr) => (tr.onclick = () => { if (tr.dataset.go.startsWith('#/reg-')) { const k = tr.dataset.k, cur = JSON.parse(store.get('erp_acc_' + k) || '{}'); store.set('erp_acc_' + k, JSON.stringify({ ...cur, filter: tr.dataset.f, q: '', from: '', to: '' })); } go(tr.dataset.go); }));
+  }
+
+  async function accBalances(dateArg) {
+    const date = dateArg || store.get('erp_bal_date') || todayIso();
+    const d = await api('/api/accounts?view=balances&date=' + date);
+    const row = (r, bold) => `<tr class="${bold ? 'tot' : ''}"><td>${bold ? `<b>${esc(r.grp)} – total</b>` : esc(r.bank)}</td><td class="small">${bold ? '' : esc(r.account_no || '')}</td><td class="num">${inr(r.opening)}</td><td class="num">${inr(r.receipts)}</td><td class="num">${inr(r.payments)}</td><td class="num"><b>${inr(r.closing)}</b></td>
+      <td class="num">${bold ? (r.perBank ? inr(r.perBank) : '') : d.can.enter ? `<input class="stated" data-b="${r.id}" value="${r.perBank == null ? '' : Math.round(r.perBank * 100) / 100}" inputmode="decimal" style="width:130px;text-align:right">` : r.perBank == null ? '' : inr(r.perBank)}</td>
+      <td class="num ${!bold && r.difference != null && Math.abs(r.difference) > 1 ? 'bad-t' : ''}">${bold || r.difference == null ? '' : inr(r.difference, 2)}</td><td class="num">${inr(r.bf)}</td></tr>`;
+    const groups = [...new Set(d.rows.map((r) => r.grp))];
+    $('#page').innerHTML = `<div class="page-head"><div><h1>Daily Bank Balance</h1><p class="muted">Every day, add one row per bank in Daily entries (date, bank, receipts, payments). The summary shows opening, receipts, payments and closing for the report date. Type the balance the bank shows in Balance per Bank: the Difference must be blank or zero. Opening = balance brought forward on ${fmtD(d.bfDate)} plus every entry before the report date.</p></div></div>
+      <div class="panel"><div class="row" style="grid-template-columns:200px auto;align-items:end"><div><label>Report date</label><input type="date" id="bd" value="${esc(d.date)}"></div><div></div></div>
+        <div class="table-wrap" style="margin-top:12px"><table><tr><th>Bank</th><th>A/c No.</th><th class="num">Opening</th><th class="num">Receipts</th><th class="num">Payments</th><th class="num">Closing</th><th class="num">Balance per Bank</th><th class="num">Difference</th><th class="num">B/F</th></tr>
+          ${groups.map((g) => d.rows.filter((r) => r.grp === g).map((r) => row(r)).join('') + row(d.groups.find((x) => x.grp === g), true)).join('')}
+          <tr class="tot"><td><b>Grand total</b></td><td></td><td class="num">${inr(d.groups.reduce((a, g) => a + g.opening, 0))}</td><td class="num">${inr(d.groups.reduce((a, g) => a + g.receipts, 0))}</td><td class="num">${inr(d.groups.reduce((a, g) => a + g.payments, 0))}</td><td class="num"><b>${inr(d.groups.reduce((a, g) => a + g.closing, 0))}</b></td><td></td><td></td><td class="num">${inr(d.groups.reduce((a, g) => a + g.bf, 0))}</td></tr></table></div></div>
+      <div class="panel"><div class="page-head" style="margin:0 0 8px"><h2 style="margin:0">Daily entries (latest 60)</h2>${d.can.enter ? '<button id="addEntry">Add a day\'s entry</button>' : ''}</div>
+        <div class="table-wrap"><table><tr><th>Date</th><th>Bank</th><th class="num">Receipts</th><th class="num">Payments</th><th>Remarks</th><th>Entered by</th></tr>
+        ${d.entries.map((e) => `<tr><td>${fmtD(e.entry_date)}</td><td>${esc(e.bank)}</td><td class="num">${e.receipts == null ? '' : inr(e.receipts)}</td><td class="num">${e.payments == null ? '' : inr(e.payments)}</td><td class="small">${esc(e.remarks || '')}</td><td class="small">${esc(e.entered_by || '')}</td></tr>`).join('')}</table></div>
+        <div class="actions"><a class="btn ghost" href="#/reg-daily">All daily entries</a></div></div>`;
+    $('#bd').onchange = (e) => { store.set('erp_bal_date', e.target.value); accBalances(e.target.value); };
+    document.querySelectorAll('input.stated').forEach((i) => (i.onchange = async () => { try { await api('/api/accounts', { action: 'stated', bankId: +i.dataset.b, date: d.date, balance: i.value }); accBalances(d.date); } catch (e) { alert(e.message); } }));
+    if ($('#addEntry')) $('#addEntry').onclick = async () => {
+      const L = (await api('/api/accounts?view=lists')).lists;
+      dialog(`<h2>Daily entry</h2><div class="row"><div><label>Date</label><input type="date" name="entry_date" value="${esc(d.date)}" required></div><div><label>Bank</label><select name="bank" required><option value=""></option>${L.dailyBank.map((b) => `<option>${esc(b)}</option>`).join('')}</select></div></div>
+        <div class="row"><div><label>Receipts (₹)</label><input name="receipts" inputmode="decimal"></div><div><label>Payments (₹)</label><input name="payments" inputmode="decimal"></div></div><label>Remarks</label><input name="remarks">`,
+      async (x) => { await api('/api/accounts', { action: 'save', reg: 'daily', data: { ...x, entered_by: me.name } }); toast('Entry added.'); accBalances(d.date); });
+    };
+  }
+
+  async function accChecks() {
+    const d = await api(`/api/accounts?view=checks&project=${proj || ''}`);
+    $('#page').innerHTML = `<div class="page-head"><div><h1>Checks</h1><p class="muted">Month end: every line in the Result column should say OK. If one says Check, fix the entry it points to. "For review" lines are not expected to be zero; they are explained unit by unit on the reports.</p></div></div>
+      <div class="panel"><div class="table-wrap"><table><tr><th>#</th><th>Check</th><th class="num">Figure</th><th>Result</th><th>What it means</th></tr>
+        ${d.rows.map((x, i) => `<tr><td>${i + 1}</td><td>${esc(x.check)}</td><td class="num">${typeof x.figure === 'number' ? x.figure.toLocaleString('en-IN') : esc(x.figure)}</td><td>${x.result === 'OK' ? '<span class="pill good">OK</span>' : x.result === 'Check' ? '<span class="pill bad">Check</span>' : '<span class="pill grey">For review</span>'}</td><td class="small">${esc(x.means || '')}</td></tr>`).join('')}</table></div></div>`;
+  }
+
+  async function accReports() {
+    const tab = store.get('erp_accrep') || 'byHead';
+    const T = [['byHead', 'Payments by Head'], ['units', 'Unit receipts'], ['gst', 'GST report'], ['sdr', 'SDR report'], ['tds', 'TDS by customers'], ['payees', 'Payees'], ['vendorBills', 'Vendor bills'], ['register', 'Salary & expense register'], ['bounced', 'Bounced cheques'], ['tally', 'Tally export']];
+    $('#page').innerHTML = `<div class="page-head"><div><h1>Accounts reports</h1><p class="muted">The report tabs of the accounts sheet, worked out live from the registers.</p></div></div>
+      <div class="tabs">${T.map(([k, l]) => `<button class="tab ${k === tab ? 'on' : ''}" data-t="${k}">${l}</button>`).join('')}</div><div id="rep"><div class="panel muted">Loading…</div></div>`;
+    document.querySelectorAll('.tab[data-t]').forEach((b) => (b.onclick = () => { store.set('erp_accrep', b.dataset.t); accReports(); }));
+    const out = $('#rep');
+    const table = (cols, rows, opts = {}) => `<div class="panel">${opts.head || ''}<div class="table-wrap acc-grid"><table><tr>${cols.map(([l, , t]) => `<th class="${t ? 'num' : ''}">${esc(l)}</th>`).join('')}</tr>
+      ${rows.slice(0, opts.limit || 1500).map((r) => `<tr>${cols.map(([, f, t]) => { const v = f(r); return `<td class="${t ? 'num' : ''}">${t === 'm' ? (v ? inr(v) : '—') : t === 'n' ? (v ?? '') : esc(v ?? '')}</td>`; }).join('')}</tr>`).join('')}</table></div>${rows.length > (opts.limit || 1500) ? `<p class="small muted">Showing ${opts.limit || 1500} of ${rows.length}.</p>` : ''}</div>`;
+    const P = proj || '';
+    if (tab === 'tally') {
+      const m0 = todayIso().slice(0, 8) + '01';
+      out.innerHTML = `<div class="panel"><h2>Export to Tally</h2><p class="muted">Receipts and Payments Out for a period, as Tally vouchers. Bounced cheques are left out. Each receipt debits the bank ledger and credits its cash flow head; each payment the reverse. The bank and head names must exist as ledgers in Tally (create them once, with the same names), or Tally will report them as missing.</p>
+        <div class="row" style="grid-template-columns:1fr 1fr"><div><label>From</label><input type="date" id="tf" value="${m0}"></div><div><label>To</label><input type="date" id="tt" value="${todayIso()}"></div></div>
+        <div class="actions"><button id="tx">Download Tally XML (Import Data)</button><button class="ghost" id="tc">Download day book (CSV)</button></div></div>`;
+      const dl = (fmt) => { location.href = `/api/accounts?view=tally&from=${$('#tf').value}&to=${$('#tt').value}&format=${fmt}`; };
+      $('#tx').onclick = () => dl('xml'); $('#tc').onclick = () => dl('csv');
+      return;
+    }
+    if (tab === 'register') {
+      const fy = +(store.get('erp_regfy') || 0) || (todayIso().slice(5, 7) >= '04' ? +todayIso().slice(0, 4) : +todayIso().slice(0, 4) - 1), head = store.get('erp_reghead') || 'Salary';
+      const [d, L] = await Promise.all([api(`/api/accounts?view=report&name=register&fy=${fy}&head=${encodeURIComponent(head)}`), api('/api/accounts?view=lists')]);
+      const mlab = (m) => new Date(m + '-01T00:00:00').toLocaleDateString('en-IN', { month: 'short', year: '2-digit' });
+      out.innerHTML = `<div class="panel"><div class="row" style="grid-template-columns:1fr 1fr"><div><label>Cash flow head</label><select id="rh">${L.lists.paymentHead2.map((h) => `<option ${h === head ? 'selected' : ''}>${esc(h)}</option>`).join('')}</select></div>
+        <div><label>Financial year starting April</label><input id="ry" type="number" value="${fy}"></div></div><p class="small muted">Straight from Payments Out. Salary paid through another person shows under that person; payments with no payee show as "(no payee)". Use this for Form 16 and the 24Q TDS return.</p></div>` +
+        table([['Payee', (r) => r.payee], ['PAN', (r) => r.pan], ...d.months.map((m) => [mlab(m), (r) => r[m] || 0, 'm']), ['Total for the year', (r) => r.total, 'm']], [{ payee: 'Total', pan: '', ...Object.fromEntries(d.months.map((m) => [m, d.rows.reduce((a, r) => a + (r[m] || 0), 0)])), total: d.rows.reduce((a, r) => a + r.total, 0) }, ...d.rows]);
+      $('#rh').onchange = (e) => { store.set('erp_reghead', e.target.value); accReports(); };
+      $('#ry').onchange = (e) => { store.set('erp_regfy', e.target.value); accReports(); };
+      return;
+    }
+    const d = await api(`/api/accounts?view=report&name=${tab}&project=${P}`);
+    if (tab === 'byHead') {
+      const mlab = (m) => new Date(m + '-01T00:00:00').toLocaleDateString('en-IN', { month: 'short', year: '2-digit' });
+      const ms = d.months.slice(-12);
+      const t = (rows, h) => table([['Cash Flow Head', (r) => r.head], ...ms.map((m) => [mlab(m), (r) => r[m] || 0, 'm']), ['Total (all months)', (r) => r.total, 'm']], rows, { head: `<h2>${h}</h2>` });
+      out.innerHTML = '<p class="small muted">Last 12 months shown; the Total column covers every month. Bounced cheques are left out of receipts.</p>' + t(d.receipts, 'Receipts (money in)') + t(d.payments, 'Payments (money out)');
+    } else if (tab === 'units') out.innerHTML = table([['Unit', (r) => r.unit], ['Applicant', (r) => r.applicant], ['Status', (r) => r.status], ['Agreement value', (r) => r.av, 'm'], ['AV received (bank)', (r) => r.avReceived, 'm'], ['% of AV', (r) => r.pct + '%', 'n'], ['GST received', (r) => r.gstReceived, 'm'], ['SDR received', (r) => r.sdrReceived, 'm'], ['Unclassified', (r) => r.unclassified, 'm'], ['From other / earlier buyers', (r) => r.other, 'm'], ['Bounced', (r) => r.bounced, 'm'], ['TDS (tracker)', (r) => r.tds, 'm'], ['SDR paid out', (r) => r.sdrPaid, 'm'], ['Refunds', (r) => r.refunds, 'm'], ['CP brokerage', (r) => r.cp, 'm'], ['CRM AV (ERP ledger)', (r) => r.crmAv, 'm'], ['Bank − CRM', (r) => r.diff, 'm']], d.rows);
+    else if (tab === 'gst') out.innerHTML = table([['Unit', (r) => r.unit], ['Applicant', (r) => r.applicant], ['Status', (r) => r.status], ['Agreement value', (r) => r.av, 'm'], ['GST payable', (r) => r.gstPayable, 'm'], ['AV received (bank)', (r) => r.avReceived, 'm'], ['GST due on AV received', (r) => r.gstDueOnReceived, 'm'], ['GST received (bank)', (r) => r.gstReceived, 'm'], ['Shortfall on received', (r) => r.shortfall, 'm'], ['GST outstanding (full)', (r) => r.outstanding, 'm'], ['GST per CRM (ERP)', (r) => r.crm, 'm'], ['Status', (r) => r.state]], d.rows);
+    else if (tab === 'sdr') out.innerHTML = table([['Unit', (r) => r.unit], ['Applicant', (r) => r.applicant], ['Status', (r) => r.status], ['Registration', (r) => r.registration], ['Stamp duty', (r) => r.stampDuty, 'm'], ['Registration fee', (r) => r.registrationFee, 'm'], ['SDR payable', (r) => r.payable, 'm'], ['SDR received (bank)', (r) => r.received, 'm'], ['SDR paid out (challans)', (r) => r.paidOut, 'm'], ['Held (received − paid)', (r) => r.held, 'm'], ['To collect', (r) => r.toCollect, 'm'], ['SDR per CRM (ERP)', (r) => r.crm, 'm'], ['Status', (r) => r.state]], d.rows);
+    else if (tab === 'tds') out.innerHTML = `<div class="panel"><div class="kpis">${kpi(inr(d.due), 'total TDS due (1% of AV)')}${kpi(inr(d.paid), 'paid by customers')}${kpi(inr(d.due - d.paid), 'still to come')}${kpi(`${d.flats} / ${d.full} / ${d.part} / ${d.none}`, 'flats: with TDS / fully / partly / not paid')}</div></div>` +
+      table([['Unit', (r) => r.unit], ['TDS due', (r) => r.due, 'm'], ['TDS paid', (r) => r.paid, 'm'], ['Balance', (r) => r.balance, 'm']], d.rows);
+    else if (tab === 'payees') out.innerHTML = table([['Payee', (r) => r.payee], ['Type', (r) => r.type], ['PAN', (r) => r.pan], ['GSTIN', (r) => r.gstin], ['TDS section', (r) => r.tdsSection], ['Usual cash flow head', (r) => r.usualHead], ['Needs invoice?', (r) => r.needsInvoice], ['No. of payments', (r) => r.n, 'n'], ['Total paid', (r) => r.paid, 'm'], ['Total billed', (r) => r.billed, 'm'], ['TDS on bills', (r) => r.tds, 'm']], d.rows);
+    else if (tab === 'vendorBills') out.innerHTML = table([['Payment ID', (r) => r.ref_id], ['Paid on', (r) => fmtD(r.txn_date)], ['Payee', (r) => r.payee], ['Head', (r) => r.head], ['Bill date', (r) => (r.bill_date ? fmtD(r.bill_date) : '')], ['Vendor PAN', (r) => r.vendor_pan], ['Bill no.', (r) => r.bill_no], ['Taxable', (r) => r.taxable_value, 'm'], ['GST', (r) => r.gst_on_bill, 'm'], ['Total bill', (r) => r.total_bill, 'm'], ['TDS section', (r) => r.tds_section || r.tdsSectionUsual], ['TDS deducted', (r) => r.tds_deducted, 'm'], ['Paid', (r) => r.amount, 'm'], ['Challan', (r) => r.tds_challan], ['What staff need to add', (r) => r.needs]], d.rows);
+    else if (tab === 'bounced') out.innerHTML = table([['Receipt ID', (r) => r.ref_id], ['Date', (r) => fmtD(r.txn_date)], ['Bank', (r) => r.bank], ['Amount', (r) => r.amount, 'm'], ['Unit', (r) => r.unit_no], ['Payer', (r) => r.payer_name], ['Head', (r) => r.payment_head || r.head], ['Description', (r) => r.description], ['Remark', (r) => r.remark]], d.rows);
+  }
+
+  async function accSetup() {
+    const [d, imp] = await Promise.all([api('/api/accounts?view=lists'), api('/api/accounts?view=import')]);
+    $('#page').innerHTML = `<div class="page-head"><div><h1>Banks, heads &amp; import</h1><p class="muted">Cash flow heads and bank accounts are set up here only (on the sheet: "Do not add heads yourself; ask Mr Syed"). The head map decides the cash flow section, TDS section and rate, and whether a payment needs a bill.</p></div></div>
+      <div class="panel"><h2>Import from the Master Accounts sheet</h2>
+        <p class="muted">Reads every tab the accounts team types into (Receipts, Payments Out, Daily Bank Balance, PDC, TDS Tracker, Reconciling Items, Compliance Calendar, SRA Tenants, Tenant Rent Links), the Lists and CA Settings tabs, and CP Commissions (brokerage released). Rows from an earlier import are replaced; rows entered in the ERP stay. The sheet is never changed. ${imp.live ? '<b>The ERP is live, so this is switched off.</b>' : 'Until go-live you can run it as often as you like to bring the ERP up to date with the sheet.'}</p>
+        ${imp.last ? `<p class="ok">Last imported ${fmtDate(imp.last.created_at)} by ${esc(imp.last.by_name || '')}: ${imp.last.after.receipts} receipts, ${imp.last.after.payments} payments.</p>` : ''}
+        ${!imp.live ? `<div class="actions"><button class="ghost" id="ipv" ${imp.configured ? '' : 'disabled'}>Read the sheet and check it</button><button id="imp" ${imp.configured ? '' : 'disabled'}>Import now</button></div><div id="ipo"></div>` : ''}</div>
+      <div class="two"><div class="panel"><div class="page-head" style="margin:0 0 8px"><h2 style="margin:0">Bank accounts</h2><button class="ghost small" id="nb">Add</button></div><p class="small muted">As written in the Bank Account column of Receipts and Payments Out.</p><div class="table-wrap"><table>${d.banks.map((b) => `<tr><td>${esc(b.name)}</td><td class="small muted">${esc(b.account_no || '')}</td></tr>`).join('')}</table></div>
+        <h2 style="margin-top:16px">Daily Bank Balance banks</h2><div class="table-wrap"><table><tr><th>Bank</th><th>A/c No.</th><th>Group</th><th class="num">B/F</th></tr>${d.dailyBanks.map((b) => `<tr><td>${esc(b.name)}</td><td class="small">${esc(b.account_no || '')}</td><td>${esc(b.grp)}</td><td class="num">${inr(b.bf_balance)}</td></tr>`).join('')}</table></div></div>
+      <div class="panel"><div class="page-head" style="margin:0 0 8px"><h2 style="margin:0">Cash flow heads (head map)</h2><button class="ghost small" id="nh">Add</button></div><div class="table-wrap" style="max-height:620px"><table><tr><th>Side</th><th>Head</th><th>Section</th><th>TDS</th><th>Needs bill</th><th>Payee type</th></tr>
+        ${d.heads.map((h) => `<tr class="click" data-h="${h.id}"><td>${h.side}</td><td>${esc(h.name)}</td><td class="small">${esc(h.section || '')}</td><td class="small">${esc([h.tds_section, h.tds_rate ? (toNum(h.tds_rate) * 100).toFixed(1) + '%' : ''].filter(Boolean).join(' '))}</td><td>${h.needs_bill ? 'Yes' : ''}</td><td class="small">${esc(h.payee_type || '')}</td></tr>`).join('')}</table></div></div></div>`;
+    const headForm = (h) => dialog(`<h2>${h ? 'Cash flow head' : 'New cash flow head'}</h2>
+      <div class="row"><div><label>Side</label><select name="side" ${h ? 'disabled' : ''}><option value="payment" ${h?.side === 'payment' ? 'selected' : ''}>Payment</option><option value="receipt" ${h?.side === 'receipt' ? 'selected' : ''}>Receipt</option></select></div><div><label>Name</label><input name="name" value="${esc(h?.name || '')}" ${h ? 'readonly' : 'required'}></div></div>
+      <div class="row"><div><label>Cash flow section</label><select name="section">${['Operating', 'Investing', 'Financing', 'Internal transfer'].map((x) => `<option ${h?.section === x ? 'selected' : ''}>${x}</option>`).join('')}</select></div><div><label>Indirect method line</label><input name="indirectLine" value="${esc(h?.indirect_line || '')}"></div></div>
+      <div class="row3"><div><label>TDS section</label><input name="tdsSection" value="${esc(h?.tds_section || '')}" placeholder="194C"></div><div><label>TDS rate %</label><input name="tdsRate" value="${h?.tds_rate ? toNum(h.tds_rate) * 100 : ''}"></div><div><label>Payee type</label><input name="payeeType" value="${esc(h?.payee_type || '')}"></div></div>
+      <div class="row"><div><label>Non-revenue category</label><input name="category" value="${esc(h?.category || '')}"></div><div><label class="check"><input type="checkbox" name="needsBill" ${h?.needs_bill ? 'checked' : ''}> Needs a bill (its payments go to Vendor bills)</label></div></div>
+      <label>Note</label><input name="note" value="${esc(h?.note || '')}">`,
+    async (x) => { await api('/api/accounts', { action: 'head', ...x, side: h ? h.side : x.side, name: h ? h.name : x.name, needsBill: x.needsBill === 'on' }); accSetup(); });
+    $('#nh').onclick = () => headForm(null);
+    document.querySelectorAll('tr[data-h]').forEach((tr) => (tr.onclick = () => headForm(d.heads.find((h) => h.id === +tr.dataset.h))));
+    $('#nb').onclick = () => dialog('<h2>New bank account</h2><label>Name (as it should appear in Receipts and Payments Out)</label><input name="name" required><label>Account no.</label><input name="accountNo">', async (x) => { await api('/api/accounts', { action: 'bank', ...x }); accSetup(); });
+    const summ = (s) => `<div class="kpis" style="margin:10px 0">${kpi(s.receipts.toLocaleString('en-IN'), 'receipts')}${kpi(inr(s.receiptsCleared), 'received, bounced left out')}${kpi(s.payments.toLocaleString('en-IN'), 'payments')}${kpi(inr(s.paymentsAmount), 'paid out')}${kpi(s.daily, 'daily entries')}${kpi(s.tds, 'TDS entries')}${kpi(s.recon, 'reconciling items')}${kpi(s.tenants, 'SRA tenants')}${kpi(s.rentLinks, 'rent links')}${kpi(s.heads, 'heads')}${kpi(inr(s.cpReleased), 'CP brokerage released')}</div>
+      ${Object.values(s.gaps).some(Boolean) ? `<p class="small muted">Rows with a blank required column (they come in as they are, to fill in the ERP): ${Object.entries(s.gaps).filter(([, n]) => n).map(([k, n]) => `${k} ${n}`).join(', ')}.</p>` : ''}`;
+    if ($('#ipv')) $('#ipv').onclick = async (e) => { e.target.disabled = true; e.target.textContent = 'Reading…'; try { const r = await api('/api/accounts', { action: 'import-preview', projectId: proj }); $('#ipo').innerHTML = summ(r.summary); } catch (x) { alert(x.message); } e.target.disabled = false; e.target.textContent = 'Read the sheet and check it'; };
+    if ($('#imp')) $('#imp').onclick = async (e) => { if (!confirm('Import the accounts sheet into the ERP? Rows from the last import are replaced; rows entered in the ERP stay.')) return; e.target.disabled = true; e.target.textContent = 'Importing… (up to a minute)'; try { const r = await api('/api/accounts', { action: 'import', projectId: proj }); toast(`Imported ${r.counts.receipts} receipts and ${r.counts.payments} payments.`); accSetup(); } catch (x) { alert(x.message); e.target.disabled = false; e.target.textContent = 'Import now'; } };
   }
 
   // ---------- import from the CRM sheet ----------

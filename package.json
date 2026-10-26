@@ -6,6 +6,6 @@
   "engines": { "node": "24.x" },
   "scripts": {
     "dev": "node scripts/dev-server.js",
-    "test": "node scripts/test-import.js && node scripts/test.js && node scripts/test-m1.js && node scripts/test-importdb.js && node scripts/test-sales.js"
+    "test": "node scripts/test-import.js && node scripts/test.js && node scripts/test-m1.js && node scripts/test-importdb.js && node scripts/test-sales.js && node scripts/test-accounts.js"
   }
 }
