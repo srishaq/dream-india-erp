@@ -7,7 +7,7 @@
   },
   "headers": [
     {
-      "source": "/((?!dashboard|ca$|ca\\.html).*)",
+      "source": "/((?!dashboard|ca$|ca\\.html|accounts$|accounts\\.html).*)",
       "headers": [
         {
           "key": "X-Frame-Options",
@@ -36,7 +36,7 @@
       ]
     },
     {
-      "source": "/(dashboard|ca)(.html)?",
+      "source": "/(dashboard|ca|accounts)(.html)?",
       "headers": [
         {
           "key": "X-Frame-Options",

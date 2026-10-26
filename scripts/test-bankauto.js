@@ -192,6 +192,16 @@ let n = 0; const step = async (name, fn) => { await fn(); n++; console.log('  âœ
     const s = client(); await s('/api/session', { action: 'login', username: 'sales1', password: 'sales-password-1' });
     assert.equal((await s('/api/ca')).status, 403);
   });
+  await step('Accounts dashboard: the portal Accounts page model from the ERP (banks, collections, units, tenants, PDC)', async () => {
+    const m = await admin('/api/acc-dashboard');
+    assert.equal(m.status, 200, m.error);
+    assert.ok(m.banks.some((b) => b.b === 'SIGNATURE - TOTAL') && m.banks.some((b) => b.b === 'GRAND TOTAL'));
+    assert.ok(m.units.length > 0); assert.ok(m.C.AV.td > 0); assert.ok(m.tenants && m.tenants.rows.length === 2); assert.ok(m.pdc.rows.length >= 2);
+    assert.equal(typeof m.D['Units in CRM'], 'number');
+    const det = await admin('/api/acc-dashboard?detail=1'); assert.ok(det.R.length > 0);
+    const s = client(); await s('/api/session', { action: 'login', username: 'sales1', password: 'sales-password-1' });
+    assert.equal((await s('/api/acc-dashboard')).status, 403);
+  });
   console.log(`bank auto, PDC and CA: ${n} checks passed`);
   server.close(); process.exit(0);
 })().catch((e) => { console.error(e); process.exit(1); });

@@ -104,8 +104,8 @@
   const anyOf = (...ps) => ps.some(can);
   const PAGES = [
     { key: 'home', label: 'Home', show: () => true },
+    { group: 'CRM' },
     { key: 'dashboard', label: 'Collections dashboard', show: () => can('ledger.view'), href: () => `/dashboard${proj ? '?project=' + proj : ''}` },
-    { group: 'Booking-to-collection' },
     { key: 'units', label: 'Units & inventory', show: () => can('inventory.view') },
     { key: 'bookings', label: 'Bookings', show: () => anyOf('inventory.view', 'ledger.view') },
     { key: 'demands', label: 'Stages & demands', show: () => anyOf('demand.raise', 'demand.approve', 'stage.record', 'ledger.view') },
@@ -114,10 +114,10 @@
     { key: 'letters', label: 'Demand letters', show: () => anyOf('demand.raise', 'ledger.view') },
     { key: 'followups', label: 'Follow-ups', show: () => can('ledger.view') },
     { key: 'verify', label: 'Data to verify', show: () => anyOf('inventory.view', 'ledger.view') },
-    { group: 'Sales' },
     { key: 'prices', label: 'Price list & cost sheet', show: () => can('inventory.view') },
     { key: 'partners', label: 'Channel partners', show: () => can('ledger.view') },
     { group: 'Accounts' },
+    { key: 'accdash', label: 'Accounts dashboard', show: () => can('accounts.view'), href: () => '/accounts' },
     { key: 'acc', label: 'To Do', show: () => can('accounts.view') },
     { key: 'balances', label: 'Daily Bank Balance', show: () => can('accounts.view') },
     { key: 'bankauto', label: 'Bank Auto Check', show: () => can('accounts.view') },
@@ -131,8 +131,8 @@
     { key: 'reg-rentLinks', label: 'Tenant Rent Links', show: () => can('accounts.view') },
     { key: 'accreports', label: 'Reports & Tally', show: () => can('accounts.view') },
     { key: 'checks', label: 'Checks', show: () => can('accounts.view') },
-    { key: 'accsetup', label: 'Banks, heads & import', show: () => can('accounts.manage') },
     { key: 'ca', label: 'CA / Tax', show: () => can('ca.view'), href: () => '/ca' },
+    { key: 'accsetup', label: 'Banks, heads & import', show: () => can('accounts.manage') },
     { group: 'Set-up' },
     { key: 'projects', label: 'Companies & projects', show: () => true },
     { key: 'plans', label: 'Payment plans', show: () => true },
@@ -143,6 +143,28 @@
   const DETAIL = { booking: 'bookings', statement: 'ledgers', run: 'demands', bankauto: 'bankauto' };
   let projectList = null, proj = null;
   const store = { get: (k) => { try { return localStorage.getItem(k); } catch { return null; } }, set: (k, v) => { try { localStorage.setItem(k, v); } catch {} } };
+
+  // Sidebar: one heading per department (CRM, Accounts, Set-up). Tapping a heading opens its pages and folds the others;
+  // the department of the page in use is open.
+  const groupOf = (key) => { let g = null; for (const p of PAGES) { if (p.group) g = p.group; else if (p.key === key) return g; } return null; };
+  function navHtml(nav, cur) {
+    const curG = groupOf(cur.key), want = store.get('erp_nav_open');
+    const open = cur.key === 'home' ? (want != null ? want : (can('accounts.enter') && !can('demand.raise') ? 'Accounts' : 'CRM')) : curG;
+    let out = '', g = null;
+    for (const p of nav) {
+      if (p.group) { if (g) out += '</div>'; g = p.group; const on = g === open; out += `<button type="button" class="group-btn ${on ? 'open' : ''}" data-g="${esc(g)}" aria-expanded="${on}">${esc(g)}<span class="chev">${on ? '▾' : '▸'}</span></button><div class="grp" data-g="${esc(g)}" ${on ? '' : 'hidden'}>`; continue; }
+      out += `<a href="${p.href ? p.href() : '#/' + p.key}" class="${p === cur ? 'on' : ''}">${esc(p.label)}</a>`;
+    }
+    return out + (g ? '</div>' : '');
+  }
+  function wireNav() {
+    document.querySelectorAll('.side .group-btn').forEach((b) => (b.onclick = () => {
+      const opening = b.getAttribute('aria-expanded') !== 'true';
+      document.querySelectorAll('.side .group-btn').forEach((x) => { const on = opening && x === b; x.classList.toggle('open', on); x.setAttribute('aria-expanded', on); x.querySelector('.chev').textContent = on ? '▾' : '▸'; });
+      document.querySelectorAll('.side .grp').forEach((d) => (d.hidden = !(opening && d.dataset.g === b.dataset.g)));
+      store.set('erp_nav_open', opening ? b.dataset.g : '');
+    }));
+  }
 
   async function shell() {
     if (!projectList) projectList = (await api('/api/masters')).projects.filter((p) => p.active);
@@ -156,7 +178,7 @@
     app.innerHTML = `<div class="shell">
       <nav class="side no-print">
         <a class="logo" href="#/home">${wordmark}<div><b>ERP</b><span>Test version</span></div></a>
-        ${nav.map((p) => (p.group ? `<div class="group">${esc(p.group)}</div>` : `<a href="${p.href ? p.href() : '#/' + p.key}" class="${p === cur ? 'on' : ''}">${esc(p.label)}</a>`)).join('')}
+        ${navHtml(nav, cur)}
       </nav>
       <div class="main">
         <div class="top no-print"><div class="who">${projectList.length > 1 ? `<select id="proj" class="proj">${projectList.map((p) => `<option value="${p.id}" ${p.id === proj ? 'selected' : ''}>${esc(p.name)}</option>`).join('')}</select>` : `<b>${esc(projectList[0]?.name || '')}</b>`}
@@ -165,6 +187,7 @@
             <button class="ghost small" id="cpw">Change password</button><button class="ghost small" id="out">Sign out</button></div></div>
         <div class="page" id="page"><p class="muted">Loading…</p></div>
       </div></div>`;
+    wireNav();
     $('#out').onclick = signOut;
     $('#cpw').onclick = () => changePassword(false);
     if ($('#proj')) $('#proj').onchange = (e) => { proj = +e.target.value; store.set('erp_project', proj); shell(); };
@@ -224,6 +247,7 @@
       { title: 'Data to verify', sub: open ? `${open} items from the import still to check` : 'Items from the import to check and close', icon: 'check', tone: '#B7791F', href: '#/verify', show: anyOf('inventory.view', 'ledger.view') },
       { title: 'Accounts', sub: 'To Do, Daily Bank Balance, Receipts, Payments Out, PDC, TDS, SRA rent, GST, SDR and Tally', icon: 'book', tone: '#2B5C8A', href: '#/acc', show: can('accounts.view') },
       { title: 'Accounts', sub: 'Bank, payments, SRA rent, GST, TDS and Tally', icon: 'book', tone: '#2B5C8A', soon: true, show: !can('accounts.view') },
+      { title: 'Accounts dashboard', sub: 'Bank balances, collections, refunds, TDS, PDC, SRA tenants, expenses and reconciliation', icon: 'chart', tone: '#117A65', href: '/accounts', show: can('accounts.view') },
       { title: 'CA / Tax', sub: 'GST, TDS payable, RERA quarterly, cash flow statement and compliance, for the CA', icon: 'chart', tone: '#7A5C99', href: '/ca', show: can('ca.view') },
       { title: 'Contractor billing', sub: 'Work orders, running bills and retention', icon: 'hammer', tone: '#B7791F', soon: true, show: true },
       { title: 'Purchase', sub: 'Indents, purchase orders and site stock', icon: 'cart', tone: '#117A65', soon: true, show: true },
