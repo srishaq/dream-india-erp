@@ -194,11 +194,14 @@ textarea { resize: vertical; }
 .side .logo img.wordmark { width: 128px; height: auto; }
 .side .logo b { font-size: 13px; letter-spacing: .08em; text-transform: uppercase; color: #a9bad1; }
 .side .logo div { display: flex; gap: 8px; align-items: baseline; }
-.hero { background: #140C59; background-image: radial-gradient(1100px 340px at 85% -160px, rgba(100,194,230,.30), transparent 60%); color: #fff; margin: -24px -28px 0; padding: 28px 28px 74px; }
+.hero { background: #140C59; background-image: radial-gradient(1100px 340px at 85% -160px, rgba(100,194,230,.30), transparent 60%); color: #fff; margin: -24px -28px 0; padding: 28px 28px 74px; clip-path: inset(0 -100vmax 0 0); box-shadow: 100vmax 0 0 #140C59; }
 .hero-in { display: grid; gap: 8px; }
 .hero .eyebrow { font-weight: 600; font-size: 12.5px; letter-spacing: .1em; text-transform: uppercase; color: #64C2E6; }
 .hero h1 { font-size: clamp(26px, 4.2vw, 40px); font-weight: 800; line-height: 1.05; margin: 0; letter-spacing: -.02em; color: #fff; }
-.hero p { margin: 0; color: #C6CCEB; }
+.hero p { margin: 0; color: #C6CCEB; max-width: 60ch; }
+.hero .back { justify-self: start; color: #C6CCEB; text-decoration: none; font-size: 13.5px; font-weight: 600; margin-bottom: 4px; }
+.hero .back:hover { color: #fff; }
+.hnote { margin: -10px 0 0; color: var(--ink-3); font-size: 13px; }
 .hm { margin-top: -48px; display: grid; gap: 26px; position: relative; }
 .hgroup { display: grid; gap: 12px; }
 .hgroup h2 { font-size: 13px; font-weight: 700; letter-spacing: .1em; text-transform: uppercase; color: var(--ink-3); margin: 0; }

@@ -142,7 +142,7 @@
     { key: 'users', label: 'Logins', show: () => can('users.manage') },
     { key: 'audit', label: 'Audit log', show: () => can('audit.view') },
   ];
-  const DETAIL = { booking: 'bookings', statement: 'ledgers', run: 'demands', bankauto: 'bankauto' };
+  const DETAIL = { booking: 'bookings', statement: 'ledgers', run: 'demands', bankauto: 'bankauto', project: 'home' };
   let projectList = null, proj = null;
   const store = { get: (k) => { try { return localStorage.getItem(k); } catch { return null; } }, set: (k, v) => { try { localStorage.setItem(k, v); } catch {} } };
 
@@ -151,7 +151,8 @@
   const groupOf = (key) => { let g = null; for (const p of PAGES) { if (p.group) g = p.group; else if (p.key === key) return g; } return null; };
   function navHtml(nav, cur) {
     const curG = groupOf(cur.key), want = store.get('erp_nav_open');
-    const open = cur.key === 'home' ? (want != null ? want : (can('accounts.enter') && !can('demand.raise') ? 'Accounts' : 'CRM')) : curG;
+    const dg = { crm: 'CRM', accounts: 'Accounts', audit: 'Accounts', construction: 'CRM' }[location.hash.split('/')[3]];
+    const open = dg || (cur.key === 'home' ? (want != null ? want : (can('accounts.enter') && !can('demand.raise') ? 'Accounts' : 'CRM')) : curG);
     let out = '', g = null;
     for (const p of nav) {
       if (p.group) { if (g) out += '</div>'; g = p.group; const on = g === open; out += `<button type="button" class="group-btn ${on ? 'open' : ''}" data-g="${esc(g)}" aria-expanded="${on}">${esc(g)}<span class="chev">${on ? '▾' : '▸'}</span></button><div class="grp" data-g="${esc(g)}" ${on ? '' : 'hidden'}>`; continue; }
@@ -194,7 +195,7 @@
     $('#cpw').onclick = () => changePassword(false);
     if ($('#proj')) $('#proj').onchange = (e) => { proj = +e.target.value; store.set('erp_project', proj); shell(); };
     if (/^reg-/.test(page || '') && can('accounts.view')) { try { await accRegister(page.slice(4)); } catch (e) { $('#page').innerHTML = `<div class="err">${esc(e.message)}</div>`; } return; }
-    const fn = { home, projects, plans, users, audit, units, bookings, demands, receipts, ledgers, letters, followups, verify, prices, partners, acc: accTodo, balances: accBalances, bankauto: bankAuto, bookscrm: booksCrm, accreports: accReports, checks: accChecks, accsetup: accSetup, import: importPage, booking: bookingPage, statement: statementPage, run: runPage };
+    const fn = { home, project: projectHome, projects, plans, users, audit, units, bookings, demands, receipts, ledgers, letters, followups, verify, prices, partners, acc: accTodo, balances: accBalances, bankauto: bankAuto, bookscrm: booksCrm, accreports: accReports, checks: accChecks, accsetup: accSetup, import: importPage, booking: bookingPage, statement: statementPage, run: runPage };
     const key = DETAIL[page] && arg ? page : cur.key;
     try { await fn[key](arg ? +arg : undefined); } catch (e) { $('#page').innerHTML = `<div class="err">${esc(e.message)}</div>`; }
   }
@@ -220,55 +221,102 @@
   const TONES = ['#140C59', '#0E8C9B', '#2B5C8A', '#7A5C99', '#117A65', '#B7791F'];
   const tile = (t) => {
     const inner = `<span class="ic">${HICON[t.icon] || HICON.building}</span><span><h3>${esc(t.title)}</h3><p>${esc(t.sub || '')}</p></span>
-      ${t.soon ? '<span class="status">Coming soon</span>' : `<span class="open">Open →</span>`}`;
+      ${t.soon ? '<span class="status">Coming soon</span>' : `<span class="open">${t.ext ? 'Open ↗' : 'Open →'}</span>`}`;
     return t.soon ? `<div class="tile soon" style="--tone:${t.tone}">${inner}</div>`
-      : `<a class="tile" style="--tone:${t.tone}" href="${esc(t.href)}" ${t.proj ? `data-proj="${t.proj}"` : ''}>${inner}</a>`;
+      : `<a class="tile" style="--tone:${t.tone}" href="${esc(t.href)}" ${t.ext ? 'target="_blank" rel="noopener"' : ''}>${inner}</a>`;
   };
+  // Home → a project → its departments (Sales & CRM, Accounts, …) → the working pages of that department.
+  const SUB = {
+    dashboard: 'Daily collections, dues, tower status, channel partners', units: 'Every unit, floor by floor, both wings side by side',
+    bookings: 'Bookings, applicants, cancellations and transfers', demands: 'Construction stages and the demands raised on them',
+    receipts: 'Enter receipts; Head Accounts approves them', ledgers: 'Each buyer’s statement of demands and payments',
+    letters: 'Stage demands and reminders, by email or courier', followups: 'Calls, WhatsApps and promises to pay',
+    verify: 'Items from the import still to check and close', prices: 'Rates, floor rise and the cost sheet', partners: 'Channel partners and brokerage',
+    accdash: 'Bank balances, collections, refunds, TDS, PDC, SRA tenants and reconciliation', acc: 'What the accounts team has to do today',
+    balances: 'Closing balance of every bank account, day by day', bankauto: 'The 3:10 pm check of bank statements against the books',
+    'reg-receipts': 'Every receipt as it came into the bank', 'reg-payments': 'Every payment out, by head', 'reg-pdc': 'Post-dated cheques and their reminders',
+    'reg-tds': 'TDS deducted and challans paid', 'reg-recon': 'Items the bank and the books do not yet agree on', 'reg-compliance': 'GST, TDS and RERA due dates',
+    'reg-tenants': 'SRA tenants and their rent', 'reg-rentLinks': 'Rent payment links for each tenant', 'reg-cancellations': 'Cancelled flats and refunds still to pay',
+    accreports: 'Reports and the Tally import', checks: 'Daily checks on the registers', bookscrm: 'Tally receipts flat by flat against the CRM',
+    ca: 'GST, TDS payable, RERA quarterly and cash flow, for the CA', accsetup: 'Bank accounts, heads, statement folders and imports', audit: 'Who changed what, and when',
+  };
+  const PICON = { dashboard: 'chart', units: 'grid', bookings: 'book', demands: 'tower', receipts: 'rupee', ledgers: 'book', letters: 'mail', followups: 'phone', verify: 'check', prices: 'rupee', partners: 'users',
+    accdash: 'chart', acc: 'check', balances: 'rupee', bankauto: 'check', 'reg-cancellations': 'users', bookscrm: 'check', checks: 'check', audit: 'book', ca: 'chart', accsetup: 'grid' };
+  const DEPTS = [
+    { key: 'crm', title: 'Sales & CRM', sub: 'Collections, units, bookings, demands, receipts and follow-ups', icon: 'chart', tone: '#2B5C8A', group: 'CRM' },
+    { key: 'construction', title: 'Construction', sub: 'Construction stages, contractor billing and site progress', icon: 'hammer', tone: '#B7791F', pages: ['demands'], later: ['Contractor billing', 'Site progress'] },
+    { key: 'accounts', title: 'Accounts', sub: 'Bank, receipts, payments, PDC, TDS, SRA rent, GST, SDR and Tally', icon: 'book', tone: '#117A65', group: 'Accounts', skip: ['ca', 'bookscrm', 'checks'] },
+    { key: 'audit', title: 'CRM/Accounts Audit', sub: 'Tally against the CRM, checks, reconciling items and cancelled flats', icon: 'check', tone: '#0E8C9B', pages: ['bookscrm', 'checks', 'reg-recon', 'reg-cancellations', 'verify', 'audit'] },
+    { key: 'ca', title: 'CA / Tax', sub: 'GST, TDS payable, RERA quarterly, cash flow and compliance', icon: 'chart', tone: '#7A5C99', direct: 'ca' },
+    { key: 'purchase', title: 'Purchase', sub: 'Indents, purchase orders and site stock', icon: 'cart', tone: '#117A65', soon: true },
+    { key: 'drawings', title: 'Drawings', sub: 'Approved plans, working drawings and revisions', icon: 'grid', tone: '#2B5C8A', soon: true },
+    { key: 'hr', title: 'HR & Admin', sub: 'Staff records, leave, letters and HR policies', icon: 'users', tone: '#7A5C99', soon: true },
+    { key: 'training', title: 'Training videos', sub: 'Short videos on how to use each part of the ERP', icon: 'book', tone: '#B7791F', soon: true },
+  ];
+  const pagesOf = (d) => {
+    let keys = d.pages;
+    if (d.group) { keys = []; let g = null; for (const p of PAGES) { if (p.group) g = p.group; else if (g === d.group && !(d.skip || []).includes(p.key)) keys.push(p.key); } }
+    return (keys || []).map((k) => PAGES.find((p) => p.key === k)).filter((p) => p && p.show());
+  };
+  const hrefOf = (p) => (p.href ? p.href() : '#/' + p.key);
+  const heroHtml = (eyebrow, title, sub, back) => `<div class="hero"><div class="hero-in">${back ? `<a class="back" href="${esc(back[0])}">← ${esc(back[1])}</a>` : ''}<span class="eyebrow">${esc(eyebrow)}</span>
+      <h1>${esc(title)}</h1><p>${esc(sub)}</p></div></div>`;
+  const projSub = (p) => {
+    const total = (u) => Object.values(u || {}).reduce((a, b) => a + b, 0);
+    const floors = Math.max(0, ...p.buildings.map((b) => +b.floors || +b.top_floor || 0));
+    const n = total(p.units), sold = (p.units.booked || 0) + (p.units.registered || 0);
+    return [p.location, p.buildings.length ? `${p.buildings.length} tower${p.buildings.length > 1 ? 's' : ''}${floors ? ' of ' + floors + ' floors' : ''}` : '', n ? `${sold} of ${n} units sold` : 'no units yet'].filter(Boolean).join(' · ');
+  };
+
   async function home() {
     const d = await api('/api/masters');
     const total = (u) => Object.values(u || {}).reduce((a, b) => a + b, 0);
     const now = new Date(), h = +now.toLocaleString('en-GB', { hour: 'numeric', hour12: false, timeZone: 'Asia/Kolkata' });
     const first = (me.name || '').split(' ')[0];
     const cur = d.projects.find((p) => p.id === proj);
-    let open = 0;
-    if (cur && total(cur.units) && anyOf('inventory.view', 'ledger.view')) { try { open = (await api(`/api/verify?project=${proj}`)).counts.open; } catch {} }
-    const projTiles = d.projects.map((p, i) => {
-      const sale = p.buildings.filter((b) => b.kind !== 'rehab');
-      const floors = Math.max(0, ...p.buildings.map((b) => +b.floors || +b.top_floor || 0));
-      const n = total(p.units), sold = (p.units.booked || 0) + (p.units.registered || 0);
-      const sub = [p.location, p.buildings.length ? `${p.buildings.length} tower${p.buildings.length > 1 ? 's' : ''}${floors ? ' of ' + floors + ' floors' : ''}` : '', n ? `${sold} of ${n} units sold` : 'no units yet'].filter(Boolean).join(' · ');
-      return { title: p.name, sub, icon: i % 2 ? 'building' : 'tower', tone: TONES[i % TONES.length], proj: p.id,
-        href: n && can('ledger.view') ? `/dashboard?project=${p.id}` : '#/units' };
-    });
+    const act = d.projects.filter((p) => p.active);
+    const projTiles = act.map((p, i) => ({ title: p.name, sub: projSub(p), icon: i % 2 ? 'building' : 'tower', tone: TONES[i % TONES.length], proj: p.id, href: `#/project/${p.id}` }));
+    if (!act.some((p) => /aspire/i.test(p.name))) projTiles.push({ title: 'Dream Aspire', sub: 'Lokhandwala, Andheri West · commercial · not in the ERP yet', icon: 'building', tone: '#0E8C9B', soon: true });
     const tools = [
-      { title: 'Collections dashboard', sub: 'Daily collections, dues, tower status, channel partners', icon: 'chart', tone: '#2B5C8A', href: `/dashboard${proj ? '?project=' + proj : ''}`, show: can('ledger.view') },
-      { title: 'Units & inventory', sub: 'Every unit, floor by floor, both wings side by side', icon: 'grid', tone: '#140C59', href: '#/units', show: can('inventory.view') },
-      { title: 'Receipts', sub: 'Enter receipts; Head Accounts approves them', icon: 'rupee', tone: '#117A65', href: '#/receipts', show: anyOf('receipt.enter', 'receipt.approve', 'ledger.view') },
-      { title: 'Demand letters', sub: 'Stage demands and reminders, by email or courier', icon: 'mail', tone: '#0E8C9B', href: '#/letters', show: anyOf('demand.raise', 'ledger.view') },
-      { title: 'Follow-ups', sub: 'Calls, WhatsApps and promises to pay', icon: 'phone', tone: '#7A5C99', href: '#/followups', show: can('ledger.view') },
-      { title: 'Data to verify', sub: open ? `${open} items from the import still to check` : 'Items from the import to check and close', icon: 'check', tone: '#B7791F', href: '#/verify', show: anyOf('inventory.view', 'ledger.view') },
-      { title: 'Accounts', sub: 'To Do, Daily Bank Balance, Receipts, Payments Out, PDC, TDS, SRA rent, GST, SDR and Tally', icon: 'book', tone: '#2B5C8A', href: '#/acc', show: can('accounts.view') },
-      { title: 'Accounts', sub: 'Bank, payments, SRA rent, GST, TDS and Tally', icon: 'book', tone: '#2B5C8A', soon: true, show: !can('accounts.view') },
-      { title: 'Accounts dashboard', sub: 'Bank balances, collections, refunds, TDS, PDC, SRA tenants, expenses and reconciliation', icon: 'chart', tone: '#117A65', href: '/accounts', show: can('accounts.view') },
-      { title: 'CA / Tax', sub: 'GST, TDS payable, RERA quarterly, cash flow statement and compliance, for the CA', icon: 'chart', tone: '#7A5C99', href: '/ca', show: can('ca.view') },
-      { title: 'Contractor billing', sub: 'Work orders, running bills and retention', icon: 'hammer', tone: '#B7791F', soon: true, show: true },
-      { title: 'Purchase', sub: 'Indents, purchase orders and site stock', icon: 'cart', tone: '#117A65', soon: true, show: true },
-      { title: 'HR & Admin', sub: 'Staff records, leave, letters and HR policies', icon: 'users', tone: '#7A5C99', soon: true, show: true },
-    ].filter((t) => t.show);
+      { title: 'New Project Feasibility', sub: 'SRA Feasibility Desk · analyse Reg. 33(10) sites and keep the register', icon: 'chart', tone: '#2B5C8A', href: 'https://claude.ai/artifact/EnCX84ZBXUSRTzQ52qf4D6', ext: true },
+      { title: 'HR & Admin', sub: 'Staff records, leave, letters and HR policies', icon: 'users', tone: '#7A5C99', soon: true },
+    ];
     const sample = can('users.manage') && cur && (!total(cur.units) || cur.sample) ? `<div class="panel"><h2>Sample data for testing</h2>
       <p class="muted">Loads Dream Signature A and B Wing (floors 10 to 45, 8 units a floor) with made-up "Sample Buyer" bookings, demands up to the stages the real project has reached, and receipts. It never touches real data and can be removed in one click.</p>
       <div class="actions">${total(cur.units) ? '<button class="danger" id="clearSample">Remove sample data</button>' : '<button id="loadSample">Load sample data</button>'}</div></div>` : '';
-    $('#page').innerHTML = `<div class="hero"><div class="hero-in"><span class="eyebrow">${esc(now.toLocaleDateString('en-IN', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric', timeZone: 'Asia/Kolkata' }))}</span>
-        <h1>${h < 12 ? 'Good morning' : h < 17 ? 'Good afternoon' : 'Good evening'}${first ? ', ' + esc(first) : ''}</h1>
-        <p>Your projects and tools in one place. Tap a tile to open it.</p></div></div>
+    $('#page').innerHTML = heroHtml(now.toLocaleDateString('en-IN', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric', timeZone: 'Asia/Kolkata' }),
+        `${h < 12 ? 'Good morning' : h < 17 ? 'Good afternoon' : 'Good evening'}${first ? ', ' + first : ''}`, 'Your projects and tools in one place. Tap a tile to open it.') + `
       <div class="hm">
         <section class="hgroup"><h2>Projects</h2><div class="tiles">${projTiles.map(tile).join('') || '<p class="muted">No projects yet.</p>'}</div></section>
         <section class="hgroup"><h2>Tools</h2><div class="tiles">${tools.map(tile).join('')}</div></section>
+        <p class="hnote">Tiles marked ↗ open in a new tab.</p>
         ${sample}
       </div>`;
-    document.querySelectorAll('a.tile[data-proj]').forEach((a) => (a.onclick = () => { proj = +a.dataset.proj; store.set('erp_project', proj); }));
     if ($('#loadSample')) $('#loadSample').onclick = async (e) => { e.target.disabled = true; e.target.textContent = 'Loading… (about 20 seconds)'; try { const r = await api('/api/sample', { action: 'load', projectId: proj }); toast(`Loaded ${r.units} units, ${r.bookings} bookings, ${r.demands} demands and ${r.receipts} receipts.`); home(); } catch (x) { e.target.disabled = false; e.target.textContent = 'Load sample data'; alert(x.message); } };
     if ($('#clearSample')) $('#clearSample').onclick = async (e) => { if (!confirm('Remove all sample units, bookings, demands and receipts for this project?')) return; e.target.disabled = true; try { await api('/api/sample', { action: 'clear', projectId: proj }); home(); } catch (x) { e.target.disabled = false; alert(x.message); } };
+  }
+
+  // #/project/<id> shows the departments; #/project/<id>/<dept> shows that department's pages.
+  async function projectHome(id) {
+    const d = await api('/api/masters');
+    const p = d.projects.find((x) => x.id === id && x.active);
+    if (!p) { $('#page').innerHTML = '<div class="err">This project is not in the ERP.</div>'; return; }
+    if (proj !== p.id) { proj = p.id; store.set('erp_project', proj); if ($('#proj')) $('#proj').value = proj; }
+    const dept = DEPTS.find((x) => x.key === location.hash.split('/')[3]);
+    if (dept && !dept.soon && !dept.direct) {
+      const tiles = pagesOf(dept).map((pg) => ({ title: pg.label, sub: SUB[pg.key] || '', icon: PICON[pg.key] || dept.icon, tone: dept.tone, href: hrefOf(pg) }))
+        .concat((dept.later || []).map((t) => ({ title: t, sub: '', icon: dept.icon, tone: dept.tone, soon: true })));
+      $('#page').innerHTML = heroHtml(p.name, dept.title, dept.sub, [`#/project/${p.id}`, p.name]) + `<div class="hm"><section class="hgroup"><h2>Pages</h2><div class="tiles">${tiles.map(tile).join('') || '<p class="muted">Your login has no pages in this section.</p>'}</div></section></div>`;
+      return;
+    }
+    const tiles = DEPTS.map((x) => {
+      if (x.soon) return { ...x };
+      if (x.direct) { const pg = PAGES.find((q) => q.key === x.direct); return pg && pg.show() ? { ...x, href: hrefOf(pg) } : null; }
+      const pgs = pagesOf(x);
+      if (!pgs.length) return x.later ? { ...x, soon: true } : null;
+      return { ...x, href: `#/project/${p.id}/${x.key}` };
+    }).filter(Boolean);
+    $('#page').innerHTML = heroHtml('Project', p.name, projSub(p), ['#/home', 'Home']) + `<div class="hm"><section class="hgroup"><h2>Departments</h2><div class="tiles">${tiles.map(tile).join('')}</div></section></div>`;
   }
 
   async function projects(data) {
