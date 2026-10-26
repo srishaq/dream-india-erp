@@ -148,6 +148,22 @@ module.exports = route({
       return res.json({ ok: true, ...(await detail(u, bk.id)) });
     }
 
+    if (b.action === 'dates') {
+      if (!has(u, 'booking.create') && !has(u, 'demand.raise')) throw fail(403, 'Your role does not allow this.');
+      const FIELDS = { registrationAppointment: 'registration_appointment', possessionDate: 'possession_date', bookingFormDate: 'booking_form_date', bankNocDate: 'bank_noc_date' };
+      const set = {}, before = {};
+      for (const [k, col] of Object.entries(FIELDS)) if (k in b) { if (b[k] && !DATE.test(b[k])) throw fail(400, 'A date looks wrong.'); set[col] = b[k] || null; before[col] = bk[col]; }
+      if ('registrationStatus' in b) { set.registration_status = str(b.registrationStatus, 60) || null; before.registration_status = bk.registration_status; }
+      if ('crmStatus' in b) { set.crm_status = str(b.crmStatus, 60) || null; before.crm_status = bk.crm_status; }
+      const cols = Object.keys(set);
+      if (!cols.length) throw fail(400, 'Nothing to change.');
+      await db.tx(async (t) => {
+        await t.q(`update bookings set ${cols.map((c, i) => `${c} = $${i + 2}`).join(', ')} where id = $1`, [bk.id, ...cols.map((c) => set[c])]);
+        await log(t, 'dates', set);
+      });
+      return res.json({ ok: true, ...(await detail(u, bk.id)) });
+    }
+
     if (b.action === 'cancel-request') {
       need('booking.create');
       if (bk.status !== 'active') throw fail(409, 'Only an active booking can be cancelled.');

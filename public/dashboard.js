@@ -367,6 +367,14 @@ function renderPaymentSchedule() {
 
 function renderCollections() {
   renderPaymentSchedule();
+  const F = M.forecast;
+  if (F) {
+    $('#fcFigs').innerHTML = [fig('Due now', inr(F.overdue), F.overdue ? 'risk' : 'in', 'past the due date'), fig('Falls due in 30 days', inr(F.dueNext30), 'due', `${cnt(F.dueNext30Count)} buyers`),
+      fig('Promised in 30 days', inr(F.promised), 'in', `${cnt(F.promisedCount)} promises logged in follow-ups`),
+      ...F.nextStages.map((x) => fig(`Next stage · Wing ${x.wing}`, inr(x.amount + x.gst), '', `${x.stage.replace(/^On (Completion of )?/, '')} · ${x.pct}% of ${cnt(x.bookings)} bookings, incl. GST`))].join('');
+    $('#fcTbl').innerHTML = F.nextStages.length ? '<thead><tr><th>Wing</th><th>Next stage to demand</th><th class="n">%</th><th class="n">Bookings</th><th class="n">Amount</th><th class="n">GST</th><th class="n">Total</th></tr></thead><tbody>' +
+      F.nextStages.map((x) => `<tr><td><b class="w-${esc(x.wing)}">${esc(x.wing)}</b></td><td>${esc(x.stage)}</td><td class="n">${x.pct}%</td><td class="n">${cnt(x.bookings)}</td><td class="n">${inr(x.amount, true)}</td><td class="n">${inr(x.gst, true)}</td><td class="n"><b>${inr(x.amount + x.gst, true)}</b></td></tr>`).join('') + '</tbody>' : '';
+  }
   const t = M.totals, mo = M.monthly;
   const s = (f) => mo.reduce((a, x) => a + x[f], 0);
   $('#colFigs').innerHTML = [

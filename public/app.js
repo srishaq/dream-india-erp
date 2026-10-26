@@ -114,6 +114,9 @@
     { key: 'letters', label: 'Demand letters', show: () => anyOf('demand.raise', 'ledger.view') },
     { key: 'followups', label: 'Follow-ups', show: () => can('ledger.view') },
     { key: 'verify', label: 'Data to verify', show: () => anyOf('inventory.view', 'ledger.view') },
+    { group: 'Sales' },
+    { key: 'prices', label: 'Price list & cost sheet', show: () => can('inventory.view') },
+    { key: 'partners', label: 'Channel partners', show: () => can('ledger.view') },
     { group: 'Set-up' },
     { key: 'projects', label: 'Companies & projects', show: () => true },
     { key: 'plans', label: 'Payment plans', show: () => true },
@@ -149,7 +152,7 @@
     $('#out').onclick = signOut;
     $('#cpw').onclick = () => changePassword(false);
     if ($('#proj')) $('#proj').onchange = (e) => { proj = +e.target.value; store.set('erp_project', proj); shell(); };
-    const fn = { home, projects, plans, users, audit, units, bookings, demands, receipts, ledgers, letters, followups, verify, import: importPage, booking: bookingPage, statement: statementPage, run: runPage };
+    const fn = { home, projects, plans, users, audit, units, bookings, demands, receipts, ledgers, letters, followups, verify, prices, partners, import: importPage, booking: bookingPage, statement: statementPage, run: runPage };
     const key = DETAIL[page] && arg ? page : cur.key;
     try { await fn[key](arg ? +arg : undefined); } catch (e) { $('#page').innerHTML = `<div class="err">${esc(e.message)}</div>`; }
   }
@@ -398,6 +401,7 @@
       ${editable ? `<div class="row"><div><label>Typology</label><input name="typology" value="${esc(u.typology)}"></div><div><label>Carpet area (sq ft)</label><input name="carpetSqft" type="number" step="0.01" value="${esc(u.carpet_sqft)}"></div></div>` : ''}
       <div class="actions">${u.booking_id ? `<button type="button" id="open">Open booking</button>` : ''}
         ${!u.booking_id && ['available', 'blocked'].includes(u.status) && can('booking.create') ? '<button type="button" id="book">New booking</button>' : ''}
+        ${!u.booking_id ? `<a class="btn ghost" target="_blank" rel="noopener" href="/api/prices?unit=${u.id}&html=1">Cost sheet</a>` : ''}
         ${editable ? '<button value="save" class="ghost">Save unit</button>' : ''}<button type="button" class="ghost" id="close">Close</button></div></form>`;
     document.body.appendChild(dl);
     const close = () => { dl.close(); dl.remove(); };
@@ -472,13 +476,17 @@
     if (b.status === 'active' && can('ledger.view')) actions.push(`<a class="btn ghost" href="#/statement/${b.id}">Statement of account</a>`);
     if (b.status === 'active' && can('demand.raise')) actions.push('<button class="ghost" id="logf">Log a follow-up</button>');
     if (b.status === 'active' && !b.cancel_requested_at && can('booking.create')) actions.push('<button class="danger" id="cancelReq">Request cancellation</button>');
+    const docBtns = [`<a class="btn ghost small" target="_blank" rel="noopener" href="/api/docs?booking=${b.id}&doc=costsheet">Cost sheet</a>`];
+    if (can('buyer.kyc')) docBtns.push(`<a class="btn ghost small" target="_blank" rel="noopener" href="/api/docs?booking=${b.id}&doc=allotment">Allotment letter</a>`, `<a class="btn ghost small" target="_blank" rel="noopener" href="/api/docs?booking=${b.id}&doc=form">Booking form</a>`);
+    if (can('buyer.kyc') && b.status === 'active') docBtns.push(`<button class="ghost small" id="welcome">Welcome email${b.welcome_sent_at ? ' (sent ' + fmtD(b.welcome_sent_at.slice(0, 10)) + ')' : ''}</button>`);
     if (b.status === 'active' && b.cancel_requested_at && can('cancellation.approve')) actions.push('<button class="danger" id="cancelOk">Approve cancellation</button><button class="ghost" id="cancelNo">Keep the booking</button>');
     const statusPill = { pending: '<span class="pill">waiting for approval</span>', active: '<span class="pill good">active</span>', cancelled: '<span class="pill bad">cancelled</span>', rejected: '<span class="pill bad">rejected</span>' }[b.status] || '';
     $('#page').innerHTML = `<p class="crumbs"><a href="#/bookings">Bookings</a> › ${esc(d.unit.unit_no)}</p>
       <div class="page-head"><div><h1>${esc(d.unit.unit_no)} · ${esc(d.applicants.map((a) => a.name).join(' & '))} ${statusPill}${b.sample ? ' <span class="pill grey">sample</span>' : ''}</h1>
         <p class="muted">${esc(d.unit.project)} · ${esc(d.unit.building)} · floor ${d.unit.floor ?? '—'} · ${esc(d.unit.typology || '')} ${d.unit.carpet_sqft ? toNum(d.unit.carpet_sqft) + ' sq ft' : ''} · ${esc(d.unit.company)}</p></div></div>
       ${b.cancel_requested_at && b.status === 'active' ? `<div class="note" style="margin-bottom:14px">Cancellation requested on ${fmtD(b.cancel_requested_at)}: ${esc(b.cancel_reason)}. Waiting for Management.</div>` : ''}
-      <div class="actions" style="margin:0 0 16px">${actions.join('')}</div>
+      <div class="actions" style="margin:0 0 10px">${actions.join('')}</div>
+      <div class="actions" style="margin:0 0 16px"><span class="muted small" style="align-self:center">Documents:</span>${docBtns.join('')}</div>
       <div class="panel"><div class="kpis">${kpi(inr(b.agreement_value), 'agreement value')}${kpi(inr(bal.demanded), 'demanded')}${kpi(inr(bal.credit_av), 'received (AV + TDS)')}
         ${kpi(inr(bal.outstanding), 'outstanding')}${kpi(inr(bal.overdue), 'overdue', toNum(bal.overdue) > 0 ? 'bad' : '')}${kpi(inr(bal.gst_outstanding), 'GST outstanding')}</div></div>
       <div class="two">
@@ -486,7 +494,11 @@
           <tr><th>Booking date</th><td>${fmtD(b.booking_date)}</td></tr><tr><th>Agreement / registration</th><td>${fmtD(b.agreement_date)} / ${fmtD(b.registration_date)}</td></tr>
           <tr><th>GST rate</th><td>${toNum(b.gst_rate)}%</td></tr><tr><th>Stamp duty / registration fee</th><td>${b.stamp_duty ? inr(b.stamp_duty) : '—'} / ${b.registration_fee ? inr(b.registration_fee) : '—'}</td></tr>
           <tr><th>Funding</th><td>${esc(b.funding === 'loan' ? 'Home loan · ' + (b.loan_bank || '') : b.funding === 'self' ? 'Self' : '—')}</td></tr><tr><th>Parking</th><td>${b.parking}</td></tr>
-          <tr><th>Source / CP</th><td>${esc([b.source, b.cp_name].filter(Boolean).join(' · ') || '—')}</td></tr><tr><th>Brokerage</th><td>${b.brokerage ? inr(b.brokerage) : '—'}</td></tr></table></div>
+          <tr><th>Source / CP</th><td>${esc([b.source, b.cp_name].filter(Boolean).join(' · ') || '—')}</td></tr><tr><th>Brokerage</th><td>${b.brokerage ? inr(b.brokerage) : '—'}</td></tr></table>
+          <h2 style="margin-top:16px">Dates &amp; status ${b.status === 'active' && anyOf('booking.create', 'demand.raise') ? '<button class="ghost small" id="editDates" style="float:right">Edit</button>' : ''}</h2><table class="kv">
+          <tr><th>Booking form received</th><td>${fmtD(b.booking_form_date)}</td></tr><tr><th>Registration status</th><td>${esc(b.registration_status || (b.registration_date ? 'Done' : '—'))}</td></tr>
+          <tr><th>Registration appointment</th><td>${fmtD(b.registration_appointment)}</td></tr><tr><th>Bank NOC</th><td>${fmtD(b.bank_noc_date)}</td></tr>
+          <tr><th>Possession</th><td>${fmtD(b.possession_date)}</td></tr><tr><th>Follow-up tag</th><td>${esc(b.crm_status || '—')}</td></tr></table></div>
         <div class="panel"><h2>Applicants</h2>${d.applicants.map((a) => `<p><b>${esc(a.name)}</b><br><span class="muted">PAN ${esc(a.pan || '—')} · Aadhaar ${esc(a.aadhaar || '—')}<br>${esc(a.phone || '')} ${esc(a.email || '')}<br>${esc(a.address || '')}</span></p>`).join('')}</div>
       </div>
       <div class="panel"><h2>Payment plan</h2><div class="table-wrap"><table><tr><th class="num">#</th><th>Stage</th><th class="num">%</th><th class="num">Amount</th><th>Demanded on</th><th>Due</th></tr>
@@ -504,6 +516,21 @@
       if ($('#logf')) $('#logf').onclick = () => followupForm(b.id, d.unit.unit_no, f, () => bookingPage(id));
     }
     const act = async (body, msg) => { try { await api('/api/bookings', { id: b.id, ...body }); if (msg) toast(msg); bookingPage(id); } catch (e) { alert(e.message); } };
+    if ($('#editDates')) $('#editDates').onclick = () => dialog(`<h2>Dates &amp; status · ${esc(d.unit.unit_no)}</h2>
+      <div class="row"><div><label>Booking form received</label><input type="date" name="bookingFormDate" value="${esc(b.booking_form_date || '')}"></div><div><label>Registration status</label><input name="registrationStatus" list="regst" value="${esc(b.registration_status || '')}"><datalist id="regst"><option>Done</option><option>Registration Lineup</option><option>Pending</option></datalist></div></div>
+      <div class="row"><div><label>Registration appointment</label><input type="date" name="registrationAppointment" value="${esc(b.registration_appointment || '')}"></div><div><label>Bank NOC date</label><input type="date" name="bankNocDate" value="${esc(b.bank_noc_date || '')}"></div></div>
+      <div class="row"><div><label>Possession date</label><input type="date" name="possessionDate" value="${esc(b.possession_date || '')}"></div><div><label>Follow-up tag</label><input name="crmStatus" list="crmst" value="${esc(b.crm_status || '')}"><datalist id="crmst"><option>Defaulter</option><option>Follow Up</option><option>Confirmed</option><option>Part Payment & PDC</option><option>Floor Approval Pending</option><option>Management Reference</option><option>Medical Emergency</option></datalist></div></div>
+      <p class="small muted">"No Due", "GST Due" and "TDS Due Only" are worked out from the figures on the dashboard; the tag here is the CRM team's own (Defaulter and so on).</p>`,
+    async (x) => { await api('/api/bookings', { action: 'dates', id: b.id, ...x }); toast('Saved.'); bookingPage(id); });
+    if ($('#welcome')) $('#welcome').onclick = async () => {
+      try {
+        const w = await api(`/api/docs?booking=${b.id}&doc=welcome`);
+        const dl = dialog(`<h2>Welcome email · ${esc(d.unit.unit_no)}</h2><p class="muted">${w.live ? `Goes to ${esc(w.to.join(', ') || 'no email address on file')}.` : 'Test version: this goes only to the test email address in Letter settings, not to the buyer.'}${w.sentAt ? ` Already sent on ${fmtD(w.sentAt.slice(0, 10))}.` : ''}</p>
+          <label>Subject</label><input value="${esc(w.subject)}" disabled><label>Message</label><textarea rows="16" disabled>${esc(w.text)}</textarea>`,
+        async () => { const r = await api('/api/docs', { action: 'welcome', bookingId: b.id }); toast(`Welcome email sent to ${r.to}.`); bookingPage(id); });
+        $('[value=save]', dl).textContent = 'Send email';
+      } catch (e) { alert(e.message); }
+    };
     if ($('#approve')) $('#approve').onclick = () => confirm('Approve this booking? The booking-stage demand is raised now, plus any construction stages already completed in this building.') && act({ action: 'approve' }, 'Booking approved.');
     if ($('#reject')) $('#reject').onclick = () => { const r = prompt('Reason for rejecting:'); if (r !== null) act({ action: 'reject', reason: r }, 'Booking rejected; the unit is available again.'); };
     if ($('#register')) $('#register').onclick = () => dialog(`<h2>Agreement and registration</h2><p class="muted">Recording the registration raises the registration-stage demand.</p>
@@ -754,6 +781,102 @@
       <input type="date" name="nextDate" min="${todayIso()}" value="${plus(3)}">`,
     async (x) => { await api('/api/followups', { action: 'add', bookingId, ...x }); toast('Follow-up saved.'); after(); });
     dl.querySelectorAll('[data-n]').forEach((b) => (b.onclick = () => { dl.querySelector('[name=nextDate]').value = b.dataset.n; }));
+  }
+
+  // ---------- price list and cost sheet ----------
+  async function prices() {
+    if (!proj) return noProject();
+    const [d, u] = await Promise.all([api(`/api/prices?project=${proj}`), api(`/api/units?project=${proj}`)]);
+    const live = d.lists.filter((l) => l.active);
+    const cur = live[0];
+    const free = u.units.filter((x) => ['available', 'blocked', 'held'].includes(x.status) && !x.booking_id).sort((a, b) => a.unit_no.localeCompare(b.unit_no, 'en', { numeric: true }));
+    $('#page').innerHTML = `<div class="page-head"><div><h1>Price list &amp; cost sheet</h1><p class="muted">The current price per sq ft of carpet area, and a cost sheet for any unsold unit: agreement value, GST, stamp duty, registration and the stage-wise payment schedule.</p></div>
+      ${d.canEdit ? '<div class="actions" style="margin:0"><button id="newPl">New price list</button></div>' : ''}</div>
+      <div class="two">
+        <div class="panel"><h2>Make a cost sheet</h2>${cur ? `<form id="csf">
+          <label>Unit</label><select name="unit" required><option value="">Choose an unsold unit</option>${free.map((x) => `<option value="${x.id}">${esc(x.unit_no)} · floor ${x.floor ?? '—'} · ${esc(x.typology || '')} ${x.carpet_sqft ? toNum(x.carpet_sqft) + ' sq ft' : ''}${x.status !== 'available' ? ' · ' + esc(STATUS[x.status] || x.status) : ''}</option>`).join('')}</select>
+          <div class="row"><div><label>Parking spaces</label><input name="parking" type="number" min="0" value="0"></div><div><label>Discount (₹ per sq ft)</label><input name="discount" inputmode="decimal" placeholder="0"></div></div>
+          <div class="row"><div><label>For (buyer name, optional)</label><input name="buyer"></div><div><label>&nbsp;</label><label class="check"><input type="checkbox" name="woman"> First buyer is a woman (1% lower stamp duty)</label></div></div>
+          <div id="csOut"></div>
+          <div class="actions"><button type="button" class="ghost" id="csCalc">Work it out</button><button type="submit">Open printable cost sheet</button></div></form>` : `<p class="muted">There is no price list yet.${d.canEdit ? ' Add one first.' : ' Head CRM or Management adds it.'}</p>`}</div>
+        <div class="panel"><h2>Current price list</h2>${cur ? `<table class="kv"><tr><th>Name</th><td>${esc(cur.name)} · from ${fmtD(cur.effective_from)}</td></tr>
+          <tr><th>Base rate</th><td>${inr(cur.base_rate)} per sq ft carpet</td></tr><tr><th>Floor rise</th><td>${toNum(cur.floor_rise) ? `${inr(cur.floor_rise)} per sq ft per floor above floor ${cur.floor_rise_from}` : 'None'}</td></tr>
+          <tr><th>Parking</th><td>${toNum(cur.parking_price) ? inr(cur.parking_price) + ' per space' : 'Not charged separately'}</td></tr><tr><th>GST</th><td>${toNum(cur.gst_rate)}%</td></tr>
+          <tr><th>Stamp duty</th><td>${toNum(cur.stamp_duty_pct)}% (woman buyer ${toNum(cur.stamp_duty_women_pct)}%)</td></tr><tr><th>Registration fee</th><td>1%, up to ${inr(cur.registration_fee)}</td></tr>
+          ${(cur.other_charges || []).map((c) => `<tr><th>${esc(c.name)}</th><td>${inr(c.amount)}</td></tr>`).join('')}${cur.notes ? `<tr><th>Notes</th><td>${esc(cur.notes)}</td></tr>` : ''}</table>` : '<p class="muted">None yet.</p>'}</div>
+      </div>
+      ${d.lists.length ? `<div class="panel"><h2>All price lists</h2><div class="table-wrap"><table><tr><th>Name</th><th>From</th><th class="num">Base rate</th><th class="num">Floor rise</th><th class="num">Parking</th><th>By</th><th></th></tr>
+        ${d.lists.map((l) => `<tr class="${l.active ? '' : 'dim'}"><td>${esc(l.name)} ${l.active ? (l === cur ? '<span class="pill good">current</span>' : '') : '<span class="pill grey">withdrawn</span>'}</td><td>${fmtD(l.effective_from)}</td><td class="num">${inr(l.base_rate)}</td><td class="num">${inr(l.floor_rise)}</td><td class="num">${inr(l.parking_price)}</td><td>${esc(l.created_by_name || '')}</td>
+          <td class="num">${d.canEdit && l.active ? `<button class="ghost small" data-off="${l.id}">Withdraw</button>` : ''}</td></tr>`).join('')}</table></div></div>` : ''}`;
+    const q = (f) => new URLSearchParams({ unit: f.unit.value, parking: f.parking.value || 0, discount: f.discount.value || 0, woman: f.woman.checked ? '1' : '', buyer: f.buyer.value || '' });
+    const f = $('#csf');
+    if (f) {
+      $('#csCalc').onclick = async () => {
+        if (!f.unit.value) return alert('Choose a unit.');
+        try { const c = await api('/api/prices?' + q(f));
+          $('#csOut').innerHTML = `<div class="kpis" style="margin:10px 0">${kpi(inr(c.agreementValue), 'agreement value')}${kpi(inr(c.gst), 'GST')}${kpi(inr(c.stampDuty), 'stamp duty')}${kpi(inr(c.registration), 'registration')}${kpi(inr(c.total), 'total cost')}</div>`;
+        } catch (e) { alert(e.message); }
+      };
+      f.onsubmit = (e) => { e.preventDefault(); if (!f.unit.value) return alert('Choose a unit.'); window.open('/api/prices?' + q(f) + '&html=1', '_blank', 'noopener'); };
+    }
+    document.querySelectorAll('[data-off]').forEach((x) => (x.onclick = async () => { if (!confirm('Withdraw this price list? It stays on record but is no longer used for new cost sheets.')) return; try { await api('/api/prices', { action: 'deactivate', id: +x.dataset.off }); prices(); } catch (e) { alert(e.message); } }));
+    if ($('#newPl')) $('#newPl').onclick = () => {
+      const dl = dialog(`<h2>New price list</h2><p class="muted">Cost sheets use the newest price list still in force. Older ones stay on record.</p>
+        <div class="row"><div><label>Name</label><input name="name" required placeholder="e.g. Launch price, October 2026" value="${esc(cur ? '' : '')}"></div><div><label>In force from</label><input type="date" name="effectiveFrom" value="${todayIso()}"></div></div>
+        <div class="row"><div><label>Base rate (₹ per sq ft carpet)</label><input name="baseRate" inputmode="decimal" required value="${esc(cur ? toNum(cur.base_rate) : '')}"></div><div><label>Parking (₹ per space)</label><input name="parkingPrice" inputmode="decimal" value="${esc(cur ? toNum(cur.parking_price) : 0)}"></div></div>
+        <div class="row"><div><label>Floor rise (₹ per sq ft per floor)</label><input name="floorRise" inputmode="decimal" value="${esc(cur ? toNum(cur.floor_rise) : 0)}"></div><div><label>Floor rise starts above floor</label><input name="floorRiseFrom" type="number" min="0" value="${esc(cur ? cur.floor_rise_from : 0)}"></div></div>
+        <div class="row3"><div><label>GST %</label><input name="gstRate" value="${esc(cur ? toNum(cur.gst_rate) : 5)}"></div><div><label>Stamp duty %</label><input name="stampDutyPct" value="${esc(cur ? toNum(cur.stamp_duty_pct) : 6)}"></div><div><label>Woman buyer %</label><input name="stampDutyWomenPct" value="${esc(cur ? toNum(cur.stamp_duty_women_pct) : 5)}"></div></div>
+        <div class="row"><div><label>Registration fee cap (₹)</label><input name="registrationFee" value="${esc(cur ? toNum(cur.registration_fee) : 30000)}"></div><div></div></div>
+        <label>Other charges outside the agreement value (one per line: name, amount)</label><textarea name="others" rows="3" placeholder="Society formation, 25000&#10;Legal charges, 15000">${esc(cur ? (cur.other_charges || []).map((c) => `${c.name}, ${c.amount}`).join('\n') : '')}</textarea>
+        <label>Notes</label><input name="notes" value="${esc(cur?.notes || '')}">`,
+      async (x) => {
+        const otherCharges = String(x.others || '').split('\n').map((l) => { const m = l.match(/^(.*?)[,:\t]\s*([\d,.]+)\s*$/); return m ? { name: m[1].trim(), amount: m[2].replace(/,/g, '') } : null; }).filter(Boolean);
+        await api('/api/prices', { action: 'create', projectId: proj, ...x, otherCharges }); toast('Price list saved.'); prices();
+      });
+      dl.classList.add('wide');
+    };
+  }
+
+  // ---------- channel partners and brokerage ----------
+  async function partners() {
+    if (!proj) return noProject();
+    const d = await api(`/api/partners?project=${proj}`);
+    const tab = store.get('erp_cptab') || 'due';
+    const TABS = [['due', 'Due now', (r) => r.state === 'Due'], ['later', 'Not yet due', (r) => r.state === 'Not yet due'], ['paid', 'Paid', (r) => r.state === 'Paid'], ['none', 'No amount set', (r) => r.state === 'No amount'], ['all', 'All', () => true]];
+    const sum = (rows, f) => rows.reduce((a, r) => a + toNum(f(r)), 0);
+    const rows = d.rows.filter(TABS.find((t) => t[0] === tab)[2]);
+    const totalB = sum(d.rows, (r) => r.brokerage), paid = sum(d.rows, (r) => toNum(r.paid) + toNum(r.paid_before)), dueNow = sum(d.rows, (r) => r.payable_now), later = sum(d.rows.filter((r) => r.state === 'Not yet due'), (r) => r.balance);
+    $('#page').innerHTML = `<div class="page-head"><div><h1>Channel partners</h1><p class="muted">Brokerage owed to each partner, when it becomes due, and what has been billed and paid. Brokerage is due once ${d.rule.afterRegistration ? 'the agreement is registered and ' : ''}${d.rule.minReceivedPct}% of the agreement value has been received.</p></div>
+      ${d.can.rule ? '<div class="actions" style="margin:0"><button class="ghost" id="rule">Change the rule</button></div>' : ''}</div>
+      <div class="panel"><div class="kpis">${kpi(d.firms.length, 'partner firms')}${kpi(d.rows.length, 'bookings via partners')}${kpi(cr(totalB), 'total brokerage')}${kpi(cr(paid), 'paid')}${kpi(cr(dueNow), 'due now', dueNow ? 'bad' : '')}${kpi(cr(later), 'not yet due')}</div></div>
+      <div class="panel"><h2>By firm</h2><div class="table-wrap" style="max-height:340px"><table><tr><th>Firm</th><th class="num">Units</th><th class="num">Agreement value</th><th class="num">Collected</th><th class="num">Brokerage</th><th class="num">Paid</th><th class="num">Due now</th><th class="num">Not yet due</th></tr>
+        ${d.firms.map((f) => `<tr><td>${esc(f.firm)}</td><td class="num">${f.units}</td><td class="num">${cr(f.agreementValue)}</td><td class="num">${cr(f.received)}</td><td class="num">${inr(f.brokerage)}</td><td class="num">${inr(f.paid)}</td><td class="num">${f.payableNow ? `<b>${inr(f.payableNow)}</b>` : '—'}</td><td class="num">${f.notYetDue ? inr(f.notYetDue) : '—'}</td></tr>`).join('')}</table></div></div>
+      <div class="tabs">${TABS.map(([k, l, f]) => `<button class="tab ${k === tab ? 'on' : ''}" data-t="${k}">${l} (${d.rows.filter(f).length})</button>`).join('')}</div>
+      <div class="panel"><input type="search" id="cpq" placeholder="Find a firm, unit or buyer" style="max-width:320px;margin-bottom:10px">
+        <div class="table-wrap"><table id="cpt"><tr><th>Unit</th><th>Buyer</th><th>Firm</th><th class="num">Brokerage</th><th class="num">Received</th><th>Registered</th><th class="num">Billed</th><th class="num">Paid</th><th>Status</th><th></th></tr>
+        ${rows.map((r) => `<tr data-s="${esc((r.unit_no + ' ' + (r.buyers || '') + ' ' + (r.cp_name || '')).toLowerCase())}"><td><a href="#/booking/${r.booking_id}">${esc(r.unit_no)}</a></td><td>${esc(r.buyers || '')}</td><td>${esc(r.cp_name || '—')}</td>
+          <td class="num">${toNum(r.brokerage) ? inr(r.brokerage) : '—'}</td><td class="num">${toNum(r.received_pct)}%</td><td>${r.registration_date ? fmtD(r.registration_date) : '<span class="muted">no</span>'}</td>
+          <td class="num">${toNum(r.billed) ? inr(r.billed) : '—'}</td><td class="num">${toNum(r.paid) + toNum(r.paid_before) ? inr(toNum(r.paid) + toNum(r.paid_before)) : '—'}${r.paid_before ? '<br><span class="small muted">released per CRM sheet</span>' : ''}</td>
+          <td>${{ Due: '<span class="pill bad">due</span>', 'Not yet due': `<span class="pill grey">not yet due</span><br><span class="small muted">${esc(r.why)}</span>`, Paid: '<span class="pill good">paid</span>', 'No amount': '<span class="pill">no amount</span>' }[r.state]}</td>
+          <td class="num" style="white-space:nowrap">${d.can.bill ? `<button class="ghost small" data-a="amount" data-b="${r.booking_id}">Amount</button>${toNum(r.brokerage) ? `<button class="ghost small" data-a="bill" data-b="${r.booking_id}">Bill</button>` : ''}` : ''}${d.can.pay && r.balance > 1 && toNum(r.brokerage) ? `<button class="small" data-a="payment" data-b="${r.booking_id}">Pay</button>` : ''}</td></tr>`).join('') || '<tr><td colspan="10" class="muted">Nothing in this list.</td></tr>'}</table></div></div>`;
+    document.querySelectorAll('.tab[data-t]').forEach((t) => (t.onclick = () => { store.set('erp_cptab', t.dataset.t); partners(); }));
+    $('#cpq').oninput = (e) => { const v = e.target.value.trim().toLowerCase(); document.querySelectorAll('#cpt tr[data-s]').forEach((tr) => { tr.style.display = !v || tr.dataset.s.includes(v) ? '' : 'none'; }); };
+    if ($('#rule')) $('#rule').onclick = () => dialog(`<h2>When brokerage becomes due</h2>
+      <label class="check"><input type="checkbox" name="afterRegistration" ${d.rule.afterRegistration ? 'checked' : ''}> Only after the agreement is registered</label>
+      <label>And at least this % of the agreement value received</label><input name="minReceivedPct" type="number" min="0" max="100" step="0.5" value="${esc(d.rule.minReceivedPct)}">`,
+    async (x) => { await api('/api/partners', { action: 'rule', afterRegistration: x.afterRegistration === 'on', minReceivedPct: x.minReceivedPct }); partners(); });
+    document.querySelectorAll('[data-a]').forEach((x) => (x.onclick = () => {
+      const r = d.rows.find((y) => y.booking_id === +x.dataset.b), a = x.dataset.a;
+      if (a === 'amount') return dialog(`<h2>Brokerage · ${esc(r.unit_no)}</h2><div class="row"><div><label>Channel partner firm</label><input name="cpName" value="${esc(r.cp_name || '')}"></div><div><label>Brokerage amount (₹)</label><input name="amount" inputmode="decimal" required value="${esc(toNum(r.brokerage) || '')}"></div></div>
+        <p class="small muted">Agreement value ${inr(r.agreement_value)}.</p>`, async (v) => { await api('/api/partners', { action: 'amount', bookingId: r.booking_id, ...v }); partners(); });
+      const pay = a === 'payment';
+      dialog(`<h2>${pay ? 'Brokerage paid' : 'Brokerage bill received'} · ${esc(r.unit_no)} · ${esc(r.cp_name || '')}</h2>
+        <p class="muted">Brokerage ${inr(r.brokerage)} · paid so far ${inr(toNum(r.paid) + toNum(r.paid_before))} · left ${inr(r.balance)}${pay && !r.eligible ? ` · <b class="bad-t">not due yet (${esc(r.why)})</b>` : ''}</p>
+        <div class="row"><div><label>Date</label><input type="date" name="date" max="${todayIso()}" value="${todayIso()}" required></div><div><label>Amount (₹)</label><input name="amount" inputmode="decimal" required value="${esc(r.balance || '')}"></div></div>
+        <div class="row"><div><label>${pay ? 'UTR / cheque no.' : 'Bill / invoice no.'}</label><input name="reference" required></div><div><label>Note</label><input name="note"></div></div>
+        ${pay && !r.eligible ? '<label class="check"><input type="checkbox" name="override"> Management has approved paying this early</label>' : ''}`,
+      async (v) => { await api('/api/partners', { action: a, bookingId: r.booking_id, ...v, override: v.override === 'on' }); toast('Saved.'); partners(); });
+    }));
   }
 
   // ---------- import from the CRM sheet ----------
