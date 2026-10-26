@@ -130,7 +130,7 @@ module.exports = route({
       // Test version: the registers are replaced with the Receipt and Payment Registers exported from Tally.
       need('accounts.manage');
       if (process.env.ERP_LIVE === '1') throw fail(403, 'The ERP is live: the accounts are kept in the ERP now.');
-      const files = (Array.isArray(b.files) ? b.files : []).slice(0, 4).map((f) => ({ name: str(f.name, 200), buffer: Buffer.from(String(f.data || ''), 'base64') }));
+      const files = (Array.isArray(b.files) ? b.files : []).filter((f) => f && f.data).slice(0, 4).map((f) => ({ name: str(f.name, 200), buffer: Buffer.from(String(f.data || ''), 'base64') }));
       if (files.length < 2 || files.some((f) => !f.buffer.length)) throw fail(400, 'Choose both Tally files: the Receipt Register and the Payment Register (.xlsx).');
       const p = tally.parse(files, today());
       if (b.action === 'tally-preview') return res.json({ summary: p.summary, registers: p.registers, problems: p.problems.slice(0, 50) });
