@@ -120,6 +120,7 @@
     { group: 'Accounts' },
     { key: 'acc', label: 'To Do', show: () => can('accounts.view') },
     { key: 'balances', label: 'Daily Bank Balance', show: () => can('accounts.view') },
+    { key: 'bankauto', label: 'Bank Auto Check', show: () => can('accounts.view') },
     { key: 'reg-receipts', label: 'Receipts (bank)', show: () => can('accounts.view') },
     { key: 'reg-payments', label: 'Payments Out', show: () => can('accounts.view') },
     { key: 'reg-pdc', label: 'PDC', show: () => can('accounts.view') },
@@ -131,6 +132,7 @@
     { key: 'accreports', label: 'Reports & Tally', show: () => can('accounts.view') },
     { key: 'checks', label: 'Checks', show: () => can('accounts.view') },
     { key: 'accsetup', label: 'Banks, heads & import', show: () => can('accounts.manage') },
+    { key: 'ca', label: 'CA / Tax', show: () => can('ca.view'), href: () => '/ca' },
     { group: 'Set-up' },
     { key: 'projects', label: 'Companies & projects', show: () => true },
     { key: 'plans', label: 'Payment plans', show: () => true },
@@ -138,7 +140,7 @@
     { key: 'users', label: 'Logins', show: () => can('users.manage') },
     { key: 'audit', label: 'Audit log', show: () => can('audit.view') },
   ];
-  const DETAIL = { booking: 'bookings', statement: 'ledgers', run: 'demands' };
+  const DETAIL = { booking: 'bookings', statement: 'ledgers', run: 'demands', bankauto: 'bankauto' };
   let projectList = null, proj = null;
   const store = { get: (k) => { try { return localStorage.getItem(k); } catch { return null; } }, set: (k, v) => { try { localStorage.setItem(k, v); } catch {} } };
 
@@ -167,7 +169,7 @@
     $('#cpw').onclick = () => changePassword(false);
     if ($('#proj')) $('#proj').onchange = (e) => { proj = +e.target.value; store.set('erp_project', proj); shell(); };
     if (/^reg-/.test(page || '') && can('accounts.view')) { try { await accRegister(page.slice(4)); } catch (e) { $('#page').innerHTML = `<div class="err">${esc(e.message)}</div>`; } return; }
-    const fn = { home, projects, plans, users, audit, units, bookings, demands, receipts, ledgers, letters, followups, verify, prices, partners, acc: accTodo, balances: accBalances, accreports: accReports, checks: accChecks, accsetup: accSetup, import: importPage, booking: bookingPage, statement: statementPage, run: runPage };
+    const fn = { home, projects, plans, users, audit, units, bookings, demands, receipts, ledgers, letters, followups, verify, prices, partners, acc: accTodo, balances: accBalances, bankauto: bankAuto, accreports: accReports, checks: accChecks, accsetup: accSetup, import: importPage, booking: bookingPage, statement: statementPage, run: runPage };
     const key = DETAIL[page] && arg ? page : cur.key;
     try { await fn[key](arg ? +arg : undefined); } catch (e) { $('#page').innerHTML = `<div class="err">${esc(e.message)}</div>`; }
   }
@@ -222,6 +224,7 @@
       { title: 'Data to verify', sub: open ? `${open} items from the import still to check` : 'Items from the import to check and close', icon: 'check', tone: '#B7791F', href: '#/verify', show: anyOf('inventory.view', 'ledger.view') },
       { title: 'Accounts', sub: 'To Do, Daily Bank Balance, Receipts, Payments Out, PDC, TDS, SRA rent, GST, SDR and Tally', icon: 'book', tone: '#2B5C8A', href: '#/acc', show: can('accounts.view') },
       { title: 'Accounts', sub: 'Bank, payments, SRA rent, GST, TDS and Tally', icon: 'book', tone: '#2B5C8A', soon: true, show: !can('accounts.view') },
+      { title: 'CA / Tax', sub: 'GST, TDS payable, RERA quarterly, cash flow statement and compliance, for the CA', icon: 'chart', tone: '#7A5C99', href: '/ca', show: can('ca.view') },
       { title: 'Contractor billing', sub: 'Work orders, running bills and retention', icon: 'hammer', tone: '#B7791F', soon: true, show: true },
       { title: 'Purchase', sub: 'Indents, purchase orders and site stock', icon: 'cart', tone: '#117A65', soon: true, show: true },
       { title: 'HR & Admin', sub: 'Staff records, leave, letters and HR policies', icon: 'users', tone: '#7A5C99', soon: true, show: true },
@@ -967,7 +970,7 @@
 
   async function accTodo() {
     const d = await api('/api/accounts?view=todo');
-    const go2 = (x) => (x.go === 'balances' ? '#/balances' : x.go === 'checks' ? '#/checks' : '#/reg-' + x.go);
+    const go2 = (x) => (x.go === 'balances' ? '#/balances' : x.go === 'checks' ? '#/checks' : x.go === 'bankauto' ? '#/bankauto' : '#/reg-' + x.go);
     const B = d.balances;
     $('#page').innerHTML = `<div class="page-head"><div><h1>Accounts · To Do</h1><p class="muted">What is missing today. Work down the list every day: green = done, red = needs you. Tap a line to go there. Updated ${fmtD(d.today)}.</p></div></div>
       <div class="panel"><div class="table-wrap"><table><tr><th>Task</th><th class="num">Number</th><th>What to do</th></tr>
@@ -1005,6 +1008,62 @@
         <div class="row"><div><label>Receipts (₹)</label><input name="receipts" inputmode="decimal"></div><div><label>Payments (₹)</label><input name="payments" inputmode="decimal"></div></div><label>Remarks</label><input name="remarks">`,
       async (x) => { await api('/api/accounts', { action: 'save', reg: 'daily', data: { ...x, entered_by: me.name } }); toast('Entry added.'); accBalances(d.date); });
     };
+  }
+
+  async function bankAuto(runId) {
+    const [d, pd] = await Promise.all([api('/api/bank-auto'), api('/api/bank-auto?view=pdc')]);
+    const run = runId ? (await api('/api/bank-auto?run=' + runId)).run : d.last;
+    const S = d.settings || {};
+    const ist = (t) => (t ? new Date(t).toLocaleString('en-IN', { day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit', timeZone: 'Asia/Kolkata' }) : '');
+    const trig = { schedule: '3:10 pm (automatic)', drive: 'Run from Drive', upload: 'Uploaded' };
+    const amt = (v) => (v == null || v === '' ? '' : inr(v));
+    const dd = (v) => (/^\d{4}-\d{2}-\d{2}$/.test(String(v || '')) ? fmtD(v) : esc(v || ''));
+    const list = (rows, empty) => rows && rows.length ? `<div class="table-wrap acc-grid"><table><tr><th>What</th><th>Bank</th><th>Date</th><th class="num">Amount</th><th>Bank description</th><th>Where</th><th>What to do</th></tr>
+      ${rows.map((x) => `<tr><td><b>${esc(x.what)}</b></td><td>${esc(x.bank || '')}</td><td>${dd(x.date)}</td><td class="num">${amt(x.amount)}</td><td class="small">${esc(x.description || '')}</td><td class="small">${esc(x.where || '')}</td><td class="small">${esc(x.todo || '')}</td></tr>`).join('')}</table></div>` : `<p class="muted">${empty}</p>`;
+    const head = run ? (run.ok ? `Run ${ist(run.run_at)} (${esc(trig[run.trigger] || run.trigger)}${run.by_name ? ', ' + esc(run.by_name) : ''}). Added <b>${run.added.receipts || 0}</b> receipts and <b>${run.added.payments || 0}</b> payments (Source = Bank statement auto). ${run.updated ? run.updated + ' marked Bounced. ' : ''}${run.differences.length} differences below. Lines from ${fmtD(S.statement_start || '2026-10-01')} onwards are checked.`
+      : `<span class="bad-t">Run ${ist(run.run_at)} failed: ${esc(run.error || '')}</span>`) : 'No run yet.';
+    const pdcRows = pd.due || [];
+    $('#page').innerHTML = `<div class="page-head"><div><h1>Bank Auto Check</h1><p class="muted">Bank statements matched to Receipts and Payments Out every day at 3:10 pm (upload the statements to the Drive folder "Daily Bank Statements - upload here" by 3 pm). Lines missing from the ERP are added with Source "Bank statement auto" and the remark "Added from bank statement. Fill head and payee."; the Daily Bank Balance is filled from each statement's own totals, and the statement's closing balance goes into Balance per Bank. Nothing is ever deleted.</p></div>
+        <div class="actions" style="margin:0">${d.can.enter ? `<button id="runDrive" ${d.google ? '' : 'disabled'}>Run now from Drive</button><button class="ghost" id="upl">Upload statements</button><input type="file" id="uplf" accept=".xlsx" multiple hidden>` : ''}</div></div>
+      ${runId ? `<p><a href="#/bankauto">← Latest run</a></p>` : ''}
+      <div class="panel"><p style="margin:0">${head}</p></div>
+      ${run && run.ok ? `<div class="panel"><h2>Statements</h2><div class="table-wrap acc-grid"><table><tr><th>Bank</th><th>File</th><th>Statement from</th><th>Statement up to</th><th class="num">Lines checked</th><th class="num">Receipts added</th><th class="num">Payments added</th><th class="num">Marked bounced</th><th class="num">Closing per statement</th><th>Note</th></tr>
+          ${run.banks.map((b) => `<tr><td><b>${esc(b.bank)}</b></td><td class="small">${esc(b.file)}</td><td>${fmtD(b.from)}</td><td>${fmtD(b.to)}</td><td class="num">${b.lines}</td><td class="num">${b.receiptsAdded}</td><td class="num">${b.paymentsAdded}</td><td class="num">${b.rowsUpdated || ''}</td><td class="num">${amt(b.closing)}</td><td class="small">${esc(b.note || '')}</td></tr>`).join('')}</table></div>
+          ${run.files.filter((f) => f.error || f.skipped || f.undated).map((f) => `<p class="small ${f.error ? 'bad-t' : 'muted'}">${esc(f.file)}: ${esc(f.error || f.skipped || `${f.undated} lines had "########" instead of a date; they were dated from the description or the line above.`)}</p>`).join('')}</div>
+        <div class="panel"><h2>Differences (${run.differences.length})</h2>${list(run.differences, 'None: every statement line from the start date is in the ERP, and every ERP entry is on its statement.')}</div>
+        <div class="panel"><h2>New bank receipts the team must tag (${run.tagging.length})</h2><p class="small muted">Receipts added from the statement where the flat could not be filled. Open Receipts (bank), find the Receipt ID and fill Cash Flow Head, Payment Head, Unit and Payer.</p>${list(run.tagging, 'Nothing to tag.')}</div>
+        ${run.added_rows && run.added_rows.length ? `<details class="panel"><summary><b>Rows added in this run (${run.added_rows.length})</b></summary><div class="table-wrap acc-grid"><table><tr><th>ID</th><th>Register</th><th>Bank</th><th>Date</th><th class="num">Amount</th><th>Unit</th><th>Description</th></tr>
+          ${run.added_rows.map((r) => `<tr><td>${esc(r.ref)}</td><td>${r.side === 'receipt' ? 'Receipts' : 'Payments Out'}</td><td>${esc(r.bank)}</td><td>${fmtD(r.date)}</td><td class="num">${inr(r.amount)}</td><td>${esc(r.unit || '')}</td><td class="small">${esc(r.description)}</td></tr>`).join('')}</table></div></details>` : ''}` : ''}
+      <div class="two"><div class="panel"><h2>Runs</h2><div class="table-wrap"><table><tr><th>Run (IST)</th><th>How</th><th class="num">Receipts added</th><th class="num">Payments added</th><th class="num">Differences</th></tr>
+          ${d.runs.map((r) => `<tr class="click" data-run="${r.id}"><td>${ist(r.run_at)}</td><td class="small">${esc(trig[r.trigger] || r.trigger)}${r.by_name ? ' · ' + esc(r.by_name) : ''}</td>${r.ok ? `<td class="num">${r.added.receipts || 0}</td><td class="num">${r.added.payments || 0}</td><td class="num">${r.n_diff}</td>` : `<td colspan="3" class="bad-t small">${esc(r.error || 'Failed')}</td>`}</tr>`).join('') || '<tr><td colspan="5" class="muted">No runs yet.</td></tr>'}</table></div></div>
+        <div class="panel"><h2>PDC reminder emails</h2><p class="small muted">Every morning at about 9:20 am: an email for each cheque due in 2 days (48-hour reminder) and in 1 day (24-hour reminder), to ${esc(S.pdc_to || '')}${S.pdc_cc ? ', copy to ' + esc(S.pdc_cc) : ''}. The date sent is written on the PDC row. ${pd.test ? `<b>Test version: the emails go only to the test address${pd.to.length ? ' (' + esc(pd.to.join(', ')) + ')' : ''}.</b>` : ''}</p>
+          ${!pd.mail ? '<p class="bad-t small">Email is not set up yet (SMTP app password), so reminders cannot be sent.</p>' : ''}
+          <div class="table-wrap"><table><tr><th>Reminder</th><th>Cheque issued to</th><th class="num">Amount</th><th>Due</th></tr>${pdcRows.map((x) => `<tr><td>${x.kind === '48h' ? '48-hour' : '24-hour'}</td><td>${esc(x.issued_to)}</td><td class="num">${inr(x.amount)}</td><td>${fmtD(x.due_date)}</td></tr>`).join('') || '<tr><td colspan="4" class="muted">No reminder due today.</td></tr>'}</table></div>
+          ${d.can.manage && pdcRows.length && pd.mail ? '<div class="actions"><button class="ghost" id="pdcSend">Send today\'s reminders now</button></div>' : ''}</div></div>
+      ${d.can.manage ? `<details class="panel"><summary><b>Settings</b></summary><form id="bas">
+        <div class="row"><div><label>Check statement lines from</label><input type="date" name="statement_start" value="${esc(S.statement_start || '')}"></div><div><label>PDC reminders to</label><input name="pdc_to" value="${esc(S.pdc_to || '')}"></div></div>
+        <div class="row"><div><label>Drive folders read (links or IDs, comma between)</label><input name="statement_folders" value="${esc(S.statement_folders || '')}"></div><div><label>PDC reminders copy to</label><input name="pdc_cc" value="${esc(S.pdc_cc || '')}"></div></div>
+        <p class="small muted">Each folder must be shared with ${esc(d.serviceEmail || 'the ERP\'s Google account')} as Viewer. The newest file for each bank is read (one level of sub-folders too). The bank is told from the file name: 8650, Misc / 9046, 0700 / 100%, 0131 / GST, 0111 / SDR, 0501 / 30%, 0800 / 70%.</p>
+        <div class="actions"><button>Save settings</button></div></form></details>` : ''}`;
+    document.querySelectorAll('tr[data-run]').forEach((tr) => (tr.onclick = () => go('#/bankauto/' + tr.dataset.run)));
+    const busy = (b, on) => { if (b) { b.disabled = on; b.textContent = on ? 'Working…' : b.dataset.l || b.textContent; } };
+    const done = (r) => { toast(`Added ${r.added.receipts} receipts and ${r.added.payments} payments; ${r.differences.length} differences.`); go('#/bankauto'); };
+    if ($('#runDrive')) { const b = $('#runDrive'); b.dataset.l = b.textContent; b.onclick = async () => { busy(b, true); try { done(await api('/api/bank-auto', { action: 'drive' })); } catch (e) { alert(e.message); busy(b, false); } }; }
+    if ($('#upl')) {
+      const b = $('#upl'); b.dataset.l = b.textContent;
+      b.onclick = () => $('#uplf').click();
+      $('#uplf').onchange = async (ev) => {
+        const fl = [...ev.target.files]; if (!fl.length) return;
+        if (fl.reduce((a, f) => a + f.size, 0) > 3e6) return alert('Upload at most 3 MB at a time (upload the statements a few at a time).');
+        busy(b, true);
+        try {
+          const files = await Promise.all(fl.map((f) => new Promise((res, rej) => { const r = new FileReader(); r.onload = () => res({ name: f.name, data: String(r.result).split(',')[1] }); r.onerror = rej; r.readAsDataURL(f); })));
+          done(await api('/api/bank-auto', { action: 'upload', files }));
+        } catch (e) { alert(e.message); busy(b, false); }
+      };
+    }
+    if ($('#pdcSend')) $('#pdcSend').onclick = async () => { try { const r = await api('/api/bank-auto', { action: 'pdc-send' }); toast(r.reason || `Sent ${r.sent.length} reminder${r.sent.length === 1 ? '' : 's'}.`); bankAuto(); } catch (e) { alert(e.message); } };
+    if ($('#bas')) $('#bas').onsubmit = async (ev) => { ev.preventDefault(); try { await api('/api/bank-auto', { action: 'settings', ...Object.fromEntries(new FormData(ev.target)) }); toast('Settings saved.'); bankAuto(); } catch (e) { showErr(ev.target, e); } };
   }
 
   async function accChecks() {

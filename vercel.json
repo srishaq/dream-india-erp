@@ -7,7 +7,7 @@
   },
   "headers": [
     {
-      "source": "/((?!dashboard).*)",
+      "source": "/((?!dashboard|ca$|ca\\.html).*)",
       "headers": [
         {
           "key": "X-Frame-Options",
@@ -36,7 +36,7 @@
       ]
     },
     {
-      "source": "/dashboard(.html)?",
+      "source": "/(dashboard|ca)(.html)?",
       "headers": [
         {
           "key": "X-Frame-Options",
@@ -63,6 +63,16 @@
           "value": "default-src 'self'; img-src 'self' data:; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src https://fonts.gstatic.com; script-src 'self' https://cdnjs.cloudflare.com; connect-src 'self'; frame-ancestors 'none'; base-uri 'none'; form-action 'self'"
         }
       ]
+    }
+  ],
+  "crons": [
+    {
+      "path": "/api/cron?job=bank",
+      "schedule": "40 9 * * *"
+    },
+    {
+      "path": "/api/cron?job=pdc",
+      "schedule": "50 3 * * *"
     }
   ]
 }

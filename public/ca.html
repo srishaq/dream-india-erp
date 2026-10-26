@@ -1,0 +1,226 @@
+<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"><meta name="robots" content="noindex,nofollow"><meta name="theme-color" content="#140C59"><link rel="icon" href="/icon.svg"><title>CA / Tax · Dream India ERP</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Schibsted+Grotesk:wght@400;500;600;700&display=swap">
+<style>
+/* CA page: same layout and design as the Accounts page. Layout and design match the CRM home page (portal.dreamindiarealty.com): ink header with tab nav and accent underline, paper ground, joined stat strips, white panels. */
+:root{
+  --ink:#140C59; --ink2:#241C6B; --accent:#64C2E6; --paper:#F3F4F1; --card:#FFFFFF; --line:#D9DDD6; --muted:#5E6A72; --text:#140C59;
+  --in:#117A65; --in-tint:#EEF6F3; --out:#B42318; --out-tint:#FBF0EE; --navy:#140C59; --navy-tint:#F0EFF7; --due:#B7791F;
+  --banner:#FFF4DC; --head:#F7F8F5; --link:#2B5C8A; --navtxt:#A9B4E0; --navline:#3B3486; --on-navy:#FFFFFF; --r:10px;
+  --font:"Schibsted Grotesk",system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;
+}
+@media (prefers-color-scheme: dark){:root:not([data-theme="light"]){
+  --ink:#0B0733; --ink2:#1A1450; --paper:#100E22; --card:#1A1830; --line:#2E2B4A; --muted:#A3A2B8; --text:#E4E3EC;
+  --in:#6CC3A1; --in-tint:#17332A; --out:#EE8A78; --out-tint:#3A1F1C; --navy:#2C2380; --navy-tint:#262052; --due:#E0B566;
+  --banner:#352B17; --head:#211E3A; --link:#9DB7F0; color-scheme:dark}}
+:root[data-theme="dark"]{
+  --ink:#0B0733; --ink2:#1A1450; --paper:#100E22; --card:#1A1830; --line:#2E2B4A; --muted:#A3A2B8; --text:#E4E3EC;
+  --in:#6CC3A1; --in-tint:#17332A; --out:#EE8A78; --out-tint:#3A1F1C; --navy:#2C2380; --navy-tint:#262052; --due:#E0B566;
+  --banner:#352B17; --head:#211E3A; --link:#9DB7F0; color-scheme:dark}
+*{box-sizing:border-box}
+html,body{background:var(--paper)}
+body{color:var(--text);font-family:var(--font);font-size:15px;line-height:1.45}
+a{color:var(--link)}
+header.top{position:sticky;top:0;z-index:20;background:var(--ink);color:#fff}
+.bar{max-width:1320px;margin:0 auto;padding:12px 20px 4px;display:flex;flex-wrap:wrap;align-items:center;gap:8px 18px}
+.brand{display:flex;align-items:baseline;gap:12px;flex-wrap:wrap}
+.logo{font-weight:700;font-size:18px;color:#fff;letter-spacing:-.01em}
+.proj{font-size:13px;color:var(--navtxt)}
+.sync{margin-left:auto;display:flex;align-items:center;gap:10px;font-size:13px;color:var(--navtxt)}
+.sync .dot{width:8px;height:8px;border-radius:50%;background:#4CC38A;flex:none}
+.sync button{font:inherit;font-size:13px;font-weight:600;color:#fff;background:transparent;border:1px solid var(--navline);border-radius:8px;padding:5px 12px;cursor:pointer}
+.sync button:hover{background:var(--ink2)}
+nav.tabs{max-width:1320px;margin:0 auto;padding:0 6px;display:flex;overflow-x:auto;scrollbar-width:none}
+nav.tabs a{color:var(--navtxt);padding:10px 14px 11px;border-bottom:3px solid transparent;text-decoration:none;white-space:nowrap;font-size:14px;font-weight:600}
+nav.tabs a:hover{color:#fff}
+nav.tabs a.on{color:#fff;border-bottom-color:var(--accent)}
+.wrap{max-width:1320px;margin:0 auto}
+main{display:flex;flex-direction:column;gap:22px;padding:22px 20px 60px}
+section[id],div[id].panel{scroll-margin-top:110px}
+h2{font-size:24px;font-weight:700;color:var(--text);margin:0;letter-spacing:-.01em;text-wrap:balance}
+h2 small{font-weight:400;font-size:14px;color:var(--muted);letter-spacing:0;margin-left:6px}
+.sub{margin:2px 0 0;color:var(--muted);font-size:14px}
+section.band{display:flex;flex-direction:column;gap:10px} section.band[hidden]{display:none}
+.panel{background:var(--card);border:1px solid var(--line);border-radius:var(--r);padding:16px;display:flex;flex-direction:column;gap:14px;min-width:0}
+.panel h2{font-size:17px}
+/* joined stat strip, like the CRM's .figs */
+.cards{display:grid;grid-template-columns:repeat(auto-fit,minmax(190px,1fr));background:var(--card);border:1px solid var(--line);border-radius:var(--r);overflow:hidden}
+.card{padding:14px 16px;box-shadow:0 0 0 .5px var(--line);display:flex;flex-direction:column;gap:2px;min-width:0}
+.card .l{order:2;font-size:13px;color:var(--muted)}
+.card .v{order:1;font-size:24px;font-weight:700;color:var(--text);letter-spacing:-.01em;line-height:1.2;font-variant-numeric:tabular-nums;white-space:nowrap}
+.card .n{order:3;font-size:12px;color:var(--muted)}
+.card.in .v{color:var(--in)} .card.out .v{color:var(--out)}
+.card.tint.in{background:var(--in-tint)} .card.tint.out{background:var(--out-tint)} .card.tint.nv{background:var(--navy-tint)}
+.card.wide{grid-column:span 2}
+@media (max-width:560px){.card.wide{grid-column:auto}}
+.bal{display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:14px}
+.bcard{border:1px solid var(--line);border-radius:var(--r);padding:14px 16px;display:flex;flex-direction:column;gap:2px;min-width:0;background:var(--card)}
+.bcard.dark{background:var(--ink);border-color:var(--ink);color:#fff}
+.bcard .l{font-size:13px;color:var(--muted)}
+.bcard.dark .l{color:var(--navtxt)}
+.bcard .v{font-size:28px;font-weight:700;color:var(--text);letter-spacing:-.01em;line-height:1.2;font-variant-numeric:tabular-nums}
+.bcard.dark .v{color:#fff}
+.bcard .n{font-size:12px;color:var(--muted);padding-bottom:8px}
+.bcard.dark .n{color:var(--navtxt)}
+.bcard .row{display:flex;justify-content:space-between;gap:12px;padding:7px 0;border-top:1px solid var(--line);color:var(--text);font-size:14px}
+.bcard.dark .row{border-top-color:var(--navline);color:#fff}
+.bcard .row b{font-variant-numeric:tabular-nums;white-space:nowrap;font-weight:600}
+.check{background:var(--banner);border:1px solid #EAD9AE;border-radius:var(--r);padding:12px 16px;color:var(--text);font-size:14px}
+@media (prefers-color-scheme: dark){:root:not([data-theme="light"]) .check{border-color:#5A4A24}}
+.tbl{border:1px solid var(--line);border-radius:8px;overflow-x:auto}
+table{border-collapse:collapse;width:100%;font-size:14px}
+th{background:var(--head);color:var(--muted);font-weight:600;font-size:13px;text-align:left;padding:9px 12px;border-bottom:1px solid var(--line);white-space:nowrap}
+td{white-space:nowrap;padding:9px 12px;border-bottom:1px solid var(--line);color:var(--text);vertical-align:top}
+tr:last-child td{border-bottom:0}
+.num{text-align:right;font-variant-numeric:tabular-nums;white-space:nowrap}
+td.g{color:var(--in);font-weight:600} td.r{color:var(--out);font-weight:600}
+tr.grp{cursor:pointer} tr.grp:hover td{background:var(--head)} tr.grp td:first-child b{font-weight:600}
+tr.grp td:first-child::before{content:'▸';display:inline-block;width:18px;color:var(--muted);font-size:12px;transition:transform .15s}
+tr.grp.open td:first-child::before{transform:rotate(90deg)}
+tr.grp.nokids td:first-child::before{content:'';}
+tr.kid td{background:var(--head);font-size:13px}
+tr.kid td:first-child{padding-left:36px;color:var(--muted)}
+tr.muted td{color:var(--muted)}
+.cnt{color:var(--muted);font-weight:400;font-size:13px}
+.desc{color:var(--muted);font-size:13px;min-width:280px;max-width:460px;white-space:normal;word-break:break-word}
+.typ-in{color:var(--in);font-weight:600} .typ-out{color:var(--out);font-weight:600}
+.legend{display:flex;justify-content:center;gap:18px;font-size:13px;color:var(--muted)}
+.legend i{display:inline-block;width:12px;height:12px;border-radius:3px;margin-right:6px;vertical-align:-1px}
+svg text{font-family:var(--font);fill:var(--muted);font-size:12px}
+.filters{display:flex;flex-wrap:wrap;gap:8px}
+input[type=search],select{font:inherit;font-size:14px;color:var(--text);background:var(--card);border:1px solid var(--line);border-radius:8px;padding:7px 10px}
+input[type=search]{width:260px;max-width:100%}
+button.more{font:inherit;font-size:13px;font-weight:600;color:var(--link);background:none;border:0;padding:0;cursor:pointer;align-self:flex-start}
+button.more:hover{text-decoration:underline}
+th.s{cursor:pointer} th.s:hover{color:var(--text)}
+.prog{display:inline-block;width:56px;height:6px;background:var(--line);border-radius:3px;vertical-align:middle;margin-right:8px;overflow:hidden}
+.prog i{display:block;height:100%;background:var(--in)}
+.two{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,480px),1fr));gap:14px}
+.foot{font-size:12px;color:var(--muted);text-align:center}
+a:focus-visible,button:focus-visible,input:focus-visible,select:focus-visible,tr.grp:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+@media (max-width:600px){main{padding:16px 16px 48px}.card .v{font-size:21px}.bcard .v{font-size:24px}.sync{margin-left:0}}
+@media (prefers-reduced-motion:reduce){*{transition:none!important}}
+
+.brand img{height:30px;width:auto;display:block}
+header.top{padding-top:env(safe-area-inset-top)}
+.sync #reload{white-space:nowrap}
+
+.brand img{height:30px;width:auto;display:block}
+header.top{padding-top:env(safe-area-inset-top)}
+.sync #reload{white-space:nowrap}
+.per,.per2{display:flex;align-items:center;gap:6px;font-size:13px;color:var(--navtxt)}
+.per select{background:var(--ink2);color:#fff;border-color:var(--navline);padding:5px 8px;font-size:13px}
+.per2{color:var(--muted);font-size:14px}
+.card.need .v{color:var(--due)} .card.need{background:var(--banner)}
+.card.nv .v{color:var(--text)}
+tr.tot td{font-weight:700;background:var(--head)}
+tr.tot.big td{font-size:15px;border-top:2px solid var(--line)}
+tr.hd td{font-weight:700;background:var(--navy-tint);color:var(--text)}
+tr.sub2 td{color:var(--muted);font-size:13px;font-weight:600}
+td.ind{padding-left:28px}
+tr.od td{color:var(--out)}
+tr.grp2 td{background:var(--head)}
+tr.kid td{font-size:13px} tr.kid td:nth-child(2){color:var(--text)}
+button.btn{font:inherit;font-size:13.5px;font-weight:600;border:1px solid var(--line);background:var(--card);color:var(--text);border-radius:8px;padding:7px 12px;cursor:pointer}
+#tInd td:first-child,#tDir td:first-child{white-space:normal;min-width:220px}
+@media (max-width:600px){.per{order:3}}
+.back{color:#fff;font-weight:600;font-size:14px;text-decoration:none;border:1px solid var(--navline);border-radius:8px;padding:5px 12px}.back:hover{background:var(--ink2)}
+#user{font-size:13px;color:var(--navtxt)}
+</style>
+</head><body>
+<header class="top">
+  <div class="bar">
+    <div class="brand"><img src="/logo.svg" alt="Dream India Realty" width="115" height="30"></div>
+    <a class="back" href="/#/home">← ERP</a><span class="proj">CA / Tax · Dream Signature</span>
+    <div class="sync"><label class="per">Period <select id="per" aria-label="Period"></select></label><span class="dot" aria-hidden="true"></span><span><span id="asof"></span> · <span id="live">Loading…</span></span><button id="reload" type="button" hidden>Refresh</button><div id="user"></div></div>
+  </div>
+  <nav class="tabs" aria-label="Sections">
+    <a href="#gst" class="on">GST</a><a href="#tdsp">TDS payable</a><a href="#rera">RERA</a><a href="#cash">Cash flow</a><a href="#comp">Compliance</a><a href="#ctds">Customer TDS</a><a href="#nonrev">Non-revenue receipts</a>
+  </nav>
+</header>
+
+<main class="wrap">
+  <div class="check" id="warn" hidden></div>
+
+  <section class="band" id="gst">
+    <h2>GST <small>consideration received from customers, with the TDS they deducted</small></h2>
+    <div class="cards" id="cGst"></div>
+    <div class="panel">
+      <div><h2>Month by month</h2><p class="sub" id="gstSub"></p></div>
+      <div class="tbl"><table id="tGst"></table></div>
+    </div>
+  </section>
+
+  <section class="band" id="tdsp">
+    <h2>TDS payable <small>TDS we deduct from vendors, contractors, consultants, CPs, landlords and staff</small></h2>
+    <div class="cards" id="cTdsp"></div>
+    <div class="panel">
+      <div><h2>By TDS section</h2><p class="sub">Payments from Payments Out, grouped by the TDS section set for each cash flow head (Accounts → Banks, heads &amp; import). Expected TDS is an estimate at the standard rate, worked back from the net amount paid. Thresholds (194Q above ₹50 lakh per supplier, 194-I above ₹50,000 a month) are not applied, so the estimate is on the high side.</p></div>
+      <div class="tbl"><table id="tTdsp"></table></div>
+    </div>
+  </section>
+
+  <section class="band" id="rera">
+    <div style="display:flex;flex-wrap:wrap;justify-content:space-between;gap:12px;align-items:flex-end">
+      <div><h2>RERA <small>bookings, collections and balance receivable, for the quarterly report</small></h2></div>
+      <label class="per2">As of <select id="asOf" aria-label="RERA report date"></select></label>
+    </div>
+    <div class="cards" id="cRera"></div>
+    <div class="panel">
+      <div style="display:flex;flex-wrap:wrap;justify-content:space-between;gap:12px;align-items:flex-end">
+        <div><h2>Units</h2><p class="sub" id="reraSub"></p></div>
+        <div class="filters">
+          <input type="search" id="rq" placeholder="Search unit or buyer" aria-label="Search units">
+          <select id="rOk" aria-label="In RERA account"><option value="">All units</option><option value="Yes">In RERA account: Yes</option><option value="No">In RERA account: No</option></select>
+          <button class="btn" id="reraAll" type="button">Open full report</button>
+        </div>
+      </div>
+      <div class="tbl"><table id="tRera"></table></div>
+      <button class="more" id="reraMore" type="button"></button>
+    </div>
+  </section>
+
+  <section class="band" id="cash">
+    <h2>Cash flow statement <small id="cashSub"></small></h2>
+    <div class="two">
+      <div class="panel">
+        <div><h2>Indirect method</h2><p class="sub">Built from the bank entries. No sales are booked as revenue until possession, so the profit line is the indirect expenses, and construction spend is shown as the increase in inventory. Unpaid bills are not included until their bill details are entered on the payment.</p></div>
+        <div class="tbl"><table id="tInd"></table></div>
+      </div>
+      <div class="panel">
+        <div><h2>Direct method</h2><p class="sub">Money in and out by cash flow head. Tap a line for its entries.</p></div>
+        <div class="tbl"><table id="tDir"></table></div>
+      </div>
+    </div>
+  </section>
+
+  <section class="band" id="comp">
+    <h2>Compliance calendar <small>from the Compliance Calendar register</small></h2>
+    <div class="cards" id="cComp"></div>
+    <div class="panel">
+      <div><h2>Open and recent items</h2><p class="sub">Overdue first, then the next due dates. Mark an item Complied in Accounts → Compliance Calendar, with the date and acknowledgement number.</p></div>
+      <div class="tbl"><table id="tComp"></table></div>
+      <button class="more" id="compMore" type="button"></button>
+    </div>
+  </section>
+
+  <section class="band" id="ctds">
+    <h2>TDS deducted by customers <small>section 194-IA; counted as money received from the customer for GST and RERA</small></h2>
+    <div class="cards" id="cCtds"></div>
+  </section>
+
+  <section class="band" id="nonrev">
+    <h2>Non-revenue receipts <small>money in that is not from customers, by category</small></h2>
+    <div class="cards" id="cNon"></div>
+    <div class="panel">
+      <div><h2>By category and head</h2><p class="sub">Each cash flow head's category is set on its head (Accounts → Banks, heads &amp; import). Heads named after a person need a proper head (loan, capital or investment).</p></div>
+      <div class="tbl"><table id="tNon"></table></div>
+    </div>
+  </section>
+
+  <p class="foot">Every number comes from the ERP's accounts (Receipts, Payments Out, TDS Tracker, Compliance Calendar and the bookings), worked out when the page opens. Bounced cheques are left out. How each head is treated is set on the head itself.</p>
+</main>
+
+<script src="/drill.js"></script>
+<script src="/page-ca.js"></script>
+</body></html>
