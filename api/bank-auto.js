@@ -35,15 +35,17 @@ module.exports = route({
       const files = (Array.isArray(b.files) ? b.files : []).slice(0, 10).map((f) => ({ name: str(f.name, 200), buffer: Buffer.from(String(f.data || ''), 'base64') }));
       if (!files.length || files.some((f) => !f.buffer.length)) throw fail(400, 'Choose the statement files (.xlsx) to upload.');
       if (files.some((f) => !/\.xlsx$/i.test(f.name))) throw fail(400, 'Statements must be Excel .xlsx files.');
-      return res.json(await ba.runFiles(files, { trigger: 'upload', user: u, apply: b.dryRun !== true }));
+      const compareFrom = b.compare ? (/^\d{4}-\d{2}-\d{2}$/.test(b.from || '') ? b.from : '2024-01-01') : null;
+      return res.json(await ba.runFiles(files, { trigger: 'upload', user: u, apply: b.dryRun !== true, compareFrom }));
     }
-    if (b.action === 'drive') {
+    if (b.action === 'drive' || b.action === 'compare') {
       need('accounts.enter');
+      const compareFrom = b.action === 'compare' ? (/^\d{4}-\d{2}-\d{2}$/.test(b.from || '') ? b.from : '2024-01-01') : null;
       if (process.env.STMT_FIXTURE_DIR && process.env.VERCEL !== '1') { // local tests only
         const fs = require('fs'), dir = process.env.STMT_FIXTURE_DIR;
-        return res.json(await ba.runFiles(fs.readdirSync(dir).filter((f) => f.endsWith('.xlsx')).map((f) => ({ name: f, buffer: fs.readFileSync(dir + '/' + f) })), { trigger: 'drive', user: u }));
+        return res.json(await ba.runFiles(fs.readdirSync(dir).filter((f) => f.endsWith('.xlsx')).map((f) => ({ name: f, buffer: fs.readFileSync(dir + '/' + f) })), { trigger: 'drive', user: u, compareFrom }));
       }
-      return res.json(await ba.runFromDrive({ trigger: 'drive', user: u }));
+      return res.json(await ba.runFromDrive({ trigger: 'drive', user: u, compareFrom }));
     }
     if (b.action === 'settings') {
       need('accounts.manage');

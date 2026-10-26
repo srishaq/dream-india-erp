@@ -211,6 +211,36 @@ let n = 0; const step = async (name, fn) => { await fn(); n++; console.log('  âœ
     const L = await admin('/api/accounts?view=lists'); assert.ok(L.banks.length > 0 && L.heads.length > 0);
     assert.equal((await admin('/api/ledger?project=' + sig.id)).status, before);
   });
+  await step('Tally: Receipt and Payment Registers replace the registers; comparing with a statement lists what differs', async () => {
+    const reg = (title, kind, vouchers) => makeXlsx('Sheet1', [['M/S. PRIME REALTORS'], ['Maharashtra,India'], [title], ['1-Apr-25 to 31-Mar-27'],
+      ['Date', 'Particulars', '', '', 'Vch Type', 'Vch No.', 'Debit', 'Credit'], ['', '', '', '', '', '', 'Amount', 'Amount'], ...vouchers.flat(), ['Total:', null, null, null, null, null, null, 1]]);
+    const R = reg('Receipt Register', 'Receipt', [
+      [['2026-10-05', 'A-1001 -Rukhsana Soheb Shaikh', '', '', 'Receipt', '1', null, 485700], ['', 'YES Bank MC A/c 092872500000700 - 100%', '', '', '', '', 485700, null]],
+      [['2026-10-20', 'B/1002 Somebody(Cancel Flat)', '', '', 'Receipt', '2', null, 100000], ['', 'UPI/Transaction Charges', '', '', '', '', 100, null], ['', 'YES Bank MC A/c 092872500000700 - 100%', '', '', '', '', 99900, null]],
+      [['2026-10-21', 'Investor Loan', '', '', 'Receipt', '3', null, 50000], ['', 'Cash', '', '', '', '', 50000, null]],
+    ]);
+    const P = reg('Payment Register', 'Payment', [
+      [['2026-10-15', 'A-1002 Abdul Ahad', '', '', 'Payment', '1', 150000, null], ['', 'YES Bank MC A/c 092872500000700 - 100%', '', '', '', '', null, 150000]],
+      [['2026-10-22', 'Skyway RMC', '', '', 'Payment', '2', 400000, null], ['', 'Yes Bank Ltd RERA 092872400000501 - 30%', '', '', '', '', null, 400000]],
+    ]);
+    const files = [{ name: 'Receipts.xlsx', data: b64(R) }, { name: 'Payments.xlsx', data: b64(P) }];
+    const pv = await admin('/api/accounts', { action: 'tally-preview', files });
+    assert.equal(pv.status, 200, pv.error); assert.equal(pv.summary.receipts, 3); assert.equal(pv.summary.payments, 2);
+    const im = await admin('/api/accounts', { action: 'tally-import', files });
+    assert.equal(im.ok, true, im.error);
+    const r = (await admin('/api/accounts?reg=receipts')).rows;
+    assert.equal(r.length, 3);
+    const a = r.find((x) => x.unit_no === 'A-1001'); assert.equal(a.payment_head, 'AV'); assert.equal(a.head, 'Receipts From Customers'); assert.equal(a.bank, 'Yes RERA Collection 100% (0700)');
+    const b = r.find((x) => x.unit_no === 'B-1002'); assert.equal(Number(b.amount), 99900); assert.equal(b.payer_type, 'Other / earlier buyer'); assert.match(b.remark, /UPI\/Transaction Charges/);
+    const c = await admin('/api/bank-auto', { action: 'upload', compare: true, from: '2026-10-01', files: [{ name: 'Yes Bank RERA 700 Ac.xlsx', data: b64(rera()) }] });
+    assert.equal(c.status, 200, c.error);
+    const what = (w) => c.differences.filter((d) => d.what === w).map((d) => Number(d.amount)).sort((x, y) => x - y);
+    assert.deepEqual(what('On the bank statement, not in the books (money in)'), [12345, 99000, 150000, 300000]);
+    assert.deepEqual(what('In the books, not on the bank statement'), [99900]);
+    assert.ok(c.differences.some((d) => d.what === 'On the bank statement, not in the books (money out)' && d.where === 'Transfer between own accounts' && Number(d.amount) === 400000));
+    assert.equal((await admin('/api/accounts?reg=receipts')).rows.length, 3); // nothing added
+    const g = await admin('/api/bank-auto'); assert.equal(g.runs[0].trigger, 'compare'); assert.ok(!g.last || g.last.trigger !== 'compare');
+  });
   console.log(`bank auto, PDC and CA: ${n} checks passed`);
   server.close(); process.exit(0);
 })().catch((e) => { console.error(e); process.exit(1); });

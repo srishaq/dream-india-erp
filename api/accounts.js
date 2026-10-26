@@ -9,6 +9,7 @@ const audit = require('../lib/audit');
 const sheets = require('../lib/sheets');
 const acc = require('../lib/accounts');
 const accImport = require('../lib/acc-import');
+const tally = require('../lib/tally-import');
 const { REGISTERS } = require('../lib/acc-schema');
 const { has } = require('../lib/roles');
 const { needProject } = require('../lib/access');
@@ -48,7 +49,8 @@ module.exports = route({
       }
       case 'import': {
         const last = await db.one("select created_at, after, (select name from users where id = audit_log.user_id) as by_name from audit_log where action = 'import-accounts' order by id desc limit 1");
-        return res.json({ configured: sheets.configured() || !!(process.env.ACC_FIXTURE && process.env.VERCEL !== '1'), sheetId: accImport.SHEET_ID, last, can, live: process.env.ERP_LIVE === '1' });
+        const lastTally = await db.one("select created_at, after, (select name from users where id = audit_log.user_id) as by_name from audit_log where action = 'import-tally' order by id desc limit 1");
+        return res.json({ configured: sheets.configured() || !!(process.env.ACC_FIXTURE && process.env.VERCEL !== '1'), sheetId: accImport.SHEET_ID, last, lastTally, can, live: process.env.ERP_LIVE === '1' });
       }
       default: throw fail(400, 'Unknown view.');
     }
@@ -123,6 +125,21 @@ module.exports = route({
       const name = str(b.name, 120); if (!name) throw fail(400, 'Give the bank account name as it should appear in Receipts and Payments Out.');
       await db.tx(async (t) => { await t.q("insert into acc_banks (book, name, account_no) values ('signature', $1, $2) on conflict (book, name) do update set account_no = excluded.account_no", [name, str(b.accountNo, 40) || null]); await audit.record(t.q, { user: u, action: 'bank', entity: 'acc-bank', entityId: name, after: b }); });
       return res.json({ ok: true });
+    }
+    if (b.action === 'tally-preview' || b.action === 'tally-import') {
+      // Test version: the registers are replaced with the Receipt and Payment Registers exported from Tally.
+      need('accounts.manage');
+      if (process.env.ERP_LIVE === '1') throw fail(403, 'The ERP is live: the accounts are kept in the ERP now.');
+      const files = (Array.isArray(b.files) ? b.files : []).slice(0, 4).map((f) => ({ name: str(f.name, 200), buffer: Buffer.from(String(f.data || ''), 'base64') }));
+      if (files.length < 2 || files.some((f) => !f.buffer.length)) throw fail(400, 'Choose both Tally files: the Receipt Register and the Payment Register (.xlsx).');
+      const p = tally.parse(files, today());
+      if (b.action === 'tally-preview') return res.json({ summary: p.summary, registers: p.registers, problems: p.problems.slice(0, 50) });
+      const r = await db.tx(async (t) => {
+        const out = await tally.commit(t, p, { user: u });
+        await audit.record(t.q, { user: u, action: 'import-tally', entity: 'accounts', entityId: 'signature', after: { ...p.summary, registers: p.registers, ...out } });
+        return out;
+      });
+      return res.json({ ok: true, summary: p.summary, problems: p.problems, ...r });
     }
     if (b.action === 'clear') {
       // Test version only: empty every accounts register (banks, cash flow heads and settings stay), to start again from another source.
