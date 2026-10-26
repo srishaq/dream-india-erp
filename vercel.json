@@ -67,6 +67,10 @@
   ],
   "crons": [
     {
+      "path": "/api/cron?job=morning",
+      "schedule": "30 3 * * *"
+    },
+    {
       "path": "/api/cron?job=bank",
       "schedule": "40 9 * * *"
     },

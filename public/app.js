@@ -104,7 +104,9 @@
   const anyOf = (...ps) => ps.some(can);
   const PAGES = [
     { key: 'home', label: 'Home', show: () => true },
+    { key: 'training', label: 'Training videos', show: () => true },
     { group: 'CRM' },
+    { key: 'crmtodo', label: 'Daily To-Do', show: () => anyOf('demand.raise', 'booking.create', 'booking.approve', 'ledger.view') },
     { key: 'dashboard', label: 'Collections dashboard', show: () => can('ledger.view'), href: () => `/dashboard${proj ? '?project=' + proj : ''}` },
     { key: 'units', label: 'Units & inventory', show: () => can('inventory.view') },
     { key: 'bookings', label: 'Bookings', show: () => anyOf('inventory.view', 'ledger.view') },
@@ -117,8 +119,9 @@
     { key: 'prices', label: 'Price list & cost sheet', show: () => can('inventory.view') },
     { key: 'partners', label: 'Channel partners', show: () => can('ledger.view') },
     { group: 'Accounts' },
+    { key: 'acctodo', label: 'Daily To-Do', show: () => can('accounts.view') },
     { key: 'accdash', label: 'Accounts dashboard', show: () => can('accounts.view'), href: () => '/accounts' },
-    { key: 'acc', label: 'To Do', show: () => can('accounts.view') },
+    { key: 'acc', label: 'Status today', show: () => can('accounts.view') },
     { key: 'balances', label: 'Daily Bank Balance', show: () => can('accounts.view') },
     { key: 'bankauto', label: 'Bank Auto Check', show: () => can('accounts.view') },
     { key: 'reg-receipts', label: 'Receipts (bank)', show: () => can('accounts.view') },
@@ -195,7 +198,7 @@
     $('#cpw').onclick = () => changePassword(false);
     if ($('#proj')) $('#proj').onchange = (e) => { proj = +e.target.value; store.set('erp_project', proj); shell(); };
     if (/^reg-/.test(page || '') && can('accounts.view')) { try { await accRegister(page.slice(4)); } catch (e) { $('#page').innerHTML = `<div class="err">${esc(e.message)}</div>`; } return; }
-    const fn = { home, project: projectHome, projects, plans, users, audit, units, bookings, demands, receipts, ledgers, letters, followups, verify, prices, partners, acc: accTodo, balances: accBalances, bankauto: bankAuto, bookscrm: booksCrm, accreports: accReports, checks: accChecks, accsetup: accSetup, import: importPage, booking: bookingPage, statement: statementPage, run: runPage };
+    const fn = { home, project: projectHome, crmtodo: () => dailyTodo('crm'), acctodo: () => dailyTodo('accounts'), training, projects, plans, users, audit, units, bookings, demands, receipts, ledgers, letters, followups, verify, prices, partners, acc: accTodo, balances: accBalances, bankauto: bankAuto, bookscrm: booksCrm, accreports: accReports, checks: accChecks, accsetup: accSetup, import: importPage, booking: bookingPage, statement: statementPage, run: runPage };
     const key = DETAIL[page] && arg ? page : cur.key;
     try { await fn[key](arg ? +arg : undefined); } catch (e) { $('#page').innerHTML = `<div class="err">${esc(e.message)}</div>`; }
   }
@@ -232,7 +235,9 @@
     receipts: 'Enter receipts; Head Accounts approves them', ledgers: 'Each buyer’s statement of demands and payments',
     letters: 'Stage demands and reminders, by email or courier', followups: 'Calls, WhatsApps and promises to pay',
     verify: 'Items from the import still to check and close', prices: 'Rates, floor rise and the cost sheet', partners: 'Channel partners and brokerage',
-    accdash: 'Bank balances, collections, refunds, TDS, PDC, SRA tenants and reconciliation', acc: 'What the accounts team has to do today',
+    crmtodo: 'Today’s calls, approvals, letters and what the 9 am check found', acctodo: 'What the 9 am Accounts audit found, plus your own tasks',
+    training: 'Short videos on how to use each part of the ERP',
+    accdash: 'Bank balances, collections, refunds, TDS, PDC, SRA tenants and reconciliation', acc: 'Live status of the registers: what is missing right now',
     balances: 'Closing balance of every bank account, day by day', bankauto: 'The 3:10 pm check of bank statements against the books',
     'reg-receipts': 'Every receipt as it came into the bank', 'reg-payments': 'Every payment out, by head', 'reg-pdc': 'Post-dated cheques and their reminders',
     'reg-tds': 'TDS deducted and challans paid', 'reg-recon': 'Items the bank and the books do not yet agree on', 'reg-compliance': 'GST, TDS and RERA due dates',
@@ -240,7 +245,7 @@
     accreports: 'Reports and the Tally import', checks: 'Daily checks on the registers', bookscrm: 'Tally receipts flat by flat against the CRM',
     ca: 'GST, TDS payable, RERA quarterly and cash flow, for the CA', accsetup: 'Bank accounts, heads, statement folders and imports', audit: 'Who changed what, and when',
   };
-  const PICON = { dashboard: 'chart', units: 'grid', bookings: 'book', demands: 'tower', receipts: 'rupee', ledgers: 'book', letters: 'mail', followups: 'phone', verify: 'check', prices: 'rupee', partners: 'users',
+  const PICON = { crmtodo: 'check', acctodo: 'check', training: 'book', dashboard: 'chart', units: 'grid', bookings: 'book', demands: 'tower', receipts: 'rupee', ledgers: 'book', letters: 'mail', followups: 'phone', verify: 'check', prices: 'rupee', partners: 'users',
     accdash: 'chart', acc: 'check', balances: 'rupee', bankauto: 'check', 'reg-cancellations': 'users', bookscrm: 'check', checks: 'check', audit: 'book', ca: 'chart', accsetup: 'grid' };
   const DEPTS = [
     { key: 'crm', title: 'Sales & CRM', sub: 'Collections, units, bookings, demands, receipts and follow-ups', icon: 'chart', tone: '#2B5C8A', group: 'CRM' },
@@ -251,7 +256,7 @@
     { key: 'purchase', title: 'Purchase', sub: 'Indents, purchase orders and site stock', icon: 'cart', tone: '#117A65', soon: true },
     { key: 'drawings', title: 'Drawings', sub: 'Approved plans, working drawings and revisions', icon: 'grid', tone: '#2B5C8A', soon: true },
     { key: 'hr', title: 'HR & Admin', sub: 'Staff records, leave, letters and HR policies', icon: 'users', tone: '#7A5C99', soon: true },
-    { key: 'training', title: 'Training videos', sub: 'Short videos on how to use each part of the ERP', icon: 'book', tone: '#B7791F', soon: true },
+    { key: 'training', title: 'Training videos', sub: 'Short videos on how to use each part of the ERP', icon: 'book', tone: '#B7791F', direct: 'training' },
   ];
   const pagesOf = (d) => {
     let keys = d.pages;
@@ -1042,6 +1047,66 @@
     };
     if ($('#accNew')) $('#accNew').onclick = () => form(null);
     document.querySelectorAll('tr[data-id]').forEach((tr) => (tr.onclick = () => form(d.rows.find((r) => r.id === +tr.dataset.id))));
+  }
+
+  // Training videos: one short screen recording per task; watched ones are ticked, and Admin sees who has watched what.
+  async function training() {
+    const d = await api('/api/training');
+    const teams = [...new Set(d.modules.map((m) => m.team))];
+    const done = d.modules.filter((m) => d.watched[m.id]).length;
+    $('#page').innerHTML = `<div class="page-head"><div><h1>Training videos</h1><p class="muted">Short videos of the ERP, made on sample data. Watch the ones for your team; each is ticked when you reach the end. You have watched ${done} of ${d.modules.length}.</p></div></div>
+      ${teams.map((t) => `<h2 class="sec">${esc(t)}</h2><div class="tr-grid">${d.modules.filter((m) => m.team === t).map((m) => `<div class="tr">
+        <video controls preload="metadata" playsinline data-m="${m.id}" src="/training/${m.id}.mp4" poster="/training/${m.id}.jpg"></video>
+        <div class="tr-body"><h3>${esc(m.title)}</h3><p class="small muted" style="margin:0">${esc(m.sub)}</p>
+          <div class="tr-foot">${d.watched[m.id] ? `<span class="pill good">Watched ${fmtD(String(d.watched[m.id]).slice(0, 10))}</span>` : '<span class="pill grey">Not watched yet</span>'}
+            ${d.watched[m.id] ? '' : `<button class="ghost small mk" data-m="${m.id}">Mark as watched</button>`}</div></div></div>`).join('')}</div>`).join('')}
+      ${d.team ? `<div class="panel" style="margin-top:22px"><h2>Who has watched what</h2><div class="table-wrap"><table><tr><th>Name</th>${d.modules.map((m) => `<th title="${esc(m.title)}" class="small">${esc(m.title)}</th>`).join('')}<th class="num">Done</th></tr>
+        ${d.team.map((x) => `<tr><td>${esc(x.name)}</td>${d.modules.map((m) => `<td>${x.watched[m.id] ? '<span class="good-t">✓</span>' : ''}</td>`).join('')}<td class="num">${Object.keys(x.watched).length} / ${d.modules.length}</td></tr>`).join('')}</table></div></div>` : ''}`;
+    const mark = async (m) => { try { await api('/api/training', { action: 'watched', module: m }); training(); } catch (x) { alert(x.message); } };
+    document.querySelectorAll('video[data-m]').forEach((v) => { if (!d.watched[v.dataset.m]) v.addEventListener('ended', () => mark(v.dataset.m)); });
+    document.querySelectorAll('.mk').forEach((b) => (b.onclick = () => mark(b.dataset.m)));
+  }
+
+  // Daily To-Do (CRM or Accounts): the 9 am audit's findings and people's own tasks, ticked off through the day.
+  async function dailyTodo(dept, dateArg) {
+    const name = dept === 'crm' ? 'Sales & CRM' : 'Accounts';
+    const date = dateArg || store.get('erp_todo_date_' + dept) || todayIso();
+    const d = await api(`/api/tasks?dept=${dept}&date=${date}`);
+    const isToday = d.date === d.today;
+    const f = store.get('erp_todo_f_' + dept) || 'open';
+    const rows = d.rows.filter((r) => (f === 'open' ? !r.done_at : f === 'mine' ? !r.done_at && (r.assigned_to === d.me || (!r.assigned_to && r.created_by === d.me)) : true));
+    const open = d.rows.filter((r) => !r.done_at), urgent = open.filter((r) => r.priority === 'high');
+    const run = d.runs[0];
+    const ago = (x) => { const k = Math.round((Date.parse(d.date) - Date.parse(x)) / 864e5); return k > 0 ? `open since ${fmtD(x)} (${k} day${k > 1 ? 's' : ''})` : ''; };
+    const who = (r) => (d.can.edit && !r.done_at ? `<select class="asg small" data-id="${r.id}"><option value="">Whole team</option>${d.team.map((t) => `<option value="${t.id}" ${t.id === r.assigned_to ? 'selected' : ''}>${esc(t.name)}</option>`).join('')}</select>` : r.assigned_name ? esc(r.assigned_name) : 'Whole team');
+    const line = (r) => `<div class="td ${r.done_at ? 'done' : ''} ${r.priority === 'high' && !r.done_at ? 'hi' : ''}">
+        <div class="td-tick">${d.can.edit ? `<input type="checkbox" class="tk" data-id="${r.id}" ${r.done_at ? 'checked' : ''} aria-label="Done">` : r.done_at ? '✓' : ''}</div>
+        <div class="td-body"><div class="td-title">${r.link ? `<a href="${esc(r.link)}">${esc(r.title)}</a>` : esc(r.title)} ${r.priority === 'high' && !r.done_at ? '<span class="pill bad">Urgent</span>' : ''}</div>
+          ${r.detail ? `<div class="small muted">${esc(r.detail)}</div>` : ''}
+          <div class="td-meta small">${r.source === 'audit' ? '<span class="pill grey">9 am audit</span>' : `<span class="pill">Added by ${esc(r.created_name || '—')}${r.task_date !== d.date ? ' on ' + fmtD(r.task_date) : ''}</span>`}
+            ${r.done_at ? `<span>${r.cleared ? 'Cleared by the audit' : 'Done by ' + esc(r.done_name || '—')} · ${fmtDate(r.done_at)}${r.done_note && !r.cleared ? ' · “' + esc(r.done_note) + '”' : ''}</span>` : `<span>${ago(r.since || r.task_date)}</span>`}
+            ${r.source === 'own' && !r.done_at && d.can.edit && (r.created_by === d.me || d.can.run) ? `<button class="link rm" data-id="${r.id}">Remove</button>` : ''}</div></div>
+        <div class="td-who small">${who(r)}${d.can.edit && !r.done_at ? `<input class="note small" data-id="${r.id}" placeholder="Note when ticking (optional)">` : ''}</div></div>`;
+    $('#page').innerHTML = `<div class="page-head"><div><h1>${name} · Daily To-Do</h1>
+        <p class="muted">${dept === 'accounts' ? 'Every morning at 9 am the ERP audits the books and lists what needs doing; the list is also emailed to the accounts mailbox.' : 'Every morning at 9 am the ERP lists today’s calls, approvals and letters, and what Accounts found that the CRM must fix.'} Tick each line when it is done. Your own tasks stay on the list until ticked; an audit line that is not fixed comes back the next morning.</p></div>
+        <div class="actions">${d.can.run && isToday ? '<button class="ghost" id="rerun">Run the audit again</button>' : ''}</div></div>
+      <div class="kpis"><div class="kpi"><span>Open</span><b>${open.length}</b></div><div class="kpi"><span>Urgent</span><b class="${urgent.length ? 'bad-t' : ''}">${urgent.length}</b></div><div class="kpi"><span>Done</span><b class="good-t">${d.rows.length - open.length}</b></div>
+        <div class="kpi"><span>Audit</span><b style="font-size:14px">${run ? `${new Date(run.run_at).toLocaleTimeString('en-IN', { hour: 'numeric', minute: '2-digit', timeZone: 'Asia/Kolkata' })} · ${run.found} found${run.error ? ' · error' : ''}` : isToday ? 'Runs at 9 am' : 'Did not run'}</b></div></div>
+      <div class="panel"><div class="row" style="grid-template-columns:180px 1fr;align-items:end"><div><label>Day</label><input type="date" id="tdd" value="${esc(d.date)}" max="${esc(d.today)}"></div>
+        <div class="tabs" style="margin:0">${[['open', 'Open'], ['mine', 'Mine'], ['all', 'All, with done']].map(([k, l]) => `<button class="tab ${k === f ? 'on' : ''}" data-f="${k}">${l}</button>`).join('')}</div></div>
+        ${run && run.error ? `<p class="err">The audit could not finish: ${esc(run.error)}</p>` : ''}
+        ${run && run.mail && dept === 'accounts' ? `<p class="small muted">Email: ${run.mail.sent ? 'sent to ' + esc((run.mail.to || []).join(', ')) + (run.mail.test ? ' (test address)' : '') : esc(run.mail.reason || 'not sent')}</p>` : ''}
+        <div class="tdl">${rows.map(line).join('') || `<p class="muted">${f === 'open' ? 'Nothing open. Well done.' : 'Nothing here.'}</p>`}</div></div>
+      ${d.can.edit && isToday ? `<form class="panel" id="addT"><h2>Add a task</h2><div class="row" style="grid-template-columns:2fr 1fr auto;align-items:end"><div><label>Task</label><input name="title" required maxlength="200" placeholder="e.g. Call the bank about the A-1203 cheque"></div>
+        <div><label>For</label><select name="assignedTo"><option value="">Whole team</option>${d.team.map((t) => `<option value="${t.id}" ${t.id === d.me ? 'selected' : ''}>${esc(t.name)}</option>`).join('')}</select></div><div><button>Add</button></div></div></form>` : ''}`;
+    $('#tdd').onchange = (e) => { store.set('erp_todo_date_' + dept, e.target.value === d.today ? '' : e.target.value); dailyTodo(dept, e.target.value); };
+    document.querySelectorAll('.tab[data-f]').forEach((b) => (b.onclick = () => { store.set('erp_todo_f_' + dept, b.dataset.f); dailyTodo(dept, d.date); }));
+    const act = async (body) => { try { await api('/api/tasks', body); dailyTodo(dept, d.date); } catch (x) { alert(x.message); } };
+    document.querySelectorAll('.tk').forEach((c) => (c.onchange = () => { const note = document.querySelector(`.note[data-id="${c.dataset.id}"]`); act(c.checked ? { action: 'done', id: +c.dataset.id, note: note ? note.value : '' } : { action: 'undo', id: +c.dataset.id }); }));
+    document.querySelectorAll('.asg').forEach((s) => (s.onchange = () => act({ action: 'assign', id: +s.dataset.id, userId: s.value || null })));
+    document.querySelectorAll('.rm').forEach((b) => (b.onclick = () => act({ action: 'remove', id: +b.dataset.id })));
+    if ($('#rerun')) $('#rerun').onclick = async (e) => { e.target.disabled = true; e.target.textContent = 'Running…'; try { const r = await api('/api/tasks', { action: 'run', dept }); toast(`Audit done: ${r.found} found.`); dailyTodo(dept, d.date); } catch (x) { e.target.disabled = false; alert(x.message); } };
+    if ($('#addT')) $('#addT').onsubmit = (e) => { e.preventDefault(); const x = Object.fromEntries(new FormData(e.target)); act({ action: 'add', dept, title: x.title, assignedTo: x.assignedTo || null }); };
   }
 
   async function accTodo() {
