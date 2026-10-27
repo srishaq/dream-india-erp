@@ -15,7 +15,9 @@ async function overview(projectId) {
   const buildings = await db.q("select id, code, name, kind from buildings where project_id = $1 and kind <> 'rehab' order by code", [projectId]);
   const plan = await db.one('select id from payment_plans where project_id = $1 and active order by id limit 1', [projectId]);
   const stages = plan ? await db.q('select seq, name, pct from plan_stages where plan_id = $1 and construction_linked order by seq', [plan.id]) : [];
-  const done = await db.q('select c.building_id, c.stage_name, c.completed_on, c.certified_by, u.name as recorded_by from stage_completions c join buildings b on b.id = c.building_id left join users u on u.id = c.recorded_by where b.project_id = $1', [projectId]);
+  const done = await db.q(`select c.id, c.building_id, c.stage_name, c.completed_on, c.certified_by, u.name as recorded_by,
+      exists (select 1 from demands d join bookings bk on bk.id = d.booking_id join units un on un.id = bk.unit_id where un.building_id = c.building_id and d.stage_name = c.stage_name) as raised
+    from stage_completions c join buildings b on b.id = c.building_id left join users u on u.id = c.recorded_by where b.project_id = $1`, [projectId]);
   const runs = await db.q(
     `select r.id, r.building_id, b.code as building, r.stage_name, r.demand_date, r.due_date, r.status, r.created_by, c.name as created_by_name, a.name as approved_by_name, r.approved_at,
             (select count(*)::int from demands d where d.run_id = r.id) as letters, (select coalesce(sum(d.amount), 0) from demands d where d.run_id = r.id) as total
@@ -73,6 +75,26 @@ module.exports = route({
         await audit.record(t.q, { user: u, action: 'stage-complete', entity: 'stage', entityId: row.id, projectId: bld.project_id, after: { building: bld.code, stage: stage.name, completedOn: on, certifiedBy: str(b.certifiedBy, 120) || null } });
       });
       return res.json({ ok: true, ...(await overview(bld.project_id)) });
+    }
+
+    // A stage recorded by mistake: removed only while no demand has been raised on it for that building. Any draft run
+    // for it is cancelled. The audit log keeps what was removed and by whom.
+    if (b.action === 'stage.undo') {
+      if (!has(u, 'stage.record') && !has(u, 'demand.approve')) throw fail(403, 'Your role does not allow this.');
+      const sc = await db.one('select c.*, bl.project_id, bl.code from stage_completions c join buildings bl on bl.id = c.building_id where c.id = $1', [intOr(b.id)]);
+      if (!sc) throw fail(404, 'That stage record is not there.');
+      needProject(u, sc.project_id);
+      const raised = await db.one(`select count(*)::int as n from demands d join bookings bk on bk.id = d.booking_id join units un on un.id = bk.unit_id
+        where un.building_id = $1 and d.stage_name = $2`, [sc.building_id, sc.stage_name]);
+      const approved = await db.one("select count(*)::int as n from demand_runs where building_id = $1 and stage_name = $2 and status = 'approved'", [sc.building_id, sc.stage_name]);
+      if (raised.n || approved.n) throw fail(409, `Demands have already been raised on this stage for ${sc.code} Wing (${raised.n}), so it cannot be removed.`);
+      const reason = str(b.reason, 300); if (!reason) throw fail(400, 'Give the reason (e.g. recorded by mistake, a test).');
+      await db.tx(async (t) => {
+        const runs = await t.q("update demand_runs set status = 'cancelled' where building_id = $1 and stage_name = $2 and status = 'draft' returning id", [sc.building_id, sc.stage_name]);
+        await t.q('delete from stage_completions where id = $1', [sc.id]);
+        await audit.record(t.q, { user: u, action: 'stage-undo', entity: 'stage', entityId: sc.id, projectId: sc.project_id, before: { building: sc.code, stage: sc.stage_name, completedOn: sc.completed_on, certifiedBy: sc.certified_by }, after: { draftRunsCancelled: runs.map((r) => r.id) }, note: reason });
+      });
+      return res.json({ ok: true, ...(await overview(sc.project_id)) });
     }
 
     if (b.action === 'run.create') {
