@@ -12,7 +12,7 @@ require('./dev-server');
 const { chromium } = require('playwright');
 const db = require('../lib/db');
 const auth = require('../lib/auth');
-const { MODULES } = require('../lib/training');
+const { ALL: MODULES } = require('../lib/training');
 
 const BASE = `http://localhost:${process.env.PORT}`;
 const OUT = path.join(__dirname, '../public/training');
