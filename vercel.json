@@ -81,6 +81,10 @@
   ],
   "rewrites": [
     {
+      "source": "/oauth/google",
+      "destination": "/api/custdocs?oauth=callback"
+    },
+    {
       "source": "/api/me",
       "destination": "/api/portal"
     },

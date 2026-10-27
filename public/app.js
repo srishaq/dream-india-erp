@@ -119,6 +119,7 @@
     { key: 'ledgers', label: 'Customer ledgers', show: () => can('ledger.view') },
     { key: 'letters', label: 'Demand letters', show: () => anyOf('demand.raise', 'ledger.view') },
     { key: 'followups', label: 'Follow-ups', show: () => can('ledger.view') },
+    { key: 'custdocs', label: 'Customer documents', show: () => anyOf('buyer.kyc', 'accounts.view') },
     { key: 'verify', label: 'Data to verify', show: () => anyOf('inventory.view', 'ledger.view') },
     { key: 'prices', label: 'Price list & cost sheet', show: () => can('inventory.view') },
     { key: 'partners', label: 'Channel partners', show: () => can('ledger.view') },
@@ -211,7 +212,7 @@
     $('#cpw').onclick = () => changePassword(false);
     if ($('#proj')) $('#proj').onchange = (e) => { proj = +e.target.value; store.set('erp_project', proj); shell(); };
     if (/^reg-/.test(page || '') && can('accounts.view')) { try { await accRegister(page.slice(4)); } catch (e) { $('#page').innerHTML = `<div class="err">${esc(e.message)}</div>`; } return; }
-    const fn = { home, mgmt, project: projectHome, crmtodo: () => dailyTodo('crm'), acctodo: () => dailyTodo('accounts'), training, projects, plans, users, audit, units, bookings, demands, receipts, ledgers, letters, followups, verify, prices, partners, acc: accTodo, balances: accBalances, bankauto: bankAuto, bookscrm: booksCrm, accreports: accReports, checks: accChecks, accsetup: accSetup, import: importPage, booking: bookingPage, statement: statementPage, run: runPage };
+    const fn = { home, mgmt, custdocs, project: projectHome, crmtodo: () => dailyTodo('crm'), acctodo: () => dailyTodo('accounts'), training, projects, plans, users, audit, units, bookings, demands, receipts, ledgers, letters, followups, verify, prices, partners, acc: accTodo, balances: accBalances, bankauto: bankAuto, bookscrm: booksCrm, accreports: accReports, checks: accChecks, accsetup: accSetup, import: importPage, booking: bookingPage, statement: statementPage, run: runPage };
     const key = DETAIL[page] && arg ? page : cur.key;
     try { await fn[key](arg ? +arg : undefined); } catch (e) { $('#page').innerHTML = `<div class="err">${esc(e.message)}</div>`; }
   }
@@ -247,7 +248,7 @@
     bookings: 'Bookings, applicants, cancellations and transfers', demands: 'Construction stages and the demands raised on them',
     receipts: 'Enter receipts; Head Accounts approves them', ledgers: 'Each buyer’s statement of demands and payments',
     letters: 'Stage demands and reminders, by email or courier', followups: 'Calls, WhatsApps and promises to pay',
-    verify: 'Items from the import still to check and close', prices: 'Rates, floor rise and the cost sheet', partners: 'Channel partners and brokerage',
+    custdocs: 'Signed and scanned papers for every flat and SRA tenant, kept in Google Drive', verify: 'Items from the import still to check and close', prices: 'Rates, floor rise and the cost sheet', partners: 'Channel partners and brokerage',
     site: 'Slab cycle, daily progress reports, hindrances, materials and floor-wise works', purchase: 'Purchase requests from request to payment', drawings: 'The drawing register from Google Drive', hr: 'Staff records, leave, letters and HR policies',
     crmtodo: 'Today’s calls, approvals, letters and what the 9 am check found', acctodo: 'What the 9 am Accounts audit found, plus your own tasks',
     training: 'Short videos on how to use each part of the ERP',
@@ -259,7 +260,7 @@
     accreports: 'Reports and the Tally import', checks: 'Daily checks on the registers', bookscrm: 'Tally receipts flat by flat against the CRM',
     ca: 'GST, TDS payable, RERA quarterly and cash flow, for the CA', accsetup: 'Bank accounts, heads, statement folders and imports', audit: 'Who changed what, and when',
   };
-  const PICON = { site: 'tower', crmtodo: 'check', acctodo: 'check', training: 'book', dashboard: 'chart', units: 'grid', bookings: 'book', demands: 'tower', receipts: 'rupee', ledgers: 'book', letters: 'mail', followups: 'phone', verify: 'check', prices: 'rupee', partners: 'users',
+  const PICON = { custdocs: 'book', site: 'tower', crmtodo: 'check', acctodo: 'check', training: 'book', dashboard: 'chart', units: 'grid', bookings: 'book', demands: 'tower', receipts: 'rupee', ledgers: 'book', letters: 'mail', followups: 'phone', verify: 'check', prices: 'rupee', partners: 'users',
     accdash: 'chart', acc: 'check', balances: 'rupee', bankauto: 'check', 'reg-cancellations': 'users', bookscrm: 'check', checks: 'check', audit: 'book', ca: 'chart', accsetup: 'grid' };
   const DEPTS = [
     { key: 'crm', title: 'Sales & CRM', sub: 'Collections, units, bookings, demands, receipts and follow-ups', icon: 'chart', tone: '#2B5C8A', group: 'CRM' },
@@ -627,6 +628,7 @@
       ${d.earlier && d.earlier.length ? `<div class="note" style="margin-bottom:14px">Earlier on this flat: ${d.earlier.map((e) => `<a href="#/booking/${e.id}">${esc(e.buyers || 'buyer')}</a> (cancelled ${fmtD(String(e.cancel_date || e.cancelled_at || '').slice(0, 10))}${e.refund_status ? ', refund ' + esc(e.refund_status) : ''})`).join('; ')}.</div>` : ''}
       <div class="actions" style="margin:0 0 10px">${actions.join('')}</div>
       <div class="actions" style="margin:0 0 16px"><span class="muted small" style="align-self:center">Documents:</span>${docBtns.join('')}</div>
+      ${can('buyer.kyc') ? '<div class="panel" id="cdocs"><h2>Customer documents</h2><p class="muted small">Loading…</p></div>' : ''}
       <div class="panel"><div class="kpis">${kpi(inr(b.agreement_value), 'agreement value')}${kpi(inr(bal.demanded), 'demanded')}${kpi(inr(bal.credit_av), 'received (AV + TDS)')}
         ${kpi(inr(bal.outstanding), 'outstanding')}${kpi(inr(bal.overdue), 'overdue', toNum(bal.overdue) > 0 ? 'bad' : '')}${kpi(inr(bal.gst_outstanding), 'GST outstanding')}</div></div>
       <div class="two">
@@ -646,6 +648,7 @@
       <div class="panel"><h2>Receipts</h2><div class="table-wrap"><table><tr><th>Date</th><th>Bank / instrument</th><th class="num">Amount</th><th>Split</th><th>Status</th></tr>
         ${d.receipts.map((r) => `<tr><td>${fmtD(r.received_on)}</td><td>${esc([r.bank, r.instrument_no].filter(Boolean).join(' · ') || r.mode)}</td><td class="num">${inr(r.amount, 2)}</td>
           <td class="small">${Object.entries(r.splits).map(([h, v]) => `${HEAD[h] || h} ${inr(v, 2)}`).join(' · ')}</td><td>${rStatus(r)}</td></tr>`).join('') || '<tr><td colspan="5" class="muted">No receipts yet.</td></tr>'}</table></div></div>`;
+    if ($('#cdocs')) docsPanel('booking', b.id, $('#cdocs'), `${d.unit.unit_no} · ${d.applicants.map((a) => a.name).join(' & ')}`);
     const iv = await api(`/api/verify?booking=${b.id}`).catch(() => ({ rows: [] }));
     const open = iv.rows.filter((x) => x.status === 'open');
     if (open.length) $('.panel', $('#page')).insertAdjacentHTML('beforebegin', `<div class="note" style="margin-bottom:14px"><b>${open.length} item${open.length === 1 ? '' : 's'} to verify from the import:</b><ul class="small" style="margin:6px 0 0 18px;padding:0">${open.map((x) => `<li>${esc(x.detail)}</li>`).join('')}</ul><a href="#/verify">Open Data to verify</a></div>`);
@@ -1130,6 +1133,122 @@
   }
 
   // Daily To-Do (CRM or Accounts): the 9 am audit's findings and people's own tasks, ticked off through the day.
+  // ---------- customer documents (kept in Google Drive) ----------
+  let DOCS = null;
+  const docsMeta = async () => (DOCS ||= await api('/api/custdocs?status=1'));
+  const kb = (n) => (n >= 1048576 ? (n / 1048576).toFixed(1) + ' MB' : Math.max(1, Math.round(n / 1024)) + ' KB');
+  async function openDoc(id, name) {
+    const w = window.open('', '_blank');
+    if (w) w.document.write('<p style="font:15px system-ui;padding:24px">Opening ' + esc(name || 'the document') + '…</p>');
+    try {
+      const info = await api(`/api/custdocs?file=${id}&info=1`);
+      const parts = [];
+      for (let i = 0; i < info.parts; i++) {
+        const r = await fetch(`/api/custdocs?file=${id}&part=${i}`, { credentials: 'same-origin' });
+        if (!r.ok) { let m = 'Could not open the file.'; try { m = (await r.json()).error || m; } catch {} throw new Error(m); }
+        parts.push(await r.arrayBuffer());
+        if (w && info.parts > 1) w.document.body.innerHTML = `<p style="font:15px system-ui;padding:24px">Opening ${esc(info.name)}… ${Math.round(((i + 1) / info.parts) * 100)}%</p>`;
+      }
+      const url = URL.createObjectURL(new Blob(parts, { type: info.mime }));
+      if (w && /^(application\/pdf|image\/)/.test(info.mime)) w.location.href = url;
+      else { if (w) w.close(); const a = document.createElement('a'); a.href = url; a.download = info.name; a.click(); }
+      setTimeout(() => URL.revokeObjectURL(url), 120000);
+    } catch (e) { if (w) w.close(); alert(e.message); }
+  }
+  async function uploadDoc(owner, id, label, after) {
+    const m = await docsMeta();
+    if (!m.connected) { alert(m.canConnect ? 'Connect Google Drive first, on the Customer documents page.' : 'Google Drive is not connected yet. Ask the Admin to connect it on the Customer documents page.'); return; }
+    const dl = dialog(`<h2>Add a document · ${esc(label)}</h2>
+      <label>What is it?</label><select name="kind">${m.kinds[owner].map((k) => `<option>${esc(k)}</option>`).join('')}</select>
+      <label>Note (optional)</label><input name="title" maxlength="160" placeholder="e.g. Registered on 12 Oct, Sub-registrar Andheri 4">
+      <label>File (PDF, photo, Word or Excel, up to 40 MB)</label><input type="file" name="file" required accept=".pdf,.jpg,.jpeg,.png,.webp,.heic,.doc,.docx,.xls,.xlsx,application/pdf,image/*">
+      <p class="small muted" id="upP">The file goes into Google Drive, in this ${owner === 'tenant' ? 'tenant' : 'flat'}'s folder.</p>`,
+    async (x, f) => {
+      const file = f.querySelector('[name=file]').files[0];
+      if (!file) throw new Error('Choose the file.');
+      const ext = (file.name.split('.').pop() || '').toLowerCase();
+      const mime = file.type || { pdf: 'application/pdf', jpg: 'image/jpeg', jpeg: 'image/jpeg', png: 'image/png', heic: 'image/heic', webp: 'image/webp' }[ext] || '';
+      if (!m.types[mime]) throw new Error('Upload a PDF, a photo (JPG, PNG) or a Word or Excel file.');
+      if (file.size > m.max) throw new Error('That file is over 40 MB. Scan it at a lower resolution, or in black and white.');
+      const btn = f.querySelector('[value=save]'); btn.disabled = true;
+      try {
+        const st = await api('/api/custdocs', { action: 'start', owner, id, kind: x.kind, title: x.title, fileName: file.name, mime, size: file.size });
+        for (let i = 0; i < st.parts; i++) {
+          f.querySelector('#upP').textContent = `Uploading… ${Math.round((i / st.parts) * 100)}%`;
+          const buf = new Uint8Array(await file.slice(i * st.part, Math.min(file.size, (i + 1) * st.part)).arrayBuffer());
+          let bin = ''; for (let k = 0; k < buf.length; k += 0x8000) bin += String.fromCharCode.apply(null, buf.subarray(k, k + 0x8000));
+          await api('/api/custdocs', { action: 'part', docId: st.docId, index: i, data: btoa(bin) });
+        }
+      } catch (e) { btn.disabled = false; f.querySelector('#upP').textContent = 'The upload stopped. Choose the file and try again.'; throw e; }
+      toast('Document saved to Google Drive.'); after();
+    });
+    $('[value=save]', dl).textContent = 'Upload';
+  }
+  async function docsPanel(owner, id, el, label) {
+    const [m, d] = await Promise.all([docsMeta(), api(`/api/custdocs?${owner}=${id}`)]);
+    const have = new Set(d.rows.map((r) => r.kind));
+    const missing = owner === 'booking' ? m.check.filter((k) => !have.has(k)) : [];
+    el.innerHTML = `<h2>${owner === 'tenant' ? 'Tenant documents' : 'Customer documents'} ${d.canAdd ? '<button class="small" data-up style="float:right">Add a document</button>' : ''}</h2>
+      ${m.connected ? '' : '<p class="small bad-t">Google Drive is not connected yet, so documents cannot be added. ' + (m.canConnect ? '<a href="#/custdocs">Connect it</a>.' : 'Ask the Admin to connect it.') + '</p>'}
+      ${missing.length ? `<p class="small muted">Still to upload: ${missing.map(esc).join(' · ')}</p>` : ''}
+      <div class="table-wrap"><table><tr><th>Document</th><th>File</th><th>Added</th><th></th></tr>
+      ${d.rows.map((r) => `<tr><td><b>${esc(r.kind)}</b>${r.title ? `<br><span class="small muted">${esc(r.title)}</span>` : ''}</td><td class="small">${esc(r.file_name)}<br><span class="muted">${esc(m.types[r.mime] || '')} · ${kb(+r.size)}</span></td>
+        <td class="small">${fmtDate(r.ready_at || r.created_at)}<br><span class="muted">${esc(r.by_name || '')}</span></td>
+        <td style="white-space:nowrap"><button class="ghost small" data-open="${r.id}" data-n="${esc(r.file_name)}">Open</button>${d.canRemove ? ` <button class="link small" data-rm="${r.id}">Remove</button>` : ''}</td></tr>`).join('') || '<tr><td colspan="4" class="muted">No documents yet.</td></tr>'}</table></div>`;
+    const again = () => docsPanel(owner, id, el, label);
+    el.querySelectorAll('[data-open]').forEach((x) => (x.onclick = () => openDoc(+x.dataset.open, x.dataset.n)));
+    if ($('[data-up]', el)) $('[data-up]', el).onclick = () => uploadDoc(owner, id, label, again);
+    el.querySelectorAll('[data-rm]').forEach((x) => (x.onclick = () => dialog('<h2>Remove this document?</h2><p class="muted small">It is hidden from the list but stays in Google Drive, and the audit log keeps who removed it and why.</p><label>Why?</label><input name="reason" required maxlength="300" placeholder="e.g. Wrong flat, uploaded again">',
+      async (v) => { await api('/api/custdocs', { action: 'remove', docId: +x.dataset.rm, reason: v.reason }); toast('Removed.'); again(); })));
+  }
+  async function custdocs() {
+    const msg = new URLSearchParams(location.search).get('drive');
+    if (msg) history.replaceState(null, '', '/' + location.hash);
+    DOCS = null;
+    const m = await docsMeta();
+    const tab = store.get('erp_cdtab') || (can('buyer.kyc') ? 'flats' : 'tenants');
+    const conn = m.connected ? `<p class="small">Google Drive connected${m.email ? ' (' + esc(m.email) + ')' : ''}${m.folder ? ` · <a href="${esc(m.folder)}" target="_blank" rel="noopener">Open the folder in Drive ↗</a>` : ''}${m.canConnect ? ' · <button class="link small" id="gdOff">Disconnect</button>' : ''}</p>`
+      : m.canConnect ? (m.configured ? `<div class="note"><b>Connect Google Drive.</b> Sign in with the Google account whose Drive will keep the documents (srishaq@gmail.com) and allow the ERP to "see, edit, create and delete only the specific Google Drive files you use with this app". It can never see anything else in that Drive.<div class="actions" style="margin-top:10px"><a class="btn" href="/api/custdocs?oauth=start">Connect Google Drive</a></div></div>`
+          : `<div class="note"><b>One-time set-up needed.</b> Google sign-in for the ERP is not set up yet (GOOGLE_OAUTH_CLIENT_ID and GOOGLE_OAUTH_CLIENT_SECRET in Vercel). The redirect address to give Google is <code>${esc(m.redirectUri)}</code>.</div>`)
+      : '<p class="small bad-t">Google Drive is not connected yet. Ask the Admin to connect it.</p>';
+    $('#page').innerHTML = `<div class="page-head"><div><h1>Customer documents</h1><p class="muted">Signed and scanned papers for every flat and SRA tenant: agreement, Index II, KYC, signed letters. They are kept in Google Drive, one folder per flat, and open here for the logins allowed to see buyer documents.</p></div></div>
+      ${msg ? `<div class="${msg === 'connected' ? 'note' : 'err'}" style="margin-bottom:12px">${msg === 'connected' ? 'Google Drive is connected. Documents can now be uploaded.' : esc(msg)}</div>` : ''}
+      <div class="panel">${conn}</div>
+      <div class="tabs">${[['flats', 'Flats', can('buyer.kyc')], ['tenants', 'SRA tenants', can('accounts.view')]].filter((t) => t[2]).map(([k, l]) => `<button class="tab ${k === tab ? 'on' : ''}" data-t="${k}">${l}</button>`).join('')}</div>
+      <div id="cdl"><div class="panel muted">Loading…</div></div>`;
+    document.querySelectorAll('.tab[data-t]').forEach((t) => (t.onclick = () => { store.set('erp_cdtab', t.dataset.t); custdocs(); }));
+    if ($('#gdOff')) $('#gdOff').onclick = async () => { if (!confirm('Disconnect Google Drive? Documents already uploaded stay in Drive, but they cannot be opened here until it is connected again.')) return; await api('/api/custdocs', { action: 'disconnect' }); custdocs(); };
+    const out = $('#cdl');
+    if (tab === 'tenants') {
+      const d = await api('/api/custdocs?tenants=1');
+      const f = store.get('erp_cdtf') || 'all';
+      const rows = d.rows.filter((r) => f === 'all' || !r.agreements);
+      out.innerHTML = `<div class="panel"><div class="kpis">${kpi(d.rows.length, 'tenants')}${kpi(d.rows.filter((r) => r.agreements).length, 'with a signed agreement')}${kpi(d.rows.filter((r) => !r.agreements).length, 'agreement still to upload', d.rows.some((r) => !r.agreements) ? 'bad' : '')}</div>
+        <div class="tabs" style="margin:12px 0 0">${[['all', 'All'], ['missing', 'Agreement missing']].map(([k, l]) => `<button class="tab ${k === f ? 'on' : ''}" data-f="${k}">${l}</button>`).join('')}</div></div>
+        <div class="panel table-wrap"><table><tr><th class="num">Survey no.</th><th>Tenant</th><th>Status</th><th>Agreement</th><th class="num">Documents</th><th></th></tr>
+        ${rows.map((r) => `<tr><td class="num">${r.survey_no == null ? '' : +r.survey_no}</td><td>${esc(r.name || '')}</td><td class="small">${esc(r.status || '')}</td><td>${r.agreements ? '<span class="pill good">uploaded</span>' : '<span class="pill bad">missing</span>'}</td><td class="num">${r.docs}</td>
+          <td><button class="ghost small" data-ten="${r.id}" data-l="${esc('Survey ' + (r.survey_no == null ? '' : +r.survey_no) + ' · ' + (r.name || ''))}">Documents</button></td></tr>`).join('') || '<tr><td colspan="6" class="muted">No tenants here.</td></tr>'}</table></div><div class="panel" id="tdocs" hidden></div>`;
+      document.querySelectorAll('[data-f]').forEach((t) => (t.onclick = () => { store.set('erp_cdtf', t.dataset.f); custdocs(); }));
+      document.querySelectorAll('[data-ten]').forEach((x) => (x.onclick = () => { const el = $('#tdocs'); el.hidden = false; docsPanel('tenant', +x.dataset.ten, el, x.dataset.l); el.scrollIntoView({ behavior: 'smooth' }); }));
+      return;
+    }
+    if (!proj) return noProject();
+    const d = await api(`/api/custdocs?project=${proj}`);
+    const short = { 'Booking form (signed)': 'Booking form', 'Allotment letter (signed)': 'Allotment', 'KYC: PAN, Aadhaar, photo': 'KYC', 'Agreement for sale (registered)': 'Agreement', 'Index II / registration receipt': 'Index II' };
+    const f = store.get('erp_cdf') || 'all';
+    const missingOf = (r) => d.check.filter((k) => !r.kinds[k]);
+    const rows = d.rows.filter((r) => (f === 'all' ? true : f === 'agreement' ? !r.kinds['Agreement for sale (registered)'] && (r.registration_date || /done/i.test(r.registration_status || '')) : missingOf(r).length));
+    const full = d.rows.filter((r) => !missingOf(r).length).length;
+    out.innerHTML = `<div class="panel"><div class="kpis">${kpi(d.rows.length, 'live bookings')}${kpi(full, 'with every key paper')}${kpi(d.rows.filter((r) => r.kinds['Agreement for sale (registered)']).length, 'registered agreements uploaded')}${kpi(d.rows.filter((r) => !r.kinds['Agreement for sale (registered)'] && (r.registration_date || /done/i.test(r.registration_status || ''))).length, 'registered, agreement not uploaded', 'bad')}</div>
+      <div class="tabs" style="margin:12px 0 0">${[['all', 'All flats'], ['missing', 'Something missing'], ['agreement', 'Registered, agreement missing']].map(([k, l]) => `<button class="tab ${k === f ? 'on' : ''}" data-f="${k}">${l}</button>`).join('')}</div></div>
+      <div class="panel table-wrap"><input class="search" id="q" placeholder="Search unit or buyer"><table><tr><th>Unit</th><th>Buyer</th>${d.check.map((k) => `<th>${esc(short[k] || k)}</th>`).join('')}<th class="num">Other</th></tr>
+      ${rows.map((r) => { const other = Object.entries(r.kinds).filter(([k]) => !d.check.includes(k)).reduce((a, [, v]) => a + v, 0);
+        return `<tr data-s="${esc((r.unit_no + ' ' + (r.buyers || '')).toLowerCase())}"><td><a href="#/booking/${r.booking_id}">${esc(r.unit_no)}</a></td><td class="small">${esc(r.buyers || '')}</td>${d.check.map((k) => `<td>${r.kinds[k] ? '<span class="good-t">✓</span>' : '<span class="muted">—</span>'}</td>`).join('')}<td class="num">${other || ''}</td></tr>`; }).join('') || '<tr><td colspan="8" class="muted">Nothing here.</td></tr>'}</table></div>
+      <p class="small muted">Open a flat to upload its papers. Each flat has its own folder in Google Drive.</p>`;
+    document.querySelectorAll('[data-f]').forEach((t) => (t.onclick = () => { store.set('erp_cdf', t.dataset.f); custdocs(); }));
+    $('#q').oninput = (e) => { const q = e.target.value.toLowerCase(); document.querySelectorAll('tr[data-s]').forEach((tr) => (tr.style.display = tr.dataset.s.includes(q) ? '' : 'none')); };
+  }
+
   // Management dashboard: the key figures of every department on one screen (Admin and Management).
   async function mgmt() {
     const pq = proj ? `?project=${proj}` : '';

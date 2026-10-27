@@ -10,6 +10,7 @@ const server = http.createServer(async (req, res) => {
   // the rewrites in vercel.json
   if (u.pathname === '/api/me') u.pathname = '/api/portal';
   if (u.pathname === '/api/hr') { u.pathname = '/api/portal'; u.searchParams.set('hr', '1'); }
+  if (u.pathname === '/oauth/google') { u.pathname = '/api/custdocs'; u.searchParams.set('oauth', 'callback'); }
   res.status = (c) => ((res.statusCode = c), res);
   res.json = (o) => { res.setHeader('Content-Type', 'application/json'); res.end(JSON.stringify(o)); };
   if (routes[u.pathname]) {
