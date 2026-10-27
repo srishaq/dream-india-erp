@@ -1,0 +1,648 @@
+{
+ "version": "2026-10-16",
+ "source": "Dream Signature \u2013 BOQ, Budget tab (consultant quantity statement 22 Jun 2026; Rehab to 34th per architect); wastage steel 5%, concrete 1.5%",
+ "steelRate": 60000,
+ "lines": [
+  {
+   "building": "Sale",
+   "floor": "Foundation + ground floor",
+   "rmc": 11093.6,
+   "steel": 1401.97,
+   "rmcRate": 7758,
+   "opening": {
+    "rmc": 6084,
+    "steel": 739.4,
+    "note": "Estimated from site trackers to 1 Oct 2026: everything not tagged Rehab, piling or PCC. Site Head to confirm."
+   }
+  },
+  {
+   "building": "Sale",
+   "floor": "Floor 1 (commercial)",
+   "rmc": 1196.9,
+   "steel": 190.18,
+   "rmcRate": 7758
+  },
+  {
+   "building": "Sale",
+   "floor": "Floor 2 (commercial)",
+   "rmc": 1167.5,
+   "steel": 176.11,
+   "rmcRate": 7758
+  },
+  {
+   "building": "Sale",
+   "floor": "Floor 3 (commercial)",
+   "rmc": 1168.7,
+   "steel": 165.04,
+   "rmcRate": 7758
+  },
+  {
+   "building": "Sale",
+   "floor": "Floor 4 (commercial)",
+   "rmc": 1168.7,
+   "steel": 165.04,
+   "rmcRate": 7758
+  },
+  {
+   "building": "Sale",
+   "floor": "Floor 5 (podium parking)",
+   "rmc": 1158.5,
+   "steel": 152.4,
+   "rmcRate": 7758
+  },
+  {
+   "building": "Sale",
+   "floor": "Floor 6 (podium parking)",
+   "rmc": 1310.9,
+   "steel": 181.31,
+   "rmcRate": 7758
+  },
+  {
+   "building": "Sale",
+   "floor": "Floor 7 (podium parking)",
+   "rmc": 1310.9,
+   "steel": 181.31,
+   "rmcRate": 7758
+  },
+  {
+   "building": "Sale",
+   "floor": "Floor 8 (podium parking)",
+   "rmc": 1310.9,
+   "steel": 181.31,
+   "rmcRate": 7758
+  },
+  {
+   "building": "Sale",
+   "floor": "Floor 9 (eco deck / amenity)",
+   "rmc": 1332.8,
+   "steel": 184.93,
+   "rmcRate": 7758
+  },
+  {
+   "building": "Sale",
+   "floor": "Floor 10",
+   "rmc": 901.9,
+   "steel": 112.2,
+   "rmcRate": 7546
+  },
+  {
+   "building": "Sale",
+   "floor": "Floor 11",
+   "rmc": 792.7,
+   "steel": 94.67,
+   "rmcRate": 7538
+  },
+  {
+   "building": "Sale",
+   "floor": "Floor 12",
+   "rmc": 792.7,
+   "steel": 94.67,
+   "rmcRate": 7538
+  },
+  {
+   "building": "Sale",
+   "floor": "Floor 13",
+   "rmc": 792.7,
+   "steel": 94.67,
+   "rmcRate": 7538
+  },
+  {
+   "building": "Sale",
+   "floor": "Floor 14",
+   "rmc": 792.7,
+   "steel": 89.08,
+   "rmcRate": 7538
+  },
+  {
+   "building": "Sale",
+   "floor": "Floor 15",
+   "rmc": 792.7,
+   "steel": 82.1,
+   "rmcRate": 7538
+  },
+  {
+   "building": "Sale",
+   "floor": "Floor 16",
+   "rmc": 792.7,
+   "steel": 82.1,
+   "rmcRate": 7538
+  },
+  {
+   "building": "Sale",
+   "floor": "Floor 17",
+   "rmc": 792.7,
+   "steel": 82.1,
+   "rmcRate": 7538
+  },
+  {
+   "building": "Sale",
+   "floor": "Floor 18",
+   "rmc": 792.7,
+   "steel": 82.1,
+   "rmcRate": 7538
+  },
+  {
+   "building": "Sale",
+   "floor": "Floor 19",
+   "rmc": 792.7,
+   "steel": 82.1,
+   "rmcRate": 7538
+  },
+  {
+   "building": "Sale",
+   "floor": "Floor 20",
+   "rmc": 792.7,
+   "steel": 82.1,
+   "rmcRate": 7538
+  },
+  {
+   "building": "Sale",
+   "floor": "Floor 21",
+   "rmc": 792.7,
+   "steel": 82.1,
+   "rmcRate": 7538
+  },
+  {
+   "building": "Sale",
+   "floor": "Floor 22",
+   "rmc": 792.7,
+   "steel": 82.1,
+   "rmcRate": 7538
+  },
+  {
+   "building": "Sale",
+   "floor": "Floor 23",
+   "rmc": 792.7,
+   "steel": 82.1,
+   "rmcRate": 7538
+  },
+  {
+   "building": "Sale",
+   "floor": "Floor 24",
+   "rmc": 792.7,
+   "steel": 82.1,
+   "rmcRate": 7538
+  },
+  {
+   "building": "Sale",
+   "floor": "Floor 25",
+   "rmc": 792.7,
+   "steel": 82.1,
+   "rmcRate": 7538
+  },
+  {
+   "building": "Sale",
+   "floor": "Floor 26",
+   "rmc": 792.7,
+   "steel": 82.1,
+   "rmcRate": 7538
+  },
+  {
+   "building": "Sale",
+   "floor": "Floor 27",
+   "rmc": 792.7,
+   "steel": 82.1,
+   "rmcRate": 7538
+  },
+  {
+   "building": "Sale",
+   "floor": "Floor 28",
+   "rmc": 792.7,
+   "steel": 82.1,
+   "rmcRate": 7538
+  },
+  {
+   "building": "Sale",
+   "floor": "Floor 29",
+   "rmc": 792.7,
+   "steel": 82.1,
+   "rmcRate": 7538
+  },
+  {
+   "building": "Sale",
+   "floor": "Floor 30",
+   "rmc": 792.7,
+   "steel": 82.1,
+   "rmcRate": 7538
+  },
+  {
+   "building": "Sale",
+   "floor": "Floor 31",
+   "rmc": 792.7,
+   "steel": 82.1,
+   "rmcRate": 7538
+  },
+  {
+   "building": "Sale",
+   "floor": "Floor 32",
+   "rmc": 792.7,
+   "steel": 82.1,
+   "rmcRate": 7538
+  },
+  {
+   "building": "Sale",
+   "floor": "Floor 33",
+   "rmc": 792.7,
+   "steel": 82.1,
+   "rmcRate": 7538
+  },
+  {
+   "building": "Sale",
+   "floor": "Floor 34",
+   "rmc": 792.7,
+   "steel": 82.1,
+   "rmcRate": 7538
+  },
+  {
+   "building": "Sale",
+   "floor": "Floor 35",
+   "rmc": 792.7,
+   "steel": 82.1,
+   "rmcRate": 7538
+  },
+  {
+   "building": "Sale",
+   "floor": "Floor 36",
+   "rmc": 792.7,
+   "steel": 82.1,
+   "rmcRate": 7538
+  },
+  {
+   "building": "Sale",
+   "floor": "Floor 37",
+   "rmc": 792.7,
+   "steel": 82.1,
+   "rmcRate": 7538
+  },
+  {
+   "building": "Sale",
+   "floor": "Floor 38",
+   "rmc": 792.7,
+   "steel": 82.1,
+   "rmcRate": 7538
+  },
+  {
+   "building": "Sale",
+   "floor": "Floor 39",
+   "rmc": 792.7,
+   "steel": 82.1,
+   "rmcRate": 7538
+  },
+  {
+   "building": "Sale",
+   "floor": "Floor 40",
+   "rmc": 788.5,
+   "steel": 81.61,
+   "rmcRate": 7538
+  },
+  {
+   "building": "Sale",
+   "floor": "Floor 41",
+   "rmc": 788.5,
+   "steel": 81.61,
+   "rmcRate": 7538
+  },
+  {
+   "building": "Sale",
+   "floor": "Floor 42",
+   "rmc": 788.5,
+   "steel": 81.61,
+   "rmcRate": 7538
+  },
+  {
+   "building": "Sale",
+   "floor": "Floor 43",
+   "rmc": 788.5,
+   "steel": 81.61,
+   "rmcRate": 7538
+  },
+  {
+   "building": "Sale",
+   "floor": "Floor 44",
+   "rmc": 788.5,
+   "steel": 81.61,
+   "rmcRate": 7538
+  },
+  {
+   "building": "Sale",
+   "floor": "Floor 45",
+   "rmc": 788.5,
+   "steel": 81.61,
+   "rmcRate": 7538
+  },
+  {
+   "building": "Sale",
+   "floor": "Terrace",
+   "rmc": 657.7,
+   "steel": 74.95,
+   "rmcRate": 7600
+  },
+  {
+   "building": "Sale",
+   "floor": "Above terrace (LMR / OHT)",
+   "rmc": 120.2,
+   "steel": 14.13,
+   "rmcRate": 7758
+  },
+  {
+   "building": "Rehab",
+   "floor": "Foundation + ground floor",
+   "rmc": 1879.2,
+   "steel": 266.71,
+   "rmcRate": 7434,
+   "opening": {
+    "rmc": 1879.2,
+    "steel": 266.71,
+    "note": "Done before the portal (plinth complete); budget treated as fully used"
+   }
+  },
+  {
+   "building": "Rehab",
+   "floor": "Floor 1",
+   "rmc": 430.6,
+   "steel": 68.14,
+   "rmcRate": 7395
+  },
+  {
+   "building": "Rehab",
+   "floor": "Floor 2",
+   "rmc": 350.4,
+   "steel": 46.42,
+   "rmcRate": 7386
+  },
+  {
+   "building": "Rehab",
+   "floor": "Floor 3",
+   "rmc": 350.4,
+   "steel": 43.56,
+   "rmcRate": 7386
+  },
+  {
+   "building": "Rehab",
+   "floor": "Floor 4",
+   "rmc": 350.4,
+   "steel": 43.56,
+   "rmcRate": 7386
+  },
+  {
+   "building": "Rehab",
+   "floor": "Floor 5",
+   "rmc": 350.4,
+   "steel": 40.7,
+   "rmcRate": 7386
+  },
+  {
+   "building": "Rehab",
+   "floor": "Floor 6",
+   "rmc": 350.4,
+   "steel": 40.7,
+   "rmcRate": 7386
+  },
+  {
+   "building": "Rehab",
+   "floor": "Floor 7",
+   "rmc": 350.4,
+   "steel": 37.27,
+   "rmcRate": 7386
+  },
+  {
+   "building": "Rehab",
+   "floor": "Floor 8",
+   "rmc": 350.4,
+   "steel": 37.27,
+   "rmcRate": 7386
+  },
+  {
+   "building": "Rehab",
+   "floor": "Floor 9",
+   "rmc": 350.4,
+   "steel": 37.27,
+   "rmcRate": 7386
+  },
+  {
+   "building": "Rehab",
+   "floor": "Floor 10",
+   "rmc": 350.4,
+   "steel": 37.27,
+   "rmcRate": 7386
+  },
+  {
+   "building": "Rehab",
+   "floor": "Floor 11",
+   "rmc": 355.0,
+   "steel": 38.01,
+   "rmcRate": 7387
+  },
+  {
+   "building": "Rehab",
+   "floor": "Floor 12",
+   "rmc": 381.5,
+   "steel": 40.39,
+   "rmcRate": 7390
+  },
+  {
+   "building": "Rehab",
+   "floor": "Floor 13",
+   "rmc": 381.5,
+   "steel": 40.39,
+   "rmcRate": 7390
+  },
+  {
+   "building": "Rehab",
+   "floor": "Floor 14",
+   "rmc": 381.5,
+   "steel": 40.39,
+   "rmcRate": 7390
+  },
+  {
+   "building": "Rehab",
+   "floor": "Floor 15",
+   "rmc": 381.5,
+   "steel": 40.39,
+   "rmcRate": 7390
+  },
+  {
+   "building": "Rehab",
+   "floor": "Floor 16",
+   "rmc": 381.5,
+   "steel": 40.39,
+   "rmcRate": 7390
+  },
+  {
+   "building": "Rehab",
+   "floor": "Floor 17",
+   "rmc": 381.5,
+   "steel": 40.39,
+   "rmcRate": 7390
+  },
+  {
+   "building": "Rehab",
+   "floor": "Floor 18",
+   "rmc": 384.3,
+   "steel": 40.84,
+   "rmcRate": 7390
+  },
+  {
+   "building": "Rehab",
+   "floor": "Floor 19",
+   "rmc": 384.3,
+   "steel": 40.84,
+   "rmcRate": 7390
+  },
+  {
+   "building": "Rehab",
+   "floor": "Floor 20",
+   "rmc": 384.3,
+   "steel": 40.84,
+   "rmcRate": 7390
+  },
+  {
+   "building": "Rehab",
+   "floor": "Floor 21",
+   "rmc": 384.3,
+   "steel": 40.84,
+   "rmcRate": 7390
+  },
+  {
+   "building": "Rehab",
+   "floor": "Floor 22",
+   "rmc": 384.3,
+   "steel": 40.84,
+   "rmcRate": 7390
+  },
+  {
+   "building": "Rehab",
+   "floor": "Floor 23",
+   "rmc": 387.1,
+   "steel": 41.29,
+   "rmcRate": 7391
+  },
+  {
+   "building": "Rehab",
+   "floor": "Floor 24",
+   "rmc": 387.1,
+   "steel": 41.29,
+   "rmcRate": 7391
+  },
+  {
+   "building": "Rehab",
+   "floor": "Floor 25",
+   "rmc": 381.5,
+   "steel": 40.39,
+   "rmcRate": 7390
+  },
+  {
+   "building": "Rehab",
+   "floor": "Floor 26",
+   "rmc": 381.5,
+   "steel": 40.39,
+   "rmcRate": 7390
+  },
+  {
+   "building": "Rehab",
+   "floor": "Floor 27",
+   "rmc": 381.5,
+   "steel": 40.39,
+   "rmcRate": 7390
+  },
+  {
+   "building": "Rehab",
+   "floor": "Floor 28",
+   "rmc": 381.5,
+   "steel": 40.39,
+   "rmcRate": 7390
+  },
+  {
+   "building": "Rehab",
+   "floor": "Floor 29",
+   "rmc": 381.5,
+   "steel": 40.39,
+   "rmcRate": 7390
+  },
+  {
+   "building": "Rehab",
+   "floor": "Floor 30",
+   "rmc": 381.5,
+   "steel": 40.39,
+   "rmcRate": 7390
+  },
+  {
+   "building": "Rehab",
+   "floor": "Floor 31",
+   "rmc": 387.1,
+   "steel": 41.29,
+   "rmcRate": 7391
+  },
+  {
+   "building": "Rehab",
+   "floor": "Floor 32",
+   "rmc": 387.1,
+   "steel": 41.29,
+   "rmcRate": 7391
+  },
+  {
+   "building": "Rehab",
+   "floor": "Floor 33",
+   "rmc": 384.3,
+   "steel": 40.84,
+   "rmcRate": 7390
+  },
+  {
+   "building": "Rehab",
+   "floor": "Floor 34",
+   "rmc": 384.3,
+   "steel": 40.84,
+   "rmcRate": 7390
+  },
+  {
+   "building": "Rehab",
+   "floor": "Terrace",
+   "rmc": 286.9,
+   "steel": 35.5,
+   "rmcRate": 7434
+  },
+  {
+   "building": "Rehab",
+   "floor": "Above terrace (LMR / OHT)",
+   "rmc": 45.2,
+   "steel": 6.78,
+   "rmcRate": 7434
+  }
+ ],
+ "extra": [
+  {
+   "building": "Project",
+   "floor": "Shore piles",
+   "rmc": 291.5,
+   "steel": 39.28,
+   "rmcRate": 7257,
+   "opening": {
+    "rmc": 291.5,
+    "steel": 39.28,
+    "note": "Done"
+   }
+  },
+  {
+   "building": "Project",
+   "floor": "PCC / levelling",
+   "rmc": 453,
+   "steel": 0,
+   "rmcRate": 5800,
+   "opening": {
+    "rmc": 453,
+    "steel": 0,
+    "note": "Delivered to 29 Sep 2026"
+   }
+  }
+ ],
+ "cement": {
+  "bags": 98000,
+  "rate": 400,
+  "note": "Cement we supply free to Mandal for blockwork, plaster and waterproofing (estimate)"
+ },
+ "trackers": {
+  "steel": 981.54,
+  "rmc": 8687,
+  "asOf": "1 Oct 2026 (steel), 29 Sep 2026 (RMC)"
+ }
+}

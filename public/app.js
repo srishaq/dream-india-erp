@@ -102,6 +102,7 @@
 
   // ---------- shell ----------
   const anyOf = (...ps) => ps.some(can);
+  const sec = (m) => !!me && (me.sections || []).includes(m);
   const PAGES = [
     { key: 'home', label: 'Home', show: () => true },
     { key: 'training', label: 'Training videos', show: () => true },
@@ -138,6 +139,11 @@
     { key: 'bookscrm', label: 'Tally vs CRM', show: () => anyOf('accounts.view', 'ledger.view') },
     { key: 'ca', label: 'CA / Tax', show: () => can('ca.view'), href: () => '/ca' },
     { key: 'accsetup', label: 'Banks, heads & import', show: () => can('accounts.manage') },
+    { group: 'Site & purchase' },
+    { key: 'site', label: 'Construction (Site Office)', show: () => sec('site'), href: () => '/site' },
+    { key: 'purchase', label: 'Purchase', show: () => sec('purchase'), href: () => '/purchase' },
+    { key: 'drawings', label: 'Drawings', show: () => sec('drawings'), href: () => '/drawings' },
+    { key: 'hr', label: 'HR & Admin', show: () => sec('hr'), href: () => '/hr' },
     { group: 'Set-up' },
     { key: 'projects', label: 'Companies & projects', show: () => true },
     { key: 'plans', label: 'Payment plans', show: () => true },
@@ -235,6 +241,7 @@
     receipts: 'Enter receipts; Head Accounts approves them', ledgers: 'Each buyer’s statement of demands and payments',
     letters: 'Stage demands and reminders, by email or courier', followups: 'Calls, WhatsApps and promises to pay',
     verify: 'Items from the import still to check and close', prices: 'Rates, floor rise and the cost sheet', partners: 'Channel partners and brokerage',
+    site: 'Slab cycle, daily progress reports, hindrances, materials and floor-wise works', purchase: 'Purchase requests from request to payment', drawings: 'The drawing register from Google Drive', hr: 'Staff records, leave, letters and HR policies',
     crmtodo: 'Today’s calls, approvals, letters and what the 9 am check found', acctodo: 'What the 9 am Accounts audit found, plus your own tasks',
     training: 'Short videos on how to use each part of the ERP',
     accdash: 'Bank balances, collections, refunds, TDS, PDC, SRA tenants and reconciliation', acc: 'Live status of the registers: what is missing right now',
@@ -245,16 +252,16 @@
     accreports: 'Reports and the Tally import', checks: 'Daily checks on the registers', bookscrm: 'Tally receipts flat by flat against the CRM',
     ca: 'GST, TDS payable, RERA quarterly and cash flow, for the CA', accsetup: 'Bank accounts, heads, statement folders and imports', audit: 'Who changed what, and when',
   };
-  const PICON = { crmtodo: 'check', acctodo: 'check', training: 'book', dashboard: 'chart', units: 'grid', bookings: 'book', demands: 'tower', receipts: 'rupee', ledgers: 'book', letters: 'mail', followups: 'phone', verify: 'check', prices: 'rupee', partners: 'users',
+  const PICON = { site: 'tower', crmtodo: 'check', acctodo: 'check', training: 'book', dashboard: 'chart', units: 'grid', bookings: 'book', demands: 'tower', receipts: 'rupee', ledgers: 'book', letters: 'mail', followups: 'phone', verify: 'check', prices: 'rupee', partners: 'users',
     accdash: 'chart', acc: 'check', balances: 'rupee', bankauto: 'check', 'reg-cancellations': 'users', bookscrm: 'check', checks: 'check', audit: 'book', ca: 'chart', accsetup: 'grid' };
   const DEPTS = [
     { key: 'crm', title: 'Sales & CRM', sub: 'Collections, units, bookings, demands, receipts and follow-ups', icon: 'chart', tone: '#2B5C8A', group: 'CRM' },
-    { key: 'construction', title: 'Construction', sub: 'Construction stages, contractor billing and site progress', icon: 'hammer', tone: '#B7791F', pages: ['demands'], later: ['Contractor billing', 'Site progress'] },
+    { key: 'construction', title: 'Construction', sub: 'Site Office: slab cycle, daily progress reports, hindrances, materials and stages', icon: 'hammer', tone: '#B7791F', pages: ['site', 'demands'], later: ['Contractor billing'] },
     { key: 'accounts', title: 'Accounts', sub: 'Bank, receipts, payments, PDC, TDS, SRA rent, GST, SDR and Tally', icon: 'book', tone: '#117A65', group: 'Accounts', skip: ['ca', 'bookscrm', 'checks'] },
     { key: 'audit', title: 'CRM/Accounts Audit', sub: 'Tally against the CRM, checks, reconciling items and cancelled flats', icon: 'check', tone: '#0E8C9B', pages: ['bookscrm', 'checks', 'reg-recon', 'reg-cancellations', 'verify', 'audit'] },
     { key: 'ca', title: 'CA / Tax', sub: 'GST, TDS payable, RERA quarterly, cash flow and compliance', icon: 'chart', tone: '#7A5C99', direct: 'ca' },
-    { key: 'purchase', title: 'Purchase', sub: 'Indents, purchase orders and site stock', icon: 'cart', tone: '#117A65', soon: true },
-    { key: 'drawings', title: 'Drawings', sub: 'Approved plans, working drawings and revisions', icon: 'grid', tone: '#2B5C8A', soon: true },
+    { key: 'purchase', title: 'Purchase', sub: 'Requests, approvals, orders, receipts at site and payment for RMC, steel, cement and more', icon: 'cart', tone: '#117A65', direct: 'purchase' },
+    { key: 'drawings', title: 'Drawings', sub: 'Architect, structural and MEP drawings from the Site Plans folder', icon: 'grid', tone: '#2B5C8A', direct: 'drawings' },
     { key: 'training', title: 'Training videos', sub: 'Short videos on how to use each part of the ERP', icon: 'book', tone: '#B7791F', direct: 'training' },
   ];
   const pagesOf = (d) => {
@@ -283,7 +290,7 @@
     if (!act.some((p) => /aspire/i.test(p.name))) projTiles.push({ title: 'Dream Aspire', sub: 'Lokhandwala, Andheri West · commercial · not in the ERP yet', icon: 'building', tone: '#0E8C9B', soon: true });
     const tools = [
       { title: 'New Project Feasibility', sub: 'SRA Feasibility Desk · analyse Reg. 33(10) sites and keep the register', icon: 'chart', tone: '#2B5C8A', href: 'https://claude.ai/artifact/EnCX84ZBXUSRTzQ52qf4D6', ext: true },
-      { title: 'HR & Admin', sub: 'Staff records, leave, letters and HR policies', icon: 'users', tone: '#7A5C99', soon: true },
+      sec('hr') ? { title: 'HR & Admin', sub: 'Staff records, leave, letters and HR policies', icon: 'users', tone: '#7A5C99', href: '/hr' } : { title: 'HR & Admin', sub: 'Staff records, leave, letters and HR policies', icon: 'users', tone: '#7A5C99', soon: true },
     ];
     const sample = can('users.manage') && cur && (!total(cur.units) || cur.sample) ? `<div class="panel"><h2>Sample data for testing</h2>
       <p class="muted">Loads Dream Signature A and B Wing (floors 10 to 45, 8 units a floor) with made-up "Sample Buyer" bookings, demands up to the stages the real project has reached, and receipts. It never touches real data and can be removed in one click.</p>
@@ -426,7 +433,29 @@
     document.querySelectorAll('[data-edit]').forEach((b) => (b.onclick = () => { const u = d.users.find((x) => x.id === +b.dataset.edit); dialog(form(u), async (x) => users(await api('/api/users', { action: 'update', id: u.id, ...pick(x) }))); }));
     document.querySelectorAll('[data-reset]').forEach((b) => (b.onclick = async () => { const u = d.users.find((x) => x.id === +b.dataset.reset); if (!confirm(`Reset the password for ${u.name}? They will be signed out.`)) return; const r = await api('/api/users', { action: 'reset', id: u.id }); users(r); showTemp(r); }));
     document.querySelectorAll('[data-toggle]').forEach((b) => (b.onclick = async () => { const u = d.users.find((x) => x.id === +b.dataset.toggle); if (!u.disabled && !confirm(`Disable ${u.name}? They will be signed out at once.`)) return; users(await api('/api/users', { action: u.disabled ? 'enable' : 'disable', id: u.id })); }));
+    if (me.role === 'admin') portalCopyPanel();
   }
+  // Copy from the staff portal: logins (same usernames and passwords), HR & Admin, Purchase and Construction.
+  async function portalCopyPanel() {
+    const box = document.createElement('div'); box.className = 'panel'; box.innerHTML = '<h2>Copy from the staff portal</h2><p class="muted">Checking the portal\'s database…</p>';
+    $('#page').appendChild(box);
+    let st; try { st = await api('/api/portal?copy=1'); } catch (e) { box.querySelector('p').textContent = e.message; return; }
+    if (!st.connected) { box.querySelector('p').textContent = st.hint; return; }
+    if (st.found === false) { box.querySelector('p').textContent = st.error; return; }
+    box.innerHTML = `<h2>Copy from the staff portal</h2><p class="muted">The portal's database is connected${st.readOnly ? ' (read only)' : ''}. It has <b>${st.users}</b> logins, and ${Object.entries(st.sections).map(([k, v]) => `${esc(k)} (${v} lists)`).join(', ')}.
+      Copying brings every login across with the <b>same username and password</b>, and replaces the ERP's HR, Purchase and Construction records with the portal's. The portal itself is not changed. Run it again on switch-over day for a fresh copy.</p>
+      <div class="actions"><button id="pcopy">Copy now</button></div><div id="pres"></div>`;
+    $('#pcopy').onclick = async (e) => {
+      if (!confirm('Copy the logins, HR, Purchase and Construction from the portal now?')) return;
+      e.target.disabled = true; e.target.textContent = 'Copying… (up to a minute)';
+      try {
+        const r = await api('/api/portal?copy=1', { go: true });
+        $('#pres').innerHTML = `<p class="ok">Copied. Logins: ${r.users.added} added, ${r.users.updated} updated${r.users.skipped.length ? `, ${r.users.skipped.length} not copied: ${esc(r.users.skipped.join('; '))}` : ''}. Records: ${Object.entries(r.copied).map(([k, v]) => `${esc(k)} ${v}`).join(', ')}.</p>`;
+        e.target.textContent = 'Copy again'; e.target.disabled = false;
+      } catch (x) { e.target.disabled = false; e.target.textContent = 'Copy now'; $('#pres').innerHTML = `<p class="err">${esc(x.message)}</p>`; }
+    };
+  }
+
 
   async function audit() {
     const d = await api('/api/audit?limit=300');

@@ -1,0 +1,98 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="robots" content="noindex,nofollow">
+<meta name="theme-color" content="#140C59">
+<link rel="icon" type="image/svg+xml" href="/icon.svg">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="Dream India Realty">
+<title>Drawings · Dream Signature</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Schibsted+Grotesk:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="/portal.css">
+<style>
+.top{display:flex;gap:16px;align-items:flex-start;justify-content:space-between;flex-wrap:wrap}
+.top .acts{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+.checked{color:var(--muted);font-size:13px}
+a.btn{text-decoration:none;display:inline-flex;align-items:center;gap:6px}
+.kpis{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:12px}
+.kpi{all:unset;box-sizing:border-box;cursor:pointer;background:var(--card);border:1px solid var(--line);border-radius:12px;padding:14px 16px;display:grid;gap:2px;box-shadow:0 1px 2px rgba(20,12,89,.05)}
+.kpi:hover{border-color:#9AA6C8}
+.kpi[aria-pressed="true"]{border-color:var(--ink);box-shadow:inset 0 0 0 1px var(--ink)}
+.kpi small{color:var(--muted);font-weight:600;font-size:12.5px}
+.kpi b{font-size:26px;letter-spacing:-.02em;font-variant-numeric:tabular-nums}
+.kpi span{color:var(--muted);font-size:12.5px}
+.kpi.new b{color:#0E8C9B}
+.ctl{display:flex;gap:10px 14px;flex-wrap:wrap;align-items:center}
+.search{flex:1 1 260px;position:relative}
+.search input{width:100%;padding:10px 12px 10px 36px;border:1px solid #C3CAC4;border-radius:8px;font-size:15px;background:#fff}
+.search svg{position:absolute;left:11px;top:50%;transform:translateY(-50%);color:var(--muted)}
+.seg{display:inline-flex;background:#EEF0EC;border-radius:9px;padding:3px;gap:2px}
+.seg button{border:0;background:none;padding:6px 12px;border-radius:7px;font-weight:600;font-size:13.5px;color:var(--muted);cursor:pointer;white-space:nowrap}
+.seg button[aria-pressed="true"]{background:#fff;color:var(--ink);box-shadow:0 1px 2px rgba(20,12,89,.12)}
+.ctl select{padding:8px 10px;border:1px solid #C3CAC4;border-radius:8px;background:#fff;font-size:14px}
+.chk{display:inline-flex;gap:6px;align-items:center;font-size:13.5px;color:var(--ink);cursor:pointer}
+.group{display:grid;gap:8px}
+.ghead{display:flex;align-items:baseline;gap:10px;margin-top:6px}
+.ghead h2{margin:0;font-size:17px}
+.ghead span{color:var(--muted);font-size:13px}
+.list{background:var(--card);border:1px solid var(--line);border-radius:12px;overflow:hidden}
+.row{display:grid;grid-template-columns:minmax(0,1fr) 150px 110px 80px 92px;gap:12px;align-items:center;padding:10px 14px;border-bottom:1px solid #EDF0EB}
+.row:last-child{border-bottom:0}
+.row.hd{background:#FAFBF9;color:var(--muted);font-size:12.5px;font-weight:600;padding:8px 14px}
+.row .nm{min-width:0}
+.row .nm b{display:block;font-weight:600;overflow-wrap:anywhere}
+.row .nm small{display:block;color:var(--muted);font-size:12.5px;overflow-wrap:anywhere}
+.row .muted{color:var(--muted);font-size:13.5px;font-variant-numeric:tabular-nums}
+.tag.new{background:#DDF3F5;color:#0B6E7A}
+.tag.cad{background:#F1ECF7;color:#5B4380}
+.tag.tr{background:#EEF0EC;color:var(--ink);font-weight:500}
+.open{justify-self:end}
+.state{padding:28px;text-align:left;display:grid;gap:8px;justify-items:start}
+.state.err b{color:var(--risk)}
+.note{color:var(--muted);font-size:13px;margin:0}
+@media (max-width:820px){
+  .kpis{grid-template-columns:repeat(2,minmax(0,1fr))}
+  .row{grid-template-columns:minmax(0,1fr) auto;gap:4px 10px}
+  .row.hd{display:none}
+  .row .c-tr,.row .c-dt,.row .c-sz{grid-column:1;font-size:12.5px}
+  .row .c-tr{order:2}.row .c-dt{order:3}.row .c-sz{display:none}
+  .row .open{grid-column:2;grid-row:1 / span 3;align-self:center}
+}
+</style>
+</head>
+<body>
+<header><div class="bar"><img src="/logo.svg" alt="Dream India Realty" width="123" height="32"><div class="title"><small>Dream Signature</small><b>Drawings</b></div><div id="mods"></div><div class="end" id="user"></div></div></header>
+<main hidden id="main">
+  <section class="panel">
+    <div class="top">
+      <div><h1>Drawings</h1><p class="sub" style="max-width:68ch">Architect, structural and MEP drawings for Rehab and Sale, read live from the consultants' Google Drive folder. New uploads show up here on their own.</p></div>
+      <div class="acts"><span class="checked" id="checked"></span><button class="btn small" id="refresh" type="button">Refresh</button><a class="btn small" id="folder" target="_blank" rel="noopener" href="#">Open folder in Drive</a></div>
+    </div>
+  </section>
+
+  <div class="kpis" id="kpis"></div>
+
+  <section class="panel" style="display:grid;gap:12px">
+    <div class="ctl">
+      <label class="search"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg><input id="q" type="search" placeholder="Search: 10th floor, plumbing, elevation, staircase…" aria-label="Search drawings"></label>
+      <div class="seg" id="bld" role="group" aria-label="Building"></div>
+      <select id="trade" aria-label="Trade"></select>
+    </div>
+    <div class="ctl">
+      <label class="chk"><input type="checkbox" id="onlyNew"> Only new (last 7 days)</label>
+      <label class="chk"><input type="checkbox" id="cad"> Also show CAD and zip files</label>
+      <span class="note" id="count" role="status"></span>
+    </div>
+  </section>
+
+  <div id="out" style="display:grid;gap:18px"><div class="panel state">Loading drawings…</div></div>
+  <p class="note">Drawings open in Google Drive. If one says "You need access", ask the Admin to share the Site Plans folder with your Google email (view only).</p>
+</main>
+<script src="/pshell.js"></script>
+<script src="/page-drawings.js"></script>
+</body>
+</html>

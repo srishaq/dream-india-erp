@@ -1,0 +1,114 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="robots" content="noindex,nofollow">
+<meta name="theme-color" content="#140C59">
+<link rel="icon" type="image/svg+xml" href="/icon.svg">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="Dream India Realty">
+<title>Purchase · Dream Signature</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Schibsted+Grotesk:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="/portal.css">
+<style>
+main>*{min-width:0}
+.head>div{min-width:0}
+.head{display:flex;flex-wrap:wrap;gap:12px 20px;align-items:end;justify-content:space-between}
+.flow{display:flex;flex-wrap:wrap;gap:6px;align-items:center;font-size:12.5px;color:var(--muted);margin-top:8px}
+.flow span{background:#EEF0EC;border-radius:99px;padding:3px 10px;font-weight:600;color:var(--ink)}
+.flow i{font-style:normal;color:#9AA3A8}
+.tiles{display:grid;grid-template-columns:repeat(auto-fill,minmax(180px,1fr));gap:12px}
+.tile{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:14px 16px;text-align:left;cursor:pointer;display:grid;gap:2px;font:inherit;color:var(--ink)}
+.tile b{font-size:28px;line-height:1.1;font-variant-numeric:tabular-nums}
+.tile span{font-size:13px;color:var(--muted);font-weight:600}
+.tile.hot{border-color:#E8B44C;background:#FFF8E8}
+.tile[aria-pressed="true"]{outline:2px solid var(--ink);outline-offset:-2px}
+.tabs{display:flex;gap:4px;background:#E7E9E4;border-radius:999px;padding:3px;width:max-content;max-width:100%;overflow-x:auto}
+.tabs button{border:0;background:none;padding:7px 16px;border-radius:999px;font-weight:600;cursor:pointer;color:var(--muted);white-space:nowrap}
+.tabs button[aria-selected="true"]{background:#fff;color:var(--ink);box-shadow:0 1px 3px rgba(20,12,89,.12)}
+.tools{display:flex;flex-wrap:wrap;gap:10px;align-items:end}
+.tools .field{min-width:150px}
+.tools input[type=search]{min-width:220px}
+.tools>*{min-width:0}
+.st{display:inline-block;padding:2px 10px;border-radius:99px;font-size:12px;font-weight:700;white-space:nowrap}
+.st.pending_approval{background:#FDECC8;color:#8A5300}.st.requested{background:#E3ECF5;color:#1F4E79}.st.ordered{background:#EDE7F6;color:#4B2C83}
+.st.received{background:#DFF3F5;color:#0B5D66}.st.accounts_ok{background:#E2F4E8;color:#17663A}.st.paid{background:#D3EEDC;color:#0E4D2A}
+.st.rejected,.st.cancelled{background:#EEF0EC;color:#5E6A72}
+.flag{display:inline-block;margin:2px 4px 0 0;padding:1px 8px;border-radius:99px;font-size:11.5px;font-weight:700;background:#FBE4E1;color:var(--risk);white-space:nowrap}
+td.n,th.n{text-align:right;font-variant-numeric:tabular-nums;white-space:nowrap}
+tr.click{cursor:pointer}tr.click:hover td{background:#F7F8F5}
+.neg{color:var(--risk);font-weight:700}.low{color:#8A5300;font-weight:700}
+.bar2{height:6px;border-radius:99px;background:#EDF0EB;overflow:hidden;min-width:70px}.bar2 i{display:block;height:100%;background:#2B5C8A}.bar2 i.o{background:var(--risk)}
+.scrim{position:fixed;inset:0;background:rgba(20,12,89,.45);z-index:60;display:grid;place-items:start center;overflow-y:auto;padding:calc(24px + env(safe-area-inset-top)) max(12px, env(safe-area-inset-right)) 24px max(12px, env(safe-area-inset-left))}
+.sheet{background:#fff;border-radius:14px;width:min(760px,100%);padding:22px;display:grid;gap:16px}
+.sheet h3{margin:0;font-size:20px}
+.sheet .top{display:flex;justify-content:space-between;gap:12px;align-items:start}
+.x{border:0;background:#EEF0EC;width:34px;height:34px;border-radius:50%;cursor:pointer;font-size:18px;line-height:1;flex:none}
+.kv{display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:10px 18px;font-size:14px}
+.kv div{display:grid;gap:1px}.kv small{color:var(--muted);font-size:12px;font-weight:600}
+.box{border:1px solid var(--line);border-radius:10px;padding:14px;display:grid;gap:12px;background:#FAFBF9}
+.box h4{margin:0;font-size:15px}
+.form{display:grid;grid-template-columns:repeat(auto-fit,minmax(170px,1fr));gap:12px}
+.form .wide{grid-column:1/-1}
+.form .field{min-width:0}.form input,.form select,.form textarea{width:100%;min-width:0}
+.field textarea{padding:10px 11px;border:1px solid #C3CAC4;border-radius:8px;font:inherit;font-size:15px;color:var(--ink);background:#fff;font-weight:400;min-height:64px;resize:vertical}
+.acts{display:flex;flex-wrap:wrap;gap:8px;justify-content:flex-end}
+.tl{list-style:none;margin:0;padding:0;display:grid;gap:8px;font-size:13.5px}
+.tl li{display:grid;grid-template-columns:150px 1fr;gap:10px}.tl time{color:var(--muted);font-variant-numeric:tabular-nums}
+.chk{font-size:13.5px;padding:10px 12px;border-radius:8px;background:#E3ECF5;color:#1F4E79}
+.chk.over{background:#FBE4E1;color:var(--risk)}
+.empty{padding:28px;text-align:center;color:var(--muted)}
+.note{font-size:12.5px;color:var(--muted)}
+.items{display:grid;gap:8px}
+.irow{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr) 34px;gap:8px;align-items:end}
+.irow.r3{grid-template-columns:minmax(0,1.1fr) minmax(0,1fr) minmax(0,1fr)}
+.irow.r2{grid-template-columns:minmax(0,1.1fr) minmax(0,1fr)}
+.irow .field{min-width:0}.irow input,.irow select{width:100%;min-width:0}
+.irow b{align-self:center;font-size:14.5px}
+.irow .x{width:34px;height:40px;border-radius:8px}
+.addrow{justify-self:start;border:1px dashed #9AA3A8;background:none;border-radius:8px;padding:7px 12px;font:inherit;font-weight:600;color:var(--ink);cursor:pointer}
+.itbl{width:100%;min-width:0;border-collapse:collapse;font-size:13.5px}.itbl th,.itbl td{padding:5px 8px;border-bottom:1px solid var(--line);text-align:left}.itbl th{color:var(--muted);font-size:12px}
+@media (max-width:640px){.tl li{grid-template-columns:1fr;gap:0}.sheet{padding:16px}.tools input[type=search]{min-width:0;width:100%}.tools .field{flex:1 1 140px;min-width:0}}
+</style>
+</head>
+<body>
+<header><div class="bar"><img src="/logo.svg" alt="Dream India Realty" width="123" height="32"><div class="title"><small>Dream Signature</small><b>Purchase</b></div><div id="mods"></div><div class="end" id="user"></div></div></header>
+<main hidden id="main">
+  <section class="head">
+    <div>
+      <h1>Purchase requests</h1>
+      <p class="sub">Excavation, RMC, steel, cement and other materials. RMC, steel and cement are checked against each floor's budget.</p>
+      <div class="flow" aria-label="Steps"><span>1 Site requests</span><i>→</i><span>2 Management approves</span><i>→</i><span>3 Purchase orders and enters bill</span><i>→</i><span>4 Site confirms quantity received</span><i>→</i><span>5 Accounts approve</span><i>→</i><span>6 Paid</span></div>
+      <p class="note" style="margin:6px 0 0">Every request goes to Management (Sameer) for approval before anything is ordered. Requests over a floor's budget are marked for Management.</p>
+    </div>
+    <button class="btn go" id="newBtn" hidden>New request</button>
+  </section>
+  <section class="tiles" id="tiles"></section>
+  <div class="tabs" role="tablist"><button role="tab" data-tab="list" aria-selected="true">Requests</button><button role="tab" data-tab="budget" aria-selected="false">Budget by floor</button></div>
+  <section class="panel" id="listView">
+    <div class="tools">
+      <label class="field">Show<select id="fStatus"><option value="open">Open</option><option value="mine">Waiting for me</option><option value="paid">Paid</option><option value="closed">Rejected or cancelled</option><option value="all">All</option></select></label>
+      <label class="field">Material<select id="fMat"><option value="">All materials</option></select></label>
+      <label class="field">Building<select id="fBld"><option value="">All buildings</option><option>Sale</option><option>Rehab</option><option>Project</option></select></label>
+      <label class="field">Search<input type="search" id="fQ" placeholder="Request no., vendor, floor, challan"></label>
+    </div>
+    <div class="tbl" style="margin-top:14px"><table><thead><tr><th>Request</th><th>Material</th><th class="n">Quantity</th><th>For</th><th>Status</th><th class="n">Bill ₹</th></tr></thead><tbody id="rows"></tbody></table></div>
+  </section>
+  <section class="panel" id="budgetView" hidden>
+    <div class="tools">
+      <label class="field">Building<select id="bBld"><option>Sale</option><option>Rehab</option><option>Project</option></select></label>
+      <p class="note" id="bSrc" style="margin:0;flex:1 1 300px"></p>
+    </div>
+    <div class="tbl" style="margin-top:14px"><table><thead><tr><th>Floor</th><th class="n">RMC budget m³</th><th class="n">Used m³</th><th class="n">Balance m³</th><th></th><th class="n">Steel budget MT</th><th class="n">Used MT</th><th class="n">Balance MT</th><th></th></tr></thead><tbody id="brows"></tbody></table></div>
+    <p class="note" id="bFoot" style="margin:10px 0 0"></p>
+  </section>
+  <p class="err" id="pageErr"></p>
+</main>
+<div class="scrim" id="scrim" hidden><div class="sheet" id="sheet" role="dialog" aria-modal="true"></div></div>
+<script src="/pshell.js"></script>
+<script src="/page-purchase.js"></script>
+</body>
+</html>

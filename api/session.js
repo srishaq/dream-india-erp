@@ -15,7 +15,11 @@ async function state(req) {
   const n = await db.one('select count(*)::int as n from users');
   if (n.n === 0) return { state: 'needs-setup', codeRequired };
   const u = await auth.session(req);
-  return { state: 'ready', user: u ? auth.publicUser(u) : null };
+  if (!u) return { state: 'ready', user: null };
+  // sections brought over from the staff portal (Construction, Purchase, Drawings, HR & Admin) this login may open
+  const pu = await require('../lib/portal/auth').session(req).catch(() => null);
+  const sections = pu ? require('../lib/portal/auth').publicUser(pu).modules.filter((m) => ['site', 'purchase', 'drawings', 'hr'].includes(m)) : [];
+  return { state: 'ready', user: { ...auth.publicUser(u), sections } };
 }
 
 module.exports = route({

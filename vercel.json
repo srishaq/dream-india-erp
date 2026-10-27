@@ -7,7 +7,7 @@
   },
   "headers": [
     {
-      "source": "/((?!dashboard|ca$|ca\\.html|accounts$|accounts\\.html).*)",
+      "source": "/((?!dashboard|ca$|ca\\.html|accounts$|accounts\\.html|site$|site\\.html|purchase$|purchase\\.html|drawings$|drawings\\.html|hr$|hr\\.html).*)",
       "headers": [
         {
           "key": "X-Frame-Options",
@@ -36,7 +36,7 @@
       ]
     },
     {
-      "source": "/(dashboard|ca|accounts)(.html)?",
+      "source": "/(dashboard|ca|accounts|site|purchase|drawings|hr)(.html)?",
       "headers": [
         {
           "key": "X-Frame-Options",
@@ -77,6 +77,16 @@
     {
       "path": "/api/cron?job=pdc",
       "schedule": "50 3 * * *"
+    }
+  ],
+  "rewrites": [
+    {
+      "source": "/api/me",
+      "destination": "/api/portal"
+    },
+    {
+      "source": "/api/hr",
+      "destination": "/api/portal?hr=1"
     }
   ]
 }
