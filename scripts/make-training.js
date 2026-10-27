@@ -158,7 +158,7 @@ async function play(page, steps) {
       else if (op === 'go') { await page.goto(BASE + a); await page.waitForLoadState('networkidle').catch(() => {}); await page.waitForTimeout(700); await recap(); }
       else if (op === 'hash') { await page.evaluate((h) => { document.querySelectorAll('dialog[open]').forEach((d) => { d.close(); d.remove(); }); location.hash = h; }, a); await page.waitForTimeout(300); await page.waitForFunction(() => { const p = document.querySelector('#page'); return p && !/^Loading/.test(p.innerText.trim()); }, null, { timeout: 15000 }).catch(() => {}); await page.waitForTimeout(900); await recap(); }
       else if (op === 'fill') { const { l } = await rect(a); await l.fill(b); await page.waitForTimeout(600); }
-      else if (op === 'set') { const { l } = await rect(a); const tag = await l.evaluate((e) => e.tagName); if (tag === 'SELECT') await l.selectOption({ label: b }).catch(() => l.selectOption(b)); else { await l.click(); await l.fill(''); await l.pressSequentially(String(b), { delay: 35 }); } await page.waitForTimeout(450); }
+      else if (op === 'set') { const { l } = await rect(a); const tag = await l.evaluate((e) => e.tagName); if (tag === 'SELECT') { const v = await l.evaluate((e, t) => { const o = [...e.options].find((x) => x.text === t) || [...e.options].find((x) => x.text.toLowerCase().includes(String(t).toLowerCase().replace(/\s*\(.*$/, ''))); return o ? o.value : null; }, b); if (v == null) throw new Error('no option ' + b); await l.selectOption(v, { timeout: 4000 }); } else { await l.click(); await l.fill(''); await l.pressSequentially(String(b), { delay: 35 }); } await page.waitForTimeout(450); }
       else if (op === 'chapter') { await page.evaluate(() => { window.__cap(); window.__box(); }).catch(() => {}); await ov(); await page.evaluate(([x, y]) => window.__title(x, y, ''), [a, b]); await speak(page, b + '.', 2200); await page.evaluate(() => window.__title()); }
       else if (op === 'pick') { const { l } = await rect(a); await l.selectOption({ index: b || 1 }); await page.waitForTimeout(500); }
       else if (op === 'key') { await page.keyboard.press(a); await page.waitForTimeout(b || 800); }
@@ -228,7 +228,7 @@ const L = {
     ['hl', '.note >> nth=0', 2400],
     ['chapter', 'Part 4', 'Construction stages and demands'],
     ['hash', '#/demands'], ['cap', 'When site completes a stage, it is recorded here, with the date and who certified it.'],
-    ['click', '#stage'], ['pick', 'dialog select[name=buildingId]', 0], ['set', 'dialog select[name=stageName]', 'On Completion of Plinth (10%)'], ['fill', 'dialog input[name=completedOn]', () => addDays(ist(), -1)], ['set', 'dialog input[name=certifiedBy]', 'Site engineer'],
+    ['click', '#stage'], ['set', 'dialog select[name=buildingId]', 'A Wing'], ['set', 'dialog select[name=stageName]', 'On Completion of Plinth (10%)'], ['fill', 'dialog input[name=completedOn]', () => addDays(ist(), -1)], ['set', 'dialog input[name=certifiedBy]', 'Site engineer'],
     ['click', 'dialog button[value=save]', 1600],
     ['cap', 'Then CRM prepares the demand run for that wing and stage.'], ['click', '#run'], ['click', 'dialog button[value=save]', 2000],
     ['cap', 'The run lists every buyer with the amount and GST. Check it. Head CRM then taps Approve and raise demands. Buyers who already have this stage are skipped.'],
