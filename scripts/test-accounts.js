@@ -59,7 +59,8 @@ let n = 0; const step = async (name, fn) => { await fn(); n++; console.log('  âœ
     const t = await admin('/api/accounts?view=todo');
     const item = (s) => t.items.find((x) => x.task.startsWith(s));
     assert.equal(item('Payments still needing bill details').n, 1); assert.equal(t.needBill[0].ref_id, 'PO00003'); assert.match(t.needBill[0].needs, /PAN/);
-    assert.equal(item('Bank items not yet matched').n, 1); assert.ok(item('Banks whose balance does not agree').n >= 1); // the made-up balances in the sample do not add up
+    assert.equal(item('Bank items not yet matched').n, 1); const bal = await admin('/api/accounts?view=balances&date=' + t.today); // the count matches the Daily Bank Balance page on the same day
+    assert.equal(item('Banks whose balance does not agree').n, bal.rows.filter((r) => r.difference != null && Math.abs(r.difference) > 1).length);
   });
   await step('SRA tenants: rent by year, payments from Tenant Rent Links, balance and position', async () => {
     const t = await admin('/api/accounts?reg=tenants');

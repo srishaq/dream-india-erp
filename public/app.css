@@ -256,3 +256,4 @@ button.link { background: none; border: 0; padding: 0; color: var(--brand); font
 .tr-body h3 { margin: 0; font-size: 16.5px; }
 .tr-foot { display: flex; justify-content: space-between; align-items: center; gap: 8px; margin-top: 4px; }
 .sec { font-size: 13px; font-weight: 700; letter-spacing: .1em; text-transform: uppercase; color: var(--ink-3); margin: 22px 0 10px; }
+.cancel-box { border-color: var(--bad); }

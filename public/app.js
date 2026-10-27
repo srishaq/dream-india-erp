@@ -582,7 +582,13 @@
     $('#page').innerHTML = `<p class="crumbs"><a href="#/bookings">Bookings</a> › ${esc(d.unit.unit_no)}</p>
       <div class="page-head"><div><h1>${esc(d.unit.unit_no)} · ${esc(d.applicants.map((a) => a.name).join(' & '))} ${statusPill}${b.sample ? ' <span class="pill grey">sample</span>' : ''}</h1>
         <p class="muted">${esc(d.unit.project)} · ${esc(d.unit.building)} · floor ${d.unit.floor ?? '—'} · ${esc(d.unit.typology || '')} ${d.unit.carpet_sqft ? toNum(d.unit.carpet_sqft) + ' sq ft' : ''} · ${esc(d.unit.company)}</p></div></div>
-      ${b.cancel_requested_at && b.status === 'active' ? `<div class="note" style="margin-bottom:14px">Cancellation requested on ${fmtD(b.cancel_requested_at)}: ${esc(b.cancel_reason)}. Waiting for Management.</div>` : ''}
+      ${b.cancel_requested_at && b.status === 'active' ? `<div class="note" style="margin-bottom:14px">Cancellation requested on ${fmtD(b.cancel_requested_at)}${b.cancel_date ? ', cancelling from ' + fmtD(String(b.cancel_date).slice(0, 10)) : ''}${toNum(b.cancel_charges) ? ', cancellation charges ' + inr(b.cancel_charges) : ''}: ${esc(b.cancel_reason)}. Waiting for Management.</div>` : ''}
+      ${b.status === 'cancelled' ? (() => { const c = d.cancellation || {}; const paid = toNum(c.refund_rtgs) + toNum(c.refund_white); const due = c.refund_due != null ? toNum(c.refund_due) : toNum(c.received);
+        return `<div class="panel cancel-box"><h2>Cancelled booking · kept on record</h2>
+          <p class="muted">This booking was cancelled${c.cancel_date ? ' on ' + fmtD(String(c.cancel_date).slice(0, 10)) : b.cancelled_at ? ' on ' + fmtD(String(b.cancelled_at).slice(0, 10)) : ''}${c.cancelled_by_name ? ', approved by ' + esc(c.cancelled_by_name) : ''}. Reason: ${esc(b.cancel_reason || '—')}. The buyer, their receipts and the refund stay here and in Accounts → Cancelled flats, so the CRM and the books agree.</p>
+          <div class="kpis">${kpi(inr(c.received), 'received from this buyer')}${kpi(inr(c.deduction), 'cancellation charges')}${kpi(inr(due), 'refund due')}${kpi(inr(paid), 'refunded so far')}${kpi(esc(c.refund_status || 'Pending'), 'refund status (Accounts)', /^(done|nothing)/i.test(c.refund_status || '') ? '' : 'bad')}</div>
+          <p class="small" style="margin-top:10px">${d.current ? `The flat is now booked to <a href="#/booking/${d.current.id}">${esc(d.current.buyers || 'a new buyer')}</a>${d.current.status === 'pending' ? ' (waiting for approval)' : ''}.` : `The flat ${esc(d.unit.unit_no)} is free to book again.${can('booking.create') ? ' <button class="small" id="rebook">Book this flat for a new buyer</button>' : ''}`}</p></div>`; })() : ''}
+      ${d.earlier && d.earlier.length ? `<div class="note" style="margin-bottom:14px">Earlier on this flat: ${d.earlier.map((e) => `<a href="#/booking/${e.id}">${esc(e.buyers || 'buyer')}</a> (cancelled ${fmtD(String(e.cancel_date || e.cancelled_at || '').slice(0, 10))}${e.refund_status ? ', refund ' + esc(e.refund_status) : ''})`).join('; ')}.</div>` : ''}
       <div class="actions" style="margin:0 0 10px">${actions.join('')}</div>
       <div class="actions" style="margin:0 0 16px"><span class="muted small" style="align-self:center">Documents:</span>${docBtns.join('')}</div>
       <div class="panel"><div class="kpis">${kpi(inr(b.agreement_value), 'agreement value')}${kpi(inr(bal.demanded), 'demanded')}${kpi(inr(bal.credit_av), 'received (AV + TDS)')}
@@ -636,8 +642,15 @@
       <div class="row"><div><label>Stamp duty (₹)</label><input name="stampDuty" inputmode="decimal"></div><div><label>Registration fee (₹)</label><input name="registrationFee" inputmode="decimal" value="30000"></div></div>`,
     async (x) => { await api('/api/bookings', { action: 'register', id: b.id, ...x }); toast('Registration recorded.'); bookingPage(id); });
     if ($('#receipt')) $('#receipt').onclick = () => receiptForm({ id: b.id, label: `${d.unit.unit_no} · ${d.applicants.map((a) => a.name).join(' & ')}`, gstRate: toNum(b.gst_rate) }, () => bookingPage(id));
-    if ($('#cancelReq')) $('#cancelReq').onclick = () => { const r = prompt('Why is this booking being cancelled?'); if (r) act({ action: 'cancel-request', reason: r }, 'Cancellation sent to Management for approval.'); };
-    if ($('#cancelOk')) $('#cancelOk').onclick = () => confirm('Cancel this booking? Open demands are cancelled and the unit becomes available. Receipts stay on record for the refund.') && act({ action: 'cancel-approve' }, 'Booking cancelled.');
+    if ($('#cancelReq')) $('#cancelReq').onclick = () => dialog(`<h2>Request cancellation · ${esc(d.unit.unit_no)}</h2>
+      <p class="muted">The booking is not deleted. Once Management approves, it stays on record as Cancelled with the buyer and every receipt, Accounts gets it on the Cancelled flats list for the refund, and the flat becomes free to book again.</p>
+      <label>Reason</label><textarea name="reason" rows="2" required></textarea>
+      <div class="row"><div><label>Cancellation date</label><input type="date" name="cancelDate" value="${todayIso()}" max="${todayIso()}"></div>
+        <div><label>Cancellation charges (₹), if any</label><input name="charges" inputmode="decimal" placeholder="0"></div></div>
+      <p class="small muted">Received so far from this buyer: <b>${inr(d.receipts.filter((r) => r.status === 'approved').reduce((a, r) => a + toNum(r.amount), 0))}</b>. Refund due = received − charges.</p>`,
+      async (x) => { await api('/api/bookings', { action: 'cancel-request', id: b.id, reason: x.reason, cancelDate: x.cancelDate, charges: x.charges }); toast('Cancellation sent to Management for approval.'); bookingPage(b.id); });
+    if ($('#rebook')) $('#rebook').onclick = () => bookingForm({ id: d.unit.id, unit_no: d.unit.unit_no });
+    if ($('#cancelOk')) $('#cancelOk').onclick = () => confirm('Approve the cancellation? The booking stays on record as Cancelled with its receipts, Accounts gets it on the Cancelled flats list for the refund, open demands are cancelled and the flat becomes free to book again.') && act({ action: 'cancel-approve' }, 'Booking cancelled.');
     if ($('#cancelNo')) $('#cancelNo').onclick = () => act({ action: 'cancel-reject' }, 'Cancellation request withdrawn.');
   }
   const HEAD = { av: 'AV', gst: 'GST', tds: 'TDS', stamp_duty: 'Stamp duty', registration: 'Registration', other: 'Other' };
@@ -995,7 +1008,7 @@
   const ACC_SHOW = { // columns shown in the list (all columns are in the form)
     receipts: ['ref_id', 'txn_date', 'bank', 'amount', 'head', 'payment_head', 'unit_no', 'payer_name', 'payer_type', 'cheque_status', 'description', 'remark'],
     payments: ['ref_id', 'txn_date', 'bank', 'amount', 'head', 'unit_no', 'payee', 'remark', 'needs', 'description'],
-    cancellations: ['cancel_date', 'unit_no', 'client', 'final_av', 'received', 'refund_rtgs', 'refund_white', 'refund_status', 'crm_now', 'books_received', 'books_refunded', 'to_refund', 'books_check', 'cp'],
+    cancellations: ['cancel_date', 'unit_no', 'client', 'final_av', 'received', 'deduction', 'refund_due', 'refund_rtgs', 'refund_white', 'refund_status', 'crm_now', 'books_received', 'books_refunded', 'to_refund', 'books_check', 'cp'],
   };
   async function accRegister(key, opts = {}) {
     const st = JSON.parse(store.get('erp_acc_' + key) || '{}');

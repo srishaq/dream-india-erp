@@ -110,6 +110,36 @@ const addDays = (d, k) => new Date(Date.parse(d) + k * 864e5).toISOString().slic
     const r = await fetch(BASE + '/api/cron?job=morning');
     if (new Date(Date.now() + 5.5 * 3600e3).getUTCHours() !== 9) assert.equal(r.status, 403);
   });
+  await step('cancellation: the buyer and money stay on record, Accounts gets the refund line, the flat can be booked again', async () => {
+    const mg = await mk('mgmt1', 'management'), hc = await mk('headcrm1', 'head_crm');
+    const bkr = await db.one(`select b.id, b.unit_id, u.unit_no, (select coalesce(sum(amount), 0) from receipts r where r.booking_id = b.id and r.status = 'approved') as got
+      from bookings b join units u on u.id = b.unit_id where b.status = 'active' and exists (select 1 from receipts r where r.booking_id = b.id and r.status = 'approved') order by u.unit_no desc limit 1`);
+    assert.equal((await crm('/api/bookings', { action: 'cancel-request', id: bkr.id, reason: 'Buyer moving abroad', charges: 'abc' })).status, 400);
+    const rq = await crm('/api/bookings', { action: 'cancel-request', id: bkr.id, reason: 'Buyer moving abroad', cancelDate: t, charges: '25,000' });
+    assert.equal(rq.ok, true, rq.error);
+    assert.equal((await crm('/api/bookings', { action: 'cancel-approve', id: bkr.id })).status, 403);
+    const ok = await mg('/api/bookings', { action: 'cancel-approve', id: bkr.id }); assert.equal(ok.ok, true, ok.error);
+    const row = await db.one('select * from acc_cancellations where booking_id = $1', [bkr.id]);
+    assert.ok(row, 'the Cancelled flats register has the line');
+    assert.equal(Number(row.received), Number(bkr.got)); assert.equal(Number(row.deduction), 25000);
+    assert.equal(Number(row.refund_due), Math.max(0, Number(bkr.got) - 25000)); assert.equal(row.refund_status, 'Pending');
+    assert.equal((await db.one('select status from units where id = $1', [bkr.unit_id])).status, 'available');
+    assert.equal((await db.one('select count(*)::int as n from receipts where booking_id = $1', [bkr.id])).n > 0, true, 'receipts are kept');
+    const old = await crm(`/api/bookings?id=${bkr.id}`);
+    assert.equal(old.booking.status, 'cancelled'); assert.ok(old.applicants.length); assert.equal(Number(old.cancellation.refund_due), Number(row.refund_due)); assert.equal(old.current, null);
+    const plan = (await db.one('select plan_id from bookings where id = $1', [bkr.id])).plan_id;
+    const nb = await crm('/api/bookings', { action: 'create', unitId: bkr.unit_id, planId: plan, bookingDate: t, agreementValue: 9000000, gstRate: 5, parking: 0, funding: 'self', applicants: [{ name: 'New Buyer After Cancel' }] });
+    assert.equal(nb.ok, true, nb.error);
+    const ap = await hc('/api/bookings', { action: 'approve', id: nb.id }); assert.equal(ap.ok, true, ap.error);
+    const now = await crm(`/api/bookings?id=${nb.id}`);
+    assert.equal(now.earlier.length, 1); assert.equal(now.earlier[0].id, bkr.id);
+    assert.equal((await crm(`/api/bookings?id=${bkr.id}`)).current.id, nb.id);
+    // Accounts records the refund; the old booking shows it
+    await db.q("update acc_cancellations set refund_rtgs = refund_due, refund_status = 'DONE' where booking_id = $1", [bkr.id]);
+    assert.equal((await crm(`/api/bookings?id=${bkr.id}`)).cancellation.refund_status, 'DONE');
+    const calc = await require('../lib/cancellations').calc([await db.one('select * from acc_cancellations where booking_id = $1', [bkr.id])]);
+    assert.match(calc[0].crm_now, /Cancelled in the ERP; re-booked to New Buyer After Cancel/); assert.equal(calc[0].to_refund, 0);
+  });
   await step('training: modules, marking a video watched, and the Admin sees who watched what', async () => {
     const d = await crm('/api/training');
     assert.ok(d.modules.length >= 9); assert.equal(d.team, null);

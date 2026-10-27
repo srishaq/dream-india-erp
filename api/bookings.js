@@ -38,8 +38,14 @@ async function detail(u, id) {
        from receipts r left join receipt_splits s on s.receipt_id = r.id where r.booking_id = $1 group by r.id order by r.received_on, r.id`, [id]);
   const balance = await db.one('select * from booking_balances where booking_id = $1', [id]);
   const plan = await db.q('select seq, name, pct, construction_linked from plan_stages where plan_id = $1 order by seq', [b.plan_id]);
-  const unit = await db.one('select u.unit_no, u.floor, u.typology, u.carpet_sqft, bl.name as building, p.name as project, c.name as company from units u join buildings bl on bl.id = u.building_id join projects p on p.id = u.project_id join companies c on c.id = p.company_id where u.id = $1', [b.unit_id]);
-  return { booking: b, unit, applicants, demands, receipts, balance, plan };
+  const cancellation = b.status === 'cancelled' || b.cancel_requested_at ? await db.one(`select c.id, c.cancel_date, c.received, c.deduction, c.refund_due, c.refund_rtgs, c.refund_white, c.refund_status, x.name as cancelled_by_name
+      from bookings bk left join acc_cancellations c on c.booking_id = bk.id left join users x on x.id = bk.cancelled_by where bk.id = $1`, [id]) : null;
+  const earlier = await db.q(`select b2.id, b2.booking_date, b2.cancel_date, b2.cancelled_at, (select string_agg(y.name, ' & ' order by ap.seq) from booking_applicants ap join buyers y on y.id = ap.buyer_id where ap.booking_id = b2.id) as buyers,
+      c.refund_status from bookings b2 left join acc_cancellations c on c.booking_id = b2.id where b2.unit_id = $1 and b2.id <> $2 and b2.status = 'cancelled' order by b2.cancelled_at`, [b.unit_id, id]);
+  const unit = await db.one('select u.id, u.status, u.unit_no, u.floor, u.typology, u.carpet_sqft, bl.name as building, p.name as project, c.name as company from units u join buildings bl on bl.id = u.building_id join projects p on p.id = u.project_id join companies c on c.id = p.company_id where u.id = $1', [b.unit_id]);
+  const current = b.status === 'cancelled' ? await db.one(`select b2.id, (select string_agg(y.name, ' & ' order by ap.seq) from booking_applicants ap join buyers y on y.id = ap.buyer_id where ap.booking_id = b2.id) as buyers, b2.status
+      from bookings b2 where b2.unit_id = $1 and b2.status in ('active', 'pending') limit 1`, [b.unit_id]) : null;
+  return { booking: b, unit, applicants, demands, receipts, balance, plan, cancellation, earlier, current };
 }
 
 function cleanApplicants(list) {
@@ -169,9 +175,13 @@ module.exports = route({
       if (bk.status !== 'active') throw fail(409, 'Only an active booking can be cancelled.');
       if (bk.cancel_requested_at) throw fail(409, 'A cancellation is already waiting for approval.');
       const reason = str(b.reason, 400); if (!reason) throw fail(400, 'Give the reason for cancelling.');
+      const cdate = dateOr(b.cancelDate) || today();
+      if (cdate < String(bk.booking_date).slice(0, 10)) throw fail(400, 'The cancellation date is before the booking date.');
+      const charges = b.charges === '' || b.charges == null ? 0 : Number(String(b.charges).replace(/[₹,\s]/g, ''));
+      if (!Number.isFinite(charges) || charges < 0) throw fail(400, 'Cancellation charges must be a number, or 0.');
       await db.tx(async (t) => {
-        await t.q('update bookings set cancel_reason = $2, cancel_requested_by = $3, cancel_requested_at = now() where id = $1', [bk.id, reason, u.id]);
-        await log(t, 'cancel-request', { reason });
+        await t.q('update bookings set cancel_reason = $2, cancel_requested_by = $3, cancel_requested_at = now(), cancel_date = $4, cancel_charges = $5 where id = $1', [bk.id, reason, u.id, cdate, charges]);
+        await log(t, 'cancel-request', { reason, cancelDate: cdate, charges });
       });
       return res.json({ ok: true, ...(await detail(u, bk.id)) });
     }
@@ -184,7 +194,17 @@ module.exports = route({
           await t.q("update bookings set status = 'cancelled', cancelled_by = $2, cancelled_at = now() where id = $1", [bk.id, u.id]);
           await t.q("update demands set status = 'cancelled' where booking_id = $1 and status = 'raised'", [bk.id]);
           await t.q("update units set status = 'available' where id = $1", [bk.unit_id]);
-          await log(t, 'cancel', { status: 'cancelled', reason: bk.cancel_reason }, 'Receipts stay on record; any refund is handled separately');
+          // the old buyer and their money stay on record: one row in Accounts' Cancelled flats register, linked to this booking
+          const x = await t.one(`select u.unit_no, u.typology, u.carpet_sqft, b.booking_date, b.agreement_value, b.cp_name, b.rm_name,
+              (select string_agg(y.name, ' & ' order by ap.seq) from booking_applicants ap join buyers y on y.id = ap.buyer_id where ap.booking_id = b.id) as client,
+              (select coalesce(sum(r.amount), 0) from receipts r where r.booking_id = b.id and r.status = 'approved') as received
+            from bookings b join units u on u.id = b.unit_id where b.id = $1`, [bk.id]);
+          const charges = Number(bk.cancel_charges) || 0, received = Number(x.received) || 0;
+          await t.q(`insert into acc_cancellations (booking_id, cancel_date, booking_date, unit_no, client, typology, area, cp, closing_manager, final_av, received, deduction, refund_due, refund_status, remark, created_by)
+                     values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16) on conflict (booking_id) where booking_id is not null do nothing`,
+          [bk.id, bk.cancel_date || today(), x.booking_date, x.unit_no, x.client, x.typology, x.carpet_sqft, x.cp_name, x.rm_name, x.agreement_value, received, charges, Math.max(0, received - charges),
+            received - charges > 0 ? 'Pending' : 'Nothing to refund', `Cancelled in the ERP: ${bk.cancel_reason || ''}`.slice(0, 400), u.id]);
+          await log(t, 'cancel', { status: 'cancelled', reason: bk.cancel_reason, received, charges, refundDue: Math.max(0, received - charges) }, 'Buyer and receipts stay on record; written to the Cancelled flats register for the refund');
         } else {
           await t.q('update bookings set cancel_reason = null, cancel_requested_by = null, cancel_requested_at = null where id = $1', [bk.id]);
           await log(t, 'cancel-reject', { reason: bk.cancel_reason });
