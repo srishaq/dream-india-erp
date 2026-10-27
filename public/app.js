@@ -912,11 +912,24 @@
         <td class="small">${r.count ? `${esc(r.kind)} · ${esc(r.outcome)}<br><span class="muted">${fmtD(r.last_at.slice(0, 10))} by ${esc(r.last_by || '')}${r.note ? ' · ' + esc(r.note.slice(0, 60)) : ''}</span>` : '<span class="muted">never</span>'}</td>
         <td class="small">${r.promise_date ? `${fmtD(r.promise_date)}${r.promise_amount ? ' · ' + inr(r.promise_amount) : ''}${r.broken ? ' <span class="pill bad">broken</span>' : ''}` : ''}</td>
         <td class="small">${r.next_date ? fmtD(r.next_date) : ''}</td>
-        <td class="small" style="white-space:nowrap">${r.mobile ? (r.wa ? `<a href="tel:+91${esc(r.mobile)}">Call</a> · <a href="${esc(r.wa)}" target="_blank" rel="noopener">WhatsApp</a>` : esc(r.mobile)) : '<span class="muted">no mobile</span>'}</td>
+        <td class="small" style="white-space:nowrap">${r.mobile ? (r.wa ? `<a href="tel:+91${esc(r.mobile)}">Call</a> · <a href="${esc(r.wa)}" target="_blank" rel="noopener">WhatsApp</a>` : esc(r.mobile)) : '<span class="muted">no mobile</span>'}${r.hasEmail && can('demand.raise') ? ` · <a href="#" data-mail="${r.booking_id}" data-u="${esc(r.unit_no)}">Email</a>` : ''}</td>
         <td>${can('demand.raise') ? `<button class="small" data-log="${r.booking_id}" data-u="${esc(r.unit_no)}">Log</button>` : ''}</td></tr>`).join('') || '<tr><td colspan="8" class="muted">Nothing here.</td></tr>'}</table></div>`;
     document.querySelectorAll('.tab[data-t]').forEach((t) => (t.onclick = () => { store.set('erp_ftab', t.dataset.t); followups(); }));
     $('#q').oninput = (e) => { const q = e.target.value.toLowerCase(); document.querySelectorAll('tr[data-s]').forEach((tr) => (tr.style.display = tr.dataset.s.includes(q) ? '' : 'none')); };
     document.querySelectorAll('[data-log]').forEach((b) => (b.onclick = () => followupForm(+b.dataset.log, b.dataset.u, d, followups)));
+    document.querySelectorAll('[data-mail]').forEach((b) => (b.onclick = (e) => { e.preventDefault(); followupEmail(+b.dataset.mail, b.dataset.u, followups); }));
+  }
+  async function followupEmail(bookingId, unit, after) {
+    const p = await api('/api/followups', { action: 'email', bookingId, preview: true });
+    const plus = (n) => { const x = new Date(Date.now() + 5.5 * 3600e3); x.setUTCDate(x.getUTCDate() + n); return x.toISOString().slice(0, 10); };
+    const dl = dialog(`<h2>Email the buyer · ${esc(unit)}</h2>
+      <p class="small muted">To: ${esc(p.to.join(', ') || 'no email on this booking')}${p.live ? '' : '<br><b>Test version:</b> the email goes only to the test address in Letter settings, marked [TEST].'}${p.configured ? '' : '<br><span class="bad-t">Email is not set up yet (SMTP app password), so it cannot be sent.</span>'}</p>
+      <label>Subject</label><input name="subject" maxlength="200" value="${esc(p.subject)}">
+      <label>Message</label><textarea name="message" rows="10">${esc(p.message)}</textarea>
+      <label>Next follow-up</label><input type="date" name="nextDate" min="${todayIso()}" value="${plus(3)}">
+      <p class="small muted">The email is logged on this buyer's follow-ups.</p>`,
+    async (x) => { const r = await api('/api/followups', { action: 'email', bookingId, ...x }); toast(r.test ? `Test email sent to ${r.to.join(', ')}.` : 'Email sent and logged.'); after(); });
+    $('[value=save]', dl).textContent = 'Send email';
   }
   function followupForm(bookingId, unit, d, after) {
     const plus = (n) => { const x = new Date(Date.now() + 5.5 * 3600e3); x.setUTCDate(x.getUTCDate() + n); return x.toISOString().slice(0, 10); };
@@ -1348,7 +1361,7 @@
 
   async function accReports() {
     const tab = store.get('erp_accrep') || 'byHead';
-    const T = [['byHead', 'Payments by Head'], ['units', 'Unit receipts'], ['gst', 'GST report'], ['sdr', 'SDR report'], ['tds', 'TDS by customers'], ['payees', 'Payees'], ['vendorBills', 'Vendor bills'], ['register', 'Salary & expense register'], ['bounced', 'Bounced cheques'], ['tally', 'Tally export']];
+    const T = [['byHead', 'Payments by Head'], ['units', 'Unit receipts'], ['gst', 'GST report'], ['sdr', 'SDR report'], ['tds', 'TDS by customers'], ['payees', 'Payees'], ['partners', 'Channel partner accounts'], ['vendorBills', 'Vendor bills'], ['register', 'Salary & expense register'], ['bounced', 'Bounced cheques'], ['tally', 'Tally export']];
     $('#page').innerHTML = `<div class="page-head"><div><h1>Accounts reports</h1><p class="muted">The report tabs of the accounts sheet, worked out live from the registers.</p></div></div>
       <div class="tabs">${T.map(([k, l]) => `<button class="tab ${k === tab ? 'on' : ''}" data-t="${k}">${l}</button>`).join('')}</div><div id="rep"><div class="panel muted">Loading…</div></div>`;
     document.querySelectorAll('.tab[data-t]').forEach((b) => (b.onclick = () => { store.set('erp_accrep', b.dataset.t); accReports(); }));
@@ -1379,14 +1392,29 @@
     const d = await api(`/api/accounts?view=report&name=${tab}&project=${P}`);
     if (tab === 'byHead') {
       const mlab = (m) => new Date(m + '-01T00:00:00').toLocaleDateString('en-IN', { month: 'short', year: '2-digit' });
-      const ms = d.months.slice(-12);
+      const ms = d.months.slice(-36);
       const t = (rows, h) => table([['Cash Flow Head', (r) => r.head], ...ms.map((m) => [mlab(m), (r) => r[m] || 0, 'm']), ['Total (all months)', (r) => r.total, 'm']], rows, { head: `<h2>${h}</h2>` });
-      out.innerHTML = '<p class="small muted">Last 12 months shown; the Total column covers every month. Bounced cheques are left out of receipts.</p>' + t(d.receipts, 'Receipts (money in)') + t(d.payments, 'Payments (money out)');
+      out.innerHTML = '<p class="small muted">Every month from the first entry (up to 36 months); scroll sideways for the earlier months. Bounced cheques are left out of receipts.</p>' + t(d.receipts, 'Receipts (money in)') + t(d.payments, 'Payments (money out)');
     } else if (tab === 'units') out.innerHTML = table([['Unit', (r) => r.unit], ['Applicant', (r) => r.applicant], ['Status', (r) => r.status], ['Agreement value', (r) => r.av, 'm'], ['AV received (bank)', (r) => r.avReceived, 'm'], ['% of AV', (r) => r.pct + '%', 'n'], ['GST received', (r) => r.gstReceived, 'm'], ['SDR received', (r) => r.sdrReceived, 'm'], ['Unclassified', (r) => r.unclassified, 'm'], ['From other / earlier buyers', (r) => r.other, 'm'], ['Bounced', (r) => r.bounced, 'm'], ['TDS (tracker)', (r) => r.tds, 'm'], ['SDR paid out', (r) => r.sdrPaid, 'm'], ['Refunds', (r) => r.refunds, 'm'], ['CP brokerage', (r) => r.cp, 'm'], ['CRM AV (ERP ledger)', (r) => r.crmAv, 'm'], ['Bank − CRM', (r) => r.diff, 'm']], d.rows);
     else if (tab === 'gst') out.innerHTML = table([['Unit', (r) => r.unit], ['Applicant', (r) => r.applicant], ['Status', (r) => r.status], ['Agreement value', (r) => r.av, 'm'], ['GST payable', (r) => r.gstPayable, 'm'], ['AV received (bank)', (r) => r.avReceived, 'm'], ['GST due on AV received', (r) => r.gstDueOnReceived, 'm'], ['GST received (bank)', (r) => r.gstReceived, 'm'], ['Shortfall on received', (r) => r.shortfall, 'm'], ['GST outstanding (full)', (r) => r.outstanding, 'm'], ['GST per CRM (ERP)', (r) => r.crm, 'm'], ['Status', (r) => r.state]], d.rows);
     else if (tab === 'sdr') out.innerHTML = table([['Unit', (r) => r.unit], ['Applicant', (r) => r.applicant], ['Status', (r) => r.status], ['Registration', (r) => r.registration], ['Stamp duty', (r) => r.stampDuty, 'm'], ['Registration fee', (r) => r.registrationFee, 'm'], ['SDR payable', (r) => r.payable, 'm'], ['SDR received (bank)', (r) => r.received, 'm'], ['SDR paid out (challans)', (r) => r.paidOut, 'm'], ['Held (received − paid)', (r) => r.held, 'm'], ['To collect', (r) => r.toCollect, 'm'], ['SDR per CRM (ERP)', (r) => r.crm, 'm'], ['Status', (r) => r.state]], d.rows);
     else if (tab === 'tds') out.innerHTML = `<div class="panel"><div class="kpis">${kpi(inr(d.due), 'total TDS due (1% of AV)')}${kpi(inr(d.paid), 'paid by customers')}${kpi(inr(d.due - d.paid), 'still to come')}${kpi(`${d.flats} / ${d.full} / ${d.part} / ${d.none}`, 'flats: with TDS / fully / partly / not paid')}</div></div>` +
       table([['Unit', (r) => r.unit], ['TDS due', (r) => r.due, 'm'], ['TDS paid', (r) => r.paid, 'm'], ['Balance', (r) => r.balance, 'm']], d.rows);
+    else if (tab === 'partners') {
+      const cols = [['CP firm', (r) => r.firm], ['Flats', (r) => r.flats, 'n'], ['Agreement value', (r) => r.av, 'm'], ['Brokerage agreed', (r) => r.agreed, 'm'], ['Billed by CP', (r) => r.billed, 'm'],
+        ['Paid as per CRM', (r) => r.paidCrm, 'm'], ['Paid as per books', (r) => r.paidBooks, 'm'], ['TDS deducted (books)', (r) => r.tdsBooks, 'm'], ['Books less CRM', (r) => r.difference, 'm'], ['Check', (r) => r.state],
+        ['Balance brokerage', (r) => r.balance, 'm'], ['Due now (rule)', (r) => r.dueNow, 'm'], ['Last paid', (r) => (r.lastPaid ? fmtD(r.lastPaid) : '')], ['Units', (r) => r.units]];
+      const sum = (k) => d.rows.reduce((a, r) => a + (r[k] || 0), 0);
+      out.innerHTML = `<div class="panel"><p class="muted">One line per channel partner firm. "Paid as per CRM" is the brokerage released or paid on the CRM side; "Paid as per books" is Payments Out under a commission or brokerage head, matched by the partner's flats or the firm's name. Due now follows the brokerage rule (${d.rule && d.rule.afterRegistration ? 'after registration, ' : ''}${d.rule ? d.rule.minReceivedPct : 10}% of agreement value received).</p>
+        <div class="kpis">${kpi(d.rows.length, 'CP firms')}${kpi(inr(sum('agreed')), 'brokerage agreed')}${kpi(inr(sum('paidBooks') + sum('tdsBooks')), 'paid in the books (with TDS)')}${kpi(inr(sum('balance')), 'balance brokerage')}${kpi(inr(sum('dueNow')), 'due now')}${kpi(d.rows.filter((r) => r.state !== 'Agrees').length, 'firms where CRM and books differ', d.rows.some((r) => r.state !== 'Agrees') ? 'bad' : '')}</div>
+        ${d.unmatched.n ? `<p class="small bad-t">${d.unmatched.n} commission payments (${inr(d.unmatched.amount)}) in the books could not be matched to a partner: give them the unit or the partner's name as payee.</p>` : ''}
+        <div class="actions"><button class="ghost small" id="cpCsv">Download for Excel (CSV)</button></div></div>` + table(cols, d.rows);
+      $('#cpCsv').onclick = () => {
+        const q = (v) => `"${String(v ?? '').replace(/"/g, '""')}"`;
+        const csv = [cols.map(([l]) => q(l)).join(','), ...d.rows.map((r) => cols.map(([, f, t]) => (t ? Math.round(+f(r) || 0) : q(f(r)))).join(','))].join('\r\n');
+        const a = document.createElement('a'); a.href = URL.createObjectURL(new Blob(['\ufeff' + csv], { type: 'text/csv' })); a.download = `channel-partner-accounts-${todayIso()}.csv`; a.click(); setTimeout(() => URL.revokeObjectURL(a.href), 2000);
+      };
+    }
     else if (tab === 'payees') out.innerHTML = table([['Payee', (r) => r.payee], ['Type', (r) => r.type], ['PAN', (r) => r.pan], ['GSTIN', (r) => r.gstin], ['TDS section', (r) => r.tdsSection], ['Usual cash flow head', (r) => r.usualHead], ['Needs invoice?', (r) => r.needsInvoice], ['No. of payments', (r) => r.n, 'n'], ['Total paid', (r) => r.paid, 'm'], ['Total billed', (r) => r.billed, 'm'], ['TDS on bills', (r) => r.tds, 'm']], d.rows);
     else if (tab === 'vendorBills') out.innerHTML = table([['Payment ID', (r) => r.ref_id], ['Paid on', (r) => fmtD(r.txn_date)], ['Payee', (r) => r.payee], ['Head', (r) => r.head], ['Bill date', (r) => (r.bill_date ? fmtD(r.bill_date) : '')], ['Vendor PAN', (r) => r.vendor_pan], ['Bill no.', (r) => r.bill_no], ['Taxable', (r) => r.taxable_value, 'm'], ['GST', (r) => r.gst_on_bill, 'm'], ['Total bill', (r) => r.total_bill, 'm'], ['TDS section', (r) => r.tds_section || r.tdsSectionUsual], ['TDS deducted', (r) => r.tds_deducted, 'm'], ['Paid', (r) => r.amount, 'm'], ['Challan', (r) => r.tds_challan], ['What staff need to add', (r) => r.needs]], d.rows);
     else if (tab === 'bounced') out.innerHTML = table([['Receipt ID', (r) => r.ref_id], ['Date', (r) => fmtD(r.txn_date)], ['Bank', (r) => r.bank], ['Amount', (r) => r.amount, 'm'], ['Unit', (r) => r.unit_no], ['Payer', (r) => r.payer_name], ['Head', (r) => r.payment_head || r.head], ['Description', (r) => r.description], ['Remark', (r) => r.remark]], d.rows);
