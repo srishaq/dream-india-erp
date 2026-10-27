@@ -60,8 +60,8 @@ function renderAll() {
   $('#syncDot').className = 'dot';
   $('#syncText').textContent = 'From the ERP · ' + new Date(m.generatedAt).toLocaleString('en-IN', { day: 'numeric', month: 'short', hour: 'numeric', minute: '2-digit' }) + (m.lastBankDate ? ` · bank entries to ${fmtD(m.lastBankDate)}` : '');
   const b = $('#banner');
-  b.classList.remove('hidden');
-  b.innerHTML = 'Test version: these figures come from the test import of the CRM sheet. They become the real figures once the ERP goes live.' + (M.checks.open ? ` <a href="/#/verify">${cnt(M.checks.open)} items from the import are still to be verified</a>.` : '');
+  b.classList.toggle('hidden', !M.checks.open);
+  b.innerHTML = M.checks.open ? `<a href="/#/verify">${cnt(M.checks.open)} items from the import are still to be verified</a>.` : '';
   renderOverview(); renderDaily(); renderCollections(); renderDues(); renderDates();
 }
 

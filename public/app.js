@@ -36,7 +36,7 @@
 
   function noDb() {
     app.innerHTML = `<div class="center"><div class="card wide">
-      <div class="brandline">${logo}<div><b>Dream India ERP</b><span>Test version</span></div></div>
+      <div class="brandline">${logo}<div><b>Dream India ERP</b></div></div>
       <h1>The database is not connected yet</h1>
       <p class="muted">The ERP is installed, but it has no database to store data in.</p>
       <p>In Vercel, open the <b>dream-india-erp</b> project → <b>Storage</b> → <b>Create Database</b> → <b>Neon</b>, and connect it to all environments. Then reload this page.</p>
@@ -196,12 +196,11 @@
     const cur = PAGES.find((p) => p.key === curKey && p.show()) || PAGES[0];
     app.innerHTML = `<div class="shell">
       <nav class="side no-print">
-        <a class="logo" href="#/home">${wordmark}<div><b>ERP</b><span>Test version</span></div></a>
+        <a class="logo" href="#/home">${wordmark}<div><b>ERP</b></div></a>
         ${navHtml(nav, cur)}
       </nav>
       <div class="main">
-        <div class="top no-print"><div class="who">${projectList.length > 1 ? `<select id="proj" class="proj">${projectList.map((p) => `<option value="${p.id}" ${p.id === proj ? 'selected' : ''}>${esc(p.name)}</option>`).join('')}</select>` : `<b>${esc(projectList[0]?.name || '')}</b>`}
-          <span class="test-banner">Test version: not live yet</span></div>
+        <div class="top no-print"><div class="who">${projectList.length > 1 ? `<select id="proj" class="proj">${projectList.map((p) => `<option value="${p.id}" ${p.id === proj ? 'selected' : ''}>${esc(p.name)}</option>`).join('')}</select>` : `<b>${esc(projectList[0]?.name || '')}</b>`}</div>
           <div class="who"><span><b>${esc(me.name)}</b> · ${esc(me.roleLabel)}</span>
             <button class="ghost small" id="cpw">Change password</button><button class="ghost small" id="out">Sign out</button></div></div>
         ${(() => { const g = groupOf(DETAIL[page] && arg ? DETAIL[page] : cur.key), dest = { CRM: [`#/project/${proj}/crm`, 'Sales & CRM'], Accounts: [`#/project/${proj}/accounts`, 'Accounts'], 'Site & purchase': [`#/project/${proj}/construction`, 'Construction'], 'Set-up': ['#/home', 'Home'] }[g];
