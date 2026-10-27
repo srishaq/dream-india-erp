@@ -13,8 +13,18 @@ const { route, fail, str, intOr } = require('../lib/http');
 
 const COLS = `c.id, c.booking_id, c.channel, c.direction, c.from_addr, c.to_addr, c.subject, c.body, c.sent_at, c.status, c.matched_by, c.delivery, c.attachments, c.kind, c.read_at,
   s.name as sent_by_name, r.name as read_by_name, u.unit_no`;
-const FROM = 'communications c left join users s on s.id = c.sent_by left join users r on r.id = c.read_by left join bookings b on b.id = c.booking_id left join units u on u.id = b.unit_id';
+const FROM = 'communications c left join users s on s.id = c.sent_by left join users r on r.id = c.read_by left join bookings b on b.id = c.booking_id left join units u on u.id = b.unit_id left join buildings bl on bl.id = u.building_id';
 const see = (u) => has(u, 'ledger.view');
+// Messages on flats this login looks after: their own flats, their wing's flats, and (Head CRM) flats with nobody.
+async function mineSql(u) {
+  const N = require('../lib/comms-notify'), w = await N.wingsOf(u.id), t = await N.teams();
+  const noTeam = ['A', 'B'].filter((x) => !(t[x] || []).length);
+  const wingList = (a) => a.map((x) => `'${String(x).replace(/[^A-Za-z0-9]/g, '')}'`).join(',');
+  const parts = [`b.crm_user_id = ${+u.id}`];
+  if (w.length) parts.push(`(b.crm_user_id is null and bl.code in (${wingList(w)}))`);
+  if (u.role === 'head_crm') parts.push(`(b.crm_user_id is null and ${noTeam.length ? `bl.code in (${wingList(noTeam)})` : 'false'})`);
+  return '(' + parts.join(' or ') + ')';
+}
 const act = (u) => has(u, 'demand.raise') || has(u, 'booking.create');
 
 module.exports = route({
@@ -25,19 +35,31 @@ module.exports = route({
     if (q.status) {
       const ms = require('../lib/mail-sync'), st = await ms.state();
       return res.json({ mail: { configured: ms.configured(), lastRun: st.lastRun || null, error: st.lastError || null, last: st.lastResult || null, mailbox: process.env.SMTP_USER || null },
-        whatsapp: { configured: require('../lib/whatsapp').configured() }, canAct: act(u), canSync: has(u, 'users.manage') || has(u, 'booking.approve') });
+        whatsapp: { configured: require('../lib/whatsapp').configured() }, teams: await require('../lib/comms-notify').teams(), crmUsers: await db.q("select id, name, role from users where not disabled and role in ('crm', 'head_crm', 'management', 'admin') order by name"), canTeams: has(u, 'booking.approve') || has(u, 'users.manage'), canAct: act(u), canSync: has(u, 'users.manage') || has(u, 'booking.approve') });
+    }
+    if (q.badge) {
+      const r = await db.one(`select count(*)::int as n from communications c join bookings b on b.id = c.booking_id join units u on u.id = b.unit_id join buildings bl on bl.id = u.building_id
+        where c.direction = 'in' and c.status = 'matched' and c.read_at is null and ${await mineSql(u)}`);
+      return res.json({ mine: r.n });
     }
     if (q.booking) {
       await bookingFor(u, intOr(q.booking));
       const rows = await db.q(`select ${COLS} from ${FROM} where c.booking_id = $1 and c.status <> 'dismissed' order by c.sent_at desc, c.id desc limit 300`, [intOr(q.booking)]);
       const wa = require('../lib/whatsapp');
-      return res.json({ rows, whatsapp: { configured: wa.configured(), window: wa.configured() ? await wa.windowOpen(intOr(q.booking)) : false }, canAct: act(u) });
+      const N = require('../lib/comms-notify'), w = await N.whoFor(intOr(q.booking));
+      const own = await db.one('select crm_user_id from bookings where id = $1', [intOr(q.booking)]);
+      const canTeams = has(u, 'booking.approve') || has(u, 'users.manage');
+      return res.json({ rows, whatsapp: { configured: wa.configured(), window: wa.configured() ? await wa.windowOpen(intOr(q.booking)) : false }, canAct: act(u),
+        crm: { people: w.people.map((p) => p.name), by: w.allocated, own: own && own.crm_user_id }, canTeams,
+        crmUsers: canTeams ? await db.q("select id, name from users where not disabled and role in ('crm', 'head_crm') order by name") : [] });
     }
     if (q.inbox) {
-      const f = ['new', 'unmatched', 'all'].includes(q.f) ? q.f : 'new';
-      const where = f === 'unmatched' ? "c.status = 'unmatched'" : f === 'new' ? "c.direction = 'in' and c.status <> 'dismissed' and c.read_at is null" : "c.direction = 'in' and c.status <> 'dismissed'";
+      const f = ['mine', 'new', 'unmatched', 'all'].includes(q.f) ? q.f : 'mine';
+      const where = f === 'unmatched' ? "c.status = 'unmatched'" : f === 'new' ? "c.direction = 'in' and c.status <> 'dismissed' and c.read_at is null"
+        : f === 'mine' ? `c.direction = 'in' and c.status <> 'dismissed' and c.read_at is null and ${await mineSql(u)}` : "c.direction = 'in' and c.status <> 'dismissed'";
       const rows = await db.q(`select ${COLS} from ${FROM} where ${where} and (c.booking_id is null or u.project_id = any($1)) order by c.sent_at desc limit 300`, [u.projects]);
-      const counts = await db.one(`select count(*) filter (where c.direction = 'in' and c.status <> 'dismissed' and c.read_at is null)::int as new, count(*) filter (where c.status = 'unmatched')::int as unmatched
+      const counts = await db.one(`select count(*) filter (where c.direction = 'in' and c.status <> 'dismissed' and c.read_at is null)::int as new, count(*) filter (where c.status = 'unmatched')::int as unmatched,
+          count(*) filter (where c.direction = 'in' and c.status <> 'dismissed' and c.read_at is null and ${await mineSql(u)})::int as mine
         from ${FROM} where c.booking_id is null or u.project_id = any($1)`, [u.projects]);
       return res.json({ rows, counts, f, canAct: act(u) });
     }
@@ -60,7 +82,25 @@ module.exports = route({
       const bk = await bookingFor(u, intOr(b.bookingId));
       await db.q("update communications set booking_id = $2, status = 'matched', matched_by = 'linked by ' || $3, linked_by = $4 where id = $1", [c.id, bk.id, u.name || 'CRM', u.id]);
       await audit.record(db.q, { user: u, action: 'link', entity: 'communication', entityId: c.id, projectId: bk.project_id, after: { unit: bk.unit_no } });
+      if (c.direction === 'in') await require('../lib/comms-notify').notify(c.id).catch(() => {});
       return res.json({ ok: true });
+    }
+    if (b.action === 'teams') {
+      if (!(has(u, 'booking.approve') || has(u, 'users.manage'))) throw fail(403, 'Only Head CRM or the Admin can set the CRM teams.');
+      const ok = new Set((await db.q('select id from users where not disabled')).map((r) => r.id));
+      const v = {}; for (const w of ['A', 'B']) v[w] = [...new Set((Array.isArray(b.teams && b.teams[w]) ? b.teams[w] : []).map((x) => intOr(x)).filter((x) => ok.has(x)))];
+      await require('../lib/comms-notify').saveTeams(v);
+      await audit.record(db.q, { user: u, action: 'crm-teams', entity: 'settings', after: v });
+      return res.json({ ok: true, teams: v });
+    }
+    if (b.action === 'allocate') {
+      if (!(has(u, 'booking.approve') || has(u, 'users.manage'))) throw fail(403, 'Only Head CRM or the Admin can allocate flats.');
+      const to = b.userId ? await db.one("select id, name from users where id = $1 and not disabled", [intOr(b.userId)]) : null;
+      if (b.userId && !to) throw fail(400, 'Pick a CRM login.');
+      const ids = (Array.isArray(b.bookingIds) ? b.bookingIds : [b.bookingId]).map((x) => intOr(x)).filter(Boolean).slice(0, 2000);
+      const rows = await db.q("update bookings b set crm_user_id = $2 from units u where u.id = b.unit_id and b.id = any($1) and u.project_id = any($3) returning b.id, u.unit_no", [ids, to ? to.id : null, u.projects]);
+      await audit.record(db.q, { user: u, action: 'allocate-crm', entity: 'booking', after: { to: to ? to.name : null, flats: rows.map((r) => r.unit_no).slice(0, 300), count: rows.length } });
+      return res.json({ ok: true, count: rows.length });
     }
     if (b.action === 'dismiss') {
       const c = await db.one("select id from communications where id = $1 and direction = 'in'", [intOr(b.id)]); if (!c) throw fail(404, 'That message is not there.');

@@ -209,6 +209,7 @@
         <div class="page" id="page"><p class="muted">Loading…</p></div>
       </div></div>`;
     wireNav();
+    if (can('ledger.view')) api('/api/comms?badge=1').then((r) => { if (r.mine && $('.top .who')) $('.top .who').insertAdjacentHTML('beforeend', `<a class="mbadge" href="#/comms" title="Buyers' replies on your flats, not read yet">✉ ${r.mine} new</a>`); }).catch(() => {});
     $('#out').onclick = signOut;
     $('#cpw').onclick = () => changePassword(false);
     if ($('#proj')) $('#proj').onchange = (e) => { proj = +e.target.value; store.set('erp_project', proj); shell(); };
@@ -429,11 +430,12 @@
       <div><label>Username</label><input name="username" value="${esc(u?.username)}" ${u ? 'disabled' : 'required'} placeholder="e.g. firstname.lastname"></div></div>
       <div class="row"><div><label>Role</label><select name="role">${d.roles.map((r) => `<option value="${r.key}" ${u?.role === r.key ? 'selected' : ''}>${esc(r.label)}</option>`).join('')}</select></div>
       <div><label>Mobile (for OTP later)</label><input name="phone" value="${esc(u?.phone)}"></div></div>
+      <label>Own email (where this person is told about buyers' replies)</label><input name="email" type="email" value="${esc(u?.email)}" maxlength="120" placeholder="e.g. ayesha@dreamindiagroup.com">
       <label>Designation (shown under the name in emails to buyers)</label><input name="designation" value="${esc(u?.designation)}" maxlength="80" placeholder="e.g. Senior Executive – Customer Relations">
       <label>Projects</label>
       <label class="check"><input type="checkbox" name="allProjects" ${u?.all_projects ? 'checked' : ''}> All projects, including future ones</label>
       ${d.projects.map((p) => `<label class="check"><input type="checkbox" name="p${p.id}" ${u?.projects.includes(p.id) ? 'checked' : ''}> ${esc(p.name)}</label>`).join('')}`;
-    const pick = (x) => ({ name: x.name, username: x.username, role: x.role, phone: x.phone, designation: x.designation, allProjects: x.allProjects === 'on', projects: d.projects.filter((p) => x['p' + p.id] === 'on').map((p) => p.id) });
+    const pick = (x) => ({ name: x.name, username: x.username, role: x.role, phone: x.phone, designation: x.designation, email: x.email, allProjects: x.allProjects === 'on', projects: d.projects.filter((p) => x['p' + p.id] === 'on').map((p) => p.id) });
     const showTemp = (r) => {
       const dl = document.createElement('dialog');
       dl.innerHTML = `<form method="dialog"><h2>Temporary password for ${esc(r.username)}</h2><p>Give this to the person. It is shown only once; they must choose their own password when they first sign in.</p>
@@ -1179,11 +1181,14 @@
     const unread = d.rows.filter((c) => c.direction === 'in' && !c.read_at).map((c) => c.id);
     el.innerHTML = `<h2>Communication <span class="muted small">${d.rows.length} message${d.rows.length === 1 ? '' : 's'}</span>
         ${d.canAct ? `<span style="float:right"><button class="ghost small" id="cmMail">Email</button> ${d.whatsapp.configured ? '<button class="ghost small" id="cmWa">WhatsApp</button>' : ''}</span>` : ''}</h2>
+      <p class="small">CRM in charge: <b>${esc(d.crm.people.join(', ') || 'nobody yet')}</b> <span class="muted">(${d.crm.by === 'flat' ? 'set for this flat' : d.crm.by === 'wing' ? 'wing team' : 'no wing team yet, so Head CRM'})</span>
+        ${d.canTeams ? ` · <select id="cmOwn" class="small"><option value="">Use the wing team</option>${d.crmUsers.map((x) => `<option value="${x.id}" ${x.id === d.crm.own ? 'selected' : ''}>${esc(x.name)} only</option>`).join('')}</select>` : ''}</p>
       ${d.whatsapp.configured ? '' : '<p class="small muted">WhatsApp messages will appear here once the WhatsApp Business number is connected.</p>'}
       <div class="msgs">${d.rows.map((c) => msgHtml(c, { actions: c.direction === 'in' && c.channel === 'email' && d.canAct ? `<div class="msg-x"><button class="link small" data-reply="${c.id}">Reply</button></div>` : '' })).join('') || '<p class="muted">No emails or WhatsApps with this buyer yet. Emails sent from the ERP, and the buyer\'s replies, appear here.</p>'}</div>`;
     wireMsgs(el);
     const again = () => commPanel(bookingId, unit, el);
     if ($('#cmMail', el)) $('#cmMail', el).onclick = () => followupEmail(bookingId, unit, again);
+    if ($('#cmOwn', el)) $('#cmOwn', el).onchange = async (e) => { await api('/api/comms', { action: 'allocate', bookingId, userId: e.target.value || null }); toast('CRM in charge updated.'); again(); };
     el.querySelectorAll('[data-reply]').forEach((x) => (x.onclick = () => { const c = d.rows.find((r) => r.id === +x.dataset.reply); followupEmail(bookingId, unit, again, c); }));
     if ($('#cmWa', el)) $('#cmWa', el).onclick = () => {
       const dl = dialog(`<h2>WhatsApp · ${esc(unit)}</h2>${d.whatsapp.window ? '<label>Message</label><textarea name="text" rows="5" required></textarea><p class="small muted">The buyer messaged in the last 24 hours, so a normal message can be sent.</p>'
@@ -1194,7 +1199,7 @@
     if (unread.length && d.canAct) api('/api/comms', { action: 'read', ids: unread }).catch(() => {});
   }
   async function comms() {
-    const f = store.get('erp_cmf') || 'new';
+    const f = store.get('erp_cmf') || 'mine';
     const [d, st] = await Promise.all([api(`/api/comms?inbox=1&f=${f}`), api('/api/comms?status=1')]);
     const m = st.mail;
     const mailLine = !m.configured ? '<span class="bad-t">The mailbox is not connected yet (email settings in Vercel), so buyers\' replies are not read.</span>'
@@ -1203,10 +1208,14 @@
         <div class="actions" style="margin:0">${st.canSync && m.configured ? '<button class="ghost" id="cmSync">Check the mailbox now</button>' : ''}</div></div>
       <div class="panel"><p class="small">${mailLine}<br>WhatsApp: ${st.whatsapp.configured ? 'connected' : 'not connected yet'}.</p>
         <div class="kpis">${kpi(d.counts.new, 'not read yet', d.counts.new ? 'bad' : '')}${kpi(d.counts.unmatched, 'to link to a flat', d.counts.unmatched ? 'bad' : '')}</div></div>
-      <div class="tabs">${[['new', 'Not read'], ['unmatched', 'To link'], ['all', 'All received']].map(([k, l]) => `<button class="tab ${k === f ? 'on' : ''}" data-t="${k}">${l}</button>`).join('')}</div>
+      ${st.canTeams ? `<div class="panel"><h2>CRM teams</h2><p class="small muted">Who is told when a buyer replies. Everyone ticked for a wing gets the reply on their own Daily To-Do, the red badge at the top, and an email to their own address (set on Logins). A flat can also be given to one person on its booking page.</p>
+        <div class="two">${['A', 'B'].map((w) => `<div><b>${w} Wing</b>${st.crmUsers.map((x) => `<label class="check"><input type="checkbox" data-w="${w}" value="${x.id}" ${(st.teams[w] || []).map(Number).includes(x.id) ? 'checked' : ''}> ${esc(x.name)}</label>`).join('')}</div>`).join('')}</div>
+        <div class="actions"><button class="ghost small" id="cmTeams">Save the CRM teams</button></div></div>` : ''}
+      <div class="tabs">${[['mine', `Mine${d.counts.mine ? ' (' + d.counts.mine + ')' : ''}`], ['new', 'All not read'], ['unmatched', 'To link'], ['all', 'All received']].map(([k, l]) => `<button class="tab ${k === f ? 'on' : ''}" data-t="${k}">${l}</button>`).join('')}</div>
       <div class="panel msgs" id="cml">${d.rows.map((c) => msgHtml(c, { unit: true, actions: d.canAct ? `<div class="msg-x">${c.status === 'unmatched' ? `<button class="small" data-link="${c.id}">Link to a flat</button> <button class="link small" data-dis="${c.id}">Not about a buyer</button>${c.matched_by ? ` <span class="small muted">(${esc(c.matched_by)})</span>` : ''}` : `<a class="small" href="#/booking/${c.booking_id}">Open the booking to reply</a>${!c.read_at ? ` · <button class="link small" data-read="${c.id}">Mark read</button>` : ''}`}</div>` : '' })).join('') || '<p class="muted">Nothing here.</p>'}</div>`;
     wireMsgs($('#cml'));
     document.querySelectorAll('.tab[data-t]').forEach((t) => (t.onclick = () => { store.set('erp_cmf', t.dataset.t); comms(); }));
+    if ($('#cmTeams')) $('#cmTeams').onclick = async () => { const teams = { A: [], B: [] }; document.querySelectorAll('[data-w]:checked').forEach((x) => teams[x.dataset.w].push(+x.value)); await api('/api/comms', { action: 'teams', teams }); toast('CRM teams saved.'); };
     if ($('#cmSync')) $('#cmSync').onclick = async (e) => { e.target.disabled = true; e.target.textContent = 'Checking…'; try { const r = await api('/api/comms', { action: 'sync' }); toast(r.ok ? `Checked ${r.looked} new emails: ${r.saved} saved, ${r.inbox} to link.` : r.error || r.reason); } catch (x) { alert(x.message); } comms(); };
     document.querySelectorAll('[data-read]').forEach((x) => (x.onclick = async () => { await api('/api/comms', { action: 'read', ids: [+x.dataset.read] }); comms(); }));
     document.querySelectorAll('[data-dis]').forEach((x) => (x.onclick = async () => { await api('/api/comms', { action: 'dismiss', id: +x.dataset.dis }); toast('Removed from the inbox.'); comms(); }));
