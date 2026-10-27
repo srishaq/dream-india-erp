@@ -45,7 +45,9 @@ module.exports = route({
     const to = live() && !bk.sample ? real : [set.testEmail];
     const m = docs.welcomeEmail(d);
     const conn = await mailer.connect();
-    try { await conn.send({ to, cc: live() && set.cc ? emails(set.cc) : [], subject: m.subject + (live() ? '' : ' [TEST]'), text: m.text }); } finally { await conn.close(); }
+    let sent;
+    try { sent = await conn.send({ to, cc: live() && set.cc ? emails(set.cc) : [], subject: m.subject + (live() ? '' : ' [TEST]'), text: m.text }); } finally { await conn.close(); }
+    await require('../lib/comms').logSent({ bookingId: bk.id, to, subject: m.subject, body: m.text, sent, kind: 'welcome', userId: u.id, test: !live() });
     await db.tx(async (t) => {
       await t.q('update bookings set welcome_sent_at = now() where id = $1', [bk.id]);
       await audit.record(t.q, { user: u, action: 'send-welcome', entity: 'booking', entityId: bk.id, projectId: bk.project_id, after: { to: to.join(', '), test: !live() } });

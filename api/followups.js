@@ -46,7 +46,10 @@ async function sendEmail(u, b, res) {
   else { if (!to.length) throw fail(400, `${bk.unit_no}: no email address on this booking. Add it on the booking first.`); cc = emails(set.cc); }
   const html = message.split(/\n{2,}/).map((x) => `<p>${esc(x).replace(/\n/g, '<br>')}</p>`).join('');
   const conn = await mailer.connect();
-  try { await conn.send({ to, cc, subject: (live() ? '' : '[TEST] ') + subject, text: message, html }); } finally { await conn.close().catch(() => {}); }
+  const ref = b.replyTo ? await db.one("select message_id from communications where id = $1 and booking_id = $2 and channel = 'email'", [intOr(b.replyTo), bk.id]) : null;
+  let sent;
+  try { sent = await conn.send({ to, cc, subject: (live() ? '' : '[TEST] ') + subject, text: message, html, inReplyTo: ref && ref.message_id || undefined }); } finally { await conn.close().catch(() => {}); }
+  await require('../lib/comms').logSent({ bookingId: bk.id, to, subject, body: message, sent, kind: ref ? 'reply' : 'follow-up', userId: u.id, test: !live() });
   await db.tx(async (t) => {
     const r = await t.one("insert into follow_ups (booking_id, kind, outcome, note, next_date, created_by) values ($1, 'Email', 'Email sent', $2, $3, $4) returning id",
       [bk.id, `${live() ? '' : '[TEST to ' + to.join(', ') + '] '}${subject}`.slice(0, 1000), nextDate, u.id]);

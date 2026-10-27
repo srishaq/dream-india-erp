@@ -181,12 +181,14 @@ module.exports = route({
           if (!to.length) { out.push({ id: l.id, unit: l.unit_no, error: 'no email address' }); continue; }
           const f = l.figures;
           try {
-            await conn.send({
+            const subj = `${l.letter_type}: ${f.projectName || 'Dream Signature'} ${f.unit} – payment due ${f.dueDate}`;
+            const sent = await conn.send({
               to, cc: live() && !l.sample ? emails(set.cc) : [],
               subject: `${l.letter_type}: ${f.projectName || 'Dream Signature'} ${f.unit} – payment due ${f.dueDate}${live() ? '' : ' [TEST]'}`,
               text: `Dear ${f.name},\n\nPlease find attached the ${l.letter_type.toLowerCase()} for unit ${f.unit}. The amount due is Rs. ${f.total}, payable by ${f.dueDate}.\n\nIf you have already paid, please disregard this notice.\n\nWarm regards,\n${f.signedFor}`,
               attachments: [{ filename: `${f.unit}_${l.letter_type}.pdf`, content: buildLetter(f), type: 'application/pdf' }],
             });
+            await require('../lib/comms').logSent({ bookingId: l.booking_id, to, subject: subj, body: `${l.letter_type} for ${f.unit}: Rs. ${f.total} due by ${f.dueDate} (PDF attached).`, sent, kind: 'letter', userId: u.id, test: !live() });
             await db.tx(async (t) => {
               await t.q("update demand_letters set sent_via = 'email', sent_to = $2, sent_at = now(), sent_by = $3, send_error = null where id = $1", [l.id, to.join(', '), u.id]);
               await audit.record(t.q, { user: u, action: 'send-email', entity: 'letter', entityId: l.id, projectId, after: { unit: l.unit_no, to: to.join(', '), test: !live() } });

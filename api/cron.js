@@ -2,6 +2,7 @@
 //   /api/cron?job=bank  09:40 UTC = 3:10 pm IST  bank statements from the Drive folder (uploads by 3 pm)
 //   /api/cron?job=morning 03:30 UTC = 9:00 am IST  the Accounts audit and the CRM list → Daily To-Do (Accounts audit emailed)
 //   /api/cron?job=pdc   03:50 UTC = 9:20 am IST  PDC reminder emails
+//   /api/cron?job=mail  every 15 minutes          buyers' email replies into their Communication record
 // Vercel sends "Authorization: Bearer <CRON_SECRET>" when CRON_SECRET is set; then nothing else may run these.
 // Without CRON_SECRET a job runs only in its own hour (IST) and only once that day, so a stray call does nothing.
 const ba = require('../lib/bank-auto');
@@ -17,7 +18,7 @@ module.exports = route({
     const job = (req.query || {}).job;
     const secret = process.env.CRON_SECRET;
     if (secret) { if (req.headers.authorization !== `Bearer ${secret}`) throw fail(401, 'Not allowed.'); }
-    else if (!(job === 'bank' && istHour() === 15) && !((job === 'pdc' || job === 'morning') && istHour() === 9)) throw fail(403, 'Not the time for this job.');
+    else if (job !== 'mail' && !(job === 'bank' && istHour() === 15) && !((job === 'pdc' || job === 'morning') && istHour() === 9)) throw fail(403, 'Not the time for this job.');
     const st = await status();
     if (st.pending.length && st.applied.length) await migrate(); // a new release deployed overnight: its tables first
     if (job === 'bank') {
@@ -37,6 +38,10 @@ module.exports = route({
     if (job === 'pdc') {
       const r = await pdc.send({});
       return res.json({ ok: true, due: r.due.length, sent: r.sent.length, reason: r.reason || null });
+    }
+    if (job === 'mail') {
+      const r = await require('../lib/mail-sync').sync({ trigger: 'schedule' });
+      return res.json(r);
     }
     throw fail(400, 'Unknown job.');
   },

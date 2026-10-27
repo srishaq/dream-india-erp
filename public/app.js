@@ -119,6 +119,7 @@
     { key: 'ledgers', label: 'Customer ledgers', show: () => can('ledger.view') },
     { key: 'letters', label: 'Demand letters', show: () => anyOf('demand.raise', 'ledger.view') },
     { key: 'followups', label: 'Follow-ups', show: () => can('ledger.view') },
+    { key: 'comms', label: 'Communication inbox', show: () => can('ledger.view') },
     { key: 'custdocs', label: 'Customer documents', show: () => anyOf('buyer.kyc', 'accounts.view') },
     { key: 'verify', label: 'Data to verify', show: () => anyOf('inventory.view', 'ledger.view') },
     { key: 'prices', label: 'Price list & cost sheet', show: () => can('inventory.view') },
@@ -212,7 +213,7 @@
     $('#cpw').onclick = () => changePassword(false);
     if ($('#proj')) $('#proj').onchange = (e) => { proj = +e.target.value; store.set('erp_project', proj); shell(); };
     if (/^reg-/.test(page || '') && can('accounts.view')) { try { await accRegister(page.slice(4)); } catch (e) { $('#page').innerHTML = `<div class="err">${esc(e.message)}</div>`; } return; }
-    const fn = { home, mgmt, custdocs, project: projectHome, crmtodo: () => dailyTodo('crm'), acctodo: () => dailyTodo('accounts'), training, projects, plans, users, audit, units, bookings, demands, receipts, ledgers, letters, followups, verify, prices, partners, balances: accBalances, bankauto: bankAuto, bookscrm: booksCrm, accreports: accReports, checks: accChecks, accsetup: accSetup, import: importPage, booking: bookingPage, statement: statementPage, run: runPage };
+    const fn = { home, mgmt, custdocs, comms, project: projectHome, crmtodo: () => dailyTodo('crm'), acctodo: () => dailyTodo('accounts'), training, projects, plans, users, audit, units, bookings, demands, receipts, ledgers, letters, followups, verify, prices, partners, balances: accBalances, bankauto: bankAuto, bookscrm: booksCrm, accreports: accReports, checks: accChecks, accsetup: accSetup, import: importPage, booking: bookingPage, statement: statementPage, run: runPage };
     const key = DETAIL[page] && arg ? page : cur.key;
     try { await fn[key](arg ? +arg : undefined); } catch (e) { $('#page').innerHTML = `<div class="err">${esc(e.message)}</div>`; }
   }
@@ -248,7 +249,7 @@
     bookings: 'Bookings, applicants, cancellations and transfers', demands: 'Construction stages and the demands raised on them',
     receipts: 'Enter receipts; Head Accounts approves them', ledgers: 'Each buyer’s statement of demands and payments',
     letters: 'Stage demands and reminders, by email or courier', followups: 'Calls, WhatsApps and promises to pay',
-    custdocs: 'Signed and scanned papers for every flat and SRA tenant, kept in Google Drive', verify: 'Items from the import still to check and close', prices: 'Rates, floor rise and the cost sheet', partners: 'Channel partners and brokerage',
+    comms: 'Buyers\' email replies and WhatsApps, and messages to link to a flat', custdocs: 'Signed and scanned papers for every flat and SRA tenant, kept in Google Drive', verify: 'Items from the import still to check and close', prices: 'Rates, floor rise and the cost sheet', partners: 'Channel partners and brokerage',
     site: 'Slab cycle, daily progress reports, hindrances, materials and floor-wise works', purchase: 'Purchase requests from request to payment', drawings: 'The drawing register from Google Drive', hr: 'Staff records, leave, letters and HR policies',
     crmtodo: 'Today’s calls, approvals, letters and what the 9 am check found', acctodo: 'What the 9 am Accounts audit found, plus your own tasks',
     training: 'Short videos on how to use each part of the ERP',
@@ -260,7 +261,7 @@
     accreports: 'Reports and the Tally import', checks: 'Daily checks on the registers', bookscrm: 'Tally receipts flat by flat against the CRM',
     ca: 'GST, TDS payable, RERA quarterly and cash flow, for the CA', accsetup: 'Bank accounts, heads, statement folders and imports', audit: 'Who changed what, and when',
   };
-  const PICON = { custdocs: 'book', site: 'tower', crmtodo: 'check', acctodo: 'check', training: 'book', dashboard: 'chart', units: 'grid', bookings: 'book', demands: 'tower', receipts: 'rupee', ledgers: 'book', letters: 'mail', followups: 'phone', verify: 'check', prices: 'rupee', partners: 'users',
+  const PICON = { comms: 'mail', custdocs: 'book', site: 'tower', crmtodo: 'check', acctodo: 'check', training: 'book', dashboard: 'chart', units: 'grid', bookings: 'book', demands: 'tower', receipts: 'rupee', ledgers: 'book', letters: 'mail', followups: 'phone', verify: 'check', prices: 'rupee', partners: 'users',
     accdash: 'chart', balances: 'rupee', bankauto: 'check', 'reg-cancellations': 'users', bookscrm: 'check', checks: 'check', audit: 'book', ca: 'chart', accsetup: 'grid' };
   const DEPTS = [
     { key: 'crm', title: 'Sales & CRM', sub: 'Collections, units, bookings, demands, receipts and follow-ups', icon: 'chart', tone: '#2B5C8A', group: 'CRM' },
@@ -629,6 +630,7 @@
       ${d.earlier && d.earlier.length ? `<div class="note" style="margin-bottom:14px">Earlier on this flat: ${d.earlier.map((e) => `<a href="#/booking/${e.id}">${esc(e.buyers || 'buyer')}</a> (cancelled ${fmtD(String(e.cancel_date || e.cancelled_at || '').slice(0, 10))}${e.refund_status ? ', refund ' + esc(e.refund_status) : ''})`).join('; ')}.</div>` : ''}
       <div class="actions" style="margin:0 0 10px">${actions.join('')}</div>
       <div class="actions" style="margin:0 0 16px"><span class="muted small" style="align-self:center">Documents:</span>${docBtns.join('')}</div>
+      ${can('ledger.view') ? '<div class="panel" id="ccomm"><h2>Communication</h2><p class="muted small">Loading…</p></div>' : ''}
       ${can('buyer.kyc') ? '<div class="panel" id="cdocs"><h2>Customer documents</h2><p class="muted small">Loading…</p></div>' : ''}
       <div class="panel"><div class="kpis">${kpi(inr(b.agreement_value), 'agreement value')}${kpi(inr(bal.demanded), 'demanded')}${kpi(inr(bal.credit_av), 'received (AV + TDS)')}
         ${kpi(inr(bal.outstanding), 'outstanding')}${kpi(inr(bal.overdue), 'overdue', toNum(bal.overdue) > 0 ? 'bad' : '')}${kpi(inr(bal.gst_outstanding), 'GST outstanding')}</div></div>
@@ -650,6 +652,7 @@
         ${d.receipts.map((r) => `<tr><td>${fmtD(r.received_on)}</td><td>${esc([r.bank, r.instrument_no].filter(Boolean).join(' · ') || r.mode)}</td><td class="num">${inr(r.amount, 2)}</td>
           <td class="small">${Object.entries(r.splits).map(([h, v]) => `${HEAD[h] || h} ${inr(v, 2)}`).join(' · ')}</td><td>${rStatus(r)}</td></tr>`).join('') || '<tr><td colspan="5" class="muted">No receipts yet.</td></tr>'}</table></div></div>`;
     if ($('#cdocs')) docsPanel('booking', b.id, $('#cdocs'), `${d.unit.unit_no} · ${d.applicants.map((a) => a.name).join(' & ')}`);
+    if ($('#ccomm')) commPanel(b.id, d.unit.unit_no, $('#ccomm'));
     const iv = await api(`/api/verify?booking=${b.id}`).catch(() => ({ rows: [] }));
     const open = iv.rows.filter((x) => x.status === 'open');
     if (open.length) $('.panel', $('#page')).insertAdjacentHTML('beforebegin', `<div class="note" style="margin-bottom:14px"><b>${open.length} item${open.length === 1 ? '' : 's'} to verify from the import:</b><ul class="small" style="margin:6px 0 0 18px;padding:0">${open.map((x) => `<li>${esc(x.detail)}</li>`).join('')}</ul><a href="#/verify">Open Data to verify</a></div>`);
@@ -926,8 +929,9 @@
     document.querySelectorAll('[data-log]').forEach((b) => (b.onclick = () => followupForm(+b.dataset.log, b.dataset.u, d, followups)));
     document.querySelectorAll('[data-mail]').forEach((b) => (b.onclick = (e) => { e.preventDefault(); followupEmail(+b.dataset.mail, b.dataset.u, followups); }));
   }
-  async function followupEmail(bookingId, unit, after) {
+  async function followupEmail(bookingId, unit, after, reply) {
     const p = await api('/api/followups', { action: 'email', bookingId, preview: true });
+    if (reply) { p.subject = /^re:/i.test(reply.subject || '') ? reply.subject : 'Re: ' + (reply.subject || p.subject); p.message = `Dear ${p.name},\n\n\n\nRegards,\nCRM Team`; }
     const plus = (n) => { const x = new Date(Date.now() + 5.5 * 3600e3); x.setUTCDate(x.getUTCDate() + n); return x.toISOString().slice(0, 10); };
     const dl = dialog(`<h2>Email the buyer · ${esc(unit)}</h2>
       <p class="small muted">To: ${esc(p.to.join(', ') || 'no email on this booking')}${p.live ? '' : '<br><b>Test version:</b> the email goes only to the test address in Letter settings, marked [TEST].'}${p.configured ? '' : '<br><span class="bad-t">Email is not set up yet (SMTP app password), so it cannot be sent.</span>'}</p>
@@ -935,7 +939,7 @@
       <label>Message</label><textarea name="message" rows="10">${esc(p.message)}</textarea>
       <label>Next follow-up</label><input type="date" name="nextDate" min="${todayIso()}" value="${plus(3)}">
       <p class="small muted">The email is logged on this buyer's follow-ups.</p>`,
-    async (x) => { const r = await api('/api/followups', { action: 'email', bookingId, ...x }); toast(r.test ? `Test email sent to ${r.to.join(', ')}.` : 'Email sent and logged.'); after(); });
+    async (x) => { const r = await api('/api/followups', { action: 'email', bookingId, ...x, replyTo: reply ? reply.id : undefined }); toast(r.test ? `Test email sent to ${r.to.join(', ')}.` : 'Email sent and logged.'); after(); });
     $('[value=save]', dl).textContent = 'Send email';
   }
   function followupForm(bookingId, unit, d, after) {
@@ -1137,6 +1141,69 @@
   }
 
   // Daily To-Do (CRM or Accounts): the 9 am audit's findings and people's own tasks, ticked off through the day.
+  // ---------- communication with buyers (email both ways, WhatsApp) ----------
+  const chIcon = (c) => (c.channel === 'whatsapp' ? 'WhatsApp' : 'Email') + (c.direction === 'in' ? ' from buyer' : ' sent');
+  const tick = (d) => ({ sent: '✓', delivered: '✓✓', read: '✓✓ read', failed: 'failed' }[d] || '');
+  function msgHtml(c, opts = {}) {
+    const att = (c.attachments || []).map((a) => a.docId ? `<button class="link small" data-doc="${a.docId}" data-n="${esc(a.name)}">📎 ${esc(a.name)}</button>` : `<span class="small muted">📎 ${esc(a.name)}${a.note ? ' (' + esc(a.note) + ')' : ''}</span>`).join(' ');
+    const long = (c.body || '').length > 420;
+    return `<div class="msg ${c.direction} ${c.read_at || c.direction === 'out' ? '' : 'unread'}" data-id="${c.id}">
+      <div class="msg-h"><b>${chIcon(c)}</b>${opts.unit && c.unit_no ? ` · <a href="#/booking/${c.booking_id}">${esc(c.unit_no)}</a>` : ''} · <span class="muted">${fmtDate(c.sent_at)}</span>
+        ${c.direction === 'out' ? `<span class="muted small"> · ${esc(c.sent_by_name || 'ERP')}${c.delivery ? ' · ' + tick(c.delivery) : ''}</span>` : `<span class="muted small"> · ${esc(c.from_addr || '')}</span>`}</div>
+      ${c.subject ? `<div class="msg-s">${esc(c.subject)}</div>` : ''}
+      <div class="msg-b ${long ? 'clip' : ''}">${esc(c.body || '').replace(/\n/g, '<br>')}</div>${long ? '<button class="link small" data-more>Show all</button>' : ''}
+      ${att ? `<div class="msg-a">${att}</div>` : ''}
+      ${opts.actions || ''}</div>`;
+  }
+  function wireMsgs(el) {
+    el.querySelectorAll('[data-more]').forEach((x) => (x.onclick = () => { x.previousElementSibling.classList.remove('clip'); x.remove(); }));
+    el.querySelectorAll('[data-doc]').forEach((x) => (x.onclick = () => openDoc(+x.dataset.doc, x.dataset.n)));
+  }
+  async function commPanel(bookingId, unit, el) {
+    const d = await api(`/api/comms?booking=${bookingId}`);
+    const unread = d.rows.filter((c) => c.direction === 'in' && !c.read_at).map((c) => c.id);
+    el.innerHTML = `<h2>Communication <span class="muted small">${d.rows.length} message${d.rows.length === 1 ? '' : 's'}</span>
+        ${d.canAct ? `<span style="float:right"><button class="ghost small" id="cmMail">Email</button> ${d.whatsapp.configured ? '<button class="ghost small" id="cmWa">WhatsApp</button>' : ''}</span>` : ''}</h2>
+      ${d.whatsapp.configured ? '' : '<p class="small muted">WhatsApp messages will appear here once the WhatsApp Business number is connected.</p>'}
+      <div class="msgs">${d.rows.map((c) => msgHtml(c, { actions: c.direction === 'in' && c.channel === 'email' && d.canAct ? `<div class="msg-x"><button class="link small" data-reply="${c.id}">Reply</button></div>` : '' })).join('') || '<p class="muted">No emails or WhatsApps with this buyer yet. Emails sent from the ERP, and the buyer\'s replies, appear here.</p>'}</div>`;
+    wireMsgs(el);
+    const again = () => commPanel(bookingId, unit, el);
+    if ($('#cmMail', el)) $('#cmMail', el).onclick = () => followupEmail(bookingId, unit, again);
+    el.querySelectorAll('[data-reply]').forEach((x) => (x.onclick = () => { const c = d.rows.find((r) => r.id === +x.dataset.reply); followupEmail(bookingId, unit, again, c); }));
+    if ($('#cmWa', el)) $('#cmWa', el).onclick = () => {
+      const dl = dialog(`<h2>WhatsApp · ${esc(unit)}</h2>${d.whatsapp.window ? '<label>Message</label><textarea name="text" rows="5" required></textarea><p class="small muted">The buyer messaged in the last 24 hours, so a normal message can be sent.</p>'
+        : '<p class="small muted">The buyer has not messaged in the last 24 hours. WhatsApp allows only an approved template.</p><label>Template name</label><input name="template" required placeholder="e.g. payment_reminder"><label>Values for {{1}}, {{2}}… (one per line)</label><textarea name="params" rows="3"></textarea>'}`,
+      async (x) => { await api('/api/comms', { action: 'whatsapp', bookingId, text: x.text, template: x.template, params: x.params ? x.params.split('\n').map((s) => s.trim()).filter(Boolean) : [] }); toast('WhatsApp sent.'); again(); });
+      $('[value=save]', dl).textContent = 'Send';
+    };
+    if (unread.length && d.canAct) api('/api/comms', { action: 'read', ids: unread }).catch(() => {});
+  }
+  async function comms() {
+    const f = store.get('erp_cmf') || 'new';
+    const [d, st] = await Promise.all([api(`/api/comms?inbox=1&f=${f}`), api('/api/comms?status=1')]);
+    const m = st.mail;
+    const mailLine = !m.configured ? '<span class="bad-t">The mailbox is not connected yet (email settings in Vercel), so buyers\' replies are not read.</span>'
+      : m.error ? `<span class="bad-t">Last check of ${esc(m.mailbox || 'the mailbox')} failed: ${esc(m.error)}</span>` : `Replies are read from ${esc(m.mailbox || 'the mailbox')} every 15 minutes${m.lastRun ? ' · last checked ' + fmtDate(m.lastRun) : ''}.`;
+    $('#page').innerHTML = `<div class="page-head"><div><h1>Communication inbox</h1><p class="muted">Buyers' email replies and WhatsApps. Each one is also kept in the buyer's Communication record on their booking. A message the ERP could not match to a flat waits here until you link it.</p></div>
+        <div class="actions" style="margin:0">${st.canSync && m.configured ? '<button class="ghost" id="cmSync">Check the mailbox now</button>' : ''}</div></div>
+      <div class="panel"><p class="small">${mailLine}<br>WhatsApp: ${st.whatsapp.configured ? 'connected' : 'not connected yet'}.</p>
+        <div class="kpis">${kpi(d.counts.new, 'not read yet', d.counts.new ? 'bad' : '')}${kpi(d.counts.unmatched, 'to link to a flat', d.counts.unmatched ? 'bad' : '')}</div></div>
+      <div class="tabs">${[['new', 'Not read'], ['unmatched', 'To link'], ['all', 'All received']].map(([k, l]) => `<button class="tab ${k === f ? 'on' : ''}" data-t="${k}">${l}</button>`).join('')}</div>
+      <div class="panel msgs" id="cml">${d.rows.map((c) => msgHtml(c, { unit: true, actions: d.canAct ? `<div class="msg-x">${c.status === 'unmatched' ? `<button class="small" data-link="${c.id}">Link to a flat</button> <button class="link small" data-dis="${c.id}">Not about a buyer</button>${c.matched_by ? ` <span class="small muted">(${esc(c.matched_by)})</span>` : ''}` : `<a class="small" href="#/booking/${c.booking_id}">Open the booking to reply</a>${!c.read_at ? ` · <button class="link small" data-read="${c.id}">Mark read</button>` : ''}`}</div>` : '' })).join('') || '<p class="muted">Nothing here.</p>'}</div>`;
+    wireMsgs($('#cml'));
+    document.querySelectorAll('.tab[data-t]').forEach((t) => (t.onclick = () => { store.set('erp_cmf', t.dataset.t); comms(); }));
+    if ($('#cmSync')) $('#cmSync').onclick = async (e) => { e.target.disabled = true; e.target.textContent = 'Checking…'; try { const r = await api('/api/comms', { action: 'sync' }); toast(r.ok ? `Checked ${r.looked} new emails: ${r.saved} saved, ${r.inbox} to link.` : r.error || r.reason); } catch (x) { alert(x.message); } comms(); };
+    document.querySelectorAll('[data-read]').forEach((x) => (x.onclick = async () => { await api('/api/comms', { action: 'read', ids: [+x.dataset.read] }); comms(); }));
+    document.querySelectorAll('[data-dis]').forEach((x) => (x.onclick = async () => { await api('/api/comms', { action: 'dismiss', id: +x.dataset.dis }); toast('Removed from the inbox.'); comms(); }));
+    document.querySelectorAll('[data-link]').forEach((x) => (x.onclick = async () => {
+      const bk = await api(`/api/bookings?project=${proj}`);
+      const list = (bk.rows || bk.bookings || []).filter((r) => r.status === 'active');
+      const dl = dialog(`<h2>Link this message to a flat</h2><label>Flat</label><input name="q" list="cmUnits" required placeholder="Type the flat, e.g. A-1203"><datalist id="cmUnits">${list.map((r) => `<option value="${esc(r.unit_no)}">${esc(r.buyers || r.applicants || '')}</option>`).join('')}</datalist>`,
+        async (v) => { const r = list.find((b) => b.unit_no.toUpperCase() === String(v.q).trim().toUpperCase()); if (!r) throw new Error('Pick a flat with a live booking.'); await api('/api/comms', { action: 'link', id: +x.dataset.link, bookingId: r.id }); toast(`Linked to ${r.unit_no}.`); comms(); });
+      $('[value=save]', dl).textContent = 'Link';
+    }));
+  }
+
   // ---------- customer documents (kept in Google Drive) ----------
   let DOCS = null;
   const docsMeta = async () => (DOCS ||= await api('/api/custdocs?status=1'));
