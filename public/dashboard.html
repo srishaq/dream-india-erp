@@ -243,14 +243,8 @@ a.btn{display:inline-block;text-decoration:none}
     <button data-v="overview" aria-selected="true">Overview</button>
     <button data-v="daily">Daily reports</button>
     <button data-v="collections">Collections</button>
-    <button data-v="schedule">Payment schedule</button>
-    <button data-v="demands">Demand letters</button>
-    <button data-v="followups">Follow-ups</button>
     <button data-v="dues">Dues &amp; actions</button>
     <button data-v="dates">Important dates</button>
-    <button data-v="units">Units</button>
-    <button data-v="cps">Channel partners</button>
-    <button data-v="audit">Source audit</button>
   </nav>
 </header>
 
@@ -339,23 +333,8 @@ a.btn{display:inline-block;text-decoration:none}
     <div class="panel" style="margin-top:18px"><h3>Month table</h3><div class="tbl" style="border:0"><table id="monthTbl"></table></div></div>
   </section>
 
-  <section class="view" id="v-schedule">
-    <h2>Payment schedule</h2>
-    <p class="sub">What each stage of the payment plan is worth across all live bookings, and how much of it has come in. Each buyer's AV and TDS received is applied to their stages in order.</p>
-    <div class="panel" id="psPanel"><div class="tbl" style="border:0"><table id="psTbl"></table></div></div>
-  </section>
 
-  <section class="view" id="v-demands">
-    <h2>Demand letters</h2>
-    <p class="sub">Demand letters and reminders are prepared, emailed, printed and tracked in the ERP itself.</p>
-    <div class="panel"><a class="btn go" href="/#/letters">Open Demand letters in the ERP</a></div>
-  </section>
 
-  <section class="view" id="v-followups">
-    <h2>Follow-ups</h2>
-    <p class="sub">Calls, WhatsApps, visits and promises to pay are logged in the ERP against each buyer.</p>
-    <div class="panel"><a class="btn go" href="/#/followups">Open Follow-ups in the ERP</a></div>
-  </section>
 
   <section class="view" id="v-dues">
     <h2>Dues &amp; actions</h2>
@@ -377,51 +356,8 @@ a.btn{display:inline-block;text-decoration:none}
     </div>
   </section>
 
-  <section class="view" id="v-units">
-    <h2>Units</h2>
-    <p class="sub">All flats with financials and workflow. Tap a row for the full file.</p>
-    <div class="toolbar">
-      <input type="search" id="uSearch" placeholder="Search unit, applicant, CP firm, RM" aria-label="Search units">
-      <select id="uWing" aria-label="Wing"><option value="">Both wings</option><option>A</option><option>B</option></select>
-      <select id="uInv" aria-label="Inventory status"><option value="">All statuses</option></select>
-      <select id="uFollow" aria-label="Follow-up status"><option value="">All follow-ups</option></select>
-      <select id="uReg" aria-label="Registration"><option value="">Registered or not</option><option value="y">Registered</option><option value="n">Not registered</option></select>
-    </div>
-    <div class="tbl"><table id="uTbl"></table></div>
-    <button class="more hidden" id="uMore">Show more</button>
-  </section>
 
-  <section class="view" id="v-cps">
-    <h2>Channel partners</h2>
-    <p class="sub">Who is bringing the business, whether their buyers pay, and what brokerage is owed against them. Firm names are matched ignoring case and spacing.</p>
-    <div class="figs" id="cpFigs"></div>
-    <div class="panel" id="cpNote" style="margin-bottom:18px"></div>
-    <div class="toolbar">
-      <input type="search" id="cpSearch" placeholder="Search channel partner" aria-label="Search channel partners">
-      <select id="cpSort" aria-label="Sort by">
-        <option value="agreementValue">Sort: agreement value</option>
-        <option value="units">Sort: units</option>
-        <option value="received">Sort: collected</option>
-        <option value="collectedPct">Sort: collection rate</option>
-        <option value="balanceDue">Sort: balance due</option>
-        <option value="brokerage">Sort: brokerage</option>
-        <option value="lastBooking">Sort: most recent booking</option>
-      </select>
-      <label class="rangeLbl"><input type="checkbox" id="cpMulti" style="width:auto"> Hide single-unit firms</label>
-    </div>
-    <div class="tbl"><table id="cpTbl"></table></div>
-    <button class="more hidden" id="cpMore">Show more</button>
-  </section>
 
-  <section class="view" id="v-audit">
-    <h2>Source audit</h2>
-    <p class="sub">What the import from the CRM sheet found that does not add up, and has not been checked yet. CRM and Accounts check each item and close it on the <a href="/#/verify">Data to verify</a> page.</p>
-    <div class="figs" id="auditFigs"></div>
-    <div class="grid2">
-      <div class="panel"><h3>By type</h3><div class="tbl" style="border:0"><table id="errTbl"></table></div></div>
-      <div class="panel"><h3>Items still open</h3><div class="tbl" style="border:0;max-height:620px"><table id="misTbl"></table></div></div>
-    </div>
-  </section>
 </main>
 </div>
 

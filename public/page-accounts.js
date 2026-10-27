@@ -72,47 +72,6 @@ $('#cColl').innerHTML=[
  card('in tint wide','Net collections till date',rs(netTD),rs(totTD)+' in bank + '+rs(TP.td)+' TDS from current buyers, less '+rs(REF.td)+' refunded',netD('td')),
 ].join('');
 
-// customer refunds
-$('#cRef').innerHTML=[
- card('out','Refunded · '+D.monthLabel,rs(REF.m),'Paid back on cancelled flats',refD('m')),
- card('out','Refunded · '+D.fyLabel,rs(REF.fy),'This financial year',refD('fy')),
- card('out tint','Refunded till date',rs(REF.td),REF.n.toLocaleString('en-IN')+' refund payments',refD('td')),
-].join('');
-
-// TDS (TDS Tracker tab): due = 1% of agreement value on every booked flat; paid = the challans / Form 16B entered
-const T=D.tds;$('#tds').hidden=!T;
-if(T){
- const TF=[['Unit',f=>f.u],['Buyer',f=>f.n],['Status',f=>f.s],['Agreement value',f=>f.av,'amt'],['TDS due (1%)',f=>f.due,'amt'],['TDS paid',f=>f.paid,'amt'],['TDS balance',f=>f.bal,'amt'],['Entries',f=>f.k,'n'],['Last TDS date',f=>f.last],['Paid status',f=>f.st]];
- const TE=[['TDS paid on',e=>e.d],['Entry ID',e=>e.id],['Unit',e=>e.unit],['Customer',e=>e.n],['Demand / instalment',e=>e.dem],['Challan / ack. no.',e=>e.ch],['Paid from',e=>e.bank],['Form 16B',e=>e.f16],['Remark',e=>e.rm,'desc'],['TDS amount',e=>e.amt,'amt']];
- const bal=T.due-T.paid, paidF=T.flats.filter(f=>f.paid>0);
- $('#cTds').innerHTML=[
-  card('nv','Total TDS due · all customers',rs(T.due),'1% of agreement value on '+T.flats.length+' booked flats · '+rs(bal)+' still to come',
-   DR.reg('TDS due by flat',()=>({sub:full(T.due)+' due · '+full(T.paid)+' paid · '+full(bal)+' balance',sections:[{cols:TF,rows:T.flats,sumCol:'TDS due (1%)'}]}),false)),
-  card('in tint','TDS paid by customers',rs(T.paid),T.entries.length.toLocaleString('en-IN')+' challans on '+paidF.length+' flats · '+(T.due?pct(T.paid/T.due):'—')+' of TDS due',
-   DR.reg('TDS paid by customers',()=>({sub:full(T.paid)+' paid on '+paidF.length+' flats',sections:[{h:'Every TDS challan / Form 16B entered',cols:TE,rows:T.entries.slice().sort((a,b)=>b.t-a.t),sumCol:'TDS amount'},{h:'By flat',cols:TF,rows:paidF.slice().sort((a,b)=>b.paid-a.paid),sumCol:'TDS paid',count:false}]}),false)),
- ].join('');
-}
-
-// PDC (PDC tab): post-dated cheques we have issued; days left counted from today in India (worked out on the server)
-const PD=D.pdc;$('#pdc').hidden=!PD;
-if(PD){
- const PCOL=[['Date',r=>r.d],['Issued to',r=>r.to],['Amount',r=>r.amt,'amt'],['Bank',r=>r.bank],['Due date',r=>r.due],['Cheque No.',r=>r.no],['Days left',r=>r.left,'n'],['Status',r=>r.st],['48-hour reminder sent',r=>r.r48],['24-hour reminder sent',r=>r.r24]];
- const BCOL=[['Bank',b=>b.bank],['Cheques',b=>b.n,'n'],['Amount',b=>b.amt,'amt']];
- const byBank=a=>Object.values(a.reduce((o,r)=>{const k=r.bank||'(no bank)';(o[k]=o[k]||{bank:k,n:0,amt:0}).n++;o[k].amt+=r.amt;return o},{})).sort((x,y)=>y.amt-x.amt);
- const pick=f=>PD.rows.filter(r=>r.left!=null&&f(r.left)).sort((a,b)=>a.t-b.t);
- const r0=v=>v?rs(v):'₹0', cnt=x=>x.n+' cheque'+(x.n===1?'':'s');
- const pd=(t,f,split)=>DR.reg(t,()=>{const rows=pick(f),s=[{cols:PCOL,rows,sumCol:'Amount'}];if(split)s.push({h:'By bank',cols:BCOL,rows:byBank(rows),sumCol:'Amount',count:false});return {sub:full(rows.reduce((a,r)=>a+r.amt,0))+' on '+cnt({n:rows.length}),sections:s}},false);
- $('#cPdc').innerHTML=[
-  card('out','Due in next 7 days',r0(PD.d7.amt),cnt(PD.d7),pd('PDCs due in the next 7 days',l=>l>=0&&l<=7)),
-  card('out','Due in next 30 days',r0(PD.d30.amt),cnt(PD.d30),pd('PDCs due in the next 30 days',l=>l>=0&&l<=30)),
-  card('nv','All upcoming PDCs',r0(PD.up.amt),cnt(PD.up)+' · split by bank inside',pd('All upcoming PDCs',l=>l>=0,true)),
-  card('out tint','Past due date',r0(PD.past.amt),cnt(PD.past),pd('PDCs past their due date',l=>l<0)),
- ].join('');
- $('#pdcNone').hidden=PD.rows.length>0;
-}
-
-// SRA tenants rent (SRA Tenants + Tenant Rent Links tabs), see accounts-tenants.js
-if(window.renderTenants)renderTenants(D,{card,rs,full,esc,DR,$});
 
 // sales
 const booked=D.units.filter(u=>u.av>0);
@@ -209,22 +168,6 @@ function drawUnits(){const q=$('#q').value.trim().toLowerCase(),fw=$('#fWing').v
 $('#unitMore').onclick=()=>{lim=lim===25?100000:25;drawUnits()};
 ['#q','#fWing','#fStatus'].forEach(s=>$(s).addEventListener('input',()=>{lim=25;drawUnits()}));drawUnits();
 
-// reconciliation
-const sum=a=>a.reduce((s,r)=>s+r.amt,0);const mg=openRI.filter(r=>r.esc==='Management review');
-const byCat=c=>openRI.filter(r=>r.cat===c);
-const RID=(t,rows)=>DR.reg(t,()=>({sections:[{cols:'RI',rows:rows.slice().sort((a,b)=>b.amt-a.amt)}]}),false);
-$('#cRec').innerHTML=[card('out','Needs a correction',rs(sum(byCat('Adjustment required'))),byCat('Adjustment required').length+' items',RID('Open items needing a correction',byCat('Adjustment required'))),
- card('out','To investigate',rs(sum(byCat('Investigation'))),byCat('Investigation').length+' items',RID('Open items to investigate',byCat('Investigation'))),
- card('in','Timing, clears by itself',rs(sum(byCat('Timing'))),byCat('Timing').length+' items',RID('Open timing items',byCat('Timing'))),
- card('out tint','For management review',rs(sum(mg)),mg.length+' items over ₹5 L or 90 days',RID('Open items for management review',mg))].join('');
-const BK=['0-30 days','31-60 days','61-90 days','Over 90 days'];
-$('#tAge').innerHTML='<tr><th>Age</th><th class="num">Items</th><th class="num">Amount</th></tr>'+BK.map(b=>{const x=openRI.filter(r=>r.bk===b);return `<tr ${RID('Open items · '+b,x)}><td>${b}</td><td class="num">${x.length}</td><td class="num r">${rs(sum(x))}</td></tr>`}).join('');
-const byA={};openRI.forEach(r=>{(byA[r.acct]=byA[r.acct]||[]).push(r)});
-$('#tAcct').innerHTML='<tr><th>Bank account</th><th class="num">Items</th><th class="num">Amount</th></tr>'+Object.entries(byA).sort((a,b)=>sum(b[1])-sum(a[1])).map(([k,x])=>`<tr ${RID('Open items · '+k,x)}><td>${esc(k)}</td><td class="num">${x.length}</td><td class="num r">${rs(sum(x))}</td></tr>`).join('');
-
-// latest
-$('#tLatest').innerHTML='<tr><th>Date</th><th>Type</th><th>Cash Flow Head</th><th>Remark / description</th><th>Bank</th><th class="num">Amount</th></tr>'+
- D.latest.map(e=>`<tr><td style="white-space:nowrap">${esc(e.Date)}</td><td class="typ-${e.T==='In'?'in':'out'}">${e.T}</td><td>${esc(e['Cash Flow Head'])}${e.Unit?` <span class="cnt">${esc(e.Unit)}</span>`:''}</td><td class="desc">${esc(e.Description)}</td><td style="white-space:nowrap">${esc(e['Bank Account'])}</td><td class="num ${e.T==='In'?'g':'r'}">${full(e.Amount)}</td></tr>`).join('');
 
 }
 

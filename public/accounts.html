@@ -132,7 +132,7 @@ header.top{padding-top:env(safe-area-inset-top)}
     <div class="sync"><span class="dot" aria-hidden="true"></span><span><span id="asof"></span> · <span id="live">Loading…</span></span><button id="reload" type="button" hidden>Refresh</button><div id="user"></div></div>
   </div>
   <nav class="tabs" aria-label="Sections">
-    <a href="#balance">Overview</a><a href="#collections">Collections</a><a href="#refunds">Refunds</a><a href="#tds">TDS</a><a href="#pdc">PDC</a><a href="#tenants" hidden>SRA tenants</a><a href="#sales">Sales and dues</a><a href="#expenses">Expenses</a><a href="#tables">By head</a><a href="#trend">Money in and out</a><a href="#units">Units</a><a href="#rec">Reconciliation</a><a href="#latest">Latest entries</a>
+    <a href="#balance">Overview</a><a href="#collections">Collections</a><a href="#sales">Sales and dues</a><a href="#expenses">Expenses</a><a href="#tables">By head</a><a href="#trend">Money in and out</a><a href="#units">Units</a>
   </nav>
 </header>
 
@@ -149,52 +149,11 @@ header.top{padding-top:env(safe-area-inset-top)}
     <div class="cards" id="cColl"></div>
   </section>
 
-  <section class="band" id="refunds" data-tab="refunds">
-    <h2>Customer refunds <small>paid back on cancelled flats</small></h2>
-    <div class="cards" id="cRef"></div>
-  </section>
 
-  <section class="band" id="tds" hidden data-tab="tds">
-    <h2>TDS by customers <small>1% of agreement value, deducted from each demand and paid to the government</small></h2>
-    <div class="cards" id="cTds"></div>
-  </section>
 
-  <section class="band" id="pdc" hidden data-tab="pdc">
-    <h2>PDC cheques issued <small>post-dated cheques we have given, from the PDC register</small></h2>
-    <div class="cards" id="cPdc"></div>
-    <p class="sub" id="pdcNone" hidden>No PDCs entered yet.</p>
-  </section>
 
-  <section class="band" id="tenants" hidden data-tab="tenants">
-    <h2>SRA tenants rent <small>Goodluck SRA transit rent, from the SRA Tenants and Tenant Rent Links tabs</small></h2>
-    <div class="cards" id="cTen"></div>
-  </section>
 
-  <div class="panel" id="tenTable" hidden data-tab="tenants">
-    <div style="display:flex;flex-wrap:wrap;justify-content:space-between;gap:12px;align-items:flex-end">
-      <div><h2>Tenant-wise rent</h2><p class="sub" id="tenCount"></p><button class="more" id="tenAdd" type="button" hidden>+ Add a survey no.</button></div>
-      <div class="filters">
-        <input type="search" id="tenQ" placeholder="Search survey no. or tenant" aria-label="Search tenants">
-        <select id="tenPos" aria-label="Position"><option value="">All positions</option></select>
-        <select id="tenSt" aria-label="Status"><option value="">Active and closed</option><option>Active</option><option>Closed shop</option></select>
-      </div>
-    </div>
-    <div class="two"><div class="tbl"><table id="tTenYr"></table></div><p class="sub" style="margin:0">Each year's rent is paid in advance in January: 11 months (12 for a few tenants), 10% more every year. A payment made in October to December counts as the next year's advance. Tap a year or a tenant to see the bank payments.</p></div>
-    <div class="tbl"><table id="tTen"></table></div>
-    <button class="more" id="tenMore" type="button"></button>
-  </div>
 
-  <div class="panel" id="tenLinks" hidden data-tab="tenants">
-    <div style="display:flex;flex-wrap:wrap;justify-content:space-between;gap:12px;align-items:flex-end">
-      <div><h2>Tenant rent payments</h2><p class="sub" id="lnkCount"></p></div>
-      <div class="filters">
-        <input type="search" id="lnkQ" placeholder="Search payment ID, survey no., name" aria-label="Search payments">
-        <select id="lnkSt" aria-label="Status"><option value="">All payments</option><option value="unl">Not yet linked</option><option>To confirm</option><option>Linked</option><option>Not tenant rent</option><option value="unchk">Not yet checked by accounts</option></select>
-      </div>
-    </div>
-    <div class="tbl"><table id="tLnk"></table></div>
-    <button class="more" id="lnkMore" type="button"></button>
-  </div>
 
   <section class="band" id="sales" data-tab="sales">
     <h2>Sales and dues <small>from the bookings and bank receipts</small></h2>
@@ -240,24 +199,11 @@ header.top{padding-top:env(safe-area-inset-top)}
     <button class="more" id="unitMore" type="button"></button>
   </div>
 
-  <div class="panel" id="rec" data-tab="rec">
-    <div><h2>Reconciliation</h2><p class="sub">Differences between the bank statements and the cash flow, from the Reconciling Items register.</p></div>
-    <div class="cards" id="cRec"></div>
-    <div class="two">
-      <div class="tbl"><table id="tAge"></table></div>
-      <div class="tbl"><table id="tAcct"></table></div>
-    </div>
-  </div>
 
-  <div class="panel" id="latest" data-tab="latest">
-    <div><h2>Latest entries</h2><p class="sub">Newest rows on the Receipts and Payments Out tabs.</p></div>
-    <div class="tbl"><table id="tLatest"></table></div>
-  </div>
 
   <p class="foot">Every number comes from the ERP's accounts, worked out when the page opens. To change an entry, open it in the ERP (← Accounts).</p>
 </main>
 
 <script src="/drill.js"></script>
-<script src="/accounts-tenants.js"></script>
 <script src="/page-accounts.js"></script>
 </body></html>

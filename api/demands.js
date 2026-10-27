@@ -50,7 +50,10 @@ module.exports = route({
                         from demands d join bookings b on b.id = d.booking_id join units u on u.id = b.unit_id where d.run_id = $1 order by u.unit_no`, [run.id]);
       return res.json({ run, rows });
     }
-    return res.json(await overview(needProject(u, intOr(req.query.project))));
+    const pid = needProject(u, intOr(req.query.project));
+    const o = await overview(pid);
+    if (has(u, 'ledger.view')) o.schedule = await require('../lib/dashboard').schedule(pid);
+    return res.json(o);
   },
   POST: async (req, res, b) => {
     const u = await auth.guard(req, res); if (!u) return;

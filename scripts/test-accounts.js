@@ -53,7 +53,7 @@ let n = 0; const step = async (name, fn) => { await fn(); n++; console.log('  âœ
   await step('a bounced cheque is marked, never deleted', async () => {
     assert.equal((await admin('/api/accounts', { action: 'save', reg: 'receipts', id: newId, data: { cheque_status: 'Bounced' } })).ok, true);
     assert.equal((await admin('/api/accounts', { action: 'delete', reg: 'receipts', id: newId, reason: 'x' })).status, 400);
-    const b = await admin('/api/accounts?view=report&name=bounced'); assert.equal(b.rows.length, 2);
+    const b = await admin('/api/accounts?reg=receipts&filter=bounced'); assert.equal(b.rows.length, 2);
   });
   await step('To Do counts what is missing; payments needing bill details are listed', async () => {
     const t = await admin('/api/accounts?view=todo');
@@ -69,14 +69,14 @@ let n = 0; const step = async (name, fn) => { await fn(); n++; console.log('  âœ
     assert.equal(b.rent_2025, 865000); // agreed yearly rent kept from the sheet
     const l = await admin('/api/accounts?reg=rentLinks'); assert.equal(l.rows[0].counted, 330000); assert.equal(l.rows[0].year_counted, 2025);
   });
-  await step('reports: GST, SDR and unit receipts from the bank registers; payees; TDS; Tally export', async () => {
+  await step('reports: GST and SDR from the bank registers; bounced cheques and TDS in their registers; payees; Tally export', async () => {
     const g = await admin(`/api/accounts?view=report&name=gst&project=${sig.id}`); const a = g.rows.find((r) => r.unit === 'A-1001');
     assert.equal(a.avReceived, 485700); assert.equal(a.gstReceived, 24288);
     const s = await admin(`/api/accounts?view=report&name=sdr&project=${sig.id}`); const sa = s.rows.find((r) => r.unit === 'A-1001');
     assert.equal(sa.received, 515800); assert.equal(sa.paidOut, 515812); assert.equal(sa.held, -12);
-    const u = await admin(`/api/accounts?view=report&name=units&project=${sig.id}`); assert.equal(u.rows.find((r) => r.unit === 'A-1002').bounced, 350000);
+    const u = await admin('/api/accounts?reg=receipts&filter=bounced'); assert.equal(u.rows.filter((r) => r.unit_no === 'A-1002').reduce((a, r) => a + Number(r.amount), 0), 350000);
     const p = await admin('/api/accounts?view=report&name=payees'); assert.equal(p.rows.find((r) => r.payee === 'Skyway').paid, 155354);
-    const t = await admin(`/api/accounts?view=report&name=tds&project=${sig.id}`); assert.equal(t.paid, 4858);
+    const t = await admin('/api/accounts?reg=tds'); assert.equal(t.rows.reduce((a, r) => a + Number(r.tds_amount), 0), 4858);
     const x = await admin('/api/accounts?view=tally&from=2026-01-01&to=2026-12-31', null, true); assert.match(x.text, /<VOUCHER VCHTYPE="Receipt"/); assert.match(x.text, /<LEDGERNAME>RMC<\/LEDGERNAME>/);
     assert.ok(!/BL00004/.test(x.text)); // bounced cheque left out
     const c = await admin('/api/accounts?view=tally&from=2026-01-01&to=2026-12-31&format=csv', null, true); assert.match(c.text, /^ï»¿?Date,Voucher Type/);

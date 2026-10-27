@@ -62,7 +62,7 @@ function renderAll() {
   const b = $('#banner');
   b.classList.remove('hidden');
   b.innerHTML = 'Test version: these figures come from the test import of the CRM sheet. They become the real figures once the ERP goes live.' + (M.checks.open ? ` <a href="/#/verify">${cnt(M.checks.open)} items from the import are still to be verified</a>.` : '');
-  renderOverview(); renderDaily(); renderCollections(); renderDues(); renderDates(); renderUnitsInit(); renderCps(); renderAudit();
+  renderOverview(); renderDaily(); renderCollections(); renderDues(); renderDates();
 }
 
 // ---------- overview ----------
@@ -352,21 +352,7 @@ function showDay(date) {
 }
 
 // ---------- collections ----------
-function renderPaymentSchedule() {
-  const p = M.paymentSchedule;
-  $('#psPanel').hidden = !p?.rows?.length;
-  if (!p?.rows?.length) return;
-  const opt = (v) => (v === null || v === undefined ? '<span style="color:var(--muted)">—</span>' : inr(v, true));
-  const line = (x, i, bold) => {
-    const w = (s) => (bold ? `<b>${s}</b>` : s);
-    return `<tr><td>${i}</td><td>${w(esc(x.stage || 'Total'))}</td><td class="n">${w(Math.round(x.pct * 100) + '%')}</td><td class="n">${w(inr(x.due, true))}</td><td class="n">${w(inr(x.gst, true))}</td><td class="n">${w(opt(x.received))}</td><td class="n">${w(opt(x.balance))}</td></tr>`;
-  };
-  $('#psTbl').innerHTML = '<thead><tr><th>Sr.</th><th>Stage</th><th class="n">%</th><th class="n">Amount due</th><th class="n">GST</th><th class="n">Amount received</th><th class="n">Balance</th></tr></thead><tbody>' +
-    p.rows.map((x, i) => line(x, i + 1)).join('') + (p.total ? line({ ...p.total, stage: 'Total' }, '', true) : '') + '</tbody>';
-}
-
 function renderCollections() {
-  renderPaymentSchedule();
   const F = M.forecast;
   if (F) {
     $('#fcFigs').innerHTML = [fig('Due now', inr(F.overdue), F.overdue ? 'risk' : 'in', 'past the due date'), fig('Falls due in 30 days', inr(F.dueNext30), 'due', `${cnt(F.dueNext30Count)} buyers`),
@@ -442,26 +428,6 @@ function renderDates() {
 
 // ---------- units ----------
 let uLimit = 60;
-function renderUnitsInit() {
-  const fill = (sel, vals) => { const cur = sel.value; sel.length = 1; vals.forEach((v) => sel.add(new Option(v, v))); sel.value = cur; };
-  fill($('#uInv'), [...new Set(M.units.map((u) => u.inventory).filter(Boolean))].sort());
-  fill($('#uFollow'), [...new Set(M.units.map((u) => u.followStatus).filter(Boolean))].sort());
-  drawUnits();
-}
-['uSearch', 'uWing', 'uInv', 'uFollow', 'uReg'].forEach((id) => $('#' + id).addEventListener('input', () => { uLimit = 60; drawUnits(); }));
-$('#uMore').onclick = () => { uLimit += 120; drawUnits(); };
-function drawUnits() {
-  const q = $('#uSearch').value.toLowerCase(), w = $('#uWing').value, inv = $('#uInv').value, fu = $('#uFollow').value, rg = $('#uReg').value;
-  const rows = M.units.filter((u) => (!w || u.wing === w) && (!inv || u.inventory === inv) && (!fu || u.followStatus === fu) &&
-    (!rg || (rg === 'y') === !!u.registered) && (!q || [u.unit, u.applicant, u.coApplicant, u.cpFirm, u.rm, u.source].join(' ').toLowerCase().includes(q)));
-  $('#uTbl').innerHTML = `<thead><tr><th>Unit</th><th>Type</th><th>Status</th><th>Applicant</th><th class="n">Agreement</th><th class="n">Received</th><th class="n">Balance</th><th>Follow-up</th><th>Registered</th></tr></thead><tbody>` +
-    rows.slice(0, uLimit).map((u) => `<tr class="click" data-u="${esc(u.unit)}"><td><b class="w-${u.wing}">${esc(u.unit)}</b></td><td>${esc(u.typology)}</td><td>${esc(u.inventory)}</td><td>${esc(u.applicant)}</td><td class="n">${u.agreementValue ? inr(u.agreementValue) : '—'}</td><td class="n">${u.receivedAV ? inr(u.receivedAV) : '—'}</td><td class="n">${u.balanceDue > 0 ? inr(u.balanceDue) : '—'}</td><td>${tagFor(u.followStatus)}</td><td>${u.registered ? fmtD(u.registrationDate) : esc(u.registrationStatus || '—')}</td></tr>`).join('') +
-    (rows.length ? '' : '<tr><td colspan="9" class="empty">No units match these filters.</td></tr>') + '</tbody>';
-  $('#uMore').classList.toggle('hidden', rows.length <= uLimit);
-  $('#uMore').textContent = `Show more (${rows.length - uLimit} left)`;
-}
-
-// ---------- unit drawer ----------
 function openUnit(id) {
   const u = M.units.find((x) => x.unit === id); if (!u) return;
   const paid = u.agreementValue ? Math.min(100, (u.receivedAV / u.agreementValue) * 100) : 0;
@@ -489,71 +455,6 @@ document.addEventListener('keydown', (e) => { if (e.key === 'Escape') closeUnit(
 
 // ---------- audit ----------
 let cpLimit = 40;
-function renderCps() {
-  const T = M.cpTotals, all = M.cps || [];
-  if (!all.length) { $('#cpTbl').innerHTML = '<tbody><tr><td class="empty">No channel partner data.</td></tr></tbody>'; return; }
-  const outstanding = T.brokerage - T.brokerageReleased;
-  $('#cpFigs').innerHTML = [
-    fig('Active firms', cnt(T.firms), '', `${cnt(T.unitsWithFirm)} units carry a firm name`),
-    fig('Sold via partners', cnt(T.units), '', `${pct(T.units, M.totals.booked)} of everything booked`),
-    fig('Agreement value', inr(T.agreementValue), '', `collected ${inr(T.received)}`),
-    fig('Balance due', inr(T.balanceDue), T.balanceDue ? 'due' : '', 'on partner-sourced units'),
-    fig('Brokerage payable', inr(T.brokerage), '', `${pct(T.brokerage, T.agreementValue)} of agreement value`),
-    fig('Brokerage outstanding', inr(outstanding), outstanding ? 'risk' : 'in', `${cnt(T.releasedCount)} units released`),
-  ].join('');
-  const top10 = T.agreementValue ? Math.round((T.top10Value / T.agreementValue) * 100) : 0;
-  $('#cpNote').innerHTML = `<h3>The long tail is most of the list</h3><p class="sub" style="margin:0">` +
-    `<b>${cnt(T.single)} of ${cnt(T.firms)}</b> firms brought exactly one unit. The ten largest account for ` +
-    `<b>${top10}%</b> of partner-sourced agreement value, so no single partner dominates \u2014 but the ` +
-    `administration of ${cnt(T.firms)} relationships sits behind that.</p>`;
-  drawCps();
-}
-function drawCps() {
-  const q = $('#cpSearch').value.trim().toLowerCase();
-  const key = $('#cpSort').value;
-  const multi = $('#cpMulti').checked;
-  let rows = (M.cps || []).filter((c) => (!q || c.firm.toLowerCase().includes(q)) && (!multi || c.units > 1));
-  rows = rows.slice().sort((a, b) => (key === 'lastBooking' ? String(b[key]).localeCompare(String(a[key])) : (b[key] || 0) - (a[key] || 0)));
-  $('#cpTbl').innerHTML =
-    '<thead><tr><th>Channel partner</th><th class="n">Units</th><th class="n">Agreement value</th>' +
-    '<th class="n">Collected</th><th class="n">Rate</th><th class="n">Balance due</th>' +
-    '<th class="n">Brokerage</th><th class="n">Registered</th><th>Last booking</th></tr></thead><tbody>' +
-    (rows.length ? rows.slice(0, cpLimit).map((c) => {
-      const rate = Math.round(c.collectedPct * 100);
-      const cls = rate >= 25 ? 'ok' : rate >= 15 ? '' : 'risk';
-      return `<tr><td><b>${esc(c.firm)}</b>${c.defaulters ? ` <span class="tag risk">${c.defaulters} defaulter${c.defaulters > 1 ? 's' : ''}</span>` : ''}</td>` +
-        `<td class="n">${cnt(c.units)}</td><td class="n">${inr(c.agreementValue)}</td>` +
-        `<td class="n">${inr(c.received)}</td><td class="n"><span class="tag ${cls}">${rate}%</span></td>` +
-        `<td class="n">${c.balanceDue > 0 ? inr(c.balanceDue) : '\u2014'}</td>` +
-        `<td class="n">${c.brokerage ? inr(c.brokerage) : '\u2014'}${c.releasedCount ? `<small style="color:var(--muted)"> \u00b7 ${c.releasedCount} rel</small>` : ''}</td>` +
-        `<td class="n">${cnt(c.registered)}/${cnt(c.units)}</td><td>${c.lastBooking ? fmtD(c.lastBooking) : '\u2014'}</td></tr>`;
-    }).join('') : '<tr><td colspan="9" class="empty">No partner matches that search.</td></tr>') + '</tbody>';
-  $('#cpMore').classList.toggle('hidden', rows.length <= cpLimit);
-}
-['cpSearch', 'cpSort', 'cpMulti'].forEach((id) => $('#' + id).addEventListener('input', () => { cpLimit = 40; drawCps(); }));
-$('#cpMore').onclick = () => { cpLimit += 80; drawCps(); };
-
-const KIND = {
-  'crm-vs-ledger': 'CRM Follow up and Ledger differ', 'ledger-vs-bank': 'Ledger and bank statement differ', 'shared-instrument': 'Same payment on two units',
-  'ledger-total': 'Ledger lines do not match its total', 'ledger-unassigned': 'Ledger lines outside any total', 'no-ledger': 'No Ledger block', 'held-unit': 'Held / management unit',
-  'money-on-unsold': 'Money against an unsold unit', 'no-agreement-value': 'Sold without agreement value', 'bank-tag': 'Bank entry not tagged to a unit', 'ledger-orphan': 'Ledger block for unknown unit',
-  'due-pct-mismatch': 'Due % does not match the plan', 'no-due-pct': 'No Due %', 'no-booking-date': 'No booking date', 'no-buyer-name': 'No buyer name', 'bad-pan': 'PAN looks wrong',
-  'no-mobile': 'No mobile number', 'no-email': 'No email address', 'duplicate-unit': 'Unit listed twice', 'unknown-building': 'Wing not set up', 'no-dates': 'No dates at all',
-};
-function renderAudit() {
-  const C = M.checks;
-  $('#auditFigs').innerHTML = [fig('Still to verify', cnt(C.open), C.open ? 'due' : 'in', 'from the import of the CRM sheet'), fig('Money items', cnt(C.money), C.money ? 'risk' : 'in', 'amounts that do not agree'),
-    fig('Checked and closed', cnt(C.resolved), 'in', 'with a note of what was checked')].join('');
-  $('#errTbl').innerHTML = C.byKind.length ? `<thead><tr><th>Type</th><th>Kind</th><th class="n">Open</th></tr></thead><tbody>` +
-    C.byKind.map((e) => `<tr><td>${esc(KIND[e.kind] || e.kind)}</td><td>${e.severity === 'money' ? '<span class="tag risk">Money</span>' : '<span class="tag">Data</span>'}</td><td class="n">${cnt(e.n)}</td></tr>`).join('') + '</tbody>'
-    : '<tbody><tr><td class="empty">Nothing left to verify.</td></tr></tbody>';
-  $('#misTbl').innerHTML = C.items.length ? `<thead><tr><th>Unit</th><th>Issue</th></tr></thead><tbody>` +
-    C.items.map((x) => `<tr ${x.unit_no && M.units.some((u) => u.unit === x.unit_no) ? `class="click" data-u="${esc(x.unit_no)}"` : ''}><td><b>${esc(x.unit_no || '—')}</b></td><td><span class="tag ${x.severity === 'money' ? 'risk' : ''}">${esc(KIND[x.kind] || x.kind)}</span><div class="rmk">${esc(x.detail)}</div></td></tr>`).join('') +
-    (C.open > C.items.length ? `<tr><td colspan="2" class="sub">Showing ${cnt(C.items.length)} of ${cnt(C.open)}. <a href="/#/verify">See all on Data to verify</a></td></tr>` : '') + '</tbody>'
-    : '<tbody><tr><td class="empty">Nothing left to verify.</td></tr></tbody>';
-}
-
-// ---------- charts ----------
 function chart(id, type, data, opts = {}) {
   if (!window.Chart) return;
   charts[id]?.destroy();

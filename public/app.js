@@ -126,7 +126,6 @@
     { group: 'Accounts' },
     { key: 'acctodo', label: 'Daily To-Do', show: () => can('accounts.view') },
     { key: 'accdash', label: 'Accounts dashboard', show: () => can('accounts.view'), href: () => '/accounts' },
-    { key: 'acc', label: 'Status today', show: () => can('accounts.view') },
     { key: 'balances', label: 'Daily Bank Balance', show: () => can('accounts.view') },
     { key: 'bankauto', label: 'Bank Auto Check', show: () => can('accounts.view') },
     { key: 'reg-receipts', label: 'Receipts (bank)', show: () => can('accounts.view') },
@@ -214,7 +213,7 @@
     $('#cpw').onclick = () => changePassword(false);
     if ($('#proj')) $('#proj').onchange = (e) => { proj = +e.target.value; store.set('erp_project', proj); shell(); };
     if (/^reg-/.test(page || '') && can('accounts.view')) { try { await accRegister(page.slice(4)); } catch (e) { $('#page').innerHTML = `<div class="err">${esc(e.message)}</div>`; } return; }
-    const fn = { home, mgmt, custdocs, project: projectHome, crmtodo: () => dailyTodo('crm'), acctodo: () => dailyTodo('accounts'), training, projects, plans, users, audit, units, bookings, demands, receipts, ledgers, letters, followups, verify, prices, partners, acc: accTodo, balances: accBalances, bankauto: bankAuto, bookscrm: booksCrm, accreports: accReports, checks: accChecks, accsetup: accSetup, import: importPage, booking: bookingPage, statement: statementPage, run: runPage };
+    const fn = { home, mgmt, custdocs, project: projectHome, crmtodo: () => dailyTodo('crm'), acctodo: () => dailyTodo('accounts'), training, projects, plans, users, audit, units, bookings, demands, receipts, ledgers, letters, followups, verify, prices, partners, balances: accBalances, bankauto: bankAuto, bookscrm: booksCrm, accreports: accReports, checks: accChecks, accsetup: accSetup, import: importPage, booking: bookingPage, statement: statementPage, run: runPage };
     const key = DETAIL[page] && arg ? page : cur.key;
     try { await fn[key](arg ? +arg : undefined); } catch (e) { $('#page').innerHTML = `<div class="err">${esc(e.message)}</div>`; }
   }
@@ -254,7 +253,7 @@
     site: 'Slab cycle, daily progress reports, hindrances, materials and floor-wise works', purchase: 'Purchase requests from request to payment', drawings: 'The drawing register from Google Drive', hr: 'Staff records, leave, letters and HR policies',
     crmtodo: 'Today’s calls, approvals, letters and what the 9 am check found', acctodo: 'What the 9 am Accounts audit found, plus your own tasks',
     training: 'Short videos on how to use each part of the ERP',
-    accdash: 'Bank balances, collections, refunds, TDS, PDC, SRA tenants and reconciliation', acc: 'Live status of the registers: what is missing right now',
+    accdash: 'Bank balances, collections, refunds, TDS, PDC, SRA tenants and reconciliation',
     balances: 'Closing balance of every bank account, day by day', bankauto: 'The 3:10 pm check of bank statements against the books',
     'reg-receipts': 'Every receipt as it came into the bank', 'reg-payments': 'Every payment out, by head', 'reg-pdc': 'Post-dated cheques and their reminders',
     'reg-tds': 'TDS deducted and challans paid', 'reg-recon': 'Items the bank and the books do not yet agree on', 'reg-compliance': 'GST, TDS and RERA due dates',
@@ -263,7 +262,7 @@
     ca: 'GST, TDS payable, RERA quarterly and cash flow, for the CA', accsetup: 'Bank accounts, heads, statement folders and imports', audit: 'Who changed what, and when',
   };
   const PICON = { custdocs: 'book', site: 'tower', crmtodo: 'check', acctodo: 'check', training: 'book', dashboard: 'chart', units: 'grid', bookings: 'book', demands: 'tower', receipts: 'rupee', ledgers: 'book', letters: 'mail', followups: 'phone', verify: 'check', prices: 'rupee', partners: 'users',
-    accdash: 'chart', acc: 'check', balances: 'rupee', bankauto: 'check', 'reg-cancellations': 'users', bookscrm: 'check', checks: 'check', audit: 'book', ca: 'chart', accsetup: 'grid' };
+    accdash: 'chart', balances: 'rupee', bankauto: 'check', 'reg-cancellations': 'users', bookscrm: 'check', checks: 'check', audit: 'book', ca: 'chart', accsetup: 'grid' };
   const DEPTS = [
     { key: 'crm', title: 'Sales & CRM', sub: 'Collections, units, bookings, demands, receipts and follow-ups', icon: 'chart', tone: '#2B5C8A', group: 'CRM' },
     { key: 'construction', title: 'Construction', sub: 'Site Office: slab cycle, daily progress reports, hindrances, materials and stages', icon: 'hammer', tone: '#B7791F', pages: ['site', 'demands'], later: ['Contractor billing'] },
@@ -759,6 +758,9 @@
       <div class="actions" style="margin:0">${can('stage.record') ? '<button class="ghost" id="stage">Record a completed stage</button>' : ''}${can('demand.raise') ? '<button id="run">Prepare a demand run</button>' : ''}${can('demand.approve') ? '<button class="ghost" id="days">Days to pay</button>' : ''}</div></div>
       <div class="panel table-wrap"><h2>Construction stages</h2><table><tr><th>Stage</th>${d.buildings.map((b) => `<th>${esc(b.name)}</th>`).join('')}</tr>
         ${d.stages.map((s) => `<tr><td>${esc(s.name)} <span class="muted">(${toNum(s.pct)}%)</span></td>${d.buildings.map((b) => { const x = done(b.id, s.name); return `<td>${x ? `<span class="pill good">done ${fmtD(x.completed_on)}</span>` : '<span class="muted">—</span>'}</td>`; }).join('')}</tr>`).join('')}</table></div>
+      ${d.schedule ? `<div class="panel table-wrap"><h2>Payment schedule</h2><p class="muted small">What each stage of the payment plan is worth across all live bookings, and how much of it has come in. Each buyer's AV and TDS received is applied to their stages in order.</p>
+        <table><tr><th>Stage</th><th class="num">%</th><th class="num">Due</th><th class="num">GST on it</th><th class="num">Received (AV + TDS)</th><th class="num">Balance</th></tr>
+        ${[...d.schedule.rows, d.schedule.total].map((r, i, a) => `<tr class="${i === a.length - 1 ? 'tot' : ''}"><td>${i === a.length - 1 ? '<b>Total</b>' : esc(r.stage)}</td><td class="num">${Math.round(r.pct * 1000) / 10}%</td><td class="num">${inr(r.due)}</td><td class="num">${inr(r.gst)}</td><td class="num">${inr(r.received)}</td><td class="num ${r.balance > 1000 ? 'bad-t' : ''}">${inr(r.balance)}</td></tr>`).join('')}</table></div>` : ''}
       <div class="panel table-wrap"><h2>Demand runs</h2><table><tr><th>Building</th><th>Stage</th><th>Demand date</th><th>Due</th><th class="num">Letters</th><th class="num">Total</th><th>Status</th><th>Prepared by</th><th>Approved by</th></tr>
         ${d.runs.map((r) => `<tr class="click" data-r="${r.id}"><td>${esc(r.building || '')}</td><td>${esc(r.stage_name)}</td><td>${fmtD(r.demand_date)}</td><td>${fmtD(r.due_date)}</td><td class="num">${r.status === 'draft' ? '—' : r.letters}</td><td class="num">${r.status === 'draft' ? '—' : inr(r.total)}</td>
           <td>${r.status === 'draft' ? '<span class="pill">waiting for approval</span>' : r.status === 'approved' ? '<span class="pill good">raised</span>' : '<span class="pill grey">cancelled</span>'}</td><td>${esc(r.created_by_name || 'Sample')}</td><td>${esc(r.approved_by_name || '')}</td></tr>`).join('') || '<tr><td colspan="9" class="muted">No demand runs yet.</td></tr>'}</table></div>`;
@@ -1314,22 +1316,6 @@
     if ($('#addT')) $('#addT').onsubmit = (e) => { e.preventDefault(); const x = Object.fromEntries(new FormData(e.target)); act({ action: 'add', dept, title: x.title, assignedTo: x.assignedTo || null }); };
   }
 
-  async function accTodo() {
-    const d = await api('/api/accounts?view=todo');
-    const go2 = (x) => (x.go === 'balances' ? '#/balances' : x.go === 'checks' ? '#/checks' : x.go === 'bankauto' ? '#/bankauto' : '#/reg-' + x.go);
-    const B = d.balances;
-    $('#page').innerHTML = `<div class="page-head"><div><h1>Accounts · To Do</h1><p class="muted">What is missing today. Work down the list every day: green = done, red = needs you. Tap a line to go there. Updated ${fmtD(d.today)}.</p></div></div>
-      <div class="panel"><div class="table-wrap"><table><tr><th>Task</th><th class="num">Number</th><th>What to do</th></tr>
-        ${d.items.map((x) => `<tr class="click" data-go="${go2(x)}" data-f="${esc(x.filter || '')}" data-k="${esc(x.go)}"><td>${esc(x.task)}</td><td class="num"><b class="${x.ok ? 'good-t' : 'bad-t'}">${x.n == null ? '—' : x.n.toLocaleString('en-IN')}</b></td><td class="small">${esc(x.what)}</td></tr>`).join('')}</table></div></div>
-      <div class="two"><div class="panel"><h2>Bank balances today</h2><div class="table-wrap"><table><tr><th>Group</th><th class="num">Closing</th></tr>${B.groups.map((g) => `<tr><td>${esc(g.grp)}</td><td class="num">${inr(g.closing)}</td></tr>`).join('')}
-          <tr><td><b>Grand total</b></td><td class="num"><b>${inr(B.groups.reduce((a, g) => a + g.closing, 0))}</b></td></tr></table></div><div class="actions"><a class="btn ghost" href="#/balances">Open Daily Bank Balance</a></div></div>
-        <div class="panel"><h2>Compliance: overdue or due in 7 days</h2><div class="table-wrap"><table><tr><th>Compliance</th><th>Period</th><th>Due</th><th class="num">Days late</th></tr>
-          ${d.compliance.map((c) => `<tr><td>${esc(c.compliance)}</td><td>${esc(c.period || '')}</td><td>${fmtD(c.due_date)}</td><td class="num ${c.late ? 'bad-t' : ''}">${c.late || ''}</td></tr>`).join('') || '<tr><td colspan="4" class="muted">Nothing due.</td></tr>'}</table></div></div></div>
-      <div class="panel"><h2>Payments needing bill details (newest 25)</h2><div class="table-wrap"><table><tr><th>Payment ID</th><th>Date</th><th>Payee</th><th class="num">Amount</th><th>Head</th><th>What is missing</th></tr>
-        ${d.needBill.map((p) => `<tr><td>${esc(p.ref_id || '')}</td><td>${fmtD(p.txn_date)}</td><td>${esc(p.payee || '')}</td><td class="num">${inr(p.amount)}</td><td>${esc(p.head || '')}</td><td class="small">${esc(p.needs)}</td></tr>`).join('')}</table></div></div>`;
-    document.querySelectorAll('tr[data-go]').forEach((tr) => (tr.onclick = () => { if (tr.dataset.go.startsWith('#/reg-')) { const k = tr.dataset.k, cur = JSON.parse(store.get('erp_acc_' + k) || '{}'); store.set('erp_acc_' + k, JSON.stringify({ ...cur, filter: tr.dataset.f, q: '', from: '', to: '' })); } go(tr.dataset.go); }));
-  }
-
   async function accBalances(dateArg) {
     const date = dateArg || store.get('erp_bal_date') || todayIso();
     const d = await api('/api/accounts?view=balances&date=' + date);
@@ -1481,8 +1467,8 @@
   }
 
   async function accReports() {
-    const tab = store.get('erp_accrep') || 'byHead';
-    const T = [['byHead', 'Payments by Head'], ['units', 'Unit receipts'], ['gst', 'GST report'], ['sdr', 'SDR report'], ['tds', 'TDS by customers'], ['payees', 'Payees'], ['partners', 'Channel partner accounts'], ['vendorBills', 'Vendor bills'], ['register', 'Salary & expense register'], ['bounced', 'Bounced cheques'], ['tally', 'Tally export']];
+    const tab0 = store.get('erp_accrep'), tab = ['byHead', 'units', 'tds', 'bounced'].includes(tab0) || !tab0 ? 'gst' : tab0;
+    const T = [['gst', 'GST report'], ['sdr', 'SDR report'], ['payees', 'Payees'], ['partners', 'Channel partner accounts'], ['vendorBills', 'Vendor bills'], ['register', 'Salary & expense register'], ['tally', 'Tally export']];
     $('#page').innerHTML = `<div class="page-head"><div><h1>Accounts reports</h1><p class="muted">The report tabs of the accounts sheet, worked out live from the registers.</p></div></div>
       <div class="tabs">${T.map(([k, l]) => `<button class="tab ${k === tab ? 'on' : ''}" data-t="${k}">${l}</button>`).join('')}</div><div id="rep"><div class="panel muted">Loading…</div></div>`;
     document.querySelectorAll('.tab[data-t]').forEach((b) => (b.onclick = () => { store.set('erp_accrep', b.dataset.t); accReports(); }));
@@ -1511,16 +1497,8 @@
       return;
     }
     const d = await api(`/api/accounts?view=report&name=${tab}&project=${P}`);
-    if (tab === 'byHead') {
-      const mlab = (m) => new Date(m + '-01T00:00:00').toLocaleDateString('en-IN', { month: 'short', year: '2-digit' });
-      const ms = d.months.slice(-36);
-      const t = (rows, h) => table([['Cash Flow Head', (r) => r.head], ...ms.map((m) => [mlab(m), (r) => r[m] || 0, 'm']), ['Total (all months)', (r) => r.total, 'm']], rows, { head: `<h2>${h}</h2>` });
-      out.innerHTML = '<p class="small muted">Every month from the first entry (up to 36 months); scroll sideways for the earlier months. Bounced cheques are left out of receipts.</p>' + t(d.receipts, 'Receipts (money in)') + t(d.payments, 'Payments (money out)');
-    } else if (tab === 'units') out.innerHTML = table([['Unit', (r) => r.unit], ['Applicant', (r) => r.applicant], ['Status', (r) => r.status], ['Agreement value', (r) => r.av, 'm'], ['AV received (bank)', (r) => r.avReceived, 'm'], ['% of AV', (r) => r.pct + '%', 'n'], ['GST received', (r) => r.gstReceived, 'm'], ['SDR received', (r) => r.sdrReceived, 'm'], ['Unclassified', (r) => r.unclassified, 'm'], ['From other / earlier buyers', (r) => r.other, 'm'], ['Bounced', (r) => r.bounced, 'm'], ['TDS (tracker)', (r) => r.tds, 'm'], ['SDR paid out', (r) => r.sdrPaid, 'm'], ['Refunds', (r) => r.refunds, 'm'], ['CP brokerage', (r) => r.cp, 'm'], ['CRM AV (ERP ledger)', (r) => r.crmAv, 'm'], ['Bank − CRM', (r) => r.diff, 'm']], d.rows);
-    else if (tab === 'gst') out.innerHTML = table([['Unit', (r) => r.unit], ['Applicant', (r) => r.applicant], ['Status', (r) => r.status], ['Agreement value', (r) => r.av, 'm'], ['GST payable', (r) => r.gstPayable, 'm'], ['AV received (bank)', (r) => r.avReceived, 'm'], ['GST due on AV received', (r) => r.gstDueOnReceived, 'm'], ['GST received (bank)', (r) => r.gstReceived, 'm'], ['Shortfall on received', (r) => r.shortfall, 'm'], ['GST outstanding (full)', (r) => r.outstanding, 'm'], ['GST per CRM (ERP)', (r) => r.crm, 'm'], ['Status', (r) => r.state]], d.rows);
+    if (tab === 'gst') out.innerHTML = table([['Unit', (r) => r.unit], ['Applicant', (r) => r.applicant], ['Status', (r) => r.status], ['Agreement value', (r) => r.av, 'm'], ['GST payable', (r) => r.gstPayable, 'm'], ['AV received (bank)', (r) => r.avReceived, 'm'], ['GST due on AV received', (r) => r.gstDueOnReceived, 'm'], ['GST received (bank)', (r) => r.gstReceived, 'm'], ['Shortfall on received', (r) => r.shortfall, 'm'], ['GST outstanding (full)', (r) => r.outstanding, 'm'], ['GST per CRM (ERP)', (r) => r.crm, 'm'], ['Status', (r) => r.state]], d.rows);
     else if (tab === 'sdr') out.innerHTML = table([['Unit', (r) => r.unit], ['Applicant', (r) => r.applicant], ['Status', (r) => r.status], ['Registration', (r) => r.registration], ['Stamp duty', (r) => r.stampDuty, 'm'], ['Registration fee', (r) => r.registrationFee, 'm'], ['SDR payable', (r) => r.payable, 'm'], ['SDR received (bank)', (r) => r.received, 'm'], ['SDR paid out (challans)', (r) => r.paidOut, 'm'], ['Held (received − paid)', (r) => r.held, 'm'], ['To collect', (r) => r.toCollect, 'm'], ['SDR per CRM (ERP)', (r) => r.crm, 'm'], ['Status', (r) => r.state]], d.rows);
-    else if (tab === 'tds') out.innerHTML = `<div class="panel"><div class="kpis">${kpi(inr(d.due), 'total TDS due (1% of AV)')}${kpi(inr(d.paid), 'paid by customers')}${kpi(inr(d.due - d.paid), 'still to come')}${kpi(`${d.flats} / ${d.full} / ${d.part} / ${d.none}`, 'flats: with TDS / fully / partly / not paid')}</div></div>` +
-      table([['Unit', (r) => r.unit], ['TDS due', (r) => r.due, 'm'], ['TDS paid', (r) => r.paid, 'm'], ['Balance', (r) => r.balance, 'm']], d.rows);
     else if (tab === 'partners') {
       const cols = [['CP firm', (r) => r.firm], ['Flats', (r) => r.flats, 'n'], ['Agreement value', (r) => r.av, 'm'], ['Brokerage agreed', (r) => r.agreed, 'm'], ['Billed by CP', (r) => r.billed, 'm'],
         ['Paid as per CRM', (r) => r.paidCrm, 'm'], ['Paid as per books', (r) => r.paidBooks, 'm'], ['TDS deducted (books)', (r) => r.tdsBooks, 'm'], ['Books less CRM', (r) => r.difference, 'm'], ['Check', (r) => r.state],
@@ -1538,7 +1516,6 @@
     }
     else if (tab === 'payees') out.innerHTML = table([['Payee', (r) => r.payee], ['Type', (r) => r.type], ['PAN', (r) => r.pan], ['GSTIN', (r) => r.gstin], ['TDS section', (r) => r.tdsSection], ['Usual cash flow head', (r) => r.usualHead], ['Needs invoice?', (r) => r.needsInvoice], ['No. of payments', (r) => r.n, 'n'], ['Total paid', (r) => r.paid, 'm'], ['Total billed', (r) => r.billed, 'm'], ['TDS on bills', (r) => r.tds, 'm']], d.rows);
     else if (tab === 'vendorBills') out.innerHTML = table([['Payment ID', (r) => r.ref_id], ['Paid on', (r) => fmtD(r.txn_date)], ['Payee', (r) => r.payee], ['Head', (r) => r.head], ['Bill date', (r) => (r.bill_date ? fmtD(r.bill_date) : '')], ['Vendor PAN', (r) => r.vendor_pan], ['Bill no.', (r) => r.bill_no], ['Taxable', (r) => r.taxable_value, 'm'], ['GST', (r) => r.gst_on_bill, 'm'], ['Total bill', (r) => r.total_bill, 'm'], ['TDS section', (r) => r.tds_section || r.tdsSectionUsual], ['TDS deducted', (r) => r.tds_deducted, 'm'], ['Paid', (r) => r.amount, 'm'], ['Challan', (r) => r.tds_challan], ['What staff need to add', (r) => r.needs]], d.rows);
-    else if (tab === 'bounced') out.innerHTML = table([['Receipt ID', (r) => r.ref_id], ['Date', (r) => fmtD(r.txn_date)], ['Bank', (r) => r.bank], ['Amount', (r) => r.amount, 'm'], ['Unit', (r) => r.unit_no], ['Payer', (r) => r.payer_name], ['Head', (r) => r.payment_head || r.head], ['Description', (r) => r.description], ['Remark', (r) => r.remark]], d.rows);
   }
 
   async function accSetup() {
