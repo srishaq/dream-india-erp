@@ -17,7 +17,7 @@ const server = http.createServer(async (req, res) => {
     req.body = body; req.query = Object.fromEntries(u.searchParams);
     try { return await routes[u.pathname](req, res); } catch (e) { console.error(e); return res.status(500).json({ error: e.message }); }
   }
-  let p = u.pathname === '/' ? '/index.html' : u.pathname;
+  let p = u.pathname === '/' || /^\/(crm|finance|audit|construction|training|home)\/?$/.test(u.pathname) ? '/index.html' : u.pathname;
   if (!path.extname(p)) p += '.html';
   const f = path.join(__dirname, '../public', path.normalize(p).replace(/^(\.\.[/\\])+/, ''));
   fs.readFile(f, (e, data) => {

@@ -178,8 +178,12 @@
     }));
   }
 
+  // Short addresses to share with staff (erp…/crm, /finance …): opened once, then the page carries on as usual.
+  const SHORT = { '/crm': '#/project/{p}/crm', '/finance': '#/project/{p}/accounts', '/audit': '#/project/{p}/audit', '/construction': '#/project/{p}/construction', '/training': '#/training', '/home': '#/home' };
   async function shell() {
     if (!projectList) projectList = (await api('/api/masters')).projects.filter((p) => p.active);
+    const short = SHORT[location.pathname.replace(/\/$/, '')];
+    if (short) { const sig = projectList.find((p) => p.code === 'SIGNATURE') || projectList[0] || { id: 1 }; history.replaceState(null, '', '/' + short.replace('{p}', sig.id)); }
     if (!proj || !projectList.some((p) => p.id === proj)) proj = +(store.get('erp_project') || 0) || null;
     if (!projectList.some((p) => p.id === proj)) proj = (projectList.find((p) => p.code === 'SIGNATURE') || projectList[0] || {}).id || null;
     const [page, arg] = location.hash.replace('#/', '').split('/');

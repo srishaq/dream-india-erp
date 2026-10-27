@@ -87,6 +87,10 @@
     {
       "source": "/api/hr",
       "destination": "/api/portal?hr=1"
+    },
+    {
+      "source": "/(crm|finance|audit|construction|training|home)",
+      "destination": "/index.html"
     }
   ]
 }
