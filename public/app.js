@@ -1222,7 +1222,7 @@
   // A button in the bottom corner; the window opens over the page in use. New messages come in every few seconds
   // (every 30 s while the tab is in the background), with a sound and a pop-up, and a desktop notification when allowed.
   const chat = (() => {
-    let el = null, last = 0, open = false, timer = null, rows = [], team = null, myId = null, unread = 0, busy = false;
+    let el = null, last = 0, seenTop = 0, open = false, timer = null, rows = [], team = null, myId = null, unread = 0, busy = false;
     const allowed = () => !!me && anyOf('ledger.view', 'accounts.view', 'receipt.enter');
     const full = () => `#/${can('accounts.view') && !can('demand.raise') ? 'accteam' : 'team'}`;
     const tName = (t) => (t === 'crm' ? 'CRM' : 'Accounts');
@@ -1257,18 +1257,19 @@
       };
       load(true); schedule();
     }
-    function unmount() { clearTimeout(timer); if (el) el.remove(); el = null; last = 0; rows = []; open = false; }
+    function unmount() { clearTimeout(timer); if (el) el.remove(); el = null; last = 0; seenTop = 0; rows = []; open = false; }
     function schedule() { clearTimeout(timer); timer = setTimeout(async () => { await load(); if (el) schedule(); }, document.hidden ? 30000 : 8000); }
     async function load(initial) {
       if (!el) return;
       try {
         const d = await api(initial ? '/api/team?recent=1' : `/api/team?after=${last}`);
         team = d.team; myId = d.me;
-        const fresh = d.rows.filter((m) => m.id > last);
-        if (initial) rows = [];
+        const fresh = initial ? d.rows : d.rows.filter((m) => m.id > last);
+        if (initial) { rows = []; last = 0; }
         if (fresh.length) {
           rows = rows.concat(fresh).slice(-200); last = fresh[fresh.length - 1].id;
-          const others = fresh.filter((m) => m.from_user !== myId);
+          const others = fresh.filter((m) => m.from_user !== myId && m.id > seenTop);
+          seenTop = Math.max(seenTop, last);
           if (!initial && others.length && (!open || document.hidden)) ring(others[others.length - 1], others.length);
         }
         unread = d.unread.n;
