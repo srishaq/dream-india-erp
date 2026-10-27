@@ -109,8 +109,16 @@ const spoken = (t) => String(t)
   .replace(/\bGST\b/g, 'G S T').replace(/\bKYC\b/g, 'K Y C').replace(/\bRERA\b/g, 'Rera').replace(/\bERP\b/g, 'E R P').replace(/\bCRM\b/g, 'C R M')
   .replace(/[“”]/g, '').replace(/·/g, ',').replace(/’/g, "'");
 const wavMs = (f) => { const b = fs.readFileSync(f); return Math.round(((b.length - 44) / b.readUInt32LE(28)) * 1000); };
-let clipN = 0;
+let clipN = 0, CUR = null, segN = 0;
+// SEG_DIR: recorded narration already cut into one clip per caption, SEG_DIR/<module>/00.wav, 01.wav … in caption order
+// (made from a voice-over such as ElevenLabs by splitting it at its pauses). Used instead of Piper when present.
+const SEG_DIR = process.env.SEG_DIR;
 function say(text) {
+  if (SEG_DIR && CUR && fs.existsSync(path.join(SEG_DIR, CUR))) {
+    const f = path.join(SEG_DIR, CUR, String(segN++).padStart(2, '0') + '.wav');
+    if (!fs.existsSync(f)) { console.warn('    no narration clip', f); return null; }
+    return { f, ms: wavMs(f) };
+  }
   if (!PIPER || !VOICE) return null;
   const f = path.join(TMP, `clip-${++clipN}.wav`);
   execFileSync(PIPER, ['-m', VOICE, '-f', f, '--length_scale', '1.12', '--sentence_silence', '0.3'], { input: spoken(text), stdio: ['pipe', 'ignore', 'ignore'] });
@@ -280,7 +288,7 @@ const L = {
       await ctx.addCookies([{ name, value, url: BASE }]);
     }
     const page = await ctx.newPage();
-    T0 = Date.now(); CUES.length = 0;
+    T0 = Date.now(); CUES.length = 0; CUR = m.id; segN = 0;
     if (lesson.user) { await page.goto(BASE + '/#/home'); await page.waitForLoadState('networkidle').catch(() => {}); }
     await play(page, lesson.steps);
     const v = page.video(); await ctx.close();
@@ -289,9 +297,9 @@ const L = {
     const vin = ['-i', webm], aud = [];
     if (CUES.length) {
       const fc = CUES.map((c, i) => `[${i + 1}:a]adelay=${Math.max(0, c.t)}|${Math.max(0, c.t)}[a${i}]`).join(';') + ';' + CUES.map((_, i) => `[a${i}]`).join('') + `amix=inputs=${CUES.length}:normalize=0,loudnorm=I=-16:TP=-1.5,aresample=48000[aout]`;
-      aud.push(...CUES.flatMap((c) => ['-i', c.f]), '-filter_complex', fc, '-map', '0:v', '-map', '[aout]', '-c:a', 'aac', '-b:a', '96k', '-ac', '1');
+      aud.push(...CUES.flatMap((c) => ['-i', c.f]), '-filter_complex', fc, '-map', '0:v', '-map', '[aout]', '-c:a', 'aac', '-b:a', '128k', '-ar', '44100', '-ac', '2');
     } else aud.push('-an');
-    execFileSync('ffmpeg', ['-y', '-loglevel', 'error', ...vin, ...aud, '-c:v', 'libx264', '-preset', 'veryfast', '-crf', '30', '-pix_fmt', 'yuv420p', '-movflags', '+faststart', mp4]);
+    execFileSync('ffmpeg', ['-y', '-loglevel', 'error', ...vin, ...aud, '-c:v', 'libx264', '-profile:v', 'main', '-level', '4.0', '-r', '25', '-preset', 'veryfast', '-crf', '28', '-pix_fmt', 'yuv420p', '-movflags', '+faststart', mp4]);
     execFileSync('ffmpeg', ['-y', '-loglevel', 'error', '-ss', '1.2', '-i', mp4, '-frames:v', '1', '-vf', 'scale=640:-2', '-q:v', '5', path.join(OUT, m.id + '.jpg')]);
     console.log('  saved', mp4, Math.round(fs.statSync(mp4).size / 1024) + ' KB');
   }
