@@ -71,6 +71,13 @@ async function seed() {
   for (const [i, r] of bk.entries()) await db.q('insert into acc_cancellations (cancel_date, unit_no, client, final_av, received, refund_status, imported) values ($1, $2, $3, $4, $5, $6, true)', [addDays(t, -40 - i * 30), r.unit_no, i === 0 ? r.name : `Earlier Buyer ${r.unit_no}`, 9500000, 450000 + i * 100000, i === 2 ? 'Done' : 'Pending']);
   for (const dept of ['accounts', 'crm']) await api(ck, '/api/tasks', { action: 'run', dept });
   await api(ck, '/api/tasks', { action: 'add', dept: 'accounts', title: 'Collect the stamped bank statement for September from the branch' });
+  // for the full CRM lesson: one booking whose cancellation Ayesha has asked for (Management approves it in the video),
+  // and one active booking the video asks to cancel
+  const withMoney = await db.q(`select b.id from bookings b join units u on u.id = b.unit_id where b.status = 'active' and exists (select 1 from receipts r where r.booking_id = b.id and r.status = 'approved') order by u.unit_no limit 2`);
+  IDS.req = withMoney[0].id; IDS.cancel = withMoney[1].id;
+  const ay = (await api('', '/api/session', { action: 'login', username: 'ayesha', password: PW })).cookie;
+  await api(ay, '/api/bookings', { action: 'cancel-request', id: IDS.req, reason: 'Buyer could not get the home loan', cancelDate: addDays(t, -1), charges: '50000' });
+  IDS.pendingBk = (await db.one("select b.id from bookings b where b.status = 'pending' order by b.id limit 1")).id;
   return { sig };
 }
 
@@ -125,6 +132,8 @@ function say(text) {
   return { f, ms: wavMs(f) };
 }
 let T0 = 0; const CUES = [];
+const IDS = {};
+const V = (x) => (typeof x === 'function' ? x() : x);
 async function speak(page, text, minMs) {
   const c = say(text);
   if (c) CUES.push({ t: Date.now() - T0, f: c.f });
@@ -143,12 +152,15 @@ async function play(page, steps) {
     return { l, r: { x: b.x, y: b.y, w: b.width, h: b.height } };
   };
   for (const s of steps) {
-    const [op, a, b, c] = s;
+    const [op, a0, b0, c] = s; const a = V(a0), b = V(b0);
     try {
       if (op === 'title') { await ov(); await page.evaluate(([x, y, z]) => window.__title(x, y, z), [a, b, c]); await speak(page, `${b}. ${c}.`, 3600); await page.evaluate(() => window.__title()); }
       else if (op === 'go') { await page.goto(BASE + a); await page.waitForLoadState('networkidle').catch(() => {}); await page.waitForTimeout(700); await recap(); }
-      else if (op === 'hash') { await page.evaluate((h) => { location.hash = h; }, a); await page.waitForTimeout(300); await page.waitForFunction(() => { const p = document.querySelector('#page'); return p && !/^Loading/.test(p.innerText.trim()); }, null, { timeout: 15000 }).catch(() => {}); await page.waitForTimeout(900); await recap(); }
+      else if (op === 'hash') { await page.evaluate((h) => { document.querySelectorAll('dialog[open]').forEach((d) => { d.close(); d.remove(); }); location.hash = h; }, a); await page.waitForTimeout(300); await page.waitForFunction(() => { const p = document.querySelector('#page'); return p && !/^Loading/.test(p.innerText.trim()); }, null, { timeout: 15000 }).catch(() => {}); await page.waitForTimeout(900); await recap(); }
       else if (op === 'fill') { const { l } = await rect(a); await l.fill(b); await page.waitForTimeout(600); }
+      else if (op === 'set') { const { l } = await rect(a); const tag = await l.evaluate((e) => e.tagName); if (tag === 'SELECT') await l.selectOption({ label: b }).catch(() => l.selectOption(b)); else { await l.click(); await l.fill(''); await l.pressSequentially(String(b), { delay: 35 }); } await page.waitForTimeout(450); }
+      else if (op === 'chapter') { await page.evaluate(() => { window.__cap(); window.__box(); }).catch(() => {}); await ov(); await page.evaluate(([x, y]) => window.__title(x, y, ''), [a, b]); await speak(page, b + '.', 2200); await page.evaluate(() => window.__title()); }
+      else if (op === 'pick') { const { l } = await rect(a); await l.selectOption({ index: b || 1 }); await page.waitForTimeout(500); }
       else if (op === 'key') { await page.keyboard.press(a); await page.waitForTimeout(b || 800); }
       else if (op === 'cap') { cap = a; await ov(); await page.evaluate((t) => window.__cap(t), a); await speak(page, a, b); }
       else if (op === 'hl') { const { r } = await rect(a); await page.evaluate((q) => { window.__box(q); window.__ptr(q.x + Math.min(q.w / 2, 60), q.y + q.h / 2); }, r); await page.waitForTimeout(b || 1800); await page.evaluate(() => window.__box()); }
@@ -170,6 +182,141 @@ async function play(page, steps) {
 
 // ---------- the lessons ----------
 const L = {
+  'crm-full': { user: 'demo', steps: [
+    ['title', 'Training · Sales & CRM', 'The complete CRM course', 'Bookings, receipts, cancellations, demands, letters and more'],
+    ['chapter', 'Part 1', 'Booking a flat'],
+    ['hash', '#/bookings'], ['cap', 'Every booking starts on the Bookings page. Tap New booking.'],
+    ['click', '#new'], ['cap', 'Pick the flat, then fill in the booking date, the agreement value, GST, parking and how the buyer is paying.'],
+    ['pick', 'dialog select[name=unitId]', 3], ['fill', 'dialog input[name=bookingDate]', () => ist()], ['set', 'dialog input[name=agreementValue]', '8500000'],
+    ['cap', 'Add up to three applicants with their PAN, Aadhaar, mobile, email and address.'],
+    ['set', 'dialog input[name=a1_name]', 'Training Buyer One'], ['set', 'dialog input[name=a1_phone]', '9800000001'], ['set', 'dialog input[name=a1_pan]', 'ABCDE1234F'],
+    ['cap', 'Add the source and the channel partner if there is one, then save. The booking now waits for Head CRM.'],
+    ['click', 'dialog button[value=save]', 1800],
+    ['cap', 'The person who enters a booking can never approve it. Head CRM opens the bookings waiting for approval.'],
+    ['hash', '#/bookings'], ['click', '.tab[data-t=pending]'], ['click', () => `tr[data-b="${IDS.pendingBk}"]`],
+    ['cap', 'Head CRM checks the cost sheet and the documents, then taps Approve booking. The booking stage demand is raised at once.'],
+    ['click', '#approve', 1800],
+    ['cap', 'The booking page holds everything about the flat: the buyers, the payment plan, demands, receipts, and documents such as the allotment letter and booking form.'],
+    ['scroll', 600, 2200], ['top'],
+    ['chapter', 'Part 2', 'Receipts and bounced cheques'],
+    ['cap', 'When the buyer pays, open the booking and tap Enter a receipt.'], ['click', '#receipt'],
+    ['cap', 'Enter the date, the amount, how it was paid, the bank and the cheque or U T R number. Then tap Split as AV plus GST, and save.'],
+    ['fill', 'dialog input[name=receivedOn]', () => ist()], ['set', 'dialog input[name=amount]', '250000'], ['set', 'dialog select[name=mode]', 'Bank transfer'], ['set', 'dialog input[name=instrumentNo]', 'UTR998877'],
+    ['click', 'dialog #auto', 1200], ['click', 'dialog button[value=save]', 1600],
+    ['cap', 'A receipt counts in the buyer’s balance only after Head Accounts approves it, on the Receipts page.'],
+    ['hash', '#/receipts'], ['hl', '[data-ok] >> nth=0'], ['click', '[data-ok] >> nth=0', 1600],
+    ['cap', 'If a cheque comes back, tap Bounced on that receipt. It is never deleted: the buyer’s balance goes back up, and the CRM team follows up for a fresh payment.'],
+    ['click', '.tab[data-t=approved]'], ['hl', '[data-bounce] >> nth=0', 2200],
+    ['chapter', 'Part 3', 'Cancelling a flat, the new way'],
+    ['cap', 'This is the most important change. A cancelled booking is never deleted any more, in the ERP or in any Excel sheet.'],
+    ['hash', () => `#/booking/${IDS.cancel}`],
+    ['cap', 'Open the booking and tap Request cancellation. Write the reason, the cancellation date, and any cancellation charges.'],
+    ['click', '#cancelReq'], ['set', 'dialog textarea[name=reason]', 'Buyer wants a bigger flat'], ['set', 'dialog input[name=charges]', '25000'],
+    ['cap', 'The form shows how much the buyer has paid so far. The refund due is what they paid, minus the charges.'],
+    ['click', 'dialog button[value=save]', 1600],
+    ['cap', 'Management approves the cancellation. The person who asked for it cannot approve it. Here is one that Ayesha asked for yesterday.'],
+    ['hash', '#/bookings'], ['click', '.tab[data-t=cancel]'], ['click', () => `tr[data-b="${IDS.req}"]`],
+    ['hl', '#cancelOk'], ['click', '#cancelOk', 1800],
+    ['cap', 'The booking now shows as Cancelled, but nothing is lost. The buyer’s name, every receipt, the charges and the refund due all stay on this page.'],
+    ['hl', '.cancel-box', 2400],
+    ['cap', 'At the same moment, Accounts gets this flat on its Cancelled flats list, with the same figures. So the CRM and the books always agree at audit.'],
+    ['cap', 'When Accounts pays the refund, the refund status shows here as well.'],
+    ['cap', 'The flat itself is free again. Tap Book this flat for a new buyer.'],
+    ['click', '#rebook'], ['fill', 'dialog input[name=bookingDate]', () => ist()], ['set', 'dialog input[name=agreementValue]', '9000000'], ['set', 'dialog input[name=a1_name]', 'Training Buyer Two'],
+    ['click', 'dialog button[value=save]', 2000],
+    ['cap', 'The new booking goes for approval as usual. Its page lists the earlier cancelled booking with its refund status, so each flat keeps its full history.'],
+    ['hl', '.note >> nth=0', 2400],
+    ['chapter', 'Part 4', 'Construction stages and demands'],
+    ['hash', '#/demands'], ['cap', 'When site completes a stage, it is recorded here, with the date and who certified it.'],
+    ['click', '#stage'], ['pick', 'dialog select[name=buildingId]', 0], ['set', 'dialog select[name=stageName]', 'On Completion of Plinth (10%)'], ['fill', 'dialog input[name=completedOn]', () => addDays(ist(), -1)], ['set', 'dialog input[name=certifiedBy]', 'Site engineer'],
+    ['click', 'dialog button[value=save]', 1600],
+    ['cap', 'Then CRM prepares the demand run for that wing and stage.'], ['click', '#run'], ['click', 'dialog button[value=save]', 2000],
+    ['cap', 'The run lists every buyer with the amount and GST. Check it. Head CRM then taps Approve and raise demands. Buyers who already have this stage are skipped.'],
+    ['hl', '#ok', 2200],
+    ['chapter', 'Part 5', 'Demand letters'],
+    ['hash', '#/letters'], ['cap', 'Choose the letter type: a demand letter, reminder one or two, or a demand with delay charges.'],
+    ['set', '#type', 'Reminder I'], ['hl', '#show'],
+    ['cap', 'Show only buyers with no letter yet, or only overdue buyers. Tick the buyers, then tap Prepare letters.'],
+    ['click', '#all', 900], ['hl', '#prepare', 1800],
+    ['cap', 'Each letter is in our format, with the amounts from the ledger. Email it, or print it for courier or WhatsApp, and record how it went. Until the ERP is live, emails go only to the test address.'],
+    ['cap', 'Letter settings holds the bank details, the signatory and the test email address. Only Head CRM changes it.'], ['hl', '#settings'],
+    ['chapter', 'Part 6', 'Price list and cost sheet'],
+    ['hash', '#/prices'], ['cap', 'Management sets the price list: the rate per square foot, floor rise, parking, GST, stamp duty and registration.'],
+    ['click', '#newPl'], ['set', 'dialog input[name=name]', 'October 2026'], ['set', 'dialog input[name=baseRate]', '21000'], ['set', 'dialog input[name=floorRise]', '60'], ['set', 'dialog input[name=floorRiseFrom]', '10'], ['set', 'dialog input[name=parkingPrice]', '600000'],
+    ['click', 'dialog button[value=save]', 1800],
+    ['cap', 'Now make a cost sheet for any unsold flat. Pick the unit, parking and any discount. It shows the agreement value, the taxes and the payment schedule, ready to give the buyer.'],
+    ['pick', '#csf select[name=unit]', 2], ['click', '#csf button', 2200],
+    ['chapter', 'Part 7', 'Partners, dashboard and checks'],
+    ['hash', '#/partners'], ['cap', 'Channel partners shows the brokerage owed to each firm. It falls due once the agreement is registered and ten percent of the agreement value is received.'],
+    ['go', '/dashboard?project=1'], ['cap', 'The Collections dashboard is the daily view for management: collections, dues, tower status and channel partners.'],
+    ['click', '[data-v=collections]', 1800], ['click', '[data-v=dues]', 1800],
+    ['go', '/#/verify'], ['cap', 'Data to verify lists anything from the old CRM sheet that does not add up. Check each item, correct it, and close it with a note.'],
+    ['hash', '#/crmtodo'], ['cap', 'And every morning, start with your Daily To-Do. It brings all of this together: calls, approvals, letters, and what Accounts needs the CRM to fix.'],
+    ['end', 'The complete CRM course'],
+  ] },
+  'acc-full': { user: 'demo', steps: [
+    ['title', 'Training · Accounts', 'The complete Accounts course', 'Daily entries, bank checks, registers, refunds, reports and Tally'],
+    ['chapter', 'Part 1', 'Your day starts here'],
+    ['hash', '#/acctodo'], ['cap', 'Start every morning with the Daily To-Do. The nine o’clock audit lists what needs doing. Tick each line when it is done.'],
+    ['hash', '#/acc'], ['cap', 'Status today is the live view of the registers. Green is done, red needs you. Tap a line to go straight to it.'],
+    ['chapter', 'Part 2', 'Entering receipts'],
+    ['hash', '#/reg-receipts'], ['cap', 'Every credit on the bank statement is one row in Receipts. Tap Add a row.'],
+    ['click', '#accNew'], ['fill', 'dialog [name=txn_date]', () => ist()], ['set', 'dialog [name=bank]', 'Sample Bank Collection A/c'], ['set', 'dialog [name=description]', 'NEFT A-1203 SAMPLE BUYER'], ['set', 'dialog [name=amount]', '350000'],
+    ['cap', 'Pick the cash flow head and the payment head, and type the flat as A-1203. If one cheque pays agreement value and GST, enter one row for each, with the same reference.'],
+    ['set', 'dialog [name=head]', 'Customer receipt'], ['set', 'dialog [name=payment_head]', 'AV'], ['set', 'dialog [name=unit_no]', 'A-1203'],
+    ['click', 'dialog button[value=save]', 1600],
+    ['cap', 'Use the filters to find receipts with no head, or customer receipts with no flat. Never delete a bounced cheque: set its Cheque Status to Bounced.'],
+    ['click', '[data-f=noHead]', 1800],
+    ['chapter', 'Part 3', 'Payments, bills and TDS'],
+    ['hash', '#/reg-payments'], ['cap', 'Every debit is one row in Payments Out, with its head, the payee, and the flat when it is for a buyer.'],
+    ['click', '#accNew'], ['fill', 'dialog [name=txn_date]', () => ist()], ['set', 'dialog [name=bank]', 'Sample Bank RERA 70% A/c'], ['set', 'dialog [name=description]', 'RTGS SAMPLE BUILDERS'], ['set', 'dialog [name=amount]', '500000'], ['set', 'dialog [name=head]', 'Contractor'], ['set', 'dialog [name=payee]', 'Sample Builders Pvt Ltd'],
+    ['cap', 'For contractors and suppliers, open Bill details and fill in the bill number, PAN, taxable value, GST and TDS. The ERP works out the net payable.'],
+    ['click', 'dialog details summary', 800], ['set', 'dialog [name=bill_no]', 'INV-204'], ['set', 'dialog [name=vendor_pan]', 'AAACS1234K'], ['set', 'dialog [name=taxable_value]', '476190'],
+    ['click', 'dialog button[value=save]', 1600],
+    ['cap', 'Needs bill details shows every payment still waiting for its bill.'], ['click', '[data-f=needsBill]', 1800],
+    ['chapter', 'Part 4', 'Daily Bank Balance'],
+    ['hash', '#/balances'], ['cap', 'Each day, add one entry for each bank, with its receipts and payments.'],
+    ['click', '#addEntry'], ['fill', 'dialog [name=entry_date]', () => ist()], ['pick', 'dialog select[name=bank]', 1], ['set', 'dialog [name=receipts]', '350000'], ['set', 'dialog [name=payments]', '500000'],
+    ['click', 'dialog button[value=save]', 1600],
+    ['cap', 'Then type the balance the bank shows in Balance per Bank. The difference must be blank or zero. If it is not, an entry is missing.'],
+    ['set', 'input.stated >> nth=0', '5480000'], ['key', 'Tab', 1400],
+    ['chapter', 'Part 5', 'Bank Auto Check'],
+    ['hash', '#/bankauto'], ['cap', 'Upload the day’s bank statements to the Google Drive folder by three p m. At three ten, the ERP reads them and checks every line against your entries.'],
+    ['hl', '#upl'], ['cap', 'Lines missing from the books are added for you, marked Added from bank statement. Fill in their head and payee. Any differences are listed here to work through.'],
+    ['hl', '#cmpDrive'], ['cap', 'Compare books with the statements checks any period both ways, without adding anything.'],
+    ['chapter', 'Part 6', 'PDC and TDS'],
+    ['hash', '#/reg-pdc'], ['cap', 'Every post-dated cheque we give goes into PDC on the day it is given. Reminders are emailed forty eight hours and twenty four hours before it is due.'],
+    ['click', '#accNew'], ['fill', 'dialog [name=issued_on]', () => ist()], ['set', 'dialog [name=issued_to]', 'Sample Steel Suppliers'], ['set', 'dialog [name=amount]', '750000'], ['set', 'dialog [name=bank]', 'Sample Bank RERA 70% A/c'], ['fill', 'dialog [name=due_date]', () => addDays(ist(), 10)], ['set', 'dialog [name=cheque_no]', '000131'],
+    ['click', 'dialog button[value=save]', 1600],
+    ['hash', '#/reg-tds'], ['cap', 'The TDS Tracker has one row for each TDS challan or Form 16 B a buyer gives us. Over the whole project, the TDS due is one percent of the agreement value.'],
+    ['chapter', 'Part 7', 'Reconciling items and compliance'],
+    ['hash', '#/reg-recon'], ['cap', 'Anything on the statement you cannot match goes into Reconciling Items. Give it an owner, and update the status and note as it is cleared.'],
+    ['click', 'tr[data-id] >> nth=0'], ['set', 'dialog [name=owner]', 'Imran'], ['set', 'dialog [name=resolution]', 'Asked the bank for the payer name'], ['click', 'dialog button[value=save]', 1600],
+    ['hash', '#/reg-compliance'], ['cap', 'The Compliance Calendar lists every return and tax payment with its due date. When one is filed, set Status to Complied, with the date and the acknowledgement number.'],
+    ['click', 'tr[data-id] >> nth=0'], ['set', 'dialog [name=status]', 'Complied'], ['fill', 'dialog [name=date_complied]', () => ist()], ['set', 'dialog [name=ack]', 'ACK12345'], ['click', 'dialog button[value=save]', 1600],
+    ['chapter', 'Part 8', 'Cancelled flats and refunds'],
+    ['hash', '#/reg-cancellations'], ['cap', 'When Management approves a cancellation in the CRM, the flat appears here by itself: the old buyer, what they paid, the charges and the refund due.'],
+    ['click', 'tr[data-id] >> nth=0'], ['cap', 'When you pay the refund, enter the amount paid by RTGS or WHITE, and set Refund Status to DONE once it is fully paid. The CRM booking shows the same status.'],
+    ['set', 'dialog [name=refund_rtgs]', '100000'], ['set', 'dialog [name=refund_status]', 'Part paid'], ['click', 'dialog button[value=save]', 1600],
+    ['cap', 'The green columns check every row against the CRM and the books, so nothing is missed at audit.'],
+    ['chapter', 'Part 9', 'SRA tenants'],
+    ['hash', '#/reg-tenants'], ['cap', 'SRA Tenants holds each survey number, the rent due each year and what has been paid. Link every Tenant Rent payment to its survey number in Tenant Rent Links.'],
+    ['chapter', 'Part 10', 'Dashboard and reports'],
+    ['go', '/accounts'], ['cap', 'The Accounts dashboard shows bank balances, collections, refunds, TDS, PDC, tenants, expenses and reconciliation, all live from the registers.'],
+    ['click', 'text="Collections"', 1800], ['click', 'text="Expenses"', 1800],
+    ['go', '/#/accreports'], ['cap', 'Reports gives payments by head, unit receipts, GST, SDR, TDS, payees, vendor bills and the salary register. Tally export makes vouchers for any period.'],
+    ['click', '[data-t=gst]', 1800], ['click', '[data-t=tally]', 1800],
+    ['chapter', 'Part 11', 'Tally, checks and the CA'],
+    ['hash', '#/accsetup'], ['cap', 'Head Accounts imports the Receipt, Payment and Contra registers from Tally here. Read the files first: the ERP checks them before anything is imported.'],
+    ['hl', '#tpv'],
+    ['hash', '#/checks'], ['cap', 'At month end, open Checks. Every line should say OK. If one says Check, fix the entry it points to.'],
+    ['hash', '#/bookscrm'], ['cap', 'Tally versus CRM compares the money in the books with the CRM for every flat, with returned cheques and cancelled buyers set aside.'],
+    ['go', '/ca'], ['cap', 'The CA page has GST, TDS payable, RERA, cash flow and compliance, for the CA to review.'],
+    ['click', 'text="RERA"', 1800],
+    ['go', '/#/acctodo'], ['cap', 'That is the full Accounts day: enter, check, reconcile, and clear your Daily To-Do.'],
+    ['end', 'The complete Accounts course'],
+  ] },
+
   start: { user: null, steps: [
     ['title', 'Training · Everyone', 'Getting started', 'Signing in, the home page, a project and its departments'],
     ['go', '/'], ['cap', 'Open the ERP in your browser and sign in with the username and password you were given.'],
@@ -288,6 +435,7 @@ const L = {
       await ctx.addCookies([{ name, value, url: BASE }]);
     }
     const page = await ctx.newPage();
+    page.on('dialog', (d) => d.accept().catch(() => {}));
     T0 = Date.now(); CUES.length = 0; CUR = m.id; segN = 0;
     if (lesson.user) { await page.goto(BASE + '/#/home'); await page.waitForLoadState('networkidle').catch(() => {}); }
     await play(page, lesson.steps);
