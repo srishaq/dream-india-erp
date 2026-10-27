@@ -308,3 +308,15 @@ button.link { background: none; border: 0; padding: 0; color: var(--brand); font
 .mail-prev textarea { width: 100%; margin: 8px 0; }
 .mail-sig { margin: 0; font: inherit; font-size: 13px; color: var(--ink-2); white-space: pre-wrap; border-top: 1px dashed var(--line); padding-top: 8px; }
 .mbadge { margin-left: 10px; background: var(--bad); color: #fff; font-size: 12.5px; font-weight: 700; padding: 3px 9px; border-radius: 999px; text-decoration: none; }
+
+/* CRM ↔ Accounts messages */
+.chat { max-height: 60vh; overflow-y: auto; display: flex; flex-direction: column; gap: 10px; }
+.cmsg { max-width: 78%; padding: 10px 12px; border-radius: 10px; background: #f3f5f9; border: 1px solid #e3e7ef; align-self: flex-start; }
+.cmsg.me { align-self: flex-end; background: #eaf3fb; border-color: #cfe1f3; }
+.cmsg.sys { align-self: center; max-width: 92%; background: #fbf8ef; border-color: #eee2bf; }
+.cmsg.open { border-left: 4px solid #c0392b; }
+.cmeta { font-size: 12px; margin-bottom: 4px; }
+.cbody { white-space: normal; word-wrap: break-word; }
+.cact { margin-top: 6px; font-size: 12px; }
+.pill.warn { background: #fdf1dc; color: #8a5a00; }
+@media (max-width: 640px) { .cmsg { max-width: 94%; } }

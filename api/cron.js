@@ -28,6 +28,7 @@ module.exports = route({
     }
     if (job === 'morning') {
       const out = {};
+      out.cheques = await require('../lib/cheque-match').run({ trigger: 'morning' }).catch((e) => ({ error: e.message }));
       for (const dept of ['accounts', 'crm']) {
         if (!secret && await dt.ranToday(dept)) { out[dept] = 'already ran'; continue; }
         const r = await dt.run(dept, { trigger: 'schedule' });

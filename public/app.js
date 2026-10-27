@@ -120,12 +120,14 @@
     { key: 'letters', label: 'Demand letters', show: () => anyOf('demand.raise', 'ledger.view') },
     { key: 'followups', label: 'Follow-ups', show: () => can('ledger.view') },
     { key: 'comms', label: 'Communication inbox', show: () => can('ledger.view') },
+    { key: 'team', label: 'CRM ↔ Accounts messages', show: () => anyOf('ledger.view', 'receipt.enter') && !(can('accounts.enter') && !can('demand.raise') && !can('booking.create')) },
     { key: 'custdocs', label: 'Customer documents', show: () => anyOf('buyer.kyc', 'accounts.view') },
     { key: 'verify', label: 'Data to verify', show: () => anyOf('inventory.view', 'ledger.view') },
     { key: 'prices', label: 'Price list & cost sheet', show: () => can('inventory.view') },
     { key: 'partners', label: 'Channel partners', show: () => can('ledger.view') },
     { group: 'Accounts' },
     { key: 'acctodo', label: 'Daily To-Do', show: () => can('accounts.view') },
+    { key: 'accteam', label: 'CRM ↔ Accounts messages', show: () => can('accounts.view') },
     { key: 'accdash', label: 'Accounts dashboard', show: () => can('accounts.view'), href: () => '/accounts' },
     { key: 'balances', label: 'Daily Bank Balance', show: () => can('accounts.view') },
     { key: 'bankauto', label: 'Bank Auto Check', show: () => can('accounts.view') },
@@ -155,7 +157,7 @@
     { key: 'users', label: 'Logins', show: () => can('users.manage') },
     { key: 'audit', label: 'Audit log', show: () => can('audit.view') },
   ];
-  const DETAIL = { booking: 'bookings', statement: 'ledgers', run: 'demands', bankauto: 'bankauto', project: 'home' };
+  const DETAIL = { booking: 'bookings', statement: 'ledgers', run: 'demands', bankauto: 'bankauto', project: 'home', team: 'team', accteam: 'accteam' };
   let projectList = null, proj = null;
   const store = { get: (k) => { try { return localStorage.getItem(k); } catch { return null; } }, set: (k, v) => { try { localStorage.setItem(k, v); } catch {} } };
 
@@ -209,12 +211,13 @@
         <div class="page" id="page"><p class="muted">Loading…</p></div>
       </div></div>`;
     wireNav();
+    if (anyOf('ledger.view', 'accounts.view', 'receipt.enter')) api('/api/team?badge=1').then((r) => { if (r.n && $('.top .who:last-child')) $('.top .who:last-child').insertAdjacentHTML('beforeend', `<a class="mbadge team" href="#/${can('accounts.view') && !can('demand.raise') ? 'accteam' : 'team'}" title="Messages between CRM and Accounts not read yet">💬 ${r.n} new</a>`); }).catch(() => {});
     if (can('ledger.view')) api('/api/comms?badge=1').then((r) => { if (r.mine && $('.top .who')) $('.top .who').insertAdjacentHTML('beforeend', `<a class="mbadge" href="#/comms" title="Buyers' replies on your flats, not read yet">✉ ${r.mine} new</a>`); }).catch(() => {});
     $('#out').onclick = signOut;
     $('#cpw').onclick = () => changePassword(false);
     if ($('#proj')) $('#proj').onchange = (e) => { proj = +e.target.value; store.set('erp_project', proj); shell(); };
     if (/^reg-/.test(page || '') && can('accounts.view')) { try { await accRegister(page.slice(4)); } catch (e) { $('#page').innerHTML = `<div class="err">${esc(e.message)}</div>`; } return; }
-    const fn = { home, mgmt, custdocs, comms, project: projectHome, crmtodo: () => dailyTodo('crm'), acctodo: () => dailyTodo('accounts'), training, projects, plans, users, audit, units, bookings, demands, receipts, ledgers, letters, followups, verify, prices, partners, balances: accBalances, bankauto: bankAuto, bookscrm: booksCrm, accreports: accReports, checks: accChecks, accsetup: accSetup, import: importPage, booking: bookingPage, statement: statementPage, run: runPage };
+    const fn = { home, mgmt, custdocs, comms, team: teamPage, accteam: teamPage, project: projectHome, crmtodo: () => dailyTodo('crm'), acctodo: () => dailyTodo('accounts'), training, projects, plans, users, audit, units, bookings, demands, receipts, ledgers, letters, followups, verify, prices, partners, balances: accBalances, bankauto: bankAuto, bookscrm: booksCrm, accreports: accReports, checks: accChecks, accsetup: accSetup, import: importPage, booking: bookingPage, statement: statementPage, run: runPage };
     const key = DETAIL[page] && arg ? page : cur.key;
     try { await fn[key](arg ? +arg : undefined); } catch (e) { $('#page').innerHTML = `<div class="err">${esc(e.message)}</div>`; }
   }
@@ -250,7 +253,7 @@
     bookings: 'Bookings, applicants, cancellations and transfers', demands: 'Construction stages and the demands raised on them',
     receipts: 'Enter receipts; Head Accounts approves them', ledgers: 'Each buyer’s statement of demands and payments',
     letters: 'Stage demands and reminders, by email or courier', followups: 'Calls, WhatsApps and promises to pay',
-    comms: 'Buyers\' email replies and WhatsApps, and messages to link to a flat', custdocs: 'Signed and scanned papers for every flat and SRA tenant, kept in Google Drive', verify: 'Items from the import still to check and close', prices: 'Rates, floor rise and the cost sheet', partners: 'Channel partners and brokerage',
+    comms: 'Buyers\' email replies and WhatsApps, and messages to link to a flat', team: 'Ask Accounts, answer CRM: messages about a flat or a cheque', accteam: 'Ask CRM, answer Accounts: messages about a flat or a cheque', custdocs: 'Signed and scanned papers for every flat and SRA tenant, kept in Google Drive', verify: 'Items from the import still to check and close', prices: 'Rates, floor rise and the cost sheet', partners: 'Channel partners and brokerage',
     site: 'Slab cycle, daily progress reports, hindrances, materials and floor-wise works', purchase: 'Purchase requests from request to payment', drawings: 'The drawing register from Google Drive', hr: 'Staff records, leave, letters and HR policies',
     crmtodo: 'Today’s calls, approvals, letters and what the 9 am check found', acctodo: 'What the 9 am Accounts audit found, plus your own tasks',
     training: 'Short videos on how to use each part of the ERP',
@@ -262,7 +265,7 @@
     accreports: 'Reports and the Tally import', checks: 'Daily checks on the registers', bookscrm: 'Tally receipts flat by flat against the CRM',
     ca: 'GST, TDS payable, RERA quarterly and cash flow, for the CA', accsetup: 'Bank accounts, heads, statement folders and imports', audit: 'Who changed what, and when',
   };
-  const PICON = { comms: 'mail', custdocs: 'book', site: 'tower', crmtodo: 'check', acctodo: 'check', training: 'book', dashboard: 'chart', units: 'grid', bookings: 'book', demands: 'tower', receipts: 'rupee', ledgers: 'book', letters: 'mail', followups: 'phone', verify: 'check', prices: 'rupee', partners: 'users',
+  const PICON = { comms: 'mail', team: 'users', accteam: 'users', custdocs: 'book', site: 'tower', crmtodo: 'check', acctodo: 'check', training: 'book', dashboard: 'chart', units: 'grid', bookings: 'book', demands: 'tower', receipts: 'rupee', ledgers: 'book', letters: 'mail', followups: 'phone', verify: 'check', prices: 'rupee', partners: 'users',
     accdash: 'chart', balances: 'rupee', bankauto: 'check', 'reg-cancellations': 'users', bookscrm: 'check', checks: 'check', audit: 'book', ca: 'chart', accsetup: 'grid' };
   const DEPTS = [
     { key: 'crm', title: 'Sales & CRM', sub: 'Collections, units, bookings, demands, receipts and follow-ups', icon: 'chart', tone: '#2B5C8A', group: 'CRM' },
@@ -700,7 +703,17 @@
     if ($('#cancelNo')) $('#cancelNo').onclick = () => act({ action: 'cancel-reject' }, 'Cancellation request withdrawn.');
   }
   const HEAD = { av: 'AV', gst: 'GST', tds: 'TDS', stamp_duty: 'Stamp duty', registration: 'Registration', other: 'Other' };
-  const rStatus = (r) => ({ pending: '<span class="pill">waiting for approval</span>', approved: '<span class="pill good">approved</span>', rejected: '<span class="pill grey">rejected</span>', bounced: '<span class="pill bad">bounced</span>', reversed: '<span class="pill bad">reversed</span>' }[r.status] || esc(r.status)) + (r.reverse_reason ? `<br><span class="small muted">${esc(r.reverse_reason)}</span>` : '');
+  // Where a cheque is: with CRM → with Accounts → deposited → in the bank / returned.
+  const chequeCell = (r) => {
+    if (r.bank_status === 'returned') return `<span class="pill bad">returned</span>${r.bank_on ? `<br><span class="small muted">${fmtD(r.bank_on)}</span>` : ''}`;
+    if (r.bank_status === 'cleared') return `<span class="pill good">in the bank</span><br><span class="small muted">${fmtD(r.bank_on)}${r.bank_ref ? ' · ' + esc(r.bank_ref) : ''}${r.bank_match === 'flat and amount' ? ' · matched on flat and amount' : ''}</span>`;
+    if (r.mode !== 'cheque' && r.mode !== 'bank') return '';
+    if (r.mode === 'bank') return '<span class="small muted">not on the statement yet</span>';
+    if (r.deposited_on) return `<span class="pill">deposited</span><br><span class="small muted">${fmtD(r.deposited_on)}${r.deposited_by_name ? ' · ' + esc(r.deposited_by_name) : ''}</span>`;
+    if (r.handed_on) return `<span class="pill">with Accounts</span><br><span class="small muted">${fmtD(r.handed_on)}</span>`;
+    return '<span class="pill warn">with CRM</span>';
+  };
+  const rStatus = (r) => (r.status === 'approved' && r.approved_note ? `<span class="pill good">approved</span><br><span class="small muted">${esc(r.approved_note)}</span>` : '') || ({ pending: '<span class="pill">waiting for approval</span>', approved: '<span class="pill good">approved</span>', rejected: '<span class="pill grey">rejected</span>', bounced: '<span class="pill bad">bounced</span>', reversed: '<span class="pill bad">reversed</span>' }[r.status] || esc(r.status)) + (r.reverse_reason ? `<br><span class="small muted">${esc(r.reverse_reason)}</span>` : '');
 
   // ---------- receipts ----------
   function receiptForm(booking, after, choices) {
@@ -731,22 +744,29 @@
   async function receipts() {
     if (!proj) return noProject();
     const tab = store.get('erp_rtab') || 'pending';
-    const d = await api(`/api/receipts?project=${proj}${tab === 'all' ? '' : '&status=' + tab}`);
-    const labels = { pending: 'Waiting for approval', approved: 'Approved', bounced: 'Bounced', all: 'All' };
-    $('#page').innerHTML = `<div class="page-head"><div><h1>Receipts</h1><p class="muted">Accounts enters each receipt and how it splits; it counts towards the buyer's balance once Head Accounts approves it.</p></div>
-      ${can('receipt.enter') ? '<div class="actions" style="margin:0"><button id="new">Enter a receipt</button></div>' : ''}</div>
+    const d = await api(`/api/receipts?project=${proj}${tab === 'all' || tab === 'cheques' ? '' : '&status=' + tab}`);
+    if (tab === 'cheques') d.rows = d.rows.filter((r) => r.mode === 'cheque' && !r.bank_status && ['pending', 'approved'].includes(r.status));
+    const labels = { pending: 'Waiting for approval', cheques: 'Cheques not in the bank yet', approved: 'Approved', bounced: 'Bounced', all: 'All' };
+    const canDep = anyOf('accounts.enter', 'receipt.approve');
+    $('#page').innerHTML = `<div class="page-head"><div><h1>Receipts</h1><p class="muted">The CRM enters each cheque or transfer and how it splits. The bank statement check (3:10 pm) finds it in the bank by itself: when the cheque number and amount match, it is approved and counts towards the buyer's balance; otherwise Head Accounts approves it. A returned cheque is marked bounced and the flat's CRM is told.</p></div>
+      <div class="actions" style="margin:0">${canDep ? '<button class="ghost" id="bankNow">Look for the cheques in the bank now</button>' : ''}${can('receipt.enter') ? '<button id="new">Enter a receipt</button>' : ''}</div></div>
       <div class="tabs">${Object.keys(labels).map((k) => `<button class="tab ${k === tab ? 'on' : ''}" data-t="${k}">${labels[k]}</button>`).join('')}</div>
-      <div class="panel table-wrap"><input class="search" id="q" placeholder="Search unit, buyer or UTR"><table><tr><th>Date</th><th>Unit</th><th>Buyer</th><th>Bank / instrument</th><th class="num">Amount</th><th>Split</th><th>Status</th><th>Entered by</th><th></th></tr>
+      <div class="panel table-wrap"><input class="search" id="q" placeholder="Search unit, buyer or UTR"><table><tr><th>Date</th><th>Unit</th><th>Buyer</th><th>Bank / instrument</th><th class="num">Amount</th><th>Split</th><th>Cheque</th><th>Status</th><th>Entered by</th><th></th></tr>
       ${d.rows.map((r) => `<tr data-s="${esc(((r.unit_no || '') + ' ' + (r.buyers || '') + ' ' + (r.instrument_no || '')).toLowerCase())}"><td>${fmtD(r.received_on)}</td><td><a href="#/booking/${r.booking_id}">${esc(r.unit_no || '')}</a></td><td>${esc(r.buyers || '')}</td>
         <td>${esc([r.bank, r.instrument_no].filter(Boolean).join(' · ') || r.mode)}</td><td class="num">${inr(r.amount, 2)}</td><td class="small">${Object.entries(r.splits).map(([h, v]) => `${HEAD[h] || h} ${inr(v)}`).join(' · ')}</td>
-        <td>${rStatus(r)}</td><td>${esc(r.created_by_name || 'Import / sample')}</td>
+        <td>${chequeCell(r)}</td><td>${rStatus(r)}</td><td>${esc(r.created_by_name || 'Import / sample')}</td>
         <td class="num" style="white-space:nowrap">${r.status === 'pending' && can('receipt.approve') ? `<button class="small" data-ok="${r.id}">Approve</button> <button class="ghost small" data-no="${r.id}">Reject</button>` : ''}
-          ${r.status === 'approved' && can('receipt.approve') ? `<button class="danger small" data-bounce="${r.id}">Bounced</button>` : ''}</td></tr>`).join('') || '<tr><td colspan="9" class="muted">Nothing here.</td></tr>'}</table></div>`;
+          ${r.status === 'approved' && can('receipt.approve') ? `<button class="danger small" data-bounce="${r.id}">Bounced</button>` : ''}
+          ${r.mode === 'cheque' && !r.bank_status && ['pending', 'approved'].includes(r.status) ? `${!r.handed_on && !r.deposited_on && can('receipt.enter') ? `<button class="ghost small" data-hand="${r.id}">Given to Accounts</button>` : ''}${!r.deposited_on && canDep ? ` <button class="ghost small" data-dep="${r.id}">Deposited</button>` : ''}` : ''}
+          <a class="btn link small" href="#/${can('accounts.view') && !can('demand.raise') ? 'accteam' : 'team'}/${r.booking_id}" title="Message the other team about this flat">Message</a></td></tr>`).join('') || '<tr><td colspan="10" class="muted">Nothing here.</td></tr>'}</table></div>`;
     document.querySelectorAll('.tab[data-t]').forEach((t) => (t.onclick = () => { store.set('erp_rtab', t.dataset.t); receipts(); }));
     $('#q').oninput = (e) => { const q = e.target.value.toLowerCase(); document.querySelectorAll('tr[data-s]').forEach((tr) => (tr.style.display = tr.dataset.s.includes(q) ? '' : 'none')); };
     const act = async (body, msg) => { try { await api('/api/receipts', body); toast(msg); receipts(); } catch (e) { alert(e.message); } };
     document.querySelectorAll('[data-ok]').forEach((x) => (x.onclick = () => act({ action: 'approve', id: +x.dataset.ok }, 'Receipt approved.')));
     document.querySelectorAll('[data-no]').forEach((x) => (x.onclick = () => { const r = prompt('Reason for rejecting:'); if (r !== null) act({ action: 'reject', id: +x.dataset.no, reason: r }, 'Receipt rejected.'); }));
+    document.querySelectorAll('[data-hand]').forEach((x) => (x.onclick = () => act({ action: 'handed', id: +x.dataset.hand }, 'Marked as given to Accounts today.')));
+    document.querySelectorAll('[data-dep]').forEach((x) => (x.onclick = () => { const on = prompt('Deposited on (YYYY-MM-DD):', todayIso()); if (on) act({ action: 'deposited', id: +x.dataset.dep, on }, 'Marked deposited. The bank statement check will find it.'); }));
+    if ($('#bankNow')) $('#bankNow').onclick = async () => { try { const o = await api('/api/receipts', { action: 'bankcheck' }); toast(`Found in the bank: ${o.linked} (${o.approved} approved by the bank statement, ${o.waiting} for Head Accounts). Returned: ${o.bounced}.`); receipts(); } catch (e) { alert(e.message); } };
     document.querySelectorAll('[data-bounce]').forEach((x) => (x.onclick = () => { const r = prompt('Mark as bounced. Reason (e.g. cheque returned, insufficient funds):'); if (r) act({ action: 'bounce', id: +x.dataset.bounce, reason: r }, 'Marked as bounced; the buyer\'s balance is updated.'); }));
     if ($('#new')) $('#new').onclick = async () => {
       const b = await api(`/api/bookings?project=${proj}`);
@@ -1198,6 +1218,43 @@
     };
     if (unread.length && d.canAct) api('/api/comms', { action: 'read', ids: unread }).catch(() => {});
   }
+  // ---------- CRM ↔ Accounts messages ----------
+  async function teamPage(bookingId) {
+    const base = location.hash.split('/')[1] === 'accteam' ? 'accteam' : 'team';
+    const f = store.get('erp_tmf') || 'all';
+    const d = await api(`/api/team?f=${f}${bookingId ? '&booking=' + bookingId : ''}`);
+    const toDefault = d.team === 'crm' ? 'accounts' : d.team === 'accounts' ? 'crm' : 'accounts';
+    const who = (m) => (m.kind === 'system' ? 'ERP' : esc(m.from_name || ''));
+    const teamName = (t) => (t === 'crm' ? 'CRM' : 'Accounts');
+    const time = (x) => new Date(x).toLocaleString('en-IN', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit', timeZone: 'Asia/Kolkata' });
+    const mine = (m) => m.from_name && m.kind !== 'system' && d.team !== 'both' && ((d.team === 'crm' && m.to_team === 'accounts') || (d.team === 'accounts' && m.to_team === 'crm'));
+    $('#page').innerHTML = `<div class="page-head"><div><h1>CRM ↔ Accounts messages${d.flat ? ' · ' + esc(d.flat.unit_no) : ''}</h1><p class="muted">One conversation between the CRM team and Accounts. Tag a flat so the message is kept with it. Tick "needs an answer" when you are asking for something: it stays open until the other team marks it done. The ERP also posts here: cheques found in the bank, and cheques returned.</p></div>
+      ${d.flat ? `<div class="actions" style="margin:0"><a class="btn ghost" href="#/${base}">All messages</a><a class="btn ghost" href="#/booking/${d.flat.id}">Open the booking</a></div>` : ''}</div>
+      <div class="panel"><div class="kpis">${kpi(d.open.accounts, 'open for Accounts', d.open.accounts ? 'bad' : '')}${kpi(d.open.crm, 'open for CRM', d.open.crm ? 'bad' : '')}</div></div>
+      <div class="tabs">${[['all', 'All'], ['open', 'Needs an answer'], ['mine', 'For my team']].map(([k, l]) => `<button class="tab ${k === f ? 'on' : ''}" data-t="${k}">${l}</button>`).join('')}</div>
+      <div class="panel chat" id="chat">${d.rows.map((m) => `<div class="cmsg ${m.kind === 'system' ? 'sys' : mine(m) ? 'me' : ''} ${m.needs_action && !m.done_at ? 'open' : ''}">
+          <div class="cmeta"><b>${who(m)}</b> → ${teamName(m.to_team)}${m.unit_no ? ` · <a href="#/${base}/${m.booking_id}">${esc(m.unit_no)}</a>` : ''} · <span class="muted">${time(m.created_at)}</span></div>
+          <div class="cbody">${esc(m.body).replace(/\n/g, '<br>')}</div>
+          ${m.needs_action ? `<div class="cact">${m.done_at ? `<span class="pill good">done</span> <span class="small muted">${esc(m.done_name || '')} ${time(m.done_at)}</span> <button class="link small" data-re="${m.id}">Reopen</button>` : `<span class="pill warn">needs an answer</span> <button class="small" data-done="${m.id}">Mark done</button>`}</div>` : ''}
+        </div>`).join('') || '<p class="muted">No messages yet.</p>'}</div>
+      <form class="panel" id="tmf"><div class="row4">
+        ${d.team === 'both' ? `<div><label>For</label><select name="to"><option value="accounts">Accounts</option><option value="crm">CRM</option></select></div>` : `<div><label>For</label><input value="${teamName(toDefault)}" disabled></div>`}
+        <div><label>Flat (optional)</label><input name="unit" placeholder="e.g. A-1001" value="${d.flat ? esc(d.flat.unit_no) : ''}" ${d.flat ? 'readonly' : ''}></div>
+        <div style="align-self:end"><label class="check"><input type="checkbox" name="needsAction" value="1"> Needs an answer</label></div><div></div></div>
+        <label>Message</label><textarea name="body" rows="3" required placeholder="e.g. Please confirm cheque 004512 of A-1001 is deposited"></textarea>
+        <div class="actions"><button>Send</button></div></form>`;
+    const c = $('#chat'); c.scrollTop = c.scrollHeight;
+    document.querySelectorAll('.tab[data-t]').forEach((t) => (t.onclick = () => { store.set('erp_tmf', t.dataset.t); teamPage(bookingId); }));
+    const act = async (body) => { try { await api('/api/team', body); teamPage(bookingId); } catch (e) { alert(e.message); } };
+    document.querySelectorAll('[data-done]').forEach((x) => (x.onclick = () => act({ action: 'done', id: +x.dataset.done })));
+    document.querySelectorAll('[data-re]').forEach((x) => (x.onclick = () => act({ action: 'reopen', id: +x.dataset.re })));
+    $('#tmf').onsubmit = async (ev) => {
+      ev.preventDefault(); const x = Object.fromEntries(new FormData(ev.target));
+      try { await api('/api/team', { action: 'post', to: x.to || toDefault, body: x.body, needsAction: !!x.needsAction, bookingId: d.flat ? d.flat.id : null, unit: d.flat ? null : (x.unit || '').trim() || null }); teamPage(bookingId); } catch (e) { alert(e.message); }
+    };
+    document.querySelectorAll('.mbadge.team').forEach((b) => b.remove());
+  }
+
   async function comms() {
     const f = store.get('erp_cmf') || 'mine';
     const [d, st] = await Promise.all([api(`/api/comms?inbox=1&f=${f}`), api('/api/comms?status=1')]);

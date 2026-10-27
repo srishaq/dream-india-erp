@@ -141,6 +141,7 @@ module.exports = route({
         await audit.record(t.q, { user: u, action: 'import-tally', entity: 'accounts', entityId: 'signature', after: { ...p.summary, registers: p.registers, ...out } });
         return out;
       });
+      r.cheques = await require('../lib/cheque-match').run({ user: u, trigger: 'tally' }).catch((e) => ({ error: e.message }));
       return res.json({ ok: true, summary: p.summary, problems: p.problems, ...r });
     }
     if (b.action === 'refunds-preview' || b.action === 'refunds-import') {

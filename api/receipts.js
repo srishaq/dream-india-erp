@@ -1,4 +1,6 @@
-// Buyer receipts. GET ?project=ID[&status=pending]. POST {action}: create, approve, reject, bounce, reverse.
+// Buyer receipts. GET ?project=ID[&status=pending]. POST {action}: create, approve, reject, bounce, reverse,
+// handed (cheque given to Accounts), deposited (Accounts deposited it), bankcheck (look for the cheques in the bank now).
+// Each cheque is then found on the bank statement by itself (lib/cheque-match.js).
 // A receipt counts towards a buyer's balance only once Head Accounts (not the person who entered it) approves it.
 const db = require('../lib/db');
 const auth = require('../lib/auth');
@@ -15,11 +17,13 @@ const MODES = ['bank', 'cheque', 'loan', 'tds', 'other'];
 async function list(projectId, status) {
   return db.q(
     `select r.id, r.received_on, r.amount, r.mode, r.bank, r.instrument_no, r.status, r.note, r.reverse_reason, r.opening, r.created_by, r.booking_id,
-            u.unit_no, c.name as created_by_name, a.name as approved_by_name, r.approved_at,
+            u.unit_no, c.name as created_by_name, a.name as approved_by_name, r.approved_at, r.approved_note,
+            r.handed_on, r.deposited_on, r.bank_status, r.bank_on, r.bank_ref, r.bank_match, h.name as handed_by_name, dp.name as deposited_by_name,
             (select string_agg(y.name, ' & ' order by ap.seq) from booking_applicants ap join buyers y on y.id = ap.buyer_id where ap.booking_id = r.booking_id) as buyers,
             coalesce((select json_object_agg(s.head, s.amount) from receipt_splits s where s.receipt_id = r.id), '{}') as splits
        from receipts r left join bookings b on b.id = r.booking_id left join units u on u.id = b.unit_id
        left join users c on c.id = r.created_by left join users a on a.id = r.approved_by
+       left join users h on h.id = r.handed_by left join users dp on dp.id = r.deposited_by
       where r.project_id = $1 and ($2::text is null or r.status = $2)
       order by (r.status = 'pending') desc, r.received_on desc, r.id desc limit 1000`, [projectId, status]);
 }
@@ -71,9 +75,24 @@ module.exports = route({
       return res.json({ ok: true, id });
     }
 
+    if (b.action === 'bankcheck') {
+      if (!(has(u, 'receipt.approve') || has(u, 'accounts.enter'))) throw fail(403, 'Your role does not allow this.');
+      return res.json({ ok: true, ...(await require('../lib/cheque-match').run({ user: u, trigger: 'manual' })) });
+    }
     const r = await db.one('select * from receipts where id = $1', [intOr(b.id)]);
     if (!r) throw fail(404, 'Receipt not found.');
     needProject(u, r.project_id);
+    if (b.action === 'handed' || b.action === 'deposited') {
+      if (b.action === 'handed') need('receipt.enter'); else if (!(has(u, 'accounts.enter') || has(u, 'receipt.approve'))) throw fail(403, 'Only Accounts marks a cheque deposited.');
+      if (r.mode !== 'cheque') throw fail(400, 'This receipt is not a cheque.');
+      if (r.bank_status) throw fail(409, 'This cheque is already on the bank statement.');
+      const on = /^\d{4}-\d{2}-\d{2}$/.test(b.on || '') ? b.on : today();
+      if (on > today() || on < String(r.received_on instanceof Date ? r.received_on.toISOString() : r.received_on).slice(0, 10)) throw fail(400, 'The date must be between the day the cheque was received and today.');
+      if (b.action === 'handed') await db.q('update receipts set handed_on = $2, handed_by = $3 where id = $1', [r.id, on, u.id]);
+      else await db.q('update receipts set deposited_on = $2, deposited_by = $3, handed_on = coalesce(handed_on, $2) where id = $1', [r.id, on, u.id]);
+      await audit.record(db.q, { user: u, action: b.action, entity: 'receipt', entityId: r.id, projectId: r.project_id, after: { on } });
+      return res.json({ ok: true });
+    }
     need('receipt.approve');
 
     if (b.action === 'approve' || b.action === 'reject') {
