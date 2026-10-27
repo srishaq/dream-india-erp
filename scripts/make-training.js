@@ -218,7 +218,7 @@ const L = {
     ['hl', '.tabs'], ['cap', 'Pick a wing at the top.'], ['scroll', 300], ['click', 'button.unit.s-booked >> nth=5'],
     ['cap', 'Tap a flat to see its buyer, agreement value and dues.'], ['wait', 1500], ['key', 'Escape'],
     ['hash', '#/bookings'], ['cap', 'Bookings lists every booking. New bookings wait here for Head CRM to approve.'],
-    ['type', '#q', 'A-12'], ['cap', 'Search by flat or buyer.'],
+    ['type', '#q', 'B-'], ['cap', 'Search by flat or buyer.'],
     ['click', 'tr[data-b] >> visible=true >> nth=0'], ['cap', 'The booking page has the applicants, the payment plan, demands and receipts.'], ['scroll', 500],
     ['hash', '#/ledgers'], ['cap', 'Customer ledgers: the statement of account for each buyer. Print it or save it as a PDF to send.'],
     ['end', 'Units, bookings and ledgers'],
