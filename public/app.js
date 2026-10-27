@@ -107,6 +107,7 @@
   const sec = (m) => !!me && (me.sections || []).includes(m);
   const PAGES = [
     { key: 'home', label: 'Home', show: () => true },
+    { key: 'mgmt', label: 'Management dashboard', show: () => can('mgmt.view') },
     { key: 'training', label: 'Training videos', show: () => true },
     { group: 'CRM' },
     { key: 'crmtodo', label: 'Daily To-Do', show: () => anyOf('demand.raise', 'booking.create', 'booking.approve', 'ledger.view') },
@@ -181,7 +182,7 @@
   }
 
   // Short addresses to share with staff (erp…/crm, /finance …): opened once, then the page carries on as usual.
-  const SHORT = { '/crm': '#/project/{p}/crm', '/finance': '#/project/{p}/accounts', '/audit': '#/project/{p}/audit', '/construction': '#/project/{p}/construction', '/training': '#/training', '/home': '#/home' };
+  const SHORT = { '/crm': '#/project/{p}/crm', '/finance': '#/project/{p}/accounts', '/audit': '#/project/{p}/audit', '/construction': '#/project/{p}/construction', '/training': '#/training', '/home': '#/home', '/management': '#/mgmt' };
   async function shell() {
     if (!projectList) projectList = (await api('/api/masters')).projects.filter((p) => p.active);
     const short = SHORT[location.pathname.replace(/\/$/, '')];
@@ -210,7 +211,7 @@
     $('#cpw').onclick = () => changePassword(false);
     if ($('#proj')) $('#proj').onchange = (e) => { proj = +e.target.value; store.set('erp_project', proj); shell(); };
     if (/^reg-/.test(page || '') && can('accounts.view')) { try { await accRegister(page.slice(4)); } catch (e) { $('#page').innerHTML = `<div class="err">${esc(e.message)}</div>`; } return; }
-    const fn = { home, project: projectHome, crmtodo: () => dailyTodo('crm'), acctodo: () => dailyTodo('accounts'), training, projects, plans, users, audit, units, bookings, demands, receipts, ledgers, letters, followups, verify, prices, partners, acc: accTodo, balances: accBalances, bankauto: bankAuto, bookscrm: booksCrm, accreports: accReports, checks: accChecks, accsetup: accSetup, import: importPage, booking: bookingPage, statement: statementPage, run: runPage };
+    const fn = { home, mgmt, project: projectHome, crmtodo: () => dailyTodo('crm'), acctodo: () => dailyTodo('accounts'), training, projects, plans, users, audit, units, bookings, demands, receipts, ledgers, letters, followups, verify, prices, partners, acc: accTodo, balances: accBalances, bankauto: bankAuto, bookscrm: booksCrm, accreports: accReports, checks: accChecks, accsetup: accSetup, import: importPage, booking: bookingPage, statement: statementPage, run: runPage };
     const key = DETAIL[page] && arg ? page : cur.key;
     try { await fn[key](arg ? +arg : undefined); } catch (e) { $('#page').innerHTML = `<div class="err">${esc(e.message)}</div>`; }
   }
@@ -304,6 +305,7 @@
     $('#page').innerHTML = heroHtml(now.toLocaleDateString('en-IN', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric', timeZone: 'Asia/Kolkata' }),
         `${h < 12 ? 'Good morning' : h < 17 ? 'Good afternoon' : 'Good evening'}${first ? ', ' + first : ''}`, 'Your projects and tools in one place. Tap a tile to open it.') + `
       <div class="hm">
+        ${can('mgmt.view') ? `<section class="hgroup"><h2>Management</h2><div class="tiles">${tile({ title: 'Management dashboard', sub: 'Cash, collections, dues, site, purchase, approvals, compliance and taxes on one screen', icon: 'chart', tone: '#140C59', href: '#/mgmt' })}</div></section>` : ''}
         <section class="hgroup"><h2>Projects</h2><div class="tiles">${projTiles.map(tile).join('') || '<p class="muted">No projects yet.</p>'}</div></section>
         <section class="hgroup"><h2>Tools</h2><div class="tiles">${tools.map(tile).join('')}</div></section>
         <p class="hnote">Tiles marked ↗ open in a new tab.</p>
@@ -1115,6 +1117,28 @@
   }
 
   // Daily To-Do (CRM or Accounts): the 9 am audit's findings and people's own tasks, ticked off through the day.
+  // Management dashboard: the key figures of every department on one screen (Admin and Management).
+  async function mgmt() {
+    const pq = proj ? `?project=${proj}` : '';
+    $('#page').innerHTML = heroHtml('Management', 'Management dashboard', 'Working out today’s figures…', ['#/home', 'Home']);
+    const d = await api('/api/mgmt' + pq);
+    const tone = (t) => (t === 'bad' ? 'bad' : t === 'warn' ? 'warn' : t === 'good' ? 'good' : '');
+    const href = (h) => esc(h || '#/mgmt');
+    const card = (t) => `<article class="mg-card ${tone(t.tone)}">
+        <a class="mg-top" href="${href(t.link)}"><span class="mg-t">${esc(t.title)}</span><span class="mg-v">${esc(t.value)}</span>${t.sub ? `<span class="mg-s">${esc(t.sub)}</span>` : ''}</a>
+        ${(t.lines || []).length ? `<ul class="mg-l">${t.lines.map(([l, v, tn, h]) => `<li class="${tone(tn)}">${h ? `<a href="${href(h)}">${esc(l)}</a>` : `<span>${esc(l)}</span>`}<b>${esc(v)}</b></li>`).join('')}</ul>` : ''}
+        ${t.list && t.list.rows.length ? `<div class="mg-h">${esc(t.list.h)}</div><ul class="mg-l">${t.list.rows.map(([l, v]) => `<li><span>${esc(l)}</span><b>${esc(v)}</b></li>`).join('')}</ul>` : ''}
+        ${t.note ? `<p class="mg-n">${esc(t.note)}</p>` : ''}
+        <a class="mg-go" href="${href(t.link)}">Open →</a></article>`;
+    const at = new Date(d.generatedAt).toLocaleTimeString('en-IN', { hour: 'numeric', minute: '2-digit', timeZone: 'Asia/Kolkata' });
+    $('#page').innerHTML = heroHtml(`${d.project ? d.project.name + ' · ' : ''}${fmtD(d.today)}`, 'Management dashboard', `Figures as of ${at} today, straight from the ERP. Tap a tile to open the page behind it.`, ['#/home', 'Home']) + `
+      <div class="hm mg">
+        <div class="mg-bar"><span class="muted small">Red needs action today · amber to watch · green is fine</span><button class="ghost small" id="mgRe">Refresh</button></div>
+        ${d.sections.map((s) => `<section class="mg-sec"><h2>${esc(s.title)}</h2><div class="mg-grid">${s.tiles.map(card).join('')}</div></section>`).join('')}
+      </div>`;
+    $('#mgRe').onclick = () => mgmt();
+  }
+
   async function dailyTodo(dept, dateArg) {
     const name = dept === 'crm' ? 'Sales & CRM' : 'Accounts';
     const date = dateArg || store.get('erp_todo_date_' + dept) || todayIso();
