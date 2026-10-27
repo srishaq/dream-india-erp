@@ -454,14 +454,15 @@
     box.innerHTML = `<h2>Copy from the staff portal</h2><p class="muted">The portal's database is connected${st.readOnly ? ' (read only)' : ''}. It has <b>${st.users}</b> logins, and ${Object.entries(st.sections).map(([k, v]) => `${esc(k)} (${v} lists)`).join(', ')}.
       Copying brings every login across with the <b>same username and password</b>, and replaces the ERP's HR, Purchase and Construction records with the portal's. The portal itself is not changed. Run it again on switch-over day for a fresh copy.</p>
       <div class="actions"><button id="pcopy">Copy now</button></div><div id="pres"></div>`;
-    $('#pcopy').onclick = async (e) => {
+    if (!box.isConnected) return;
+    box.querySelector('#pcopy').onclick = async (e) => {
       if (!confirm('Copy the logins, HR, Purchase and Construction from the portal now?')) return;
       e.target.disabled = true; e.target.textContent = 'Copying… (up to a minute)';
       try {
         const r = await api('/api/portal?copy=1', { go: true });
-        $('#pres').innerHTML = `<p class="ok">Copied. Logins: ${r.users.added} added, ${r.users.updated} updated${r.users.skipped.length ? `, ${r.users.skipped.length} not copied: ${esc(r.users.skipped.join('; '))}` : ''}. Records: ${Object.entries(r.copied).map(([k, v]) => `${esc(k)} ${v}`).join(', ')}.</p>`;
+        box.querySelector('#pres').innerHTML = `<p class="ok">Copied. Logins: ${r.users.added} added, ${r.users.updated} updated${r.users.skipped.length ? `, ${r.users.skipped.length} not copied: ${esc(r.users.skipped.join('; '))}` : ''}. Records: ${Object.entries(r.copied).map(([k, v]) => `${esc(k)} ${v}`).join(', ')}.</p>`;
         e.target.textContent = 'Copy again'; e.target.disabled = false;
-      } catch (x) { e.target.disabled = false; e.target.textContent = 'Copy now'; $('#pres').innerHTML = `<p class="err">${esc(x.message)}</p>`; }
+      } catch (x) { e.target.disabled = false; e.target.textContent = 'Copy now'; box.querySelector('#pres').innerHTML = `<p class="err">${esc(x.message)}</p>`; }
     };
   }
 
