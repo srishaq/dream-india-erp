@@ -18,6 +18,8 @@
   const can = (p) => !!me && me.perms.includes(p);
   function showErr(form, e) { let box = $('.err', form); if (!box) { box = document.createElement('div'); box.className = 'err'; form.appendChild(box); } box.textContent = e.message; }
   const logo = '<img src="/icon.svg" alt="">';
+  // sign-in, first setup and password cards: the Dream India Realty logo
+  const brand = (sub) => `<div class="brandlogo"><img src="/logo-dark.svg" alt="Dream India Realty" width="230" height="60"><span>ERP${sub ? ' · ' + esc(sub) : ''}</span></div>`;
   const wordmark = '<img class="wordmark" src="/logo.svg" alt="Dream India Realty" width="123" height="32">';
 
   // ---------- entry ----------
@@ -43,7 +45,7 @@
 
   function setup(codeRequired) {
     app.innerHTML = `<div class="center"><form class="card" id="f">
-      <div class="brandline">${logo}<div><b>Dream India ERP</b><span>First-time setup</span></div></div>
+      ${brand('First-time setup')}
       <h1>Create the Admin login</h1>
       <p class="muted">This sets up the database and the first login. It can only be done once.</p>
       <label>Your name</label><input name="name" autocomplete="name" required>
@@ -64,7 +66,7 @@
 
   function login() {
     app.innerHTML = `<div class="center"><form class="card" id="f">
-      <div class="brandline">${logo}<div><b>Dream India ERP</b><span>Test version</span></div></div>
+      ${brand()}
       <h1>Sign in</h1>
       <label>Username</label><input name="username" autocomplete="username" required autofocus>
       <label>Password</label><input name="password" type="password" autocomplete="current-password" required>
@@ -79,7 +81,7 @@
 
   function changePassword(forced) {
     const html = `<form class="card" id="pw">
-      <div class="brandline">${logo}<div><b>Dream India ERP</b><span>${esc(me.name)}</span></div></div>
+      ${brand(me.name)}
       <h1>${forced ? 'Choose your own password' : 'Change password'}</h1>
       ${forced ? '<p class="muted">You signed in with a temporary password. Choose your own before continuing.</p>' : ''}
       <label>Current password</label><input name="current" type="password" autocomplete="current-password" required>

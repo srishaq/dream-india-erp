@@ -158,24 +158,13 @@
           <polygon class="cls-4" points="171.5 265.9 173.6 261.6 177.6 264.3 174.1 261 177.9 258 173.6 260.3 172 255.8 172.9 260.5 168.1 260.6 172.9 261.3 171.5 265.9"/>
           <text class="cls-10" transform="translate(405.9 208.6)"><tspan x="0" y="0">DREAM INDIA</tspan></text>
           <g class="cls-11">
-            <text class="cls-3" transform="translate(1321.7 318.5)"><tspan x="0" y="0">REA</tspan></text>
-            <text class="cls-2" transform="translate(1573.7 318.5)"><tspan x="0" y="0">L</tspan></text>
-            <text class="cls-9" transform="translate(1639.9 318.5)"><tspan x="0" y="0">T</tspan></text>
-            <text class="cls-6" transform="translate(1712.5 318.5)"><tspan x="0" y="0">Y</tspan></text>
-          </g>
+            </g>
           <g class="cls-11">
-            <text class="cls-1" transform="translate(707.8 395.5)"><tspan x="0" y="0">TURNING DRE</tspan></text>
-            <text class="cls-1" transform="translate(1037.2 395.5)"><tspan x="0" y="0">A</tspan></text>
-            <text class="cls-8" transform="translate(1070.7 395.5)"><tspan x="0" y="0">MS IN</tspan></text>
-            <text class="cls-7" transform="translate(1210.6 395.5)"><tspan x="0" y="0">T</tspan></text>
-            <text class="cls-1" transform="translate(1238.1 395.5)"><tspan x="0" y="0">O REALI</tspan></text>
-            <text class="cls-5" transform="translate(1428.9 395.5)"><tspan x="0" y="0">T</tspan></text>
-            <text class="cls-1" transform="translate(1458.8 395.5)"><tspan x="0" y="0">Y</tspan></text>
-          </g>
+            </g>
           <rect class="cls-4" x="405.9" y="380.6" width="206.1" height="3.5"/>
           <rect class="cls-4" x="1576.3" y="380.6" width="206.1" height="3.5"/>
         </g>
       </g>
     </g>
   </g>
-</svg>
+<text x="1321.7" y="318.5" textLength="455" lengthAdjust="spacingAndGlyphs" style="font-family:Montserrat,Arial,Helvetica,sans-serif;font-weight:700;font-size:96.1px;fill:#fff">REALTY</text><text x="707.8" y="395.5" textLength="790" lengthAdjust="spacingAndGlyphs" style="font-family:Montserrat,Arial,Helvetica,sans-serif;font-weight:600;font-size:43.6px;fill:#fff">TURNING DREAMS INTO REALITY</text></svg>

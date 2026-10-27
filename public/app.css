@@ -257,3 +257,8 @@ button.link { background: none; border: 0; padding: 0; color: var(--brand); font
 .tr-foot { display: flex; justify-content: space-between; align-items: center; gap: 8px; margin-top: 4px; }
 .sec { font-size: 13px; font-weight: 700; letter-spacing: .1em; text-transform: uppercase; color: var(--ink-3); margin: 22px 0 10px; }
 .cancel-box { border-color: var(--bad); }
+
+/* Dream India Realty logo on the sign-in card */
+.brandlogo { display: grid; justify-items: start; gap: 6px; margin-bottom: 18px; padding-bottom: 16px; border-bottom: 1px solid var(--line); }
+.brandlogo img { width: 230px; height: auto; max-width: 100%; }
+.brandlogo span { font-size: 12.5px; font-weight: 700; letter-spacing: .14em; text-transform: uppercase; color: var(--ink-3); }
