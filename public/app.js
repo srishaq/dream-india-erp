@@ -1538,13 +1538,15 @@
       <div class="ss-grid">
         ${box('Saleable flats', T.saleable.toLocaleString('en-IN'), `${sq(T.saleableSqft)} carpet${T.notForSale ? ` · ${T.notForSale} refuge / society not counted` : ''}`)}
         ${box('Sold', T.sold.toLocaleString('en-IN'), `${sq(T.soldSqft)} · ${pct(T.soldSqft, T.saleableSqft)} of the area`, 'good')}
-        ${box('Balance to sell', T.balance.toLocaleString('en-IN'), sq(T.balanceSqft), 'warn')}
+        ${box('Balance to sell', T.balance.toLocaleString('en-IN'), `${sq(T.balanceSqft)} open for sale`, 'warn')}
+        ${T.held ? box('Held back', T.held.toLocaleString('en-IN'), `${sq(T.heldSqft)} · not for sale now`, 'grey') : ''}
         ${money ? box('Sale value of flats sold', cr(T.saleValue), `Agreement value incl. parking ${cr(T.av)} + amenity & possession ${cr(T.dev)}`) : ''}
         ${money ? box('Average sale rate', T.avgRate ? '₹' + T.avgRate.toLocaleString('en-IN') + ' / sq ft' : '—', 'Sale value ÷ carpet area sold', 'brand') : ''}
       </div>
-      <div class="table-wrap"><table class="ss-t"><tr><th></th><th class="num">Saleable flats</th><th class="num">Saleable sq ft</th><th class="num">Sold</th><th class="num">Sold sq ft</th><th class="num">Balance</th><th class="num">Balance sq ft</th>${money ? '<th class="num">Sale value</th><th class="num">Avg ₹ / sq ft</th>' : ''}</tr>
+      <div class="table-wrap"><table class="ss-t"><tr><th></th><th class="num">Saleable flats</th><th class="num">Saleable sq ft</th><th class="num">Sold</th><th class="num">Sold sq ft</th><th class="num">Balance to sell</th><th class="num">Balance sq ft</th><th class="num">Held</th><th class="num">Held sq ft</th>${money ? '<th class="num">Sale value</th><th class="num">Avg ₹ / sq ft</th>' : ''}</tr>
         ${rows.map((w) => `<tr class="${w.code === 'T' ? 'tot' : ''}"><td>${w.code === 'T' ? '<b>Total</b>' : esc(w.name)}</td><td class="num">${w.saleable}</td><td class="num">${Math.round(w.saleableSqft).toLocaleString('en-IN')}</td><td class="num">${w.sold}</td><td class="num">${Math.round(w.soldSqft).toLocaleString('en-IN')}</td>
-          <td class="num">${w.balance}</td><td class="num">${Math.round(w.balanceSqft).toLocaleString('en-IN')}</td>${money ? `<td class="num">${cr(w.saleValue)}</td><td class="num"><b>${w.avgRate ? '₹' + w.avgRate.toLocaleString('en-IN') : '—'}</b></td>` : ''}</tr>`).join('')}</table></div>
+          <td class="num">${w.balance}</td><td class="num">${Math.round(w.balanceSqft).toLocaleString('en-IN')}</td><td class="num">${w.held}</td><td class="num">${Math.round(w.heldSqft).toLocaleString('en-IN')}</td>${money ? `<td class="num">${cr(w.saleValue)}</td><td class="num"><b>${w.avgRate ? '₹' + w.avgRate.toLocaleString('en-IN') : '—'}</b></td>` : ''}</tr>`).join('')}</table></div>
+      ${T.held ? `<p class="small"><b>Held back:</b> ${S.wings.filter((w) => w.held).map((w) => `${esc(w.name)}: ${w.heldBy.map((h) => `${esc(h.name)} ${h.flats} (floor${h.floors.length > 1 ? 's' : ''} ${h.floors.join(', ')})`).join(' · ')}`).join(' &nbsp;|&nbsp; ')}</p>` : ''}
       ${miss.length ? `<p class="small warn-t">${esc(miss.join(' · '))}.</p>` : ''}
     </section>`;
   }

@@ -357,3 +357,4 @@ button.link { background: none; border: 0; padding: 0; color: var(--brand); font
 .warn-t { color: #8a5a00; }
 .ss { min-width: 0; max-width: 100%; }
 .ss .table-wrap { overflow-x: auto; }
+.ss-b.grey { border-left: 4px solid #8a93a6; }
