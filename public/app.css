@@ -342,3 +342,6 @@ button.link { background: none; border: 0; padding: 0; color: var(--brand); font
 .chatpop { max-width: 320px; background: #fff; border: 1px solid #dfe3ec; border-left: 4px solid var(--brand, #140C59); border-radius: 10px; padding: 10px 12px; box-shadow: 0 8px 24px rgba(20,12,89,.2); font-size: 13px; cursor: pointer; }
 @media (max-width: 640px) { .chatw { right: 12px; bottom: 12px; } .chatw.on { left: 12px; } .chatp { width: 100%; height: calc(100vh - 100px); } }
 @media print { .chatw { display: none; } }
+
+.chats { background: rgba(255,255,255,.14); border: 0; color: #fff; font-size: 12px; padding: 3px 8px; margin-right: 10px; border-radius: 6px; box-shadow: none; }
+.chats:hover { background: rgba(255,255,255,.25); }

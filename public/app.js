@@ -1227,13 +1227,38 @@
     const full = () => `#/${can('accounts.view') && !can('demand.raise') ? 'accteam' : 'team'}`;
     const tName = (t) => (t === 'crm' ? 'CRM' : 'Accounts');
     const time = (x) => { const d = new Date(x), today = new Date().toDateString() === d.toDateString(); return d.toLocaleString('en-IN', today ? { hour: '2-digit', minute: '2-digit', timeZone: 'Asia/Kolkata' } : { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit', timeZone: 'Asia/Kolkata' }); };
+    // Sounds: a swoosh when a message goes, a soft two-note chime when one comes in. Browsers keep a page silent
+    // until it is clicked or typed in once, so the sound is switched on at the first click or key press.
+    let actx = null;
+    const audio = () => { try { actx = actx || new (window.AudioContext || window.webkitAudioContext)(); if (actx.state === 'suspended') actx.resume(); } catch {} return actx; };
+    ['pointerdown', 'keydown'].forEach((ev) => document.addEventListener(ev, audio, { once: false, passive: true }));
+    const soundOn = () => store.get('erp_chat_sound') !== 'off';
+    function sound(kind) {
+      if (!soundOn()) return;
+      const a = audio(); if (!a || a.state !== 'running') return;
+      const t0 = a.currentTime;
+      if (kind === 'out') {
+        // swoosh: a burst of noise swept through a band-pass filter
+        const len = 0.32, buf = a.createBuffer(1, Math.floor(a.sampleRate * len), a.sampleRate), d = buf.getChannelData(0);
+        for (let i = 0; i < d.length; i++) d[i] = Math.random() * 2 - 1;
+        const src = a.createBufferSource(), f = a.createBiquadFilter(), g = a.createGain();
+        src.buffer = buf; f.type = 'bandpass'; f.Q.value = 1.2;
+        f.frequency.setValueAtTime(500, t0); f.frequency.exponentialRampToValueAtTime(5000, t0 + len);
+        g.gain.setValueAtTime(0.0001, t0); g.gain.exponentialRampToValueAtTime(0.5, t0 + 0.07); g.gain.exponentialRampToValueAtTime(0.0001, t0 + len);
+        src.connect(f).connect(g).connect(a.destination); src.start(t0); src.stop(t0 + len);
+      } else {
+        [[784, 0], [1175, 0.12]].forEach(([fq, t]) => { const o = a.createOscillator(), g = a.createGain(); o.type = 'sine'; o.frequency.value = fq;
+          g.gain.setValueAtTime(0.0001, t0 + t); g.gain.exponentialRampToValueAtTime(0.25, t0 + t + 0.02); g.gain.exponentialRampToValueAtTime(0.0001, t0 + t + 0.35);
+          o.connect(g).connect(a.destination); o.start(t0 + t); o.stop(t0 + t + 0.4); });
+      }
+    }
     function mount() {
       if (!allowed()) return unmount();
       if (el) return;
       el = document.createElement('div'); el.className = 'chatw no-print';
       el.innerHTML = `<div class="chatpop" hidden></div>
         <div class="chatp" hidden role="dialog" aria-label="Dream Chat">
-          <div class="chath"><b>Dream Chat</b> <span class="small" style="opacity:.75">CRM ↔ Accounts</span><span><a href="${full()}" class="small" id="chFull">Full page</a><button type="button" class="chatx" aria-label="Close">×</button></span></div>
+          <div class="chath"><b>Dream Chat</b> <span class="small" style="opacity:.75">CRM ↔ Accounts</span><span><button type="button" class="chats" id="chSnd"></button><a href="${full()}" class="small" id="chFull">Full page</a><button type="button" class="chatx" aria-label="Close">×</button></span></div>
           <div class="chatl" id="chL"><p class="muted small">Loading…</p></div>
           <form class="chatf" id="chF">
             <div class="chatr"><span id="chTo"></span><input name="unit" placeholder="Flat (optional)" maxlength="12"><label class="check small"><input type="checkbox" name="needsAction" value="1"> Needs an answer</label></div>
@@ -1244,6 +1269,10 @@
       document.body.appendChild(el);
       el.querySelector('.chatb').onclick = () => (open ? close() : show());
       el.querySelector('.chatx').onclick = close;
+      const snd = el.querySelector('#chSnd');
+      const showSnd = () => { snd.textContent = soundOn() ? '🔔 Sound on' : '🔕 Sound off'; snd.title = soundOn() ? 'Click to turn the sound off' : 'Click to turn the sound on'; };
+      snd.onclick = () => { store.set('erp_chat_sound', soundOn() ? 'off' : 'on'); showSnd(); if (soundOn()) sound('in'); };
+      showSnd();
       el.querySelector('#chFull').onclick = close;
       el.querySelector('.chatpop').onclick = () => { el.querySelector('.chatpop').hidden = true; show(); };
       const f = el.querySelector('#chF');
@@ -1252,7 +1281,7 @@
         e.preventDefault(); if (busy) return;
         const x = Object.fromEntries(new FormData(f)); if (!String(x.body || '').trim()) return;
         busy = true;
-        try { await api('/api/team', { action: 'post', to: x.to || (team === 'crm' ? 'accounts' : 'crm'), body: x.body, unit: (x.unit || '').trim() || null, needsAction: !!x.needsAction }); f.body.value = ''; f.needsAction.checked = false; await load(); }
+        try { await api('/api/team', { action: 'post', to: x.to || (team === 'crm' ? 'accounts' : 'crm'), body: x.body, unit: (x.unit || '').trim() || null, needsAction: !!x.needsAction }); f.body.value = ''; f.needsAction.checked = false; sound('out'); await load(); }
         catch (err) { alert(err.message); } finally { busy = false; }
       };
       load(true); schedule();
@@ -1270,7 +1299,7 @@
           rows = rows.concat(fresh).slice(-200); last = fresh[fresh.length - 1].id;
           const others = fresh.filter((m) => m.from_user !== myId && m.id > seenTop);
           seenTop = Math.max(seenTop, last);
-          if (!initial && others.length && (!open || document.hidden)) ring(others[others.length - 1], others.length);
+          if (!initial && others.length) { if (!open || document.hidden) ring(others[others.length - 1], others.length); else sound('in'); }
         }
         unread = d.unread.n;
         if (open && unread && !document.hidden) seen();
@@ -1302,14 +1331,11 @@
       const pop = el.querySelector('.chatpop');
       pop.innerHTML = `<b>${esc(who)}</b>${k > 1 ? ` <span class="muted small">+${k - 1} more</span>` : ''}<br>${esc(text)}`;
       pop.hidden = false; clearTimeout(pop._t); pop._t = setTimeout(() => (pop.hidden = true), 9000);
-      try {
-        const A = window.AudioContext || window.webkitAudioContext; const a = ring.ctx || (ring.ctx = new A());
-        [[880, 0], [1320, 0.13]].forEach(([f, t]) => { const o = a.createOscillator(), g = a.createGain(); o.frequency.value = f; g.gain.setValueAtTime(0.0001, a.currentTime + t); g.gain.exponentialRampToValueAtTime(0.18, a.currentTime + t + 0.02); g.gain.exponentialRampToValueAtTime(0.0001, a.currentTime + t + 0.22); o.connect(g).connect(a.destination); o.start(a.currentTime + t); o.stop(a.currentTime + t + 0.25); });
-      } catch {}
+      sound('in');
       try { if (document.hidden && 'Notification' in window && Notification.permission === 'granted') { const nn = new Notification(`${who} · Dream Chat`, { body: text, tag: 'erp-chat' }); nn.onclick = () => { window.focus(); show(); nn.close(); }; } } catch {}
     }
     document.addEventListener('visibilitychange', () => { if (el && !document.hidden) { load(); schedule(); } });
-    return { mount, unmount, seen };
+    return { mount, unmount, seen, sound };
   })();
 
   // ---------- Dream Chat, full page ----------
@@ -1344,7 +1370,7 @@
     document.querySelectorAll('[data-re]').forEach((x) => (x.onclick = () => act({ action: 'reopen', id: +x.dataset.re })));
     $('#tmf').onsubmit = async (ev) => {
       ev.preventDefault(); const x = Object.fromEntries(new FormData(ev.target));
-      try { await api('/api/team', { action: 'post', to: x.to || toDefault, body: x.body, needsAction: !!x.needsAction, bookingId: d.flat ? d.flat.id : null, unit: d.flat ? null : (x.unit || '').trim() || null }); teamPage(bookingId); } catch (e) { alert(e.message); }
+      try { await api('/api/team', { action: 'post', to: x.to || toDefault, body: x.body, needsAction: !!x.needsAction, bookingId: d.flat ? d.flat.id : null, unit: d.flat ? null : (x.unit || '').trim() || null }); chat.sound('out'); teamPage(bookingId); } catch (e) { alert(e.message); }
     };
     chat.seen();
   }
