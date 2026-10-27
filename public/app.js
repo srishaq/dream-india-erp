@@ -205,6 +205,8 @@
           <span class="test-banner">Test version: not live yet</span></div>
           <div class="who"><span><b>${esc(me.name)}</b> · ${esc(me.roleLabel)}</span>
             <button class="ghost small" id="cpw">Change password</button><button class="ghost small" id="out">Sign out</button></div></div>
+        ${(() => { const g = groupOf(DETAIL[page] && arg ? DETAIL[page] : cur.key), dest = { CRM: [`#/project/${proj}/crm`, 'Sales & CRM'], Accounts: [`#/project/${proj}/accounts`, 'Accounts'], 'Site & purchase': [`#/project/${proj}/construction`, 'Construction'], 'Set-up': ['#/home', 'Home'] }[g];
+          return dest && proj && !['home', 'project'].includes(page || 'home') ? `<div class="crumb no-print"><a href="${dest[0]}">← ${esc(dest[1])}</a>${dest[0] === '#/home' ? '' : '<a href="#/home">Home</a>'}</div>` : ''; })()}
         <div class="page" id="page"><p class="muted">Loading…</p></div>
       </div></div>`;
     wireNav();
