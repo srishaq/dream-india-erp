@@ -429,10 +429,11 @@
       <div><label>Username</label><input name="username" value="${esc(u?.username)}" ${u ? 'disabled' : 'required'} placeholder="e.g. firstname.lastname"></div></div>
       <div class="row"><div><label>Role</label><select name="role">${d.roles.map((r) => `<option value="${r.key}" ${u?.role === r.key ? 'selected' : ''}>${esc(r.label)}</option>`).join('')}</select></div>
       <div><label>Mobile (for OTP later)</label><input name="phone" value="${esc(u?.phone)}"></div></div>
+      <label>Designation (shown under the name in emails to buyers)</label><input name="designation" value="${esc(u?.designation)}" maxlength="80" placeholder="e.g. Senior Executive – Customer Relations">
       <label>Projects</label>
       <label class="check"><input type="checkbox" name="allProjects" ${u?.all_projects ? 'checked' : ''}> All projects, including future ones</label>
       ${d.projects.map((p) => `<label class="check"><input type="checkbox" name="p${p.id}" ${u?.projects.includes(p.id) ? 'checked' : ''}> ${esc(p.name)}</label>`).join('')}`;
-    const pick = (x) => ({ name: x.name, username: x.username, role: x.role, phone: x.phone, allProjects: x.allProjects === 'on', projects: d.projects.filter((p) => x['p' + p.id] === 'on').map((p) => p.id) });
+    const pick = (x) => ({ name: x.name, username: x.username, role: x.role, phone: x.phone, designation: x.designation, allProjects: x.allProjects === 'on', projects: d.projects.filter((p) => x['p' + p.id] === 'on').map((p) => p.id) });
     const showTemp = (r) => {
       const dl = document.createElement('dialog');
       dl.innerHTML = `<form method="dialog"><h2>Temporary password for ${esc(r.username)}</h2><p>Give this to the person. It is shown only once; they must choose their own password when they first sign in.</p>
@@ -931,17 +932,31 @@
   }
   async function followupEmail(bookingId, unit, after, reply) {
     const p = await api('/api/followups', { action: 'email', bookingId, preview: true });
-    if (reply) { p.subject = /^re:/i.test(reply.subject || '') ? reply.subject : 'Re: ' + (reply.subject || p.subject); p.message = `Dear ${p.name},\n\n\n\nRegards,\nCRM Team`; }
     const plus = (n) => { const x = new Date(Date.now() + 5.5 * 3600e3); x.setUTCDate(x.getUTCDate() + n); return x.toISOString().slice(0, 10); };
-    const dl = dialog(`<h2>Email the buyer · ${esc(unit)}</h2>
-      <p class="small muted">To: ${esc(p.to.join(', ') || 'no email on this booking')}${p.live ? '' : '<br><b>Test version:</b> the email goes only to the test address in Letter settings, marked [TEST].'}${p.configured ? '' : '<br><span class="bad-t">Email is not set up yet (SMTP app password), so it cannot be sent.</span>'}</p>
-      <label>Subject</label><input name="subject" maxlength="200" value="${esc(p.subject)}">
-      <label>Message</label><textarea name="message" rows="10">${esc(p.message)}</textarea>
-      <label>Next follow-up</label><input type="date" name="nextDate" min="${todayIso()}" value="${plus(3)}">
-      <p class="small muted">The email is logged on this buyer's follow-ups.</p>`,
-    async (x) => { const r = await api('/api/followups', { action: 'email', bookingId, ...x, replyTo: reply ? reply.id : undefined }); toast(r.test ? `Test email sent to ${r.to.join(', ')}.` : 'Email sent and logged.'); after(); });
+    const T = p.templates, first = reply ? T.find((t) => t.key === 'general') : T[0];
+    const subj0 = reply ? (/^re:/i.test(reply.subject || '') ? reply.subject : 'Re: ' + (reply.subject || first.subject)) : first.subject;
+    const dl = dialog(`<h2>Email · ${esc(unit)}</h2>
+      <p class="small muted">To: ${esc(p.to.join(', ') || 'no email on this booking')}. From the CRM mailbox; a copy is kept in this buyer's Communication record and replies come back to it.${p.live ? '' : '<br><b>Test version:</b> the email goes only to the test address in Letter settings, marked [TEST].'}${p.configured ? '' : '<br><span class="bad-t">Email is not set up yet, so it cannot be sent.</span>'}</p>
+      <label>Address the buyer${p.people.length > 1 ? 's' : ''} as</label>
+      <div class="row">${p.people.map((x) => `<div><select name="sal_${x.id}" required><option value="">Choose…</option>${p.salutations.map((v) => `<option ${x.salutation === v ? 'selected' : ''}>${v}</option>`).join('')}<option value="-" ${x.salutation === null && false ? 'selected' : ''}>(no title)</option></select> <span class="small">${esc(x.name)}</span></div>`).join('')}</div>
+      <label>Purpose</label><select name="template">${T.map((t) => `<option value="${t.key}" ${t === first ? 'selected' : ''}>${esc(t.label)}</option>`).join('')}</select>
+      <label>Subject</label><input name="subject" maxlength="200" value="${esc(subj0)}">
+      <div class="mail-prev"><div class="small" id="emGreet"></div>
+        <textarea name="body" rows="9">${esc(first.body)}</textarea>
+        <pre class="mail-sig">${esc(p.signature)}</pre></div>
+      <label>Next follow-up</label><input type="date" name="nextDate" min="${todayIso()}" value="${plus(3)}">`,
+    async (x) => {
+      const salutations = Object.fromEntries(p.people.map((y) => [y.id, x['sal_' + y.id] === '-' ? '' : x['sal_' + y.id]]));
+      const r = await api('/api/followups', { action: 'email', bookingId, template: x.template, subject: x.subject, body: x.body, nextDate: x.nextDate, salutations, replyTo: reply ? reply.id : undefined });
+      toast(r.test ? `Test email sent to ${r.to.join(', ')}.` : 'Email sent; a copy is in the buyer\'s record.'); after();
+    });
     $('[value=save]', dl).textContent = 'Send email';
+    const greet = () => { const names = p.people.map((y) => { const v = dl.querySelector(`[name=sal_${y.id}]`).value; return `${v && v !== '-' ? v + ' ' : ''}${y.name}`; });
+      $('#emGreet', dl).textContent = `Dear ${names.length > 1 ? names.slice(0, -1).join(', ') + ' and ' + names[names.length - 1] : names[0] || 'Sir / Madam'},`; };
+    dl.querySelectorAll('[name^=sal_]').forEach((x) => (x.onchange = greet)); greet();
+    dl.querySelector('[name=template]').onchange = (e) => { const t = T.find((z) => z.key === e.target.value); dl.querySelector('[name=subject]').value = reply ? subj0 : t.subject; dl.querySelector('[name=body]').value = t.body; };
   }
+
   function followupForm(bookingId, unit, d, after) {
     const plus = (n) => { const x = new Date(Date.now() + 5.5 * 3600e3); x.setUTCDate(x.getUTCDate() + n); return x.toISOString().slice(0, 10); };
     const dl = dialog(`<h2>Log a follow-up · ${esc(unit)}</h2>

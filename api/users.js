@@ -13,7 +13,7 @@ const tempPassword = () => {
 };
 
 async function list() {
-  const users = await db.q('select id, username, name, role, disabled, must_change, all_projects, phone, created_at from users order by disabled, name');
+  const users = await db.q('select id, username, name, role, disabled, must_change, all_projects, phone, designation, created_at from users order by disabled, name');
   const links = await db.q('select user_id, project_id from user_projects');
   for (const u of users) u.projects = links.filter((l) => l.user_id === u.id).map((l) => l.project_id);
   const projects = await db.q('select id, name from projects where active order by name');
@@ -41,8 +41,8 @@ module.exports = route({
       if (!ROLES[role]) throw fail(400, 'Choose a role.');
       const temp = tempPassword();
       await db.tx(async (t) => {
-        const u = await t.one('insert into users (username, name, role, password_hash, must_change, all_projects, phone, created_by) values ($1, $2, $3, $4, true, $5, $6, $7) returning id',
-          [username, name, role, auth.hashPassword(temp), !!b.allProjects, str(b.phone, 20) || null, me.id]);
+        const u = await t.one('insert into users (username, name, role, password_hash, must_change, all_projects, phone, designation, created_by) values ($1, $2, $3, $4, true, $5, $6, $7, $8) returning id',
+          [username, name, role, auth.hashPassword(temp), !!b.allProjects, str(b.phone, 20) || null, str(b.designation, 80) || null, me.id]);
         await setProjects(t, u.id, cleanIds(b.projects));
         await audit.record(t.q, { user: me, action: 'create', entity: 'user', entityId: u.id, after: { username, name, role, allProjects: !!b.allProjects, projects: cleanIds(b.projects) } });
       });
@@ -56,7 +56,7 @@ module.exports = route({
       if (!ROLES[role]) throw fail(400, 'Choose a role.');
       const name = str(b.name, 80) || before.name;
       await db.tx(async (t) => {
-        await t.q('update users set name = $2, role = $3, all_projects = $4, phone = $5, session_version = session_version + 1 where id = $1', [id, name, role, !!b.allProjects, str(b.phone, 20) || null]);
+        await t.q('update users set name = $2, role = $3, all_projects = $4, phone = $5, designation = $6, session_version = session_version + 1 where id = $1', [id, name, role, !!b.allProjects, str(b.phone, 20) || null, str(b.designation, 80) || null]);
         await setProjects(t, id, cleanIds(b.projects));
         await audit.record(t.q, { user: me, action: 'update', entity: 'user', entityId: id, before, after: { name, role, allProjects: !!b.allProjects, projects: cleanIds(b.projects) } });
       });

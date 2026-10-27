@@ -22,21 +22,27 @@ const OUTCOMES = ['Email sent', 'Promised to pay', 'Paid – proof to share', 'L
 const DATE = /^\d{4}-\d{2}-\d{2}$/;
 const mobile = (p) => { const d = String(p || '').replace(/\D/g, '').slice(-10); return /^[6-9]\d{9}$/.test(d) ? d : null; };
 
-// The email to a buyer: the dues as on today, then the CRM's own message. Logged as an Email follow-up.
-async function draft(bk) {
-  const bb = await db.one('select * from booking_balances where booking_id = $1', [bk.id]);
-  const ap = await db.q('select y.name, y.email from booking_applicants a join buyers y on y.id = a.buyer_id where a.booking_id = $1 order by a.seq', [bk.id]);
-  const name = ap.map((a) => a.name).filter(Boolean).join(' & ') || 'Customer';
-  const p = await db.one('select name from projects where id = $1', [bk.project_id]);
-  const subject = `${p ? p.name : 'Your flat'} ${bk.unit_no}: payment due`;
-  const message = `Dear ${name},\n\nAs per our records, ${inr(bb.overdue)} is overdue on your flat ${bk.unit_no}${Number(bb.gst_outstanding) > 1000 ? `, with GST of ${inr(bb.gst_outstanding)} still to be paid` : ''}. We request you to clear it at the earliest. If you have already paid, please reply with the payment details so we can update your account.\n\nFor any query, please reply to this email or call the CRM team.\n\nRegards,\nCRM Team`;
-  return { to: [...new Set(ap.flatMap((a) => emails(a.email)))], name, subject, message, overdue: Number(bb.overdue), gst: Number(bb.gst_outstanding) };
-}
+// The standard email to a buyer (lib/buyer-mail.js): greeting with each buyer's salutation, the chosen template's
+// text (editable), the sender's fixed signature. Logged in the buyer's Communication record and as an Email follow-up.
 async function sendEmail(u, b, res) {
+  const bm = require('../lib/buyer-mail');
   const bk = await bookingFor(u, intOr(b.bookingId));
-  const d = await draft(bk);
-  if (b.preview) return res.json({ ...d, to: d.to.map((e) => (has(u, 'buyer.kyc') ? e : e.replace(/^(.).*(@.*)$/, '$1•••$2'))), live: live(), configured: mailer.configured() });
-  const subject = str(b.subject, 200) || d.subject, message = str(b.message, 5000) || d.message;
+  const x = await bm.context(bk.id);
+  const sig = await bm.signature(u);
+  const toAll = [...new Set(x.people.flatMap((p) => emails(p.email)))];
+  if (b.preview) return res.json({ people: x.people.map((p) => ({ id: p.id, name: p.name, salutation: p.salutation })), salutations: bm.SALUTATIONS, templates: bm.templates(x), signature: sig,
+    to: toAll.map((e) => (has(u, 'buyer.kyc') ? e : e.replace(/^(.).*(@.*)$/, '$1•••$2'))), live: live(), configured: mailer.configured(), unit: x.unit });
+  // the salutation chosen for each buyer is kept for next time
+  const sal = b.salutations && typeof b.salutations === 'object' ? b.salutations : {};
+  for (const p of x.people) {
+    const v = bm.SALUTATIONS.includes(sal[p.id]) ? sal[p.id] : sal[p.id] === '' ? null : undefined;
+    if (v !== undefined && v !== p.salutation) { await db.q('update buyers set salutation = $2 where id = $1', [p.id, v]); p.salutation = v; }
+  }
+  const tpl = bm.templates(x).find((t) => t.key === b.template) || bm.templates(x)[0];
+  const subject = str(b.subject, 200) || tpl.subject;
+  const body = str(b.body ?? b.message, 5000) || tpl.body;
+  const message = bm.compose({ people: x.people, body, sig });
+  const d = { to: toAll };
   const nextDate = DATE.test(b.nextDate || '') ? b.nextDate : null;
   if (nextDate && nextDate < today()) throw fail(400, 'The next follow-up date cannot be in the past.');
   if (!mailer.configured()) throw fail(409, 'Email is not set up yet (SMTP app password in Vercel), so nothing was sent.');
