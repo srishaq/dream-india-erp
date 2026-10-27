@@ -47,6 +47,16 @@ module.exports = route({
       for (const i of p.issues) (kinds[i.kind] = kinds[i.kind] || []).length < 5 && kinds[i.kind].push(i);
       return res.json({ summary: p.summary, stageDates: p.stageDates, examples: kinds, sample: p.bookings.slice(0, 8).map((x) => ({ unit: x.unit_no, buyer: x.applicants[0].name, av: x.agreement_value, demanded: x.demands.map((d) => d.stage_name), receipts: x.receipts.length })) });
     }
+    // Development charges (amenity and possession) for the flats already in the ERP, from the sheet's "Development C."
+    // column. Only that one figure is written; nothing else changes.
+    if (b.action === 'dev-charges') {
+      const p = await readAndParse(projectId, b.stageDates);
+      const rows = p.bookings.filter((x) => x.dev_charges > 0).map((x) => ({ unit_no: x.unit_no, dev: x.dev_charges }));
+      const up = await db.q(`update bookings b set dev_charges = x.dev from json_to_recordset($2::json) as x(unit_no text, dev numeric), units u
+        where u.id = b.unit_id and u.project_id = $1 and u.unit_no = x.unit_no and b.status in ('active', 'pending') and b.dev_charges is distinct from x.dev returning b.id`, [projectId, JSON.stringify(rows)]);
+      await require('../lib/audit').record(db.q, { user: u, action: 'dev-charges', entity: 'bookings', after: { inSheet: rows.length, updated: up.length } });
+      return res.json({ ok: true, inSheet: rows.length, updated: up.length });
+    }
     if (b.action === 'commit') {
       const p = await readAndParse(projectId, b.stageDates);
       const days = await daysToPay(db);

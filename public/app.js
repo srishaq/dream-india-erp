@@ -288,8 +288,8 @@
   const projSub = (p) => {
     const total = (u) => Object.values(u || {}).reduce((a, b) => a + b, 0);
     const floors = Math.max(0, ...p.buildings.map((b) => +b.floors || +b.top_floor || 0));
-    const n = total(p.units), sold = (p.units.booked || 0) + (p.units.registered || 0);
-    return [p.location, p.buildings.length ? `${p.buildings.length} tower${p.buildings.length > 1 ? 's' : ''}${floors ? ' of ' + floors + ' floors' : ''}` : '', n ? `${sold} of ${n} units sold` : 'no units yet'].filter(Boolean).join(' · ');
+    const u = p.units || {}, n = total(u) - (u.refuge || 0) - (u.society || 0) - (u.rehab || 0), sold = (u.booked || 0) + (u.registered || 0);
+    return [p.location, p.buildings.length ? `${p.buildings.length} tower${p.buildings.length > 1 ? 's' : ''}${floors ? ' of ' + floors + ' floors' : ''}` : '', n ? `${sold} of ${n} saleable flats sold` : 'no units yet'].filter(Boolean).join(' · ');
   };
 
   async function home() {
@@ -517,12 +517,14 @@
     const tower = (b) => {
       const list = d.units.filter((u) => u.building_id === b.id);
       const floors = [...new Set(list.map((u) => u.floor))].sort((a, b2) => b2 - a);
-      return `<div class="panel tower">${shown.length > 1 ? `<h2>${esc(b.name)} <span class="muted small">${list.length} units</span></h2>` : ''}${legend(list)}
+      const ns = list.filter((u) => ['refuge', 'society', 'rehab'].includes(u.status)).length;
+      return `<div class="panel tower">${shown.length > 1 ? `<h2>${esc(b.name)} <span class="muted small">${list.length - ns} saleable flats${ns ? ` (+ ${ns} refuge / society, not for sale)` : ''}</span></h2>` : ''}${legend(list)}
         ${floors.length ? `<div class="floors">${floors.map((f) => `<div class="floor"><span class="fl">${f}</span>${list.filter((u) => u.floor === f).map(cell).join('')}</div>`).join('')}</div>` : '<p class="muted">No units yet in this building.' + (can('users.manage') ? ' For testing, load sample data from the Home page, or import from the CRM sheet.' : '') + '</p>'}</div>`;
     };
     $('#page').innerHTML = `<div class="page-head"><div><h1>Units & inventory</h1><p class="muted">Every unit, floor by floor. A red corner means the buyer has overdue dues.</p></div>
       ${can('inventory.edit') && bld ? '<div class="actions" style="margin:0"><button class="ghost" id="gen">Add units</button></div>' : ''}</div>
       <div class="tabs">${sideBySide.length > 1 ? `<button class="tab ${!one ? 'on' : ''}" data-b="0">All wings</button>` : ''}${blds.map((b) => `<button class="tab ${b === one || (!one && shown.length === 1 && b === shown[0]) ? 'on' : ''}" data-b="${b.id}">${esc(b.name)}</button>`).join('')}</div>
+      ${salesStrip(d.summary)}
       <div class="towers">${shown.map(tower).join('')}</div>`;
     document.querySelectorAll('.tab[data-b]').forEach((t) => (t.onclick = () => { store.set('erp_bld', t.dataset.b); units(); }));
     document.querySelectorAll('[data-u]').forEach((c) => (c.onclick = () => unitDialog(d.units.find((u) => u.id === +c.dataset.u))));
@@ -1522,6 +1524,31 @@
   }
 
   // Management dashboard: the key figures of every department on one screen (Admin and Management).
+  // Saleable flats, area sold and the average sale rate (Units & inventory, and the Management dashboard).
+  function salesStrip(S, { title = 'Sales summary', link = '' } = {}) {
+    if (!S || !S.total) return '';
+    const T = S.total, money = T.saleValue != null;
+    const sq = (v) => `${Math.round(v).toLocaleString('en-IN')} sq ft`;
+    const pct = (a, b) => (b ? Math.round((a / b) * 1000) / 10 + '%' : '—');
+    const box = (label, big, sub, cls = '') => `<div class="ss-b ${cls}"><span class="ss-l">${label}</span><b class="ss-v">${big}</b>${sub ? `<span class="ss-s">${sub}</span>` : ''}</div>`;
+    const rows = [...S.wings, { ...T, name: 'Total', code: 'T' }];
+    const miss = [T.soldNoDev ? `${T.soldNoDev} sold flat${T.soldNoDev > 1 ? 's have' : ' has'} no development charges in the ERP yet` : '', T.soldNoArea ? `${T.soldNoArea} sold flat${T.soldNoArea > 1 ? 's have' : ' has'} no carpet area` : ''].filter(Boolean);
+    return `<section class="panel ss">
+      <div class="ss-head"><h2>${esc(title)}</h2>${link ? `<a class="small" href="${esc(link)}">Units & inventory →</a>` : ''}</div>
+      <div class="ss-grid">
+        ${box('Saleable flats', T.saleable.toLocaleString('en-IN'), `${sq(T.saleableSqft)} carpet${T.notForSale ? ` · ${T.notForSale} refuge / society not counted` : ''}`)}
+        ${box('Sold', T.sold.toLocaleString('en-IN'), `${sq(T.soldSqft)} · ${pct(T.soldSqft, T.saleableSqft)} of the area`, 'good')}
+        ${box('Balance to sell', T.balance.toLocaleString('en-IN'), sq(T.balanceSqft), 'warn')}
+        ${money ? box('Sale value of flats sold', cr(T.saleValue), `Agreement value incl. parking ${cr(T.av)} + amenity & possession ${cr(T.dev)}`) : ''}
+        ${money ? box('Average sale rate', T.avgRate ? '₹' + T.avgRate.toLocaleString('en-IN') + ' / sq ft' : '—', 'Sale value ÷ carpet area sold', 'brand') : ''}
+      </div>
+      <div class="table-wrap"><table class="ss-t"><tr><th></th><th class="num">Saleable flats</th><th class="num">Saleable sq ft</th><th class="num">Sold</th><th class="num">Sold sq ft</th><th class="num">Balance</th><th class="num">Balance sq ft</th>${money ? '<th class="num">Sale value</th><th class="num">Avg ₹ / sq ft</th>' : ''}</tr>
+        ${rows.map((w) => `<tr class="${w.code === 'T' ? 'tot' : ''}"><td>${w.code === 'T' ? '<b>Total</b>' : esc(w.name)}</td><td class="num">${w.saleable}</td><td class="num">${Math.round(w.saleableSqft).toLocaleString('en-IN')}</td><td class="num">${w.sold}</td><td class="num">${Math.round(w.soldSqft).toLocaleString('en-IN')}</td>
+          <td class="num">${w.balance}</td><td class="num">${Math.round(w.balanceSqft).toLocaleString('en-IN')}</td>${money ? `<td class="num">${cr(w.saleValue)}</td><td class="num"><b>${w.avgRate ? '₹' + w.avgRate.toLocaleString('en-IN') : '—'}</b></td>` : ''}</tr>`).join('')}</table></div>
+      ${miss.length ? `<p class="small warn-t">${esc(miss.join(' · '))}.</p>` : ''}
+    </section>`;
+  }
+
   async function mgmt() {
     const pq = proj ? `?project=${proj}` : '';
     $('#page').innerHTML = heroHtml('Management', 'Management dashboard', 'Working out today’s figures…', ['#/home', 'Home']);
@@ -1538,6 +1565,7 @@
     $('#page').innerHTML = heroHtml(`${d.project ? d.project.name + ' · ' : ''}${fmtD(d.today)}`, 'Management dashboard', `Figures as of ${at} today, straight from the ERP. Tap a tile to open the page behind it.`, ['#/home', 'Home']) + `
       <div class="hm mg">
         <div class="mg-bar"><span class="muted small">Red needs action today · amber to watch · green is fine</span><button class="ghost small" id="mgRe">Refresh</button></div>
+        ${salesStrip(d.sales, { title: 'Sales: saleable flats, area sold and the average rate', link: '#/units' })}
         ${d.sections.map((s) => `<section class="mg-sec"><h2>${esc(s.title)}</h2><div class="mg-grid">${s.tiles.map(card).join('')}</div></section>`).join('')}
       </div>`;
     $('#mgRe').onclick = () => mgmt();

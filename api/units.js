@@ -26,7 +26,11 @@ module.exports = route({
   GET: async (req, res) => {
     const u = await auth.guard(req, res, 'inventory.view'); if (!u) return;
     const projectId = needProject(u, intOr(req.query.project));
-    return res.json(await inventory(projectId));
+    // Saleable flats and area sold for everyone who sees the inventory; the sale value and average rate only for
+    // those who see the ledgers.
+    const sum = await require('../lib/sales-summary').build(projectId);
+    if (!require('../lib/roles').has(u, 'ledger.view')) for (const x of [sum.total, ...sum.wings]) for (const k of ['av', 'dev', 'saleValue', 'avgRate']) delete x[k];
+    return res.json({ ...(await inventory(projectId)), summary: sum });
   },
   POST: async (req, res, b) => {
     const u = await auth.guard(req, res, 'inventory.edit'); if (!u) return;

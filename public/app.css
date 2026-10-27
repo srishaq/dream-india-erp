@@ -345,3 +345,13 @@ button.link { background: none; border: 0; padding: 0; color: var(--brand); font
 
 .chats { background: rgba(255,255,255,.14); border: 0; color: #fff; font-size: 12px; padding: 3px 8px; margin-right: 10px; border-radius: 6px; box-shadow: none; }
 .chats:hover { background: rgba(255,255,255,.25); }
+
+/* sales summary strip */
+.ss-head { display: flex; justify-content: space-between; align-items: baseline; gap: 12px; }
+.ss-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 12px; margin: 10px 0 14px; }
+.ss-b { border: 1px solid #e3e7ef; border-radius: 10px; padding: 12px 14px; display: flex; flex-direction: column; gap: 4px; background: #fbfcfe; }
+.ss-b.good { border-left: 4px solid #1e8e5a; } .ss-b.warn { border-left: 4px solid #c58b00; } .ss-b.brand { border-left: 4px solid #140C59; background: #f3f2fb; }
+.ss-l { font-size: 12px; color: #5c6478; text-transform: uppercase; letter-spacing: .03em; }
+.ss-v { font-size: 22px; } .ss-s { font-size: 12px; color: #5c6478; }
+.ss-t td, .ss-t th { white-space: nowrap; }
+.warn-t { color: #8a5a00; }
