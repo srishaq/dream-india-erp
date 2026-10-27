@@ -1,4 +1,4 @@
-// CRM ↔ Accounts messages.
+// Dream Chat (CRM ↔ Accounts messages).
 // GET  ?badge=1                      → { n, open } not read yet by this login
 // GET  [?booking=ID][&f=all|open|mine] → the conversation (newest last), and marks it read
 // POST {action:'post', to, body, bookingId?, receiptId?, needsAction?} | {action:'done', id} | {action:'reopen', id}
@@ -17,6 +17,15 @@ module.exports = route({
     if (!see(u)) throw fail(403, 'Your role does not see CRM and Accounts messages.');
     const q = req.query || {};
     if (q.badge) return res.json(await T.unread(u));
+    // The chat window: the latest messages (?recent=1), or only those after the last one it has (?after=ID). Not marked read here.
+    if (q.recent || q.after != null) {
+      const after = intOr(q.after) || 0;
+      const rows = await db.q(`select m.id, m.to_team, m.body, m.kind, m.needs_action, m.done_at, m.created_at, m.booking_id, m.from_user,
+          s.name as from_name, un.unit_no
+        from team_messages m left join users s on s.id = m.from_user left join bookings b on b.id = m.booking_id left join units un on un.id = b.unit_id
+        where (m.booking_id is null or un.project_id = any($1)) and m.id > $2 order by m.id desc limit ${q.recent ? 60 : 100}`, [u.projects, after]);
+      return res.json({ rows: rows.reverse(), unread: await T.unread(u), team: T.teamOf(u), me: u.id });
+    }
     const t = T.teamOf(u), bk = intOr(q.booking);
     const f = ['all', 'open', 'mine'].includes(q.f) ? q.f : 'all';
     const where = ['(m.booking_id is null or un.project_id = any($1))'];
@@ -38,6 +47,7 @@ module.exports = route({
   POST: async (req, res, b) => {
     const u = await auth.guard(req, res); if (!u) return;
     if (!see(u)) throw fail(403, 'Your role does not see CRM and Accounts messages.');
+    if (b.action === 'read') { await T.markRead(u); return res.json({ ok: true }); }
     if (b.action === 'post') {
       const body = str(b.body, 4000); if (!body) throw fail(400, 'Write the message.');
       const t = T.teamOf(u);

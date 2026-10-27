@@ -100,7 +100,7 @@
     if ($('#out')) $('#out').onclick = signOut;
     if ($('#cancel')) $('#cancel').onclick = () => start();
   }
-  async function signOut() { await api('/api/session', { action: 'logout' }).catch(() => {}); me = null; location.hash = ''; start(); }
+  async function signOut() { await api('/api/session', { action: 'logout' }).catch(() => {}); chat.unmount(); me = null; location.hash = ''; start(); }
 
   // ---------- shell ----------
   const anyOf = (...ps) => ps.some(can);
@@ -120,14 +120,14 @@
     { key: 'letters', label: 'Demand letters', show: () => anyOf('demand.raise', 'ledger.view') },
     { key: 'followups', label: 'Follow-ups', show: () => can('ledger.view') },
     { key: 'comms', label: 'Communication inbox', show: () => can('ledger.view') },
-    { key: 'team', label: 'CRM ↔ Accounts messages', show: () => anyOf('ledger.view', 'receipt.enter') && !(can('accounts.enter') && !can('demand.raise') && !can('booking.create')) },
+    { key: 'team', label: 'Dream Chat', show: () => anyOf('ledger.view', 'receipt.enter') && !(can('accounts.enter') && !can('demand.raise') && !can('booking.create')) },
     { key: 'custdocs', label: 'Customer documents', show: () => anyOf('buyer.kyc', 'accounts.view') },
     { key: 'verify', label: 'Data to verify', show: () => anyOf('inventory.view', 'ledger.view') },
     { key: 'prices', label: 'Price list & cost sheet', show: () => can('inventory.view') },
     { key: 'partners', label: 'Channel partners', show: () => can('ledger.view') },
     { group: 'Accounts' },
     { key: 'acctodo', label: 'Daily To-Do', show: () => can('accounts.view') },
-    { key: 'accteam', label: 'CRM ↔ Accounts messages', show: () => can('accounts.view') },
+    { key: 'accteam', label: 'Dream Chat', show: () => can('accounts.view') },
     { key: 'accdash', label: 'Accounts dashboard', show: () => can('accounts.view'), href: () => '/accounts' },
     { key: 'balances', label: 'Daily Bank Balance', show: () => can('accounts.view') },
     { key: 'bankauto', label: 'Bank Auto Check', show: () => can('accounts.view') },
@@ -211,7 +211,7 @@
         <div class="page" id="page"><p class="muted">Loading…</p></div>
       </div></div>`;
     wireNav();
-    if (anyOf('ledger.view', 'accounts.view', 'receipt.enter')) api('/api/team?badge=1').then((r) => { if (r.n && $('.top .who:last-child')) $('.top .who:last-child').insertAdjacentHTML('beforeend', `<a class="mbadge team" href="#/${can('accounts.view') && !can('demand.raise') ? 'accteam' : 'team'}" title="Messages between CRM and Accounts not read yet">💬 ${r.n} new</a>`); }).catch(() => {});
+    chat.mount();
     if (can('ledger.view')) api('/api/comms?badge=1').then((r) => { if (r.mine && $('.top .who')) $('.top .who').insertAdjacentHTML('beforeend', `<a class="mbadge" href="#/comms" title="Buyers' replies on your flats, not read yet">✉ ${r.mine} new</a>`); }).catch(() => {});
     $('#out').onclick = signOut;
     $('#cpw').onclick = () => changePassword(false);
@@ -253,7 +253,7 @@
     bookings: 'Bookings, applicants, cancellations and transfers', demands: 'Construction stages and the demands raised on them',
     receipts: 'Enter receipts; Head Accounts approves them', ledgers: 'Each buyer’s statement of demands and payments',
     letters: 'Stage demands and reminders, by email or courier', followups: 'Calls, WhatsApps and promises to pay',
-    comms: 'Buyers\' email replies and WhatsApps, and messages to link to a flat', team: 'Ask Accounts, answer CRM: messages about a flat or a cheque', accteam: 'Ask CRM, answer Accounts: messages about a flat or a cheque', custdocs: 'Signed and scanned papers for every flat and SRA tenant, kept in Google Drive', verify: 'Items from the import still to check and close', prices: 'Rates, floor rise and the cost sheet', partners: 'Channel partners and brokerage',
+    comms: 'Buyers\' email replies and WhatsApps, and messages to link to a flat', team: 'Dream Chat: CRM and Accounts, about a flat or a cheque', accteam: 'Dream Chat: CRM and Accounts, about a flat or a cheque', custdocs: 'Signed and scanned papers for every flat and SRA tenant, kept in Google Drive', verify: 'Items from the import still to check and close', prices: 'Rates, floor rise and the cost sheet', partners: 'Channel partners and brokerage',
     site: 'Slab cycle, daily progress reports, hindrances, materials and floor-wise works', purchase: 'Purchase requests from request to payment', drawings: 'The drawing register from Google Drive', hr: 'Staff records, leave, letters and HR policies',
     crmtodo: 'Today’s calls, approvals, letters and what the 9 am check found', acctodo: 'What the 9 am Accounts audit found, plus your own tasks',
     training: 'Short videos on how to use each part of the ERP',
@@ -758,7 +758,7 @@
         <td class="num" style="white-space:nowrap">${r.status === 'pending' && can('receipt.approve') ? `<button class="small" data-ok="${r.id}">Approve</button> <button class="ghost small" data-no="${r.id}">Reject</button>` : ''}
           ${r.status === 'approved' && can('receipt.approve') ? `<button class="danger small" data-bounce="${r.id}">Bounced</button>` : ''}
           ${r.mode === 'cheque' && !r.bank_status && ['pending', 'approved'].includes(r.status) ? `${!r.handed_on && !r.deposited_on && can('receipt.enter') ? `<button class="ghost small" data-hand="${r.id}">Given to Accounts</button>` : ''}${!r.deposited_on && canDep ? ` <button class="ghost small" data-dep="${r.id}">Deposited</button>` : ''}` : ''}
-          <a class="btn link small" href="#/${can('accounts.view') && !can('demand.raise') ? 'accteam' : 'team'}/${r.booking_id}" title="Message the other team about this flat">Message</a></td></tr>`).join('') || '<tr><td colspan="10" class="muted">Nothing here.</td></tr>'}</table></div>`;
+          <a class="btn link small" href="#/${can('accounts.view') && !can('demand.raise') ? 'accteam' : 'team'}/${r.booking_id}" title="Dream Chat with the other team about this flat">Chat</a></td></tr>`).join('') || '<tr><td colspan="10" class="muted">Nothing here.</td></tr>'}</table></div>`;
     document.querySelectorAll('.tab[data-t]').forEach((t) => (t.onclick = () => { store.set('erp_rtab', t.dataset.t); receipts(); }));
     $('#q').oninput = (e) => { const q = e.target.value.toLowerCase(); document.querySelectorAll('tr[data-s]').forEach((tr) => (tr.style.display = tr.dataset.s.includes(q) ? '' : 'none')); };
     const act = async (body, msg) => { try { await api('/api/receipts', body); toast(msg); receipts(); } catch (e) { alert(e.message); } };
@@ -1218,7 +1218,100 @@
     };
     if (unread.length && d.canAct) api('/api/comms', { action: 'read', ids: unread }).catch(() => {});
   }
-  // ---------- CRM ↔ Accounts messages ----------
+  // ---------- Dream Chat: the chat window (CRM ↔ Accounts), on every page ----------
+  // A button in the bottom corner; the window opens over the page in use. New messages come in every few seconds
+  // (every 30 s while the tab is in the background), with a sound and a pop-up, and a desktop notification when allowed.
+  const chat = (() => {
+    let el = null, last = 0, open = false, timer = null, rows = [], team = null, myId = null, unread = 0, busy = false;
+    const allowed = () => !!me && anyOf('ledger.view', 'accounts.view', 'receipt.enter');
+    const full = () => `#/${can('accounts.view') && !can('demand.raise') ? 'accteam' : 'team'}`;
+    const tName = (t) => (t === 'crm' ? 'CRM' : 'Accounts');
+    const time = (x) => { const d = new Date(x), today = new Date().toDateString() === d.toDateString(); return d.toLocaleString('en-IN', today ? { hour: '2-digit', minute: '2-digit', timeZone: 'Asia/Kolkata' } : { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit', timeZone: 'Asia/Kolkata' }); };
+    function mount() {
+      if (!allowed()) return unmount();
+      if (el) return;
+      el = document.createElement('div'); el.className = 'chatw no-print';
+      el.innerHTML = `<div class="chatpop" hidden></div>
+        <div class="chatp" hidden role="dialog" aria-label="Dream Chat">
+          <div class="chath"><b>Dream Chat</b> <span class="small" style="opacity:.75">CRM ↔ Accounts</span><span><a href="${full()}" class="small" id="chFull">Full page</a><button type="button" class="chatx" aria-label="Close">×</button></span></div>
+          <div class="chatl" id="chL"><p class="muted small">Loading…</p></div>
+          <form class="chatf" id="chF">
+            <div class="chatr"><span id="chTo"></span><input name="unit" placeholder="Flat (optional)" maxlength="12"><label class="check small"><input type="checkbox" name="needsAction" value="1"> Needs an answer</label></div>
+            <div class="chatr"><textarea name="body" rows="2" placeholder="Type a message. Enter sends, Shift+Enter for a new line" required></textarea><button>Send</button></div>
+          </form>
+        </div>
+        <button type="button" class="chatb" aria-label="Dream Chat">💬<span class="chatn" hidden></span></button>`;
+      document.body.appendChild(el);
+      el.querySelector('.chatb').onclick = () => (open ? close() : show());
+      el.querySelector('.chatx').onclick = close;
+      el.querySelector('#chFull').onclick = close;
+      el.querySelector('.chatpop').onclick = () => { el.querySelector('.chatpop').hidden = true; show(); };
+      const f = el.querySelector('#chF');
+      f.body.onkeydown = (e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); f.requestSubmit(); } };
+      f.onsubmit = async (e) => {
+        e.preventDefault(); if (busy) return;
+        const x = Object.fromEntries(new FormData(f)); if (!String(x.body || '').trim()) return;
+        busy = true;
+        try { await api('/api/team', { action: 'post', to: x.to || (team === 'crm' ? 'accounts' : 'crm'), body: x.body, unit: (x.unit || '').trim() || null, needsAction: !!x.needsAction }); f.body.value = ''; f.needsAction.checked = false; await load(); }
+        catch (err) { alert(err.message); } finally { busy = false; }
+      };
+      load(true); schedule();
+    }
+    function unmount() { clearTimeout(timer); if (el) el.remove(); el = null; last = 0; rows = []; open = false; }
+    function schedule() { clearTimeout(timer); timer = setTimeout(async () => { await load(); if (el) schedule(); }, document.hidden ? 30000 : 8000); }
+    async function load(initial) {
+      if (!el) return;
+      try {
+        const d = await api(initial ? '/api/team?recent=1' : `/api/team?after=${last}`);
+        team = d.team; myId = d.me;
+        const fresh = d.rows.filter((m) => m.id > last);
+        if (initial) rows = [];
+        if (fresh.length) {
+          rows = rows.concat(fresh).slice(-200); last = fresh[fresh.length - 1].id;
+          const others = fresh.filter((m) => m.from_user !== myId);
+          if (!initial && others.length && (!open || document.hidden)) ring(others[others.length - 1], others.length);
+        }
+        unread = d.unread.n;
+        if (open && unread && !document.hidden) seen();
+        badge(); if (open) render(initial || fresh.length);
+      } catch { /* offline for a moment: try again next time */ }
+    }
+    function badge() { if (!el) return; const b = el.querySelector('.chatn'); b.hidden = !unread; b.textContent = unread > 99 ? '99+' : unread; }
+    function seen() { unread = 0; badge(); api('/api/team', { action: 'read' }).catch(() => {}); }
+    function render(scroll) {
+      const L = el.querySelector('#chL'), atEnd = L.scrollHeight - L.scrollTop - L.clientHeight < 40;
+      L.innerHTML = rows.map((m) => `<div class="cmsg ${m.kind === 'system' ? 'sys' : m.from_user === myId ? 'me' : ''} ${m.needs_action && !m.done_at ? 'open' : ''}">
+          <div class="cmeta"><b>${m.kind === 'system' ? 'ERP' : esc(m.from_name || '')}</b> → ${tName(m.to_team)}${m.unit_no ? ` · <a href="#/booking/${m.booking_id}">${esc(m.unit_no)}</a>` : ''} · <span class="muted">${time(m.created_at)}</span></div>
+          <div class="cbody">${esc(m.body).replace(/\n/g, '<br>')}</div>
+          ${m.needs_action ? `<div class="cact">${m.done_at ? '<span class="pill good">done</span>' : `<span class="pill warn">needs an answer</span> <button type="button" class="small ghost" data-cd="${m.id}">Mark done</button>`}</div>` : ''}</div>`).join('') || '<p class="muted small">No messages yet. Write to the other team below.</p>';
+      L.querySelectorAll('[data-cd]').forEach((b) => (b.onclick = async () => { try { await api('/api/team', { action: 'done', id: +b.dataset.cd }); const m = rows.find((r) => r.id === +b.dataset.cd); if (m) m.done_at = new Date().toISOString(); render(); } catch (e) { alert(e.message); } }));
+      if (scroll || atEnd) L.scrollTop = L.scrollHeight;
+      el.querySelector('#chTo').innerHTML = team === 'both' ? '<select name="to"><option value="accounts">To Accounts</option><option value="crm">To CRM</option></select>' : `<span class="small muted">To ${tName(team === 'crm' ? 'accounts' : 'crm')}</span>`;
+    }
+    async function show() {
+      open = true; el.querySelector('.chatp').hidden = false; el.querySelector('.chatpop').hidden = true;
+      el.classList.add('on');
+      try { if ('Notification' in window && Notification.permission === 'default') Notification.requestPermission(); } catch {}
+      await load(true); seen(); el.querySelector('#chF').body.focus();
+    }
+    function close() { open = false; if (el) { el.querySelector('.chatp').hidden = true; el.classList.remove('on'); } }
+    function ring(m, k) {
+      const who = m.kind === 'system' ? 'ERP' : m.from_name || 'New message';
+      const text = `${m.unit_no ? m.unit_no + ': ' : ''}${m.body}`.slice(0, 140);
+      const pop = el.querySelector('.chatpop');
+      pop.innerHTML = `<b>${esc(who)}</b>${k > 1 ? ` <span class="muted small">+${k - 1} more</span>` : ''}<br>${esc(text)}`;
+      pop.hidden = false; clearTimeout(pop._t); pop._t = setTimeout(() => (pop.hidden = true), 9000);
+      try {
+        const A = window.AudioContext || window.webkitAudioContext; const a = ring.ctx || (ring.ctx = new A());
+        [[880, 0], [1320, 0.13]].forEach(([f, t]) => { const o = a.createOscillator(), g = a.createGain(); o.frequency.value = f; g.gain.setValueAtTime(0.0001, a.currentTime + t); g.gain.exponentialRampToValueAtTime(0.18, a.currentTime + t + 0.02); g.gain.exponentialRampToValueAtTime(0.0001, a.currentTime + t + 0.22); o.connect(g).connect(a.destination); o.start(a.currentTime + t); o.stop(a.currentTime + t + 0.25); });
+      } catch {}
+      try { if (document.hidden && 'Notification' in window && Notification.permission === 'granted') { const nn = new Notification(`${who} · Dream Chat`, { body: text, tag: 'erp-chat' }); nn.onclick = () => { window.focus(); show(); nn.close(); }; } } catch {}
+    }
+    document.addEventListener('visibilitychange', () => { if (el && !document.hidden) { load(); schedule(); } });
+    return { mount, unmount, seen };
+  })();
+
+  // ---------- Dream Chat, full page ----------
   async function teamPage(bookingId) {
     const base = location.hash.split('/')[1] === 'accteam' ? 'accteam' : 'team';
     const f = store.get('erp_tmf') || 'all';
@@ -1228,7 +1321,7 @@
     const teamName = (t) => (t === 'crm' ? 'CRM' : 'Accounts');
     const time = (x) => new Date(x).toLocaleString('en-IN', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit', timeZone: 'Asia/Kolkata' });
     const mine = (m) => m.from_name && m.kind !== 'system' && d.team !== 'both' && ((d.team === 'crm' && m.to_team === 'accounts') || (d.team === 'accounts' && m.to_team === 'crm'));
-    $('#page').innerHTML = `<div class="page-head"><div><h1>CRM ↔ Accounts messages${d.flat ? ' · ' + esc(d.flat.unit_no) : ''}</h1><p class="muted">One conversation between the CRM team and Accounts. Tag a flat so the message is kept with it. Tick "needs an answer" when you are asking for something: it stays open until the other team marks it done. The ERP also posts here: cheques found in the bank, and cheques returned.</p></div>
+    $('#page').innerHTML = `<div class="page-head"><div><h1>Dream Chat${d.flat ? ' · ' + esc(d.flat.unit_no) : ''}</h1><p class="muted">Dream Chat: one conversation between the CRM team and Accounts. The 💬 button at the bottom of every page opens it too. Tag a flat so the message is kept with it. Tick "needs an answer" when you are asking for something: it stays open until the other team marks it done. The ERP also posts here: cheques found in the bank, and cheques returned.</p></div>
       ${d.flat ? `<div class="actions" style="margin:0"><a class="btn ghost" href="#/${base}">All messages</a><a class="btn ghost" href="#/booking/${d.flat.id}">Open the booking</a></div>` : ''}</div>
       <div class="panel"><div class="kpis">${kpi(d.open.accounts, 'open for Accounts', d.open.accounts ? 'bad' : '')}${kpi(d.open.crm, 'open for CRM', d.open.crm ? 'bad' : '')}</div></div>
       <div class="tabs">${[['all', 'All'], ['open', 'Needs an answer'], ['mine', 'For my team']].map(([k, l]) => `<button class="tab ${k === f ? 'on' : ''}" data-t="${k}">${l}</button>`).join('')}</div>
@@ -1252,7 +1345,7 @@
       ev.preventDefault(); const x = Object.fromEntries(new FormData(ev.target));
       try { await api('/api/team', { action: 'post', to: x.to || toDefault, body: x.body, needsAction: !!x.needsAction, bookingId: d.flat ? d.flat.id : null, unit: d.flat ? null : (x.unit || '').trim() || null }); teamPage(bookingId); } catch (e) { alert(e.message); }
     };
-    document.querySelectorAll('.mbadge.team').forEach((b) => b.remove());
+    chat.seen();
   }
 
   async function comms() {
