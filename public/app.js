@@ -255,7 +255,6 @@
     { key: 'ca', title: 'CA / Tax', sub: 'GST, TDS payable, RERA quarterly, cash flow and compliance', icon: 'chart', tone: '#7A5C99', direct: 'ca' },
     { key: 'purchase', title: 'Purchase', sub: 'Indents, purchase orders and site stock', icon: 'cart', tone: '#117A65', soon: true },
     { key: 'drawings', title: 'Drawings', sub: 'Approved plans, working drawings and revisions', icon: 'grid', tone: '#2B5C8A', soon: true },
-    { key: 'hr', title: 'HR & Admin', sub: 'Staff records, leave, letters and HR policies', icon: 'users', tone: '#7A5C99', soon: true },
     { key: 'training', title: 'Training videos', sub: 'Short videos on how to use each part of the ERP', icon: 'book', tone: '#B7791F', direct: 'training' },
   ];
   const pagesOf = (d) => {
