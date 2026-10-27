@@ -94,7 +94,7 @@
     },
     {
       "source": "/(crm|finance|audit|construction|training|home|management)",
-      "destination": "/index.html"
+      "destination": "/"
     }
   ]
 }
