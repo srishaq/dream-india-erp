@@ -355,3 +355,5 @@ button.link { background: none; border: 0; padding: 0; color: var(--brand); font
 .ss-v { font-size: 22px; } .ss-s { font-size: 12px; color: #5c6478; }
 .ss-t td, .ss-t th { white-space: nowrap; }
 .warn-t { color: #8a5a00; }
+.ss { min-width: 0; max-width: 100%; }
+.ss .table-wrap { overflow-x: auto; }
