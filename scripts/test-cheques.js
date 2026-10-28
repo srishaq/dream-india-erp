@@ -67,7 +67,7 @@ let n = 0; const step = async (name, fn) => { await fn(); n++; console.log('  âœ
     await db.q("update acc_receipts set cheque_status = 'Bounced' where id = $1", [line1]);
     const o = await admin('/api/receipts', { action: 'bankcheck' });
     assert.equal(o.bounced, 1);
-    assert.equal((await db.one("select count(*)::int as n from team_messages where to_team = 'accounts' and kind = 'system'")).n, 1, 'the waiting notice is posted once');
+    assert.equal((await db.one("select count(*)::int as n from team_messages where to_team = 'accounts' and kind = 'system' and body like 'In the bank%'")).n, 1, 'the waiting notice is posted once');
     const row = (await admin(`/api/receipts?project=${sig.id}`)).rows.find((x) => x.id === r1);
     assert.equal(row.status, 'bounced'); assert.equal(row.bank_status, 'returned'); assert.match(row.reverse_reason, /returned/);
     const m = await db.one("select * from team_messages where to_team = 'crm' and kind = 'system' and receipt_id = $1 and body like 'Cheque returned%'", [r1]);
