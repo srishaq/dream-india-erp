@@ -115,6 +115,9 @@
     { key: 'flats', label: 'Flats & buyers', show: () => anyOf('inventory.view', 'ledger.view') },
     { key: 'units', label: 'Book a flat (inventory)', show: () => can('inventory.view') },
     { key: 'receipts', label: 'Receipts', show: () => anyOf('receipt.enter', 'receipt.approve', 'ledger.view') },
+    { key: 'sc-calls', label: 'Follow-up calls', show: () => can('ledger.view'), href: () => '#/flats?f=call' },
+    { key: 'sc-dues', label: 'Customer ledgers & dues', show: () => can('ledger.view'), href: () => '#/flats?f=overdue' },
+    { key: 'sc-appr', label: 'Bookings & approvals', show: () => anyOf('inventory.view', 'ledger.view'), href: () => '#/flats?f=approval' },
     { key: 'comms', label: 'Inbox', show: () => can('ledger.view') },
     { key: 'team', label: 'Dream Chat', show: () => anyOf('ledger.view', 'receipt.enter') && !(can('accounts.enter') && !can('demand.raise') && !can('booking.create')) },
     { group: 'CRM tools' },
@@ -124,6 +127,7 @@
     { key: 'prices', label: 'Price list & cost sheet', show: () => can('inventory.view') },
     { key: 'partners', label: 'Channel partner ledger', show: () => can('ledger.view') },
     { key: 'verify', label: 'Data to verify', show: () => anyOf('inventory.view', 'ledger.view') },
+    { key: 'custdocs', label: 'Customer documents', show: () => anyOf('buyer.kyc', 'accounts.view') || can('users.manage') },
     // the old lists, now all in Flats & buyers and the flat file; still open from old links
     { key: 'bookings', label: 'Bookings', show: () => false },
     { key: 'ledgers', label: 'Customer ledgers', show: () => false },
@@ -139,7 +143,6 @@
     { key: 'reg-pdc', label: 'PDC', show: () => can('accounts.view') },
     { key: 'reg-tds', label: 'TDS Tracker', show: () => can('accounts.view') },
     { key: 'sdr', label: 'SDR challans', show: () => can('accounts.view') },
-    { key: 'custdocs', label: 'Documents (flats & SRA tenants)', show: () => can('accounts.view') || can('users.manage') },
     { key: 'reg-recon', label: 'Reconciling Items', show: () => can('accounts.view') },
     { key: 'reg-compliance', label: 'Compliance Calendar', show: () => can('accounts.view') },
     { key: 'reg-tenants', label: 'SRA Tenants', show: () => can('accounts.view') },
@@ -263,7 +266,9 @@
     letters: 'Stage demands and reminders, by email or courier', followups: 'Calls, WhatsApps and promises to pay',
     comms: 'Buyers\' email replies and WhatsApps, and messages to link to a flat', team: 'Dream Chat: CRM and Accounts, about a flat or a cheque', accteam: 'Dream Chat: CRM and Accounts, about a flat or a cheque', custdocs: 'Signed and scanned papers for every flat and SRA tenant, kept in Google Drive', verify: 'Items from the import still to check and close', prices: 'Rates, floor rise and the cost sheet', partners: 'Each partner firm: brokerage, bills, pass back, payments and balance',
     site: 'Slab cycle, daily progress reports, hindrances, materials and floor-wise works', purchase: 'Purchase requests from request to payment', drawings: 'The drawing register from Google Drive', hr: 'Staff records, leave, letters and HR policies',
-    crmtodo: 'Today’s calls, approvals, letters and what the 9 am check found', flats: 'Every flat and buyer. Open one to see payments, calls, messages and documents in one place', acctodo: 'What the 9 am Accounts audit found, plus your own tasks',
+    crmtodo: 'Today’s calls, approvals, letters and what the 9 am check found', flats: 'Every flat and buyer. Open one to see payments, calls, messages and documents in one place',
+    'sc-calls': 'Who to call today, broken promises to pay, and buyers never called', 'sc-dues': 'Every buyer with an overdue amount; open one for the full ledger and statement',
+    'sc-appr': 'New bookings, cancellations and transfers waiting for approval', acctodo: 'What the 9 am Accounts audit found, plus your own tasks',
     training: 'Short videos on how to use each part of the ERP',
     accdash: 'Bank balances, collections, refunds, TDS, PDC, SRA tenants and reconciliation',
     balances: 'Closing balance of every bank account, day by day', bankauto: 'The 3:10 pm check of bank statements against the books',
@@ -273,10 +278,12 @@
     accreports: 'Reports and the Tally import', checks: 'Daily checks on the registers', bookscrm: 'Tally receipts flat by flat against the CRM',
     ca: 'GST, TDS payable, RERA quarterly and cash flow, for the CA', accsetup: 'Bank accounts, heads, statement folders and imports', audit: 'Who changed what, and when',
   };
-  const PICON = { flats: 'users', comms: 'mail', team: 'users', accteam: 'users', sdr: 'rupee', custdocs: 'book', site: 'tower', crmtodo: 'check', acctodo: 'check', training: 'book', dashboard: 'chart', units: 'grid', bookings: 'book', demands: 'tower', receipts: 'rupee', ledgers: 'book', letters: 'mail', followups: 'phone', verify: 'check', prices: 'rupee', partners: 'users',
+  const PICON = { flats: 'users', 'sc-calls': 'phone', 'sc-dues': 'book', 'sc-appr': 'check', comms: 'mail', team: 'users', accteam: 'users', sdr: 'rupee', custdocs: 'book', site: 'tower', crmtodo: 'check', acctodo: 'check', training: 'book', dashboard: 'chart', units: 'grid', bookings: 'book', demands: 'tower', receipts: 'rupee', ledgers: 'book', letters: 'mail', followups: 'phone', verify: 'check', prices: 'rupee', partners: 'users',
     accdash: 'chart', balances: 'rupee', bankauto: 'check', 'reg-cancellations': 'users', bookscrm: 'check', checks: 'check', audit: 'book', ca: 'chart', accsetup: 'grid' };
   const DEPTS = [
-    { key: 'crm', title: 'Sales & CRM', sub: 'Today’s work, every flat and buyer in one place, receipts and the inbox', icon: 'chart', tone: '#2B5C8A', group: 'CRM', more: 'CRM tools' },
+    { key: 'crm', title: 'Sales & CRM', sub: 'Today’s work, every flat and buyer in one place, receipts, collections and the inbox', icon: 'chart', tone: '#2B5C8A', group: 'CRM', more: 'CRM tools',
+      sections: [['Every day', ['crmtodo', 'flats', 'receipts', 'comms', 'team']], ['Sales', ['units', 'sc-appr', 'prices', 'partners']],
+        ['Collections', ['dashboard', 'sc-calls', 'sc-dues', 'demands', 'letters']], ['Records and checks', ['custdocs', 'verify']]] },
     { key: 'construction', title: 'Construction', sub: 'Site Office: slab cycle, daily progress reports, hindrances, materials and stages', icon: 'hammer', tone: '#B7791F', pages: ['site', 'demands'], later: ['Contractor billing'] },
     { key: 'accounts', title: 'Accounts', sub: 'Bank, receipts, payments, PDC, TDS, SRA rent, GST, SDR and Tally', icon: 'book', tone: '#117A65', group: 'Accounts', skip: ['ca', 'bookscrm', 'checks'] },
     { key: 'audit', title: 'CRM/Accounts Audit', sub: 'Tally against the CRM, checks, reconciling items and cancelled flats', icon: 'check', tone: '#0E8C9B', pages: ['bookscrm', 'checks', 'reg-recon', 'reg-cancellations', 'verify', 'audit'] },
@@ -340,6 +347,12 @@
     if (dept && !dept.soon && !dept.direct) {
       const tiles = pagesOf(dept).map((pg) => ({ title: pg.label, sub: SUB[pg.key] || '', icon: PICON[pg.key] || dept.icon, tone: dept.tone, href: hrefOf(pg) }))
         .concat((dept.later || []).map((t) => ({ title: t, sub: '', icon: dept.icon, tone: dept.tone, soon: true })));
+      if (dept.sections) {
+        const pg = (k) => PAGES.find((x) => x.key === k && !x.group && x.show());
+        const secs = dept.sections.map(([h, keys]) => [h, keys.map(pg).filter(Boolean).map((x) => ({ title: x.label, sub: SUB[x.key] || '', icon: PICON[x.key] || dept.icon, tone: dept.tone, href: hrefOf(x) }))]).filter(([, t]) => t.length);
+        $('#page').innerHTML = heroHtml(p.name, dept.title, dept.sub, [`#/project/${p.id}`, p.name]) + `<div class="hm">${secs.map(([h, t]) => `<section class="hgroup"><h2>${esc(h)}</h2><div class="tiles">${t.map(tile).join('')}</div></section>`).join('') || '<p class="muted">Your login has no pages in this section.</p>'}</div>`;
+        return;
+      }
       const extra = dept.more ? pagesOf({ group: dept.more }).map((pg) => ({ title: pg.label, sub: SUB[pg.key] || '', icon: PICON[pg.key] || dept.icon, tone: '#6B7280', href: hrefOf(pg) })) : [];
       $('#page').innerHTML = heroHtml(p.name, dept.title, dept.sub, [`#/project/${p.id}`, p.name]) + `<div class="hm"><section class="hgroup"><h2>${dept.more ? 'Daily work' : 'Pages'}</h2><div class="tiles">${tiles.map(tile).join('') || '<p class="muted">Your login has no pages in this section.</p>'}</div></section>
         ${extra.length ? `<section class="hgroup more"><h2>${esc(dept.more)} <span class="muted small" style="font-weight:400">· set-up and work on many flats at once</span></h2><div class="tiles small">${extra.map(tile).join('')}</div></section>` : ''}</div>`;
