@@ -49,7 +49,11 @@ async function detail(u, id) {
   const transfer = b.transfer_to_unit_id || b.transferred_to || b.transferred_from ? await db.one(`select (select unit_no from units where id = $1) as to_unit,
       (select u2.unit_no from bookings b2 join units u2 on u2.id = b2.unit_id where b2.id = $2) as to_booking_unit, (select u3.unit_no from bookings b3 join units u3 on u3.id = b3.unit_id where b3.id = $3) as from_unit,
       (select name from users where id = $4) as requested_by`, [b.transfer_to_unit_id, b.transferred_to, b.transferred_from, b.transfer_requested_by]) : null;
-  return { booking: b, unit, applicants, demands, receipts, balance, plan, cancellation, earlier, current, transfer };
+  // what happened on this flat, newest first: the booking and its receipts and demands (for the flat file's History tab)
+  const history = await db.q(`select a.at, a.action, a.entity, a.note, a.after, x.name as user_name from audit_log a left join users x on x.id = a.user_id
+     where (a.entity = 'booking' and a.entity_id = $1::text) or (a.entity = 'receipt' and a.entity_id = any($2::text[])) or (a.entity = 'demand' and a.entity_id = any($3::text[]))
+     order by a.at desc, a.id desc limit 150`, [String(b.id), receipts.map((r) => String(r.id)), demands.map((d) => String(d.id))]).catch(() => []);
+  return { booking: b, unit, applicants, demands, receipts, balance, plan, cancellation, earlier, current, transfer, history };
 }
 
 function cleanApplicants(list) {

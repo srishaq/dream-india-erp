@@ -111,21 +111,23 @@
     { key: 'mgmt', label: 'Management dashboard', show: () => can('mgmt.view') },
     { key: 'training', label: 'Training videos', show: () => true },
     { group: 'CRM' },
-    { key: 'crmtodo', label: 'Daily To-Do', show: () => anyOf('demand.raise', 'booking.create', 'booking.approve', 'ledger.view') },
-    { key: 'dashboard', label: 'Collections dashboard', show: () => can('ledger.view'), href: () => `/dashboard${proj ? '?project=' + proj : ''}` },
-    { key: 'units', label: 'Units & inventory', show: () => can('inventory.view') },
-    { key: 'bookings', label: 'Bookings', show: () => anyOf('inventory.view', 'ledger.view') },
-    { key: 'demands', label: 'Stages & demands', show: () => anyOf('demand.raise', 'demand.approve', 'stage.record', 'ledger.view') },
+    { key: 'crmtodo', label: 'Today', show: () => anyOf('demand.raise', 'booking.create', 'booking.approve', 'ledger.view') },
+    { key: 'flats', label: 'Flats & buyers', show: () => anyOf('inventory.view', 'ledger.view') },
+    { key: 'units', label: 'Book a flat (inventory)', show: () => can('inventory.view') },
     { key: 'receipts', label: 'Receipts', show: () => anyOf('receipt.enter', 'receipt.approve', 'ledger.view') },
-    { key: 'ledgers', label: 'Customer ledgers', show: () => can('ledger.view') },
-    { key: 'letters', label: 'Demand letters', show: () => anyOf('demand.raise', 'ledger.view') },
-    { key: 'followups', label: 'Follow-ups', show: () => can('ledger.view') },
-    { key: 'comms', label: 'Communication inbox', show: () => can('ledger.view') },
+    { key: 'comms', label: 'Inbox', show: () => can('ledger.view') },
     { key: 'team', label: 'Dream Chat', show: () => anyOf('ledger.view', 'receipt.enter') && !(can('accounts.enter') && !can('demand.raise') && !can('booking.create')) },
-    { key: 'custdocs', label: 'Customer documents', show: () => anyOf('buyer.kyc', 'accounts.view') },
-    { key: 'verify', label: 'Data to verify', show: () => anyOf('inventory.view', 'ledger.view') },
+    { group: 'CRM tools' },
+    { key: 'dashboard', label: 'Collections dashboard', show: () => can('ledger.view'), href: () => `/dashboard${proj ? '?project=' + proj : ''}` },
+    { key: 'demands', label: 'Stages & demands', show: () => anyOf('demand.raise', 'demand.approve', 'stage.record', 'ledger.view') },
+    { key: 'letters', label: 'Demand letters (many flats)', show: () => anyOf('demand.raise', 'ledger.view') },
     { key: 'prices', label: 'Price list & cost sheet', show: () => can('inventory.view') },
     { key: 'partners', label: 'Channel partner ledger', show: () => can('ledger.view') },
+    { key: 'verify', label: 'Data to verify', show: () => anyOf('inventory.view', 'ledger.view') },
+    // the old lists, now all in Flats & buyers and the flat file; still open from old links
+    { key: 'bookings', label: 'Bookings', show: () => false },
+    { key: 'ledgers', label: 'Customer ledgers', show: () => false },
+    { key: 'followups', label: 'Follow-ups', show: () => false },
     { group: 'Accounts' },
     { key: 'acctodo', label: 'Daily To-Do', show: () => can('accounts.view') },
     { key: 'accteam', label: 'Dream Chat', show: () => can('accounts.view') },
@@ -137,6 +139,7 @@
     { key: 'reg-pdc', label: 'PDC', show: () => can('accounts.view') },
     { key: 'reg-tds', label: 'TDS Tracker', show: () => can('accounts.view') },
     { key: 'sdr', label: 'SDR challans', show: () => can('accounts.view') },
+    { key: 'custdocs', label: 'Documents (flats & SRA tenants)', show: () => can('accounts.view') || can('users.manage') },
     { key: 'reg-recon', label: 'Reconciling Items', show: () => can('accounts.view') },
     { key: 'reg-compliance', label: 'Compliance Calendar', show: () => can('accounts.view') },
     { key: 'reg-tenants', label: 'SRA Tenants', show: () => can('accounts.view') },
@@ -160,7 +163,7 @@
     { key: 'users', label: 'Logins', show: () => can('users.manage') },
     { key: 'audit', label: 'Audit log', show: () => can('audit.view') },
   ];
-  const DETAIL = { booking: 'bookings', statement: 'ledgers', run: 'demands', bankauto: 'bankauto', project: 'home', team: 'team', accteam: 'accteam', cp: 'partners' };
+  const DETAIL = { booking: 'flats', statement: 'flats', run: 'demands', bankauto: 'bankauto', project: 'home', team: 'team', accteam: 'accteam', cp: 'partners' };
   let projectList = null, proj = null;
   const store = { get: (k) => { try { return localStorage.getItem(k); } catch { return null; } }, set: (k, v) => { try { localStorage.setItem(k, v); } catch {} } };
 
@@ -209,7 +212,7 @@
         <div class="top no-print"><div class="who">${projectList.length > 1 ? `<select id="proj" class="proj">${projectList.map((p) => `<option value="${p.id}" ${p.id === proj ? 'selected' : ''}>${esc(p.name)}</option>`).join('')}</select>` : `<b>${esc(projectList[0]?.name || '')}</b>`}</div>
           <div class="who"><span><b>${esc(me.name)}</b> · ${esc(me.roleLabel)}</span>
             ${installButton()}<button class="ghost small" id="cpw">Change password</button><button class="ghost small" id="out">Sign out</button></div></div>
-        ${(() => { const g = groupOf(DETAIL[page] && arg ? DETAIL[page] : cur.key), dest = { CRM: [`#/project/${proj}/crm`, 'Sales & CRM'], Accounts: [`#/project/${proj}/accounts`, 'Accounts'], 'Site & purchase': [`#/project/${proj}/construction`, 'Construction'], 'Set-up': ['#/home', 'Home'] }[g];
+        ${(() => { const g = groupOf(DETAIL[page] && arg ? DETAIL[page] : cur.key), dest = { CRM: [`#/project/${proj}/crm`, 'Sales & CRM'], 'CRM tools': [`#/project/${proj}/crm`, 'Sales & CRM'], Accounts: [`#/project/${proj}/accounts`, 'Accounts'], 'Site & purchase': [`#/project/${proj}/construction`, 'Construction'], 'Set-up': ['#/home', 'Home'] }[g];
           return dest && proj && !['home', 'project'].includes(page || 'home') ? `<div class="crumb no-print"><a href="${dest[0]}">← ${esc(dest[1])}</a>${dest[0] === '#/home' ? '' : '<a href="#/home">Home</a>'}</div>` : ''; })()}
         <div class="page" id="page"><p class="muted">Loading…</p></div>
       </div></div>`;
@@ -222,7 +225,7 @@
     $('#cpw').onclick = () => changePassword(false);
     if ($('#proj')) $('#proj').onchange = (e) => { proj = +e.target.value; store.set('erp_project', proj); shell(); };
     if (/^reg-/.test(page || '') && can('accounts.view')) { try { await accRegister(page.slice(4)); } catch (e) { $('#page').innerHTML = `<div class="err">${esc(e.message)}</div>`; } return; }
-    const fn = { home, mgmt, custdocs, comms, team: teamPage, accteam: teamPage, sdr: sdrPage, cp: cpPage, project: projectHome, crmtodo: () => dailyTodo('crm'), acctodo: () => dailyTodo('accounts'), training, projects, plans, users, audit, units, bookings, demands, receipts, ledgers, letters, followups, verify, prices, partners, balances: accBalances, bankauto: bankAuto, bookscrm: booksCrm, accreports: accReports, checks: accChecks, accsetup: accSetup, import: importPage, booking: bookingPage, statement: statementPage, run: runPage };
+    const fn = { home, mgmt, flats, custdocs, comms, team: teamPage, accteam: teamPage, sdr: sdrPage, cp: cpPage, project: projectHome, crmtodo: () => dailyTodo('crm'), acctodo: () => dailyTodo('accounts'), training, projects, plans, users, audit, units, bookings, demands, receipts, ledgers, letters, followups, verify, prices, partners, balances: accBalances, bankauto: bankAuto, bookscrm: booksCrm, accreports: accReports, checks: accChecks, accsetup: accSetup, import: importPage, booking: bookingPage, statement: statementPage, run: runPage };
     const key = DETAIL[page] && arg ? page : cur.key;
     try { await fn[key](arg ? +arg : undefined); } catch (e) { $('#page').innerHTML = `<div class="err">${esc(e.message)}</div>`; }
   }
@@ -260,7 +263,7 @@
     letters: 'Stage demands and reminders, by email or courier', followups: 'Calls, WhatsApps and promises to pay',
     comms: 'Buyers\' email replies and WhatsApps, and messages to link to a flat', team: 'Dream Chat: CRM and Accounts, about a flat or a cheque', accteam: 'Dream Chat: CRM and Accounts, about a flat or a cheque', custdocs: 'Signed and scanned papers for every flat and SRA tenant, kept in Google Drive', verify: 'Items from the import still to check and close', prices: 'Rates, floor rise and the cost sheet', partners: 'Each partner firm: brokerage, bills, pass back, payments and balance',
     site: 'Slab cycle, daily progress reports, hindrances, materials and floor-wise works', purchase: 'Purchase requests from request to payment', drawings: 'The drawing register from Google Drive', hr: 'Staff records, leave, letters and HR policies',
-    crmtodo: 'Today’s calls, approvals, letters and what the 9 am check found', acctodo: 'What the 9 am Accounts audit found, plus your own tasks',
+    crmtodo: 'Today’s calls, approvals, letters and what the 9 am check found', flats: 'Every flat and buyer. Open one to see payments, calls, messages and documents in one place', acctodo: 'What the 9 am Accounts audit found, plus your own tasks',
     training: 'Short videos on how to use each part of the ERP',
     accdash: 'Bank balances, collections, refunds, TDS, PDC, SRA tenants and reconciliation',
     balances: 'Closing balance of every bank account, day by day', bankauto: 'The 3:10 pm check of bank statements against the books',
@@ -270,10 +273,10 @@
     accreports: 'Reports and the Tally import', checks: 'Daily checks on the registers', bookscrm: 'Tally receipts flat by flat against the CRM',
     ca: 'GST, TDS payable, RERA quarterly and cash flow, for the CA', accsetup: 'Bank accounts, heads, statement folders and imports', audit: 'Who changed what, and when',
   };
-  const PICON = { comms: 'mail', team: 'users', accteam: 'users', sdr: 'rupee', custdocs: 'book', site: 'tower', crmtodo: 'check', acctodo: 'check', training: 'book', dashboard: 'chart', units: 'grid', bookings: 'book', demands: 'tower', receipts: 'rupee', ledgers: 'book', letters: 'mail', followups: 'phone', verify: 'check', prices: 'rupee', partners: 'users',
+  const PICON = { flats: 'users', comms: 'mail', team: 'users', accteam: 'users', sdr: 'rupee', custdocs: 'book', site: 'tower', crmtodo: 'check', acctodo: 'check', training: 'book', dashboard: 'chart', units: 'grid', bookings: 'book', demands: 'tower', receipts: 'rupee', ledgers: 'book', letters: 'mail', followups: 'phone', verify: 'check', prices: 'rupee', partners: 'users',
     accdash: 'chart', balances: 'rupee', bankauto: 'check', 'reg-cancellations': 'users', bookscrm: 'check', checks: 'check', audit: 'book', ca: 'chart', accsetup: 'grid' };
   const DEPTS = [
-    { key: 'crm', title: 'Sales & CRM', sub: 'Collections, units, bookings, demands, receipts and follow-ups', icon: 'chart', tone: '#2B5C8A', group: 'CRM' },
+    { key: 'crm', title: 'Sales & CRM', sub: 'Today’s work, every flat and buyer in one place, receipts and the inbox', icon: 'chart', tone: '#2B5C8A', group: 'CRM', more: 'CRM tools' },
     { key: 'construction', title: 'Construction', sub: 'Site Office: slab cycle, daily progress reports, hindrances, materials and stages', icon: 'hammer', tone: '#B7791F', pages: ['site', 'demands'], later: ['Contractor billing'] },
     { key: 'accounts', title: 'Accounts', sub: 'Bank, receipts, payments, PDC, TDS, SRA rent, GST, SDR and Tally', icon: 'book', tone: '#117A65', group: 'Accounts', skip: ['ca', 'bookscrm', 'checks'] },
     { key: 'audit', title: 'CRM/Accounts Audit', sub: 'Tally against the CRM, checks, reconciling items and cancelled flats', icon: 'check', tone: '#0E8C9B', pages: ['bookscrm', 'checks', 'reg-recon', 'reg-cancellations', 'verify', 'audit'] },
@@ -337,13 +340,15 @@
     if (dept && !dept.soon && !dept.direct) {
       const tiles = pagesOf(dept).map((pg) => ({ title: pg.label, sub: SUB[pg.key] || '', icon: PICON[pg.key] || dept.icon, tone: dept.tone, href: hrefOf(pg) }))
         .concat((dept.later || []).map((t) => ({ title: t, sub: '', icon: dept.icon, tone: dept.tone, soon: true })));
-      $('#page').innerHTML = heroHtml(p.name, dept.title, dept.sub, [`#/project/${p.id}`, p.name]) + `<div class="hm"><section class="hgroup"><h2>Pages</h2><div class="tiles">${tiles.map(tile).join('') || '<p class="muted">Your login has no pages in this section.</p>'}</div></section></div>`;
+      const extra = dept.more ? pagesOf({ group: dept.more }).map((pg) => ({ title: pg.label, sub: SUB[pg.key] || '', icon: PICON[pg.key] || dept.icon, tone: '#6B7280', href: hrefOf(pg) })) : [];
+      $('#page').innerHTML = heroHtml(p.name, dept.title, dept.sub, [`#/project/${p.id}`, p.name]) + `<div class="hm"><section class="hgroup"><h2>${dept.more ? 'Daily work' : 'Pages'}</h2><div class="tiles">${tiles.map(tile).join('') || '<p class="muted">Your login has no pages in this section.</p>'}</div></section>
+        ${extra.length ? `<section class="hgroup more"><h2>${esc(dept.more)} <span class="muted small" style="font-weight:400">· set-up and work on many flats at once</span></h2><div class="tiles small">${extra.map(tile).join('')}</div></section>` : ''}</div>`;
       return;
     }
     const tiles = DEPTS.map((x) => {
       if (x.soon) return { ...x };
       if (x.direct) { const pg = PAGES.find((q) => q.key === x.direct); return pg && pg.show() ? { ...x, href: hrefOf(pg) } : null; }
-      const pgs = pagesOf(x);
+      const pgs = pagesOf(x).concat(x.more ? pagesOf({ group: x.more }) : []);
       if (!pgs.length) return x.later ? { ...x, soon: true } : null;
       return { ...x, href: `#/project/${p.id}/${x.key}` };
     }).filter(Boolean);
@@ -567,6 +572,48 @@
   }
 
   // ---------- bookings ----------
+  // ---------- flats & buyers: the one list of every flat and buyer; each row opens the flat file ----------
+  async function flats() {
+    if (!proj) return noProject();
+    const [B, F] = await Promise.all([api(`/api/bookings?project=${proj}`), can('ledger.view') ? api(`/api/followups?project=${proj}`).catch(() => ({ rows: [] })) : { rows: [] }]);
+    const fu = new Map(F.rows.map((r) => [r.booking_id, r]));
+    const rows = B.rows.map((r) => ({ ...r, f: fu.get(r.id) }));
+    const req = (r) => r.status === 'active' && (r.cancel_requested_at || r.transfer_requested_at);
+    const SETS = [
+      ['call', 'Call today', (r) => r.f && r.f.due, 'Buyers with dues whose next call is today or earlier'],
+      ['broken', 'Broken promises', (r) => r.f && r.f.broken, 'They promised to pay by a date that has passed'],
+      ['never', 'Never called', (r) => r.f && !r.f.count, 'Buyers with dues nobody has called yet'],
+      ['overdue', 'Overdue', (r) => r.status === 'active' && toNum(r.overdue) > 0, 'Every buyer with an overdue amount'],
+      ['approval', 'Waiting for approval', (r) => r.status === 'pending' || req(r), 'New bookings, cancellations and transfers to approve'],
+      ['all', 'All active', (r) => r.status === 'active', 'Every live booking'],
+      ['closed', 'Cancelled / transferred', (r) => ['cancelled', 'rejected', 'transferred'].includes(r.status), 'Kept on record'],
+    ];
+    const qf = (location.hash.split('?')[1] || '').match(/f=(\w+)/);
+    let f = (qf && qf[1]) || store.get('erp_flats_f') || 'call';
+    if (!SETS.some(([k]) => k === f)) f = 'all';
+    const set = SETS.find(([k]) => k === f);
+    if (f === 'call' && !rows.some(set[2]) && !qf) f = 'all';
+    const cur = SETS.find(([k]) => k === f);
+    const list = rows.filter(cur[2]).sort((a, b) => (f === 'all' || f === 'closed' || f === 'approval' ? a.unit_no.localeCompare(b.unit_no, 'en', { numeric: true }) : toNum(b.overdue) - toNum(a.overdue)));
+    const todo = (r) => r.status === 'pending' ? '<span class="pill">needs approval</span>' : r.cancel_requested_at && r.status === 'active' ? '<span class="pill bad">cancel requested</span>' : r.transfer_requested_at && r.status === 'active' ? '<span class="pill warn">transfer requested</span>'
+      : r.status !== 'active' ? `<span class="pill grey">${esc(r.status)}</span>` : r.f && r.f.broken ? '<span class="pill bad">promise broken</span>' : r.f && r.f.due ? '<span class="pill warn">call today</span>' : toNum(r.overdue) > 0 ? '<span class="pill warn">overdue</span>' : '<span class="pill good">on track</span>';
+    $('#page').innerHTML = `<div class="page-head"><div><h1>Flats &amp; buyers</h1><p class="muted">Every flat and buyer in one list. Open a flat to see and do everything for it: payments, calls, messages, documents and history.</p></div>
+      ${can('booking.create') ? '<div class="actions" style="margin:0"><a class="btn" href="#/units">+ Book a flat</a></div>' : ''}</div>
+      <div class="chips">${SETS.map(([k, l, fn, hint]) => { const n = rows.filter(fn).length; return `<button type="button" class="chip ${k === f ? 'on' : ''} ${['call', 'broken'].includes(k) && n ? 'hot' : ''}" data-f="${k}" title="${esc(hint)}">${l} <b>${n}</b></button>`; }).join('')}</div>
+      <div class="panel table-wrap"><input class="search" id="q" placeholder="Search a flat number, buyer name or phone" autofocus>
+      <p class="small muted" style="margin:4px 0 10px">${esc(cur[3])} · ${list.length} flat${list.length === 1 ? '' : 's'}</p>
+      <table class="flats"><tr><th>Flat</th><th>Buyer</th><th>Status</th><th class="num">Balance due</th><th class="num">Overdue</th><th>Last contact</th><th>Next call</th><th>Contact</th></tr>
+      ${list.map((r) => `<tr class="click" data-b="${r.id}" data-s="${esc((r.unit_no + ' ' + (r.buyers || '') + ' ' + (r.f && r.f.mobile || '')).toLowerCase())}">
+        <td><b>${esc(r.unit_no)}</b>${r.sample ? ' <span class="pill grey">sample</span>' : ''}</td><td>${esc(r.buyers || '')}</td><td>${todo(r)}</td>
+        <td class="num">${inr(r.outstanding)}</td><td class="num ${toNum(r.overdue) > 0 ? 'bad-t' : ''}">${toNum(r.overdue) > 0 ? inr(r.overdue) : '—'}</td>
+        <td class="small">${r.f && r.f.count ? `${fmtD(r.f.last_at.slice(0, 10))} · ${esc(r.f.outcome || r.f.kind || '')}` : r.f ? '<span class="muted">never</span>' : ''}</td>
+        <td class="small">${r.f && r.f.next_date ? fmtD(r.f.next_date) : ''}${r.f && r.f.promise_date ? `<br><span class="muted">promised ${fmtD(r.f.promise_date)}</span>` : ''}</td>
+        <td class="small" style="white-space:nowrap">${r.f && r.f.mobile && r.f.wa ? `<a href="tel:+91${esc(r.f.mobile)}" data-stop>Call</a> · <a href="${esc(r.f.wa)}" target="_blank" rel="noopener" data-stop>WhatsApp</a>` : ''}</td></tr>`).join('') || '<tr><td colspan="8" class="muted">Nothing here.</td></tr>'}</table></div>`;
+    document.querySelectorAll('.chip[data-f]').forEach((x) => (x.onclick = () => { store.set('erp_flats_f', x.dataset.f); history.replaceState(null, '', '#/flats'); flats(); }));
+    document.querySelectorAll('tr[data-b]').forEach((tr) => (tr.onclick = (e) => { if (e.target.closest('[data-stop]')) return; go(`#/booking/${tr.dataset.b}`); }));
+    $('#q').oninput = (e) => { const q = e.target.value.toLowerCase().trim(); document.querySelectorAll('tr[data-s]').forEach((tr) => (tr.style.display = tr.dataset.s.includes(q) ? '' : 'none')); };
+  }
+
   async function bookings() {
     if (!proj) return noProject();
     const d = await api(`/api/bookings?project=${proj}`);
@@ -635,70 +682,168 @@
     const d = await api(`/api/bookings?id=${id}`);
     const b = d.booking, bal = d.balance || {};
     const demanded = new Map(d.demands.filter((x) => x.status === 'raised').map((x) => [x.stage_name, x]));
-    const actions = [];
-    if (b.status === 'pending' && can('booking.approve')) actions.push('<button id="approve">Approve booking</button><button class="danger" id="reject">Reject</button>');
-    if (b.status === 'active' && !b.registration_date && can('booking.create')) actions.push('<button class="ghost" id="register">Record agreement and registration</button>');
-    if (b.status === 'active' && can('receipt.enter')) actions.push('<button class="ghost" id="receipt">Enter a receipt</button>');
-    if (b.status === 'active' && can('ledger.view')) actions.push(`<a class="btn ghost" href="#/statement/${b.id}">Statement of account</a>`);
-    if (b.status === 'active' && can('demand.raise')) actions.push('<button class="ghost" id="logf">Log a follow-up</button>');
-    if (['active', 'pending'].includes(b.status) && can('booking.approve')) actions.push('<button class="ghost" id="editBk" title="Only Head CRM can change a booking; every change is kept in the audit log">Edit booking</button>');
-    if (b.status === 'active' && !b.cancel_requested_at && !b.transfer_requested_at && can('booking.create')) actions.push('<button class="ghost" id="trReq">Transfer to another flat</button>');
-    if (b.status === 'active' && b.transfer_requested_at && can('booking.approve')) actions.push('<button id="trOk">Approve the transfer</button><button class="ghost" id="trNo">Reject the transfer</button>');
-    if (b.status === 'active' && !b.cancel_requested_at && !b.transfer_requested_at && can('booking.create')) actions.push('<button class="danger" id="cancelReq">Request cancellation</button>');
+    // ---------- the flat file: one window for one flat and its buyer ----------
+    // Everything about the flat is here: money, payments, calls, messages, documents and history. Other lists only link to it.
+    const names = d.applicants.map((a) => a.name).join(' & ');
+    const live = b.status === 'active';
+    const primary = [], more = [];
+    if (b.status === 'pending' && can('booking.approve')) primary.push('<button id="approve">Approve booking</button><button class="danger" id="reject">Reject</button>');
+    if (live && b.cancel_requested_at && can('cancellation.approve')) primary.push('<button class="danger" id="cancelOk">Approve cancellation</button><button class="ghost" id="cancelNo">Keep the booking</button>');
+    if (live && b.transfer_requested_at && can('booking.approve')) primary.push('<button id="trOk">Approve the transfer</button><button class="ghost" id="trNo">Reject the transfer</button>');
+    if (live && can('demand.raise')) primary.push('<button id="logf">📞 Log a call</button>');
+    if (live && can('receipt.enter')) primary.push('<button id="receipt">₹ Enter a receipt</button>');
+    if (live && can('demand.raise')) primary.push('<button class="ghost" id="ffMail">✉ Email the buyer</button>');
+    if (live && can('demand.raise')) primary.push('<button class="ghost" id="ffLetter">Demand letter</button>');
+    if (live && can('ledger.view')) more.push(`<a href="#/statement/${b.id}">Statement of account (print)</a>`);
+    if (live && !b.registration_date && can('booking.create')) more.push('<button id="register">Record agreement and registration</button>');
+    if (['active', 'pending'].includes(b.status) && can('booking.approve')) more.push('<button id="editBk" title="Only Head CRM can change a booking; every change is kept in the audit log">Edit booking or buyer details</button>');
+    if (live && !b.cancel_requested_at && !b.transfer_requested_at && can('booking.create')) more.push('<button id="trReq">Transfer to another flat</button>', '<button id="cancelReq" class="bad-t">Request cancellation</button>');
+    const statusPill = { pending: '<span class="pill">waiting for approval</span>', active: '<span class="pill good">active</span>', cancelled: '<span class="pill bad">cancelled</span>', rejected: '<span class="pill bad">rejected</span>', transferred: '<span class="pill grey">transferred</span>' }[b.status] || '';
+    const tel = (p) => String(p || '').replace(/\D/g, '').slice(-10);
+    const contact = (a) => { const m = tel(a.phone), ok = /^[6-9]\d{9}$/.test(m);
+      return `<div class="ff-person"><b>${esc(a.name)}</b><span>${ok ? `<a href="tel:+91${m}">📞 ${esc(m)}</a> <a href="https://wa.me/91${m}" target="_blank" rel="noopener">WhatsApp</a>` : a.phone ? esc(a.phone) : '<span class="muted">no mobile</span>'}${a.email ? ` <a href="mailto:${esc(a.email)}">${esc(a.email)}</a>` : ''}</span></div>`; };
+    const TABS = [['overview', 'Overview'], ['payments', 'Payments'], ['calls', 'Calls & follow-ups'], ['messages', 'Messages'], ['documents', 'Documents'], ['history', 'History']];
+    const qTab = (location.hash.split('?')[1] || '').match(/tab=(\w+)/);
+    let tab = qTab && TABS.some(([k]) => k === qTab[1]) ? qTab[1] : 'overview';
     const docBtns = [`<a class="btn ghost small" target="_blank" rel="noopener" href="/api/docs?booking=${b.id}&doc=costsheet">Cost sheet</a>`];
     if (can('buyer.kyc')) docBtns.push(`<a class="btn ghost small" target="_blank" rel="noopener" href="/api/docs?booking=${b.id}&doc=allotment">Allotment letter</a>`, `<a class="btn ghost small" target="_blank" rel="noopener" href="/api/docs?booking=${b.id}&doc=form">Booking form</a>`);
-    if (can('buyer.kyc') && b.status === 'active') docBtns.push(`<button class="ghost small" id="welcome">Welcome email${b.welcome_sent_at ? ' (sent ' + fmtD(b.welcome_sent_at.slice(0, 10)) + ')' : ''}</button>`);
-    if (b.status === 'active' && b.cancel_requested_at && can('cancellation.approve')) actions.push('<button class="danger" id="cancelOk">Approve cancellation</button><button class="ghost" id="cancelNo">Keep the booking</button>');
-    const statusPill = { pending: '<span class="pill">waiting for approval</span>', active: '<span class="pill good">active</span>', cancelled: '<span class="pill bad">cancelled</span>', rejected: '<span class="pill bad">rejected</span>', transferred: '<span class="pill grey">transferred</span>' }[b.status] || '';
-    $('#page').innerHTML = `<p class="crumbs"><a href="#/bookings">Bookings</a> › ${esc(d.unit.unit_no)}</p>
-      <div class="page-head"><div><h1>${esc(d.unit.unit_no)} · ${esc(d.applicants.map((a) => a.name).join(' & '))} ${statusPill}${b.sample ? ' <span class="pill grey">sample</span>' : ''}</h1>
-        <p class="muted">${esc(d.unit.project)} · ${esc(d.unit.building)} · floor ${d.unit.floor ?? '—'} · ${esc(d.unit.typology || '')} ${d.unit.carpet_sqft ? toNum(d.unit.carpet_sqft) + ' sq ft' : ''} · ${esc(d.unit.company)}</p></div></div>
-      ${b.transfer_requested_at && b.status === 'active' && d.transfer ? `<div class="note" style="margin-bottom:14px">Transfer to <b>${esc(d.transfer.to_unit)}</b> requested on ${fmtD(String(b.transfer_requested_at).slice(0, 10))}${d.transfer.requested_by ? ' by ' + esc(d.transfer.requested_by) : ''}: new agreement value ${inr(b.transfer_av)}, from ${fmtD(String(b.transfer_date || '').slice(0, 10))}. ${b.transfer_move_receipts ? 'The receipts move to the new flat.' : 'The receipts stay here; Accounts moves them.'} Reason: ${esc(b.transfer_reason || '')}. Waiting for Head CRM.</div>` : ''}
-      ${b.status === 'transferred' && d.transfer ? `<div class="note" style="margin-bottom:14px">This booking was transferred to <a href="#/booking/${b.transferred_to}"><b>${esc(d.transfer.to_booking_unit || 'the new flat')}</b></a> on ${fmtD(String(b.cancelled_at || '').slice(0, 10))}. It stays here on record; the receipts are on the new booking.</div>` : ''}
-      ${b.transferred_from && d.transfer ? `<div class="note" style="margin-bottom:14px">Transferred from <a href="#/booking/${b.transferred_from}">${esc(d.transfer.from_unit || 'the earlier flat')}</a>. Receipts marked "moved" came across with the buyer.</div>` : ''}
-      ${b.cancel_requested_at && b.status === 'active' ? `<div class="note" style="margin-bottom:14px">Cancellation requested on ${fmtD(b.cancel_requested_at)}${b.cancel_date ? ', cancelling from ' + fmtD(String(b.cancel_date).slice(0, 10)) : ''}${toNum(b.cancel_charges) ? ', cancellation charges ' + inr(b.cancel_charges) : ''}: ${esc(b.cancel_reason)}. Waiting for Management.</div>` : ''}
-      ${b.status === 'cancelled' ? (() => { const c = d.cancellation || {}; const paid = toNum(c.refund_rtgs) + toNum(c.refund_white); const due = c.refund_due != null ? toNum(c.refund_due) : toNum(c.received);
-        return `<div class="panel cancel-box"><h2>Cancelled booking · kept on record</h2>
-          <p class="muted">This booking was cancelled${c.cancel_date ? ' on ' + fmtD(String(c.cancel_date).slice(0, 10)) : b.cancelled_at ? ' on ' + fmtD(String(b.cancelled_at).slice(0, 10)) : ''}${c.cancelled_by_name ? ', approved by ' + esc(c.cancelled_by_name) : ''}. Reason: ${esc(b.cancel_reason || '—')}. The buyer, their receipts and the refund stay here and in Accounts → Cancelled flats, so the CRM and the books agree.</p>
-          <div class="kpis">${kpi(inr(c.received), 'received from this buyer')}${kpi(inr(c.deduction), 'cancellation charges')}${kpi(inr(due), 'refund due')}${kpi(inr(paid), 'refunded so far')}${kpi(esc(c.refund_status || 'Pending'), 'refund status (Accounts)', /^(done|nothing)/i.test(c.refund_status || '') ? '' : 'bad')}</div>
-          <p class="small" style="margin-top:10px">${d.current ? `The flat is now booked to <a href="#/booking/${d.current.id}">${esc(d.current.buyers || 'a new buyer')}</a>${d.current.status === 'pending' ? ' (waiting for approval)' : ''}.` : `The flat ${esc(d.unit.unit_no)} is free to book again.${can('booking.create') ? ' <button class="small" id="rebook">Book this flat for a new buyer</button>' : ''}`}</p></div>`; })() : ''}
-      ${d.earlier && d.earlier.length ? `<div class="note" style="margin-bottom:14px">Earlier on this flat: ${d.earlier.map((e) => `<a href="#/booking/${e.id}">${esc(e.buyers || 'buyer')}</a> (cancelled ${fmtD(String(e.cancel_date || e.cancelled_at || '').slice(0, 10))}${e.refund_status ? ', refund ' + esc(e.refund_status) : ''})`).join('; ')}.</div>` : ''}
-      <div class="actions" style="margin:0 0 10px">${actions.join('')}</div>
-      <div class="actions" style="margin:0 0 16px"><span class="muted small" style="align-self:center">Documents:</span>${docBtns.join('')}</div>
-      ${can('ledger.view') ? '<div class="panel" id="ccomm"><h2>Communication</h2><p class="muted small">Loading…</p></div>' : ''}
-      ${can('buyer.kyc') ? '<div class="panel" id="cdocs"><h2>Customer documents</h2><p class="muted small">Loading…</p></div>' : ''}
-      <div class="panel"><div class="kpis">${kpi(inr(b.agreement_value), 'agreement value')}${kpi(inr(bal.demanded), 'demanded')}${kpi(inr(bal.credit_av), 'received (AV + TDS)')}
-        ${kpi(inr(bal.outstanding), 'outstanding')}${kpi(inr(bal.overdue), 'overdue', toNum(bal.overdue) > 0 ? 'bad' : '')}${kpi(inr(bal.gst_outstanding), 'GST outstanding')}</div></div>
-      <div class="two">
-        <div class="panel"><h2>Booking</h2><table class="kv">
-          <tr><th>Booking date</th><td>${fmtD(b.booking_date)}</td></tr><tr><th>Agreement / registration</th><td>${fmtD(b.agreement_date)} / ${fmtD(b.registration_date)}</td></tr>
-          <tr><th>GST rate</th><td>${toNum(b.gst_rate)}%</td></tr><tr><th>Stamp duty / registration fee</th><td>${b.stamp_duty ? inr(b.stamp_duty) : '—'} / ${b.registration_fee ? inr(b.registration_fee) : '—'}</td></tr>
-          <tr><th>Funding</th><td>${esc(b.funding === 'loan' ? 'Home loan · ' + (b.loan_bank || '') : b.funding === 'self' ? 'Self' : '—')}</td></tr><tr><th>Parking</th><td>${b.parking}</td></tr>
-          <tr><th>Source / CP</th><td>${esc(b.source || '')}${b.cp_id ? ` · <a href="#/cp/${b.cp_id}">${esc(b.cp_name || 'partner')}</a>` : b.cp_name ? ' · ' + esc(b.cp_name) : ''}${!b.source && !b.cp_name ? '—' : ''}</td></tr><tr><th>Brokerage</th><td>${b.brokerage ? inr(b.brokerage) + (b.brokerage_pct != null ? ` (${toNum(b.brokerage_pct)}%)` : '') : '—'}</td></tr></table>
-          <h2 style="margin-top:16px">Dates &amp; status ${b.status === 'active' && anyOf('booking.create', 'demand.raise') ? '<button class="ghost small" id="editDates" style="float:right">Edit</button>' : ''}</h2><table class="kv">
-          <tr><th>Booking form received</th><td>${fmtD(b.booking_form_date)}</td></tr><tr><th>Registration status</th><td>${esc(b.registration_status || (b.registration_date ? 'Done' : '—'))}</td></tr>
-          <tr><th>Registration appointment</th><td>${fmtD(b.registration_appointment)}</td></tr><tr><th>Bank NOC</th><td>${fmtD(b.bank_noc_date)}</td></tr>
-          <tr><th>Possession</th><td>${fmtD(b.possession_date)}</td></tr><tr><th>Follow-up tag</th><td>${esc(b.crm_status || '—')}</td></tr></table></div>
-        <div class="panel"><h2>Applicants</h2>${d.applicants.map((a) => `<p><b>${esc(a.name)}</b><br><span class="muted">PAN ${esc(a.pan || '—')} · Aadhaar ${esc(a.aadhaar || '—')}<br>${esc(a.phone || '')} ${esc(a.email || '')}<br>${esc(a.address || '')}</span></p>`).join('')}</div>
+    if (can('ledger.view') && live) docBtns.push(`<a class="btn ghost small" href="#/statement/${b.id}">Statement of account</a>`);
+    if (can('buyer.kyc') && live) docBtns.push(`<button class="ghost small" id="welcome">Welcome email${b.welcome_sent_at ? ' (sent ' + fmtD(b.welcome_sent_at.slice(0, 10)) + ')' : ''}</button>`);
+    const notes = [
+      b.transfer_requested_at && live && d.transfer ? `Transfer to <b>${esc(d.transfer.to_unit)}</b> requested on ${fmtD(String(b.transfer_requested_at).slice(0, 10))}${d.transfer.requested_by ? ' by ' + esc(d.transfer.requested_by) : ''}: new agreement value ${inr(b.transfer_av)}, from ${fmtD(String(b.transfer_date || '').slice(0, 10))}. ${b.transfer_move_receipts ? 'The receipts move to the new flat.' : 'The receipts stay here; Accounts moves them.'} Reason: ${esc(b.transfer_reason || '')}. Waiting for Head CRM.` : '',
+      b.status === 'transferred' && d.transfer ? `This booking was transferred to <a href="#/booking/${b.transferred_to}"><b>${esc(d.transfer.to_booking_unit || 'the new flat')}</b></a> on ${fmtD(String(b.cancelled_at || '').slice(0, 10))}. It stays here on record; the receipts are on the new booking.` : '',
+      b.transferred_from && d.transfer ? `Transferred from <a href="#/booking/${b.transferred_from}">${esc(d.transfer.from_unit || 'the earlier flat')}</a>. Receipts marked "moved" came across with the buyer.` : '',
+      b.cancel_requested_at && live ? `Cancellation requested on ${fmtD(b.cancel_requested_at)}${b.cancel_date ? ', cancelling from ' + fmtD(String(b.cancel_date).slice(0, 10)) : ''}${toNum(b.cancel_charges) ? ', cancellation charges ' + inr(b.cancel_charges) : ''}: ${esc(b.cancel_reason)}. Waiting for Management.` : '',
+      b.status === 'pending' ? 'This booking is waiting for Head CRM approval. The person who entered it cannot approve it.' : '',
+      d.earlier && d.earlier.length ? `Earlier on this flat: ${d.earlier.map((e) => `<a href="#/booking/${e.id}">${esc(e.buyers || 'buyer')}</a> (cancelled ${fmtD(String(e.cancel_date || e.cancelled_at || '').slice(0, 10))}${e.refund_status ? ', refund ' + esc(e.refund_status) : ''})`).join('; ')}.` : '',
+    ].filter(Boolean);
+    const cancelBox = b.status === 'cancelled' ? (() => { const c = d.cancellation || {}; const paid = toNum(c.refund_rtgs) + toNum(c.refund_white); const due = c.refund_due != null ? toNum(c.refund_due) : toNum(c.received);
+      return `<div class="panel cancel-box"><h2>Cancelled booking · kept on record</h2>
+        <p class="muted">This booking was cancelled${c.cancel_date ? ' on ' + fmtD(String(c.cancel_date).slice(0, 10)) : b.cancelled_at ? ' on ' + fmtD(String(b.cancelled_at).slice(0, 10)) : ''}${c.cancelled_by_name ? ', approved by ' + esc(c.cancelled_by_name) : ''}. Reason: ${esc(b.cancel_reason || '—')}. The buyer, their receipts and the refund stay here and in Accounts → Cancelled flats, so the CRM and the books agree.</p>
+        <div class="kpis">${kpi(inr(c.received), 'received from this buyer')}${kpi(inr(c.deduction), 'cancellation charges')}${kpi(inr(due), 'refund due')}${kpi(inr(paid), 'refunded so far')}${kpi(esc(c.refund_status || 'Pending'), 'refund status (Accounts)', /^(done|nothing)/i.test(c.refund_status || '') ? '' : 'bad')}</div>
+        <p class="small" style="margin-top:10px">${d.current ? `The flat is now booked to <a href="#/booking/${d.current.id}">${esc(d.current.buyers || 'a new buyer')}</a>${d.current.status === 'pending' ? ' (waiting for approval)' : ''}.` : `The flat ${esc(d.unit.unit_no)} is free to book again.${can('booking.create') ? ' <button class="small" id="rebook">Book this flat for a new buyer</button>' : ''}`}</p></div>`; })() : '';
+    const nextDue = d.demands.filter((x) => x.status === 'raised' && !x.opening).map((x) => x.due_date).filter(Boolean).sort().pop();
+    const ACT = { approve: 'Approved', reject: 'Rejected', create: 'Entered', edit: 'Edited', cancel: 'Cancelled', 'cancel-request': 'Cancellation requested', 'cancel-approve': 'Cancellation approved', register: 'Registration recorded', 'bank-linked': 'Found in the bank', bounce: 'Cheque returned', deposited: 'Deposited', received: 'Received by Accounts', handed: 'Handed to Accounts', 'receipt-email': 'Receipt emailed to the buyer', 'receipt-no': 'Receipt numbered', 'transfer-request': 'Transfer requested', 'transfer-approve': 'Transfer approved', 'transfer-reject': 'Transfer rejected', dates: 'Dates changed', welcome: 'Welcome email sent', raise: 'Raised', update: 'Updated' };
+    $('#page').innerHTML = `<p class="crumbs"><a href="#/flats">Flats &amp; buyers</a> › ${esc(d.unit.unit_no)}</p>
+      <div class="panel ff-head">
+        <div class="ff-id"><h1>${esc(d.unit.unit_no)} <span class="ff-names">${esc(names)}</span> ${statusPill}${b.sample ? ' <span class="pill grey">sample</span>' : ''}</h1>
+          <p class="muted">${esc(d.unit.building)} · floor ${d.unit.floor ?? '—'} · ${esc(d.unit.typology || '')} ${d.unit.carpet_sqft ? toNum(d.unit.carpet_sqft) + ' sq ft' : ''} · booked ${fmtD(b.booking_date)}${b.rm_name ? ' · RM ' + esc(b.rm_name) : ''}</p>
+          <div class="ff-people">${d.applicants.map(contact).join('')}</div></div>
+        <div class="ff-money">${kpi(inr(b.agreement_value), 'agreement value')}${kpi(inr(bal.credit_av), 'received')}${kpi(inr(bal.outstanding), 'balance due')}${kpi(inr(bal.overdue), 'overdue', toNum(bal.overdue) > 0 ? 'bad' : '')}${kpi(inr(bal.gst_outstanding), 'GST due')}${kpi(nextDue ? fmtD(nextDue) : '—', 'last demand due')}</div>
       </div>
-      <div class="panel"><h2>Payment plan</h2><div class="table-wrap"><table><tr><th class="num">#</th><th>Stage</th><th class="num">%</th><th class="num">Amount</th><th>Demanded on</th><th>Due</th></tr>
-        ${d.plan.map((s) => { const x = demanded.get(s.name); return `<tr class="${x ? '' : 'dim'}"><td class="num">${s.seq}</td><td>${esc(s.name)}</td><td class="num">${toNum(s.pct)}%</td><td class="num">${inr(toNum(b.agreement_value) * toNum(s.pct) / 100)}</td><td>${x ? fmtD(x.demand_date) : 'not yet'}</td><td>${x ? fmtD(x.due_date) : ''}</td></tr>`; }).join('')}</table></div></div>
-      <div class="panel"><h2>Receipts</h2><div class="table-wrap"><table><tr><th>Date</th><th>Bank / instrument</th><th class="num">Amount</th><th>Split</th><th>Status</th><th></th></tr>
-        ${d.receipts.map((r) => `<tr><td>${fmtD(r.received_on)}</td><td>${esc([r.bank, r.instrument_no].filter(Boolean).join(' · ') || r.mode)}</td><td class="num">${inr(r.amount, 2)}</td>
-          <td class="small">${Object.entries(r.splits).map(([h, v]) => `${HEAD[h] || h} ${inr(v, 2)}`).join(' · ')}</td><td>${rStatus(r)}</td>
-          <td>${['pending', 'approved'].includes(r.status) && !r.opening ? `<button class="ghost small" data-doc="${r.id}">Receipt</button>` : ''}</td></tr>`).join('') || '<tr><td colspan="6" class="muted">No receipts yet.</td></tr>'}</table></div></div>`;
+      ${notes.map((n) => `<div class="note" style="margin-bottom:12px">${n}</div>`).join('')}
+      <div id="ffVerify"></div>
+      ${cancelBox}
+      ${primary.length || more.length ? `<div class="ff-actions">${primary.join('')}${more.length ? `<details class="ff-more"><summary class="btn ghost">More ▾</summary><div class="ff-menu">${more.join('')}</div></details>` : ''}</div>` : ''}
+      <div class="ff-tabs" role="tablist">${TABS.map(([k, l]) => `<button type="button" role="tab" data-ff="${k}" aria-selected="${k === tab}">${l}<span class="ff-n" id="ffn-${k}"></span></button>`).join('')}</div>
+      <section class="ff-pane" data-pane="overview">
+        <div class="panel" id="ffNext"><h2>Where this buyer stands</h2><p class="muted small">Loading…</p></div>
+        <div class="two">
+          <div class="panel"><h2>Booking</h2><table class="kv">
+            <tr><th>Booking date</th><td>${fmtD(b.booking_date)}</td></tr><tr><th>Agreement / registration</th><td>${fmtD(b.agreement_date)} / ${fmtD(b.registration_date)}</td></tr>
+            <tr><th>GST rate</th><td>${toNum(b.gst_rate)}%</td></tr><tr><th>Stamp duty / registration fee</th><td>${b.stamp_duty ? inr(b.stamp_duty) : '—'} / ${b.registration_fee ? inr(b.registration_fee) : '—'}</td></tr>
+            <tr><th>Funding</th><td>${esc(b.funding === 'loan' ? 'Home loan · ' + (b.loan_bank || '') : b.funding === 'self' ? 'Self' : '—')}</td></tr><tr><th>Parking</th><td>${b.parking}</td></tr>
+            <tr><th>Source / CP</th><td>${esc(b.source || '')}${b.cp_id ? ` · <a href="#/cp/${b.cp_id}">${esc(b.cp_name || 'partner')}</a>` : b.cp_name ? ' · ' + esc(b.cp_name) : ''}${!b.source && !b.cp_name ? '—' : ''}</td></tr><tr><th>Brokerage</th><td>${b.brokerage ? inr(b.brokerage) + (b.brokerage_pct != null ? ` (${toNum(b.brokerage_pct)}%)` : '') : '—'}</td></tr></table>
+            <h2 style="margin-top:16px">Dates &amp; status ${live && anyOf('booking.create', 'demand.raise') ? '<button class="ghost small" id="editDates" style="float:right">Edit</button>' : ''}</h2><table class="kv">
+            <tr><th>Booking form received</th><td>${fmtD(b.booking_form_date)}</td></tr><tr><th>Registration status</th><td>${esc(b.registration_status || (b.registration_date ? 'Done' : '—'))}</td></tr>
+            <tr><th>Registration appointment</th><td>${fmtD(b.registration_appointment)}</td></tr><tr><th>Bank NOC</th><td>${fmtD(b.bank_noc_date)}</td></tr>
+            <tr><th>Possession</th><td>${fmtD(b.possession_date)}</td></tr><tr><th>Follow-up tag</th><td>${esc(b.crm_status || '—')}</td></tr></table></div>
+          <div class="panel"><h2>Buyers</h2>${d.applicants.map((a) => `<p><b>${esc(a.name)}</b><br><span class="muted">PAN ${esc(a.pan || '—')} · Aadhaar ${esc(a.aadhaar || '—')}<br>${esc(a.phone || '')} ${esc(a.email || '')}<br>${esc(a.address || '')}</span></p>`).join('')}
+            ${can('booking.approve') ? '' : '<p class="small muted">To change a buyer\'s details, ask Head CRM (Edit booking).</p>'}</div>
+        </div>
+      </section>
+      <section class="ff-pane" data-pane="payments" hidden>
+        <div class="panel"><h2>Receipts ${live && can('receipt.enter') ? '<button class="small" id="receipt2" style="float:right">Enter a receipt</button>' : ''}</h2><div class="table-wrap"><table><tr><th>Date</th><th>Bank / instrument</th><th class="num">Amount</th><th>Split</th><th>Status</th><th>Cheque</th><th></th></tr>
+          ${d.receipts.map((r) => `<tr><td>${fmtD(r.received_on)}</td><td>${esc([r.bank, r.instrument_no].filter(Boolean).join(' · ') || r.mode)}</td><td class="num">${inr(r.amount, 2)}</td>
+            <td class="small">${Object.entries(r.splits).map(([h, v]) => `${HEAD[h] || h} ${inr(v, 2)}`).join(' · ')}</td><td>${rStatus(r)}</td><td class="small">${r.opening ? '' : chequeCell(r)}</td>
+            <td>${['pending', 'approved'].includes(r.status) && !r.opening ? `<button class="ghost small" data-doc="${r.id}">Receipt</button>` : ''}</td></tr>`).join('') || '<tr><td colspan="7" class="muted">No receipts yet.</td></tr>'}</table></div></div>
+        <div class="panel"><h2>Payment plan</h2><div class="table-wrap"><table><tr><th class="num">#</th><th>Stage</th><th class="num">%</th><th class="num">Amount</th><th>Demanded on</th><th>Due</th></tr>
+          ${d.plan.map((s) => { const x = demanded.get(s.name); return `<tr class="${x ? '' : 'dim'}"><td class="num">${s.seq}</td><td>${esc(s.name)}</td><td class="num">${toNum(s.pct)}%</td><td class="num">${inr(toNum(b.agreement_value) * toNum(s.pct) / 100)}</td><td>${x ? fmtD(x.demand_date) : 'not yet'}</td><td>${x ? fmtD(x.due_date) : ''}</td></tr>`; }).join('')}</table></div></div>
+        ${can('ledger.view') ? `<div class="panel" id="ffLedger"><h2>Ledger <a class="btn ghost small" style="float:right" href="#/statement/${b.id}">Print statement</a></h2><p class="muted small">Loading…</p></div>` : ''}
+      </section>
+      <section class="ff-pane" data-pane="calls" hidden><div class="panel" id="ffCalls"><h2>Calls &amp; follow-ups</h2><p class="muted small">${can('ledger.view') ? 'Loading…' : 'Not on your login.'}</p></div></section>
+      <section class="ff-pane" data-pane="messages" hidden>
+        ${can('ledger.view') ? '<div class="panel" id="ccomm"><h2>Communication</h2><p class="muted small">Loading…</p></div>' : ''}
+        <div class="panel" id="ffChat"><h2>Dream Chat about this flat</h2><p class="muted small">Loading…</p></div>
+      </section>
+      <section class="ff-pane" data-pane="documents" hidden>
+        <div class="panel"><h2>Letters and forms from the ERP</h2><div class="actions" style="margin:0">${docBtns.join('')}</div></div>
+        ${can('buyer.kyc') ? '<div class="panel" id="cdocs"><h2>Customer documents</h2><p class="muted small">Loading…</p></div>' : ''}
+      </section>
+      <section class="ff-pane" data-pane="history" hidden><div class="panel"><h2>History</h2><p class="small muted">Every change on this booking, its receipts and demands, newest first.</p><div class="table-wrap"><table><tr><th>When</th><th>What</th><th>Note</th><th>By</th></tr>
+        ${(d.history || []).map((h) => `<tr><td class="small">${fmtDate(h.at)}</td><td>${esc((h.entity === 'booking' ? '' : h.entity === 'receipt' ? 'Receipt: ' : 'Demand: ') + (ACT[h.action] || h.action))}</td><td class="small">${esc(h.note || '')}</td><td class="small">${esc(h.user_name || 'ERP')}</td></tr>`).join('') || '<tr><td colspan="4" class="muted">Nothing recorded yet.</td></tr>'}</table></div></div></section>`;
+    const showTab = (k) => { tab = k;
+      document.querySelectorAll('[data-ff]').forEach((x) => x.setAttribute('aria-selected', x.dataset.ff === k));
+      document.querySelectorAll('.ff-pane').forEach((x) => (x.hidden = x.dataset.pane !== k));
+      history.replaceState(null, '', `#/booking/${b.id}${k === 'overview' ? '' : '?tab=' + k}`); };
+    document.querySelectorAll('[data-ff]').forEach((x) => (x.onclick = () => showTab(x.dataset.ff)));
+    const mm = $('.ff-more'); if (mm) { document.addEventListener('click', (e) => { if (mm.open && !mm.contains(e.target)) mm.open = false; }); mm.querySelectorAll('.ff-menu > *').forEach((x) => x.addEventListener('click', () => (mm.open = false))); }
+    showTab(tab);
+    const count = (k, n, hot) => { const el = $('#ffn-' + k); if (el && n) { el.textContent = n; el.classList.toggle('hot', !!hot); } };
+    count('payments', d.receipts.length);
+    count('history', (d.history || []).length);
     document.querySelectorAll('[data-doc]').forEach((x) => (x.onclick = () => receiptDocDialog(+x.dataset.doc)));
-    if ($('#cdocs')) docsPanel('booking', b.id, $('#cdocs'), `${d.unit.unit_no} · ${d.applicants.map((a) => a.name).join(' & ')}`);
-    if ($('#ccomm')) commPanel(b.id, d.unit.unit_no, $('#ccomm'));
-    const iv = await api(`/api/verify?booking=${b.id}`).catch(() => ({ rows: [] }));
-    const open = iv.rows.filter((x) => x.status === 'open');
-    if (open.length) $('.panel', $('#page')).insertAdjacentHTML('beforebegin', `<div class="note" style="margin-bottom:14px"><b>${open.length} item${open.length === 1 ? '' : 's'} to verify from the import:</b><ul class="small" style="margin:6px 0 0 18px;padding:0">${open.map((x) => `<li>${esc(x.detail)}</li>`).join('')}</ul><a href="#/verify">Open Data to verify</a></div>`);
+    if ($('#receipt2')) $('#receipt2').onclick = () => $('#receipt').click();
+    const reload = (k) => () => go(`#/booking/${b.id}${k ? '?tab=' + k : ''}`);
+    if ($('#cdocs')) docsPanel('booking', b.id, $('#cdocs'), `${d.unit.unit_no} · ${names}`).then(() => count('documents', $('#cdocs').querySelectorAll('[data-open]').length)).catch(() => {});
+    if ($('#ccomm')) commPanel(b.id, d.unit.unit_no, $('#ccomm')).then(() => count('messages', $('#ccomm').querySelectorAll('.msg').length)).catch(() => {});
+    if ($('#ffMail')) $('#ffMail').onclick = () => followupEmail(b.id, d.unit.unit_no, reload('messages'));
+    if ($('#ffLetter')) $('#ffLetter').onclick = async () => {
+      const L = await api(`/api/letters?project=${proj}`).catch((e) => ({ error: e.message }));
+      if (L.error) return alert(L.error);
+      const m = L.mail || {};
+      const dl = dialog(`<h2>Demand letter · ${esc(d.unit.unit_no)}</h2><p class="muted small">${!m.configured ? 'Email is not set up, so the letter can be printed or marked as sent on WhatsApp or by courier.' : m.live ? 'The email goes to the buyer.' : 'Test version: the email goes only to the test address in Letter settings.'}</p>
+        <div class="row"><div><label>Letter type</label><select name="type">${L.types.map((t) => `<option>${esc(t)}</option>`).join('')}</select></div><div><label>Letter date</label><input type="date" name="date" value="${todayIso()}" max="${todayIso()}"></div></div>
+        <label>Send</label><select name="via">${m.configured ? '<option value="email">By email</option>' : ''}<option value="print">Print only (open the PDF)</option><option value="whatsapp">Mark sent on WhatsApp</option><option value="courier">Mark sent by courier</option></select>
+        <p class="small"><a href="#" id="ffPrev">Preview the letter</a></p>`,
+      async (x) => {
+        const r = await api('/api/letters', { action: 'prepare', projectId: proj, bookingIds: [b.id], letterType: x.type, letterDate: x.date });
+        const id = r.letters[0] && r.letters[0].id; if (!id) throw new Error('No letter was prepared: this buyer may owe less than the minimum in Letter settings.');
+        if (x.via === 'email') { const e = await api('/api/letters', { action: 'email', projectId: proj, letterIds: [id] }); const res = e.results[0] || {}; if (res.error) throw new Error(res.error); toast('Letter emailed.'); }
+        else if (x.via === 'print') window.open(`/api/letters?pdf=${id}`, '_blank', 'noopener');
+        else { await api('/api/letters', { action: 'mark', projectId: proj, letterIds: [id], via: x.via }); toast(`Marked as sent by ${x.via}.`); }
+        reload('history')();
+      });
+      $('[value=save]', dl).textContent = 'Prepare';
+      $('#ffPrev', dl).onclick = (e) => { e.preventDefault(); window.open(`/api/letters?preview=${b.id}&type=${encodeURIComponent(dl.querySelector('[name=type]').value)}`, '_blank', 'noopener'); };
+    };
+    api(`/api/verify?booking=${b.id}`).then((iv) => { const open = iv.rows.filter((x) => x.status === 'open');
+      if (open.length) $('#ffVerify').innerHTML = `<div class="note" style="margin-bottom:12px"><b>${open.length} item${open.length === 1 ? '' : 's'} to verify from the import:</b><ul class="small" style="margin:6px 0 0 18px;padding:0">${open.map((x) => `<li>${esc(x.detail)}</li>`).join('')}</ul><a href="#/verify">Open Data to verify</a></div>`; }).catch(() => {});
+    // Dream Chat with Accounts about this flat
+    (async () => { const el = $('#ffChat');
+      try {
+        const t = await api(`/api/team?booking=${b.id}`);
+        count('messages', ($('#ccomm') ? $('#ccomm').querySelectorAll('.msg').length : 0) + t.rows.length);
+        el.innerHTML = `<h2>Dream Chat about this flat <span class="muted small">CRM ↔ Accounts</span></h2>
+          <div class="ff-chat">${t.rows.map((m) => `<div class="ff-cm ${m.kind === 'system' ? 'sys' : ''}"><div class="small muted">${esc(m.kind === 'system' ? 'ERP' : m.from_name || '')} → ${m.to_team === 'crm' ? 'CRM' : 'Accounts'} · ${fmtDate(m.created_at)}${m.needs_action ? (m.done_at ? ' · done' : ' · <b>needs an answer</b>') : ''}</div><div>${esc(m.body)}</div></div>`).join('') || '<p class="muted small">No messages about this flat yet.</p>'}</div>
+          ${t.team ? `<form id="ffChatF" class="row" style="grid-template-columns:1fr auto;align-items:end;margin-top:10px"><div><label>Message to ${t.team === 'crm' ? 'Accounts' : t.team === 'accounts' ? 'CRM' : 'the other team'}</label><input name="body" required maxlength="2000" placeholder="e.g. Please confirm the cheque for this flat is deposited"></div><div><button>Send</button></div></form>` : ''}`;
+        if ($('#ffChatF')) $('#ffChatF').onsubmit = async (e) => { e.preventDefault(); const x = Object.fromEntries(new FormData(e.target));
+          try { await api('/api/team', { action: 'post', bookingId: b.id, to: t.team === 'crm' ? 'accounts' : t.team === 'accounts' ? 'crm' : 'accounts', body: x.body }); toast('Sent.'); reload('messages')(); } catch (er) { alert(er.message); } };
+      } catch { el.innerHTML = '<h2>Dream Chat about this flat</h2><p class="muted small">Not on your login.</p>'; }
+    })();
     if (can('ledger.view')) {
+      api(`/api/ledger?booking=${b.id}`).then((L) => { $('#ffLedger').innerHTML = `<h2>Ledger <a class="btn ghost small" style="float:right" href="#/statement/${b.id}">Print statement</a></h2>
+        <div class="table-wrap"><table><tr><th>Date</th><th>Particulars</th><th class="num">Demanded</th><th class="num">Received</th><th class="num">Balance</th><th class="num">GST balance</th></tr>
+        ${L.lines.map((l) => `<tr><td>${fmtD(l.date)}</td><td>${esc(l.text)}${l.due ? `<br><span class="small muted">due ${fmtD(l.due)}</span>` : ''}</td><td class="num">${l.debit ? inr(l.debit, 2) : ''}</td><td class="num">${l.credit && toNum(l.credit) ? inr(l.credit, 2) : ''}</td><td class="num"><b>${inr(l.balance, 2)}</b></td><td class="num">${inr(l.gstBalance, 2)}</td></tr>`).join('')}</table></div>
+        ${L.oldest ? `<p class="small">Oldest unpaid demand: ${esc(L.oldest.stage)}, due ${fmtD(L.oldest.since)} (${L.oldest.days} days ago).</p>` : ''}`;
+        }).catch((e) => { $('#ffLedger').innerHTML = `<p class="err">${esc(e.message)}</p>`; });
       const f = await api(`/api/followups?booking=${b.id}`);
-      $('#page').insertAdjacentHTML('beforeend', `<div class="panel"><h2>Follow-ups</h2><div class="table-wrap"><table><tr><th>When</th><th>How</th><th>Outcome</th><th>Note</th><th>Promise</th><th>Next</th><th>By</th></tr>
-        ${f.rows.map((x) => `<tr><td>${fmtD(x.created_at.slice(0, 10))}</td><td>${esc(x.kind)}</td><td>${esc(x.outcome)}</td><td class="small">${esc(x.note || '')}</td><td class="small">${x.promise_date ? fmtD(x.promise_date) + (x.promise_amount ? ' · ' + inr(x.promise_amount) : '') : ''}</td><td class="small">${x.next_date ? fmtD(x.next_date) : ''}</td><td>${esc(x.by_name || '')}</td></tr>`).join('') || '<tr><td colspan="7" class="muted">No follow-ups yet.</td></tr>'}</table></div></div>`);
-      if ($('#logf')) $('#logf').onclick = () => followupForm(b.id, d.unit.unit_no, f, () => bookingPage(id));
-    }
+      const last = f.rows[0];
+      const today = todayIso();
+      const late = last && last.promise_date && last.promise_date < today && !d.receipts.some((r) => r.received_on >= last.created_at.slice(0, 10) && ['pending', 'approved'].includes(r.status));
+      count('calls', f.rows.length, last && last.next_date && last.next_date <= today && toNum(bal.overdue) > 0);
+      $('#ffNext').innerHTML = `<h2>Where this buyer stands</h2><div class="ff-next">
+        <div><span class="muted small">Overdue</span><b class="${toNum(bal.overdue) > 0 ? 'bad-t' : 'good-t'}">${toNum(bal.overdue) > 0 ? inr(bal.overdue) : 'Nothing overdue'}</b></div>
+        <div><span class="muted small">Last contact</span><b>${last ? `${fmtD(last.created_at.slice(0, 10))} · ${esc(last.kind)}` : 'Never'}</b>${last ? `<span class="small">${esc(last.outcome)}${last.note ? ' · ' + esc(last.note.slice(0, 80)) : ''}${last.by_name ? ' · ' + esc(last.by_name) : ''}</span>` : ''}</div>
+        <div><span class="muted small">Promise to pay</span><b class="${late ? 'bad-t' : ''}">${last && last.promise_date ? `${fmtD(last.promise_date)}${last.promise_amount ? ' · ' + inr(last.promise_amount) : ''}${late ? ' (broken)' : ''}` : '—'}</b></div>
+        <div><span class="muted small">Next call</span><b class="${last && last.next_date && last.next_date <= today && toNum(bal.overdue) > 0 ? 'bad-t' : ''}">${last && last.next_date ? fmtD(last.next_date) + (last.next_date <= today ? ' (due)' : '') : toNum(bal.overdue) > 0 ? 'Call today' : '—'}</b></div>
+        <div><span class="muted small">Last receipt</span><b>${(() => { const r = d.receipts.filter((x) => ['pending', 'approved'].includes(x.status)).sort((x, y) => String(y.received_on).localeCompare(String(x.received_on)))[0]; return r ? `${fmtD(r.received_on)} · ${inr(r.amount)}` : 'None'; })()}</b></div>
+      </div>`;
+      $('#ffCalls').innerHTML = `<h2>Calls &amp; follow-ups ${$('#logf') ? '<button class="small" id="logf2" style="float:right">Log a call</button>' : ''}</h2><div class="table-wrap"><table><tr><th>When</th><th>How</th><th>Outcome</th><th>Note</th><th>Promise</th><th>Next</th><th>By</th></tr>
+        ${f.rows.map((x) => `<tr><td>${fmtD(x.created_at.slice(0, 10))}</td><td>${esc(x.kind)}</td><td>${esc(x.outcome)}</td><td class="small">${esc(x.note || '')}</td><td class="small">${x.promise_date ? fmtD(x.promise_date) + (x.promise_amount ? ' · ' + inr(x.promise_amount) : '') : ''}</td><td class="small">${x.next_date ? fmtD(x.next_date) : ''}</td><td>${esc(x.by_name || '')}</td></tr>`).join('') || '<tr><td colspan="7" class="muted">No calls logged yet.</td></tr>'}</table></div>`;
+      if ($('#logf')) $('#logf').onclick = () => followupForm(b.id, d.unit.unit_no, f, reload('calls'));
+      if ($('#logf2')) $('#logf2').onclick = () => $('#logf').click();
+    } else $('#ffNext').hidden = true;
     const act = async (body, msg) => { try { await api('/api/bookings', { id: b.id, ...body }); if (msg) toast(msg); bookingPage(id); } catch (e) { alert(e.message); } };
     if ($('#editDates')) $('#editDates').onclick = () => dialog(`<h2>Dates &amp; status · ${esc(d.unit.unit_no)}</h2>
       <div class="row"><div><label>Booking form received</label><input type="date" name="bookingFormDate" value="${esc(b.booking_form_date || '')}"></div><div><label>Registration status</label><input name="registrationStatus" list="regst" value="${esc(b.registration_status || '')}"><datalist id="regst"><option>Done</option><option>Registration Lineup</option><option>Pending</option></datalist></div></div>
@@ -721,7 +866,7 @@
       <div class="row"><div><label>Agreement date</label><input type="date" name="agreementDate" max="${todayIso()}"></div><div><label>Registration date</label><input type="date" name="registrationDate" required max="${todayIso()}"></div></div>
       <div class="row"><div><label>Stamp duty (₹)</label><input name="stampDuty" inputmode="decimal"></div><div><label>Registration fee (₹)</label><input name="registrationFee" inputmode="decimal" value="30000"></div></div>`,
     async (x) => { await api('/api/bookings', { action: 'register', id: b.id, ...x }); toast('Registration recorded.'); bookingPage(id); });
-    if ($('#receipt')) $('#receipt').onclick = () => receiptForm({ id: b.id, label: `${d.unit.unit_no} · ${d.applicants.map((a) => a.name).join(' & ')}`, gstRate: toNum(b.gst_rate) }, () => bookingPage(id));
+    if ($('#receipt')) $('#receipt').onclick = () => receiptForm({ id: b.id, label: `${d.unit.unit_no} · ${names}`, gstRate: toNum(b.gst_rate) }, reload('payments'));
     if ($('#cancelReq')) $('#cancelReq').onclick = () => dialog(`<h2>Request cancellation · ${esc(d.unit.unit_no)}</h2>
       <p class="muted">The booking is not deleted. Once Management approves, it stays on record as Cancelled with the buyer and every receipt, Accounts gets it on the Cancelled flats list for the refund, and the flat becomes free to book again.</p>
       <label>Reason</label><textarea name="reason" rows="2" required></textarea>
@@ -966,7 +1111,7 @@
   async function statementPage(id) {
     const d = await api(`/api/ledger?booking=${id}`);
     const h = d.head, bal = d.balance;
-    $('#page').innerHTML = `<p class="crumbs no-print"><a href="#/ledgers">Customer ledgers</a> › ${esc(h.unit_no)}</p>
+    $('#page').innerHTML = `<p class="crumbs no-print"><a href="#/flats">Flats &amp; buyers</a> › <a href="#/booking/${id}">${esc(h.unit_no)}</a> › Statement</p>
       <div class="actions no-print" style="margin:0 0 14px"><button id="print">Print / save as PDF</button><a class="btn ghost" href="#/booking/${id}">Open booking</a></div>
       <div class="statement panel">
         <div class="st-head"><div><b>${esc(h.company)}</b><br>${esc(h.project)}${h.rera_no ? ' · MahaRERA ' + esc(h.rera_no) : ''}</div><div class="right"><b>Statement of account</b><br>As of ${fmtD(d.asOf)}</div></div>
