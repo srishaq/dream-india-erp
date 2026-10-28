@@ -1287,7 +1287,7 @@
       el = document.createElement('div'); el.className = 'chatw no-print';
       el.innerHTML = `<div class="chatpop" hidden></div>
         <div class="chatp" hidden role="dialog" aria-label="Dream Chat">
-          <div class="chath"><b>Dream Chat</b> <span class="small" style="opacity:.75">CRM ↔ Accounts</span><span><button type="button" class="chats" id="chSnd"></button><a href="${full()}" class="small" id="chFull">Full page</a><button type="button" class="chatx" aria-label="Close">×</button></span></div>
+          <div class="chath"><b>Dream Chat</b> <span class="small" style="opacity:.75">CRM ↔ Accounts</span><span>${anyOf('users.manage', 'mgmt.view') ? '<button type="button" class="chats" id="chTest" title="The ERP sends you a message in 10 seconds, so you can hear the chime">Test sound</button>' : ''}<button type="button" class="chats" id="chSnd"></button><a href="${full()}" class="small" id="chFull">Full page</a><button type="button" class="chatx" aria-label="Close">×</button></span></div>
           <div class="chatl" id="chL"><p class="muted small">Loading…</p></div>
           <form class="chatf" id="chF">
             <div class="chatr"><span id="chTo"></span><input name="unit" placeholder="Flat (optional)" maxlength="12"><label class="check small"><input type="checkbox" name="needsAction" value="1"> Needs an answer</label></div>
@@ -1302,6 +1302,8 @@
       const showSnd = () => { snd.textContent = soundOn() ? '🔔 Sound on' : '🔕 Sound off'; snd.title = soundOn() ? 'Click to turn the sound off' : 'Click to turn the sound on'; };
       snd.onclick = () => { store.set('erp_chat_sound', soundOn() ? 'off' : 'on'); showSnd(); if (soundOn()) sound('in'); };
       showSnd();
+      const tb = el.querySelector('#chTest');
+      if (tb) tb.onclick = () => { tb.disabled = true; tb.textContent = 'Coming in 10 s…'; close(); setTimeout(async () => { try { await api('/api/team', { action: 'test' }); await load(); } catch (e) { alert(e.message); } tb.disabled = false; tb.textContent = 'Test sound'; }, 10000); };
       el.querySelector('#chFull').onclick = close;
       el.querySelector('.chatpop').onclick = () => { el.querySelector('.chatpop').hidden = true; show(); };
       const f = el.querySelector('#chF');

@@ -48,6 +48,12 @@ module.exports = route({
     const u = await auth.guard(req, res); if (!u) return;
     if (!see(u)) throw fail(403, 'Your role does not see CRM and Accounts messages.');
     if (b.action === 'read') { await T.markRead(u); return res.json({ ok: true }); }
+    // Admin / Management: a message from the ERP itself, to hear the incoming chime on one's own screen.
+    if (b.action === 'test') {
+      if (!(has(u, 'users.manage') || has(u, 'mgmt.view'))) throw fail(403, 'Only the Admin can send a test message.');
+      const id = await T.post({ to: 'crm', body: `Test message for ${u.name}: if you heard a chime, the Dream Chat sound is working.`, kind: 'system' });
+      return res.json({ ok: true, id });
+    }
     if (b.action === 'post') {
       const body = str(b.body, 4000); if (!body) throw fail(400, 'Write the message.');
       const t = T.teamOf(u);
