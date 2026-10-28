@@ -219,7 +219,7 @@
     wireNav();
     chat.mount();
     if (anyOf('accounts.enter', 'receipt.approve')) api('/api/receipts?todeposit=1').then((r) => { if (r.n && $('.top .who:last-child')) $('.top .who:last-child').insertAdjacentHTML('afterbegin', `<a class="mbadge dep" href="#/receipts?t=cheques" title="Cheques the CRM has entered that are not deposited yet">🏦 ${r.n} cheque${r.n === 1 ? '' : 's'} to deposit</a>`); }).catch(() => {});
-    if (can('ledger.view')) api('/api/comms?badge=1').then((r) => { if (r.mine && $('.top .who')) $('.top .who').insertAdjacentHTML('beforeend', `<a class="mbadge" href="#/comms" title="Buyers' replies on your flats, not read yet">✉ ${r.mine} new</a>`); }).catch(() => {});
+    if (can('ledger.view')) mailWatch.paint();
     $('#out').onclick = signOut;
     wireInstall();
     $('#cpw').onclick = () => changePassword(false);
@@ -1612,6 +1612,11 @@
         f.frequency.setValueAtTime(500, t0); f.frequency.exponentialRampToValueAtTime(5000, t0 + len);
         g.gain.setValueAtTime(0.0001, t0); g.gain.exponentialRampToValueAtTime(0.5, t0 + 0.07); g.gain.exponentialRampToValueAtTime(0.0001, t0 + len);
         src.connect(f).connect(g).connect(a.destination); src.start(t0); src.stop(t0 + len);
+      } else if (kind === 'mail') {
+        // a buyer's email or WhatsApp: three bright bell notes going up, clearly not the Dream Chat chime
+        [[1047, 0], [1319, 0.11], [1568, 0.22]].forEach(([fq, t]) => { const o = a.createOscillator(), o2 = a.createOscillator(), g = a.createGain(); o.type = 'triangle'; o.frequency.value = fq; o2.type = 'sine'; o2.frequency.value = fq * 2;
+          g.gain.setValueAtTime(0.0001, t0 + t); g.gain.exponentialRampToValueAtTime(0.3, t0 + t + 0.01); g.gain.exponentialRampToValueAtTime(0.0001, t0 + t + 0.6);
+          o.connect(g); o2.connect(g); g.connect(a.destination); o.start(t0 + t); o2.start(t0 + t); o.stop(t0 + t + 0.65); o2.stop(t0 + t + 0.65); });
       } else {
         [[784, 0], [1175, 0.12]].forEach(([fq, t]) => { const o = a.createOscillator(), g = a.createGain(); o.type = 'sine'; o.frequency.value = fq;
           g.gain.setValueAtTime(0.0001, t0 + t); g.gain.exponentialRampToValueAtTime(0.25, t0 + t + 0.02); g.gain.exponentialRampToValueAtTime(0.0001, t0 + t + 0.35);
@@ -1636,8 +1641,8 @@
       el.querySelector('.chatb').onclick = () => (open ? close() : show());
       el.querySelector('.chatx').onclick = close;
       const snd = el.querySelector('#chSnd');
-      const showSnd = () => { snd.textContent = soundOn() ? '🔔 Sound on' : '🔕 Sound off'; snd.title = soundOn() ? 'Click to turn the sound off' : 'Click to turn the sound on'; };
-      snd.onclick = () => { store.set('erp_chat_sound', soundOn() ? 'off' : 'on'); showSnd(); if (soundOn()) sound('in'); };
+      const showSnd = () => { snd.textContent = soundOn() ? '🔔 Sound on' : '🔕 Sound off'; snd.title = soundOn() ? 'Sound for Dream Chat and for buyers\' emails. Click to turn it off' : 'Click to turn the sound on (you hear the chat chime, then the email tone)'; };
+      snd.onclick = () => { store.set('erp_chat_sound', soundOn() ? 'off' : 'on'); showSnd(); if (soundOn()) { sound('in'); if (can('ledger.view')) setTimeout(() => sound('mail'), 900); } };
       showSnd();
       const tb = el.querySelector('#chTest');
       if (tb) tb.onclick = () => { tb.disabled = true; tb.textContent = 'Coming in 10 s…'; close(); setTimeout(async () => { try { await api('/api/team', { action: 'test' }); await load(); } catch (e) { alert(e.message); } tb.disabled = false; tb.textContent = 'Test sound'; }, 10000); };
@@ -1704,6 +1709,42 @@
     }
     document.addEventListener('visibilitychange', () => { if (el && !document.hidden) { load(); schedule(); } });
     return { mount, unmount, seen, sound };
+  })();
+
+  // Buyers' emails and WhatsApps: the "✉ N new" badge stays live (checked every minute, every 3 minutes in the
+  // background), and every new one plays its own tone (three rising bell notes, not the Dream Chat chime) with a
+  // pop-up and, when the tab is in the background, a desktop notification. Uses the same Sound on / off switch.
+  const mailWatch = (() => {
+    let n = null, lastId = 0, timer = null;
+    function draw() {
+      const host = $('.top .who'); if (!host) return;
+      let a = host.querySelector('.mbadge.mail');
+      if (!n) { if (a) a.remove(); return; }
+      if (!a) { host.insertAdjacentHTML('beforeend', '<a class="mbadge mail" href="#/comms" title="Buyers\' emails and WhatsApps on your flats, not read yet"></a>'); a = host.querySelector('.mbadge.mail'); }
+      a.textContent = `✉ ${n} new`;
+    }
+    function pop(m) {
+      const who = m.buyers || m.from_addr || 'A buyer', text = `${m.unit_no ? m.unit_no + ' · ' : ''}${m.subject || (m.channel === 'whatsapp' ? 'WhatsApp message' : 'Email')}`;
+      let el = document.getElementById('mailpop');
+      if (!el) { el = document.createElement('a'); el.id = 'mailpop'; el.className = 'mailpop no-print'; document.body.appendChild(el); }
+      el.href = m.booking_id ? `#/booking/${m.booking_id}?tab=messages` : '#/comms';
+      el.innerHTML = `<b>✉ ${m.channel === 'whatsapp' ? 'WhatsApp' : 'Email'} from ${esc(who)}</b><br>${esc(text.slice(0, 140))}`;
+      el.hidden = false; clearTimeout(el._t); el._t = setTimeout(() => (el.hidden = true), 12000);
+      el.onclick = () => (el.hidden = true);
+      try { if (document.hidden && 'Notification' in window && Notification.permission === 'granted') { const nn = new Notification(`${m.channel === 'whatsapp' ? 'WhatsApp' : 'Email'} from ${who}`, { body: text, tag: 'erp-mail-' + m.id }); nn.onclick = () => { window.focus(); location.hash = el.href.split('#')[1] ? '#' + el.href.split('#')[1] : '#/comms'; nn.close(); }; } } catch {}
+    }
+    async function check() {
+      if (!me || !can('ledger.view')) return;
+      try {
+        const r = await api('/api/comms?badge=1');
+        const id = r.last ? r.last.id : 0;
+        if (n !== null && id > lastId && r.last) { chat.sound('mail'); pop(r.last); }
+        n = r.mine; lastId = Math.max(lastId, id); draw();
+      } catch { /* offline for a moment */ }
+    }
+    function schedule() { clearTimeout(timer); timer = setTimeout(async () => { await check(); schedule(); }, document.hidden ? 180000 : 60000); }
+    document.addEventListener('visibilitychange', () => { if (!document.hidden && me) { check(); schedule(); } });
+    return { paint: () => { draw(); check(); schedule(); }, check };
   })();
 
   // ---------- SDR (stamp duty and registration) challans ----------
@@ -1794,7 +1835,7 @@
     const [d, st] = await Promise.all([api(`/api/comms?inbox=1&f=${f}`), api('/api/comms?status=1')]);
     const m = st.mail;
     const mailLine = !m.configured ? '<span class="bad-t">The mailbox is not connected yet (email settings in Vercel), so buyers\' replies are not read.</span>'
-      : m.error ? `<span class="bad-t">Last check of ${esc(m.mailbox || 'the mailbox')} failed: ${esc(m.error)}</span>` : `Replies are read from ${esc(m.mailbox || 'the mailbox')} every 15 minutes${m.lastRun ? ' · last checked ' + fmtDate(m.lastRun) : ''}.`;
+      : m.error ? `<span class="bad-t">Last check of ${esc(m.mailbox || 'the mailbox')} failed: ${esc(m.error)}</span>` : `Replies are read from ${esc(m.mailbox || 'the mailbox')} every 5 minutes${m.lastRun ? ' · last checked ' + fmtDate(m.lastRun) : ''}.`;
     $('#page').innerHTML = `<div class="page-head"><div><h1>Communication inbox</h1><p class="muted">Buyers' email replies and WhatsApps. Each one is also kept in the buyer's Communication record on their booking. A message the ERP could not match to a flat waits here until you link it.</p></div>
         <div class="actions" style="margin:0">${st.canSync && m.configured ? '<button class="ghost" id="cmSync">Check the mailbox now</button>' : ''}</div></div>
       <div class="panel"><p class="small">${mailLine}<br>WhatsApp: ${st.whatsapp.configured ? 'connected' : 'not connected yet'}.</p>

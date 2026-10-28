@@ -419,3 +419,7 @@ table.flats tr.click:hover td { background: var(--brand-tint); }
 .tiles.small { grid-template-columns: repeat(auto-fill, minmax(min(100%, 230px), 1fr)); gap: 10px; }
 .tiles.small .tile { min-height: 0; padding: 14px; gap: 6px; box-shadow: 0 1px 2px rgba(20,12,89,.05); }
 .tiles.small .tile p { display: none; }
+/* a buyer's new email or WhatsApp: pop-up above the Dream Chat button */
+.mailpop { position: fixed; right: 18px; bottom: 92px; z-index: 60; max-width: 340px; background: #fff; color: var(--ink); border: 1.5px solid #140C59; border-left: 6px solid #0E8C9B; border-radius: 12px; padding: 12px 14px; box-shadow: 0 12px 30px rgba(20,12,89,.2); text-decoration: none; font-size: 14px; line-height: 1.4; }
+.mailpop b { color: #140C59; }
+.mailpop[hidden] { display: none; }

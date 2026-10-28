@@ -40,7 +40,12 @@ module.exports = route({
     if (q.badge) {
       const r = await db.one(`select count(*)::int as n from communications c join bookings b on b.id = c.booking_id join units u on u.id = b.unit_id join buildings bl on bl.id = u.building_id
         where c.direction = 'in' and c.status = 'matched' and c.read_at is null and ${await mineSql(u)}`);
-      return res.json({ mine: r.n });
+      // the newest unread one, so the page can chime and show who wrote when a new one arrives
+      const last = r.n ? await db.one(`select c.id, c.channel, c.subject, c.from_addr, c.booking_id, u.unit_no,
+          (select string_agg(y.name, ' & ' order by a.seq) from booking_applicants a join buyers y on y.id = a.buyer_id where a.booking_id = b.id) as buyers
+        from communications c join bookings b on b.id = c.booking_id join units u on u.id = b.unit_id join buildings bl on bl.id = u.building_id
+        where c.direction = 'in' and c.status = 'matched' and c.read_at is null and ${await mineSql(u)} order by c.id desc limit 1`) : null;
+      return res.json({ mine: r.n, last });
     }
     if (q.booking) {
       await bookingFor(u, intOr(q.booking));

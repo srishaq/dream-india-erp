@@ -80,7 +80,7 @@
     },
     {
       "path": "/api/cron?job=mail",
-      "schedule": "*/15 * * * *"
+      "schedule": "*/5 * * * *"
     }
   ],
   "rewrites": [

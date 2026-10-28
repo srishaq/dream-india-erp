@@ -2,7 +2,7 @@
 //   /api/cron?job=bank  09:40 UTC = 3:10 pm IST  bank statements from the Drive folder (uploads by 3 pm)
 //   /api/cron?job=morning 03:30 UTC = 9:00 am IST  the Accounts audit and the CRM list → Daily To-Do (Accounts audit emailed)
 //   /api/cron?job=pdc   03:50 UTC = 9:20 am IST  PDC reminder emails
-//   /api/cron?job=mail  every 15 minutes          buyers' email replies into their Communication record
+//   /api/cron?job=mail  every 5 minutes           buyers' email replies into their Communication record
 // Vercel sends "Authorization: Bearer <CRON_SECRET>" when CRON_SECRET is set; then nothing else may run these.
 // Without CRON_SECRET a job runs only in its own hour (IST) and only once that day, so a stray call does nothing.
 const ba = require('../lib/bank-auto');
