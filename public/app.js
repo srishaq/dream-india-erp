@@ -124,7 +124,7 @@
     { key: 'custdocs', label: 'Customer documents', show: () => anyOf('buyer.kyc', 'accounts.view') },
     { key: 'verify', label: 'Data to verify', show: () => anyOf('inventory.view', 'ledger.view') },
     { key: 'prices', label: 'Price list & cost sheet', show: () => can('inventory.view') },
-    { key: 'partners', label: 'Channel partners', show: () => can('ledger.view') },
+    { key: 'partners', label: 'Channel partner ledger', show: () => can('ledger.view') },
     { group: 'Accounts' },
     { key: 'acctodo', label: 'Daily To-Do', show: () => can('accounts.view') },
     { key: 'accteam', label: 'Dream Chat', show: () => can('accounts.view') },
@@ -141,6 +141,7 @@
     { key: 'reg-tenants', label: 'SRA Tenants', show: () => can('accounts.view') },
     { key: 'reg-rentLinks', label: 'Tenant Rent Links', show: () => can('accounts.view') },
     { key: 'reg-cancellations', label: 'Cancelled flats', show: () => can('accounts.view') },
+    { key: 'cpacc', label: 'Channel partner ledger', show: () => can('accounts.view') && can('ledger.view'), href: () => '#/partners' },
     { key: 'accreports', label: 'Reports & Tally', show: () => can('accounts.view') },
     { key: 'checks', label: 'Checks', show: () => can('accounts.view') },
     { key: 'bookscrm', label: 'Tally vs CRM', show: () => anyOf('accounts.view', 'ledger.view') },
@@ -158,7 +159,7 @@
     { key: 'users', label: 'Logins', show: () => can('users.manage') },
     { key: 'audit', label: 'Audit log', show: () => can('audit.view') },
   ];
-  const DETAIL = { booking: 'bookings', statement: 'ledgers', run: 'demands', bankauto: 'bankauto', project: 'home', team: 'team', accteam: 'accteam' };
+  const DETAIL = { booking: 'bookings', statement: 'ledgers', run: 'demands', bankauto: 'bankauto', project: 'home', team: 'team', accteam: 'accteam', cp: 'partners' };
   let projectList = null, proj = null;
   const store = { get: (k) => { try { return localStorage.getItem(k); } catch { return null; } }, set: (k, v) => { try { localStorage.setItem(k, v); } catch {} } };
 
@@ -193,7 +194,7 @@
     if (short) { const sig = projectList.find((p) => p.code === 'SIGNATURE') || projectList[0] || { id: 1 }; history.replaceState(null, '', '/' + short.replace('{p}', sig.id)); }
     if (!proj || !projectList.some((p) => p.id === proj)) proj = +(store.get('erp_project') || 0) || null;
     if (!projectList.some((p) => p.id === proj)) proj = (projectList.find((p) => p.code === 'SIGNATURE') || projectList[0] || {}).id || null;
-    const [page, arg] = location.hash.replace('#/', '').split('/');
+    const [page, arg] = location.hash.replace('#/', '').split('?')[0].split('/');
     const visible = PAGES.filter((p) => p.group || p.show());
     const nav = visible.filter((p, i) => !p.group || (visible[i + 1] && !visible[i + 1].group));
     const curKey = DETAIL[page] || page || 'home';
@@ -206,7 +207,7 @@
       <div class="main">
         <div class="top no-print"><div class="who">${projectList.length > 1 ? `<select id="proj" class="proj">${projectList.map((p) => `<option value="${p.id}" ${p.id === proj ? 'selected' : ''}>${esc(p.name)}</option>`).join('')}</select>` : `<b>${esc(projectList[0]?.name || '')}</b>`}</div>
           <div class="who"><span><b>${esc(me.name)}</b> · ${esc(me.roleLabel)}</span>
-            <button class="ghost small" id="cpw">Change password</button><button class="ghost small" id="out">Sign out</button></div></div>
+            ${installButton()}<button class="ghost small" id="cpw">Change password</button><button class="ghost small" id="out">Sign out</button></div></div>
         ${(() => { const g = groupOf(DETAIL[page] && arg ? DETAIL[page] : cur.key), dest = { CRM: [`#/project/${proj}/crm`, 'Sales & CRM'], Accounts: [`#/project/${proj}/accounts`, 'Accounts'], 'Site & purchase': [`#/project/${proj}/construction`, 'Construction'], 'Set-up': ['#/home', 'Home'] }[g];
           return dest && proj && !['home', 'project'].includes(page || 'home') ? `<div class="crumb no-print"><a href="${dest[0]}">← ${esc(dest[1])}</a>${dest[0] === '#/home' ? '' : '<a href="#/home">Home</a>'}</div>` : ''; })()}
         <div class="page" id="page"><p class="muted">Loading…</p></div>
@@ -215,10 +216,11 @@
     chat.mount();
     if (can('ledger.view')) api('/api/comms?badge=1').then((r) => { if (r.mine && $('.top .who')) $('.top .who').insertAdjacentHTML('beforeend', `<a class="mbadge" href="#/comms" title="Buyers' replies on your flats, not read yet">✉ ${r.mine} new</a>`); }).catch(() => {});
     $('#out').onclick = signOut;
+    wireInstall();
     $('#cpw').onclick = () => changePassword(false);
     if ($('#proj')) $('#proj').onchange = (e) => { proj = +e.target.value; store.set('erp_project', proj); shell(); };
     if (/^reg-/.test(page || '') && can('accounts.view')) { try { await accRegister(page.slice(4)); } catch (e) { $('#page').innerHTML = `<div class="err">${esc(e.message)}</div>`; } return; }
-    const fn = { home, mgmt, custdocs, comms, team: teamPage, accteam: teamPage, sdr: sdrPage, project: projectHome, crmtodo: () => dailyTodo('crm'), acctodo: () => dailyTodo('accounts'), training, projects, plans, users, audit, units, bookings, demands, receipts, ledgers, letters, followups, verify, prices, partners, balances: accBalances, bankauto: bankAuto, bookscrm: booksCrm, accreports: accReports, checks: accChecks, accsetup: accSetup, import: importPage, booking: bookingPage, statement: statementPage, run: runPage };
+    const fn = { home, mgmt, custdocs, comms, team: teamPage, accteam: teamPage, sdr: sdrPage, cp: cpPage, project: projectHome, crmtodo: () => dailyTodo('crm'), acctodo: () => dailyTodo('accounts'), training, projects, plans, users, audit, units, bookings, demands, receipts, ledgers, letters, followups, verify, prices, partners, balances: accBalances, bankauto: bankAuto, bookscrm: booksCrm, accreports: accReports, checks: accChecks, accsetup: accSetup, import: importPage, booking: bookingPage, statement: statementPage, run: runPage };
     const key = DETAIL[page] && arg ? page : cur.key;
     try { await fn[key](arg ? +arg : undefined); } catch (e) { $('#page').innerHTML = `<div class="err">${esc(e.message)}</div>`; }
   }
@@ -254,7 +256,7 @@
     bookings: 'Bookings, applicants, cancellations and transfers', demands: 'Construction stages and the demands raised on them',
     receipts: 'Enter receipts; Head Accounts approves them', ledgers: 'Each buyer’s statement of demands and payments',
     letters: 'Stage demands and reminders, by email or courier', followups: 'Calls, WhatsApps and promises to pay',
-    comms: 'Buyers\' email replies and WhatsApps, and messages to link to a flat', team: 'Dream Chat: CRM and Accounts, about a flat or a cheque', accteam: 'Dream Chat: CRM and Accounts, about a flat or a cheque', custdocs: 'Signed and scanned papers for every flat and SRA tenant, kept in Google Drive', verify: 'Items from the import still to check and close', prices: 'Rates, floor rise and the cost sheet', partners: 'Channel partners and brokerage',
+    comms: 'Buyers\' email replies and WhatsApps, and messages to link to a flat', team: 'Dream Chat: CRM and Accounts, about a flat or a cheque', accteam: 'Dream Chat: CRM and Accounts, about a flat or a cheque', custdocs: 'Signed and scanned papers for every flat and SRA tenant, kept in Google Drive', verify: 'Items from the import still to check and close', prices: 'Rates, floor rise and the cost sheet', partners: 'Each partner firm: brokerage, bills, pass back, payments and balance',
     site: 'Slab cycle, daily progress reports, hindrances, materials and floor-wise works', purchase: 'Purchase requests from request to payment', drawings: 'The drawing register from Google Drive', hr: 'Staff records, leave, letters and HR policies',
     crmtodo: 'Today’s calls, approvals, letters and what the 9 am check found', acctodo: 'What the 9 am Accounts audit found, plus your own tasks',
     training: 'Short videos on how to use each part of the ERP',
@@ -568,11 +570,11 @@
     const tab = store.get('erp_btab') || 'pending';
     const sets = {
       pending: d.rows.filter((r) => r.status === 'pending'),
-      cancel: d.rows.filter((r) => r.status === 'active' && r.cancel_requested_at),
+      cancel: d.rows.filter((r) => r.status === 'active' && (r.cancel_requested_at || r.transfer_requested_at)),
       active: d.rows.filter((r) => r.status === 'active'),
-      closed: d.rows.filter((r) => ['cancelled', 'rejected'].includes(r.status)),
+      closed: d.rows.filter((r) => ['cancelled', 'rejected', 'transferred'].includes(r.status)),
     };
-    const labels = { pending: 'Waiting for approval', cancel: 'Cancellation requests', active: 'Active', closed: 'Cancelled / rejected' };
+    const labels = { pending: 'Waiting for approval', cancel: 'Cancellation / transfer requests', active: 'Active', closed: 'Cancelled / transferred / rejected' };
     const rows = sets[tab] || sets.active;
     $('#page').innerHTML = `<div class="page-head"><div><h1>Bookings</h1><p class="muted">New bookings wait for Head CRM approval; the person who entered one cannot approve it.</p></div>
       ${can('booking.create') ? '<div class="actions" style="margin:0"><button id="new">New booking</button></div>' : ''}</div>
@@ -580,15 +582,29 @@
       <div class="panel table-wrap"><input class="search" id="q" placeholder="Search unit or buyer"><table id="tbl"><tr><th>Unit</th><th>Buyer</th><th>Booked</th><th class="num">Agreement value</th><th class="num">Outstanding</th><th class="num">Overdue</th><th>Entered by</th><th></th></tr>
       ${rows.map((r) => `<tr class="click" data-b="${r.id}" data-s="${esc((r.unit_no + ' ' + (r.buyers || '')).toLowerCase())}"><td><b>${esc(r.unit_no)}</b>${r.sample ? ' <span class="pill grey">sample</span>' : ''}</td><td>${esc(r.buyers || '')}</td><td>${fmtD(r.booking_date)}</td>
         <td class="num">${inr(r.agreement_value)}</td><td class="num">${inr(r.outstanding)}</td><td class="num ${toNum(r.overdue) > 0 ? 'bad-t' : ''}">${inr(r.overdue)}</td><td>${esc(r.created_by_name || 'Import / sample')}</td>
-        <td class="num">${r.status === 'pending' ? '<span class="pill">needs approval</span>' : r.cancel_requested_at && r.status === 'active' ? '<span class="pill bad">cancel requested</span>' : ''}</td></tr>`).join('') || '<tr><td colspan="8" class="muted">Nothing here.</td></tr>'}</table></div>`;
+        <td class="num">${r.status === 'pending' ? '<span class="pill">needs approval</span>' : r.cancel_requested_at && r.status === 'active' ? '<span class="pill bad">cancel requested</span>' : r.transfer_requested_at && r.status === 'active' ? '<span class="pill warn">transfer requested</span>' : r.status === 'transferred' ? '<span class="pill grey">transferred</span>' : ''}</td></tr>`).join('') || '<tr><td colspan="8" class="muted">Nothing here.</td></tr>'}</table></div>`;
     document.querySelectorAll('.tab[data-t]').forEach((t) => (t.onclick = () => { store.set('erp_btab', t.dataset.t); bookings(); }));
     document.querySelectorAll('tr[data-b]').forEach((tr) => (tr.onclick = () => go(`#/booking/${tr.dataset.b}`)));
     $('#q').oninput = (e) => { const q = e.target.value.toLowerCase(); document.querySelectorAll('tr[data-s]').forEach((tr) => (tr.style.display = tr.dataset.s.includes(q) ? '' : 'none')); };
     if ($('#new')) $('#new').onclick = () => bookingForm(null);
   }
 
+  // Channel partner firms for the booking form (pick one, or type a new firm's name).
+  const cpFields = async (cur = {}) => {
+    const L = await api(`/api/partners?project=${proj}&firms=1`).catch(() => ({ firms: [] }));
+    return `<div class="row"><div><label>Channel partner firm</label><input name="cpName" list="cpfirms" value="${esc(cur.cp_name || '')}" placeholder="choose, or type a new firm"><datalist id="cpfirms">${L.firms.map((f) => `<option value="${esc(f.name)}" data-pct="${f.default_pct ?? ''}">`).join('')}</datalist></div>
+      <div><label>Brokerage % of agreement value</label><input name="brokeragePct" inputmode="decimal" value="${cur.brokerage_pct != null ? toNum(cur.brokerage_pct) : ''}" placeholder="e.g. 2"><span class="small muted" id="brkAmt"></span></div></div>`;
+  };
+  const wireCp = (dl) => {
+    const f = $('form', dl), out = $('#brkAmt', dl); if (!f || !out) return;
+    const upd = () => { const av = toNum(f.agreementValue && f.agreementValue.value), p = toNum(f.brokeragePct.value); out.textContent = av && p ? `= ${inr(Math.round(av * p / 100))}` : ''; };
+    f.cpName.addEventListener('change', () => { const o = [...dl.querySelectorAll('#cpfirms option')].find((x) => x.value === f.cpName.value); if (o && o.dataset.pct && !f.brokeragePct.value) f.brokeragePct.value = o.dataset.pct; upd(); });
+    f.addEventListener('input', upd); upd();
+  };
+
   async function bookingForm(unit) {
     let choices = [];
+    const cpHtml = await cpFields();
     if (!unit) { const d = await api(`/api/units?project=${proj}`); choices = d.units.filter((u) => ['available', 'blocked'].includes(u.status) && !u.booking_id); }
     const applicant = (i) => `<fieldset class="appl"><legend>Applicant ${i}${i > 1 ? ' (optional)' : ''}</legend>
       <div class="row"><div><label>Full name</label><input name="a${i}_name" ${i === 1 ? 'required' : ''}></div><div><label>Mobile</label><input name="a${i}_phone"></div></div>
@@ -599,16 +615,17 @@
       <div class="row"><div><label>Booking date</label><input name="bookingDate" type="date" max="${todayIso()}" value="${todayIso()}" required></div><div><label>Agreement value (₹)</label><input name="agreementValue" inputmode="decimal" required placeholder="e.g. 9715000"></div></div>
       <div class="row"><div><label>GST rate %</label><input name="gstRate" value="5"></div><div><label>Parking</label><input name="parking" type="number" min="0" value="0"></div></div>
       <div class="row"><div><label>Funding</label><select name="funding"><option value="self">Self funding</option><option value="loan">Home loan</option></select></div><div><label>Loan bank</label><input name="loanBank"></div></div>
-      <div class="row"><div><label>Source</label><select name="source"><option>Walk-in</option><option>Channel Partner</option><option>Reference</option><option>Digital</option><option>Other</option></select></div><div><label>Channel partner</label><input name="cpName"></div></div>
-      <div class="row"><div><label>Brokerage (₹)</label><input name="brokerage" inputmode="decimal"></div><div><label>Relationship manager</label><input name="rmName"></div></div>
+      <div class="row"><div><label>Source</label><select name="source"><option>Walk-in</option><option>Channel Partner</option><option>Reference</option><option>Digital</option><option>Other</option></select></div><div><label>Relationship manager</label><input name="rmName"></div></div>
+      ${cpHtml}
       ${applicant(1)}<details><summary>Add a second or third applicant</summary>${applicant(2)}${applicant(3)}</details>`,
     async (x) => {
       const applicants = [1, 2, 3].map((i) => ({ name: x[`a${i}_name`], phone: x[`a${i}_phone`], pan: x[`a${i}_pan`], aadhaar: x[`a${i}_aadhaar`], email: x[`a${i}_email`], address: x[`a${i}_address`] })).filter((a) => a.name && a.name.trim());
-      const r = await api('/api/bookings', { action: 'create', unitId: unit ? unit.id : x.unitId, bookingDate: x.bookingDate, agreementValue: x.agreementValue, gstRate: x.gstRate, parking: x.parking, funding: x.funding, loanBank: x.loanBank, source: x.source, cpName: x.cpName, brokerage: x.brokerage, rmName: x.rmName, applicants });
+      const r = await api('/api/bookings', { action: 'create', unitId: unit ? unit.id : x.unitId, bookingDate: x.bookingDate, agreementValue: x.agreementValue, gstRate: x.gstRate, parking: x.parking, funding: x.funding, loanBank: x.loanBank, source: x.source, cpName: x.cpName, brokeragePct: x.brokeragePct, rmName: x.rmName, applicants });
       toast('Booking saved. It now waits for Head CRM approval.');
       go(`#/booking/${r.id}`);
     });
     dl.classList.add('wide');
+    wireCp(dl);
   }
 
   async function bookingPage(id) {
@@ -622,15 +639,20 @@
     if (b.status === 'active' && can('ledger.view')) actions.push(`<a class="btn ghost" href="#/statement/${b.id}">Statement of account</a>`);
     if (b.status === 'active' && can('demand.raise')) actions.push('<button class="ghost" id="logf">Log a follow-up</button>');
     if (['active', 'pending'].includes(b.status) && can('booking.approve')) actions.push('<button class="ghost" id="editBk" title="Only Head CRM can change a booking; every change is kept in the audit log">Edit booking</button>');
-    if (b.status === 'active' && !b.cancel_requested_at && can('booking.create')) actions.push('<button class="danger" id="cancelReq">Request cancellation</button>');
+    if (b.status === 'active' && !b.cancel_requested_at && !b.transfer_requested_at && can('booking.create')) actions.push('<button class="ghost" id="trReq">Transfer to another flat</button>');
+    if (b.status === 'active' && b.transfer_requested_at && can('booking.approve')) actions.push('<button id="trOk">Approve the transfer</button><button class="ghost" id="trNo">Reject the transfer</button>');
+    if (b.status === 'active' && !b.cancel_requested_at && !b.transfer_requested_at && can('booking.create')) actions.push('<button class="danger" id="cancelReq">Request cancellation</button>');
     const docBtns = [`<a class="btn ghost small" target="_blank" rel="noopener" href="/api/docs?booking=${b.id}&doc=costsheet">Cost sheet</a>`];
     if (can('buyer.kyc')) docBtns.push(`<a class="btn ghost small" target="_blank" rel="noopener" href="/api/docs?booking=${b.id}&doc=allotment">Allotment letter</a>`, `<a class="btn ghost small" target="_blank" rel="noopener" href="/api/docs?booking=${b.id}&doc=form">Booking form</a>`);
     if (can('buyer.kyc') && b.status === 'active') docBtns.push(`<button class="ghost small" id="welcome">Welcome email${b.welcome_sent_at ? ' (sent ' + fmtD(b.welcome_sent_at.slice(0, 10)) + ')' : ''}</button>`);
     if (b.status === 'active' && b.cancel_requested_at && can('cancellation.approve')) actions.push('<button class="danger" id="cancelOk">Approve cancellation</button><button class="ghost" id="cancelNo">Keep the booking</button>');
-    const statusPill = { pending: '<span class="pill">waiting for approval</span>', active: '<span class="pill good">active</span>', cancelled: '<span class="pill bad">cancelled</span>', rejected: '<span class="pill bad">rejected</span>' }[b.status] || '';
+    const statusPill = { pending: '<span class="pill">waiting for approval</span>', active: '<span class="pill good">active</span>', cancelled: '<span class="pill bad">cancelled</span>', rejected: '<span class="pill bad">rejected</span>', transferred: '<span class="pill grey">transferred</span>' }[b.status] || '';
     $('#page').innerHTML = `<p class="crumbs"><a href="#/bookings">Bookings</a> › ${esc(d.unit.unit_no)}</p>
       <div class="page-head"><div><h1>${esc(d.unit.unit_no)} · ${esc(d.applicants.map((a) => a.name).join(' & '))} ${statusPill}${b.sample ? ' <span class="pill grey">sample</span>' : ''}</h1>
         <p class="muted">${esc(d.unit.project)} · ${esc(d.unit.building)} · floor ${d.unit.floor ?? '—'} · ${esc(d.unit.typology || '')} ${d.unit.carpet_sqft ? toNum(d.unit.carpet_sqft) + ' sq ft' : ''} · ${esc(d.unit.company)}</p></div></div>
+      ${b.transfer_requested_at && b.status === 'active' && d.transfer ? `<div class="note" style="margin-bottom:14px">Transfer to <b>${esc(d.transfer.to_unit)}</b> requested on ${fmtD(String(b.transfer_requested_at).slice(0, 10))}${d.transfer.requested_by ? ' by ' + esc(d.transfer.requested_by) : ''}: new agreement value ${inr(b.transfer_av)}, from ${fmtD(String(b.transfer_date || '').slice(0, 10))}. ${b.transfer_move_receipts ? 'The receipts move to the new flat.' : 'The receipts stay here; Accounts moves them.'} Reason: ${esc(b.transfer_reason || '')}. Waiting for Head CRM.</div>` : ''}
+      ${b.status === 'transferred' && d.transfer ? `<div class="note" style="margin-bottom:14px">This booking was transferred to <a href="#/booking/${b.transferred_to}"><b>${esc(d.transfer.to_booking_unit || 'the new flat')}</b></a> on ${fmtD(String(b.cancelled_at || '').slice(0, 10))}. It stays here on record; the receipts are on the new booking.</div>` : ''}
+      ${b.transferred_from && d.transfer ? `<div class="note" style="margin-bottom:14px">Transferred from <a href="#/booking/${b.transferred_from}">${esc(d.transfer.from_unit || 'the earlier flat')}</a>. Receipts marked "moved" came across with the buyer.</div>` : ''}
       ${b.cancel_requested_at && b.status === 'active' ? `<div class="note" style="margin-bottom:14px">Cancellation requested on ${fmtD(b.cancel_requested_at)}${b.cancel_date ? ', cancelling from ' + fmtD(String(b.cancel_date).slice(0, 10)) : ''}${toNum(b.cancel_charges) ? ', cancellation charges ' + inr(b.cancel_charges) : ''}: ${esc(b.cancel_reason)}. Waiting for Management.</div>` : ''}
       ${b.status === 'cancelled' ? (() => { const c = d.cancellation || {}; const paid = toNum(c.refund_rtgs) + toNum(c.refund_white); const due = c.refund_due != null ? toNum(c.refund_due) : toNum(c.received);
         return `<div class="panel cancel-box"><h2>Cancelled booking · kept on record</h2>
@@ -649,7 +671,7 @@
           <tr><th>Booking date</th><td>${fmtD(b.booking_date)}</td></tr><tr><th>Agreement / registration</th><td>${fmtD(b.agreement_date)} / ${fmtD(b.registration_date)}</td></tr>
           <tr><th>GST rate</th><td>${toNum(b.gst_rate)}%</td></tr><tr><th>Stamp duty / registration fee</th><td>${b.stamp_duty ? inr(b.stamp_duty) : '—'} / ${b.registration_fee ? inr(b.registration_fee) : '—'}</td></tr>
           <tr><th>Funding</th><td>${esc(b.funding === 'loan' ? 'Home loan · ' + (b.loan_bank || '') : b.funding === 'self' ? 'Self' : '—')}</td></tr><tr><th>Parking</th><td>${b.parking}</td></tr>
-          <tr><th>Source / CP</th><td>${esc([b.source, b.cp_name].filter(Boolean).join(' · ') || '—')}</td></tr><tr><th>Brokerage</th><td>${b.brokerage ? inr(b.brokerage) : '—'}</td></tr></table>
+          <tr><th>Source / CP</th><td>${esc(b.source || '')}${b.cp_id ? ` · <a href="#/cp/${b.cp_id}">${esc(b.cp_name || 'partner')}</a>` : b.cp_name ? ' · ' + esc(b.cp_name) : ''}${!b.source && !b.cp_name ? '—' : ''}</td></tr><tr><th>Brokerage</th><td>${b.brokerage ? inr(b.brokerage) + (b.brokerage_pct != null ? ` (${toNum(b.brokerage_pct)}%)` : '') : '—'}</td></tr></table>
           <h2 style="margin-top:16px">Dates &amp; status ${b.status === 'active' && anyOf('booking.create', 'demand.raise') ? '<button class="ghost small" id="editDates" style="float:right">Edit</button>' : ''}</h2><table class="kv">
           <tr><th>Booking form received</th><td>${fmtD(b.booking_form_date)}</td></tr><tr><th>Registration status</th><td>${esc(b.registration_status || (b.registration_date ? 'Done' : '—'))}</td></tr>
           <tr><th>Registration appointment</th><td>${fmtD(b.registration_appointment)}</td></tr><tr><th>Bank NOC</th><td>${fmtD(b.bank_noc_date)}</td></tr>
@@ -705,8 +727,23 @@
       <p class="small muted">Received so far from this buyer: <b>${inr(d.receipts.filter((r) => r.status === 'approved').reduce((a, r) => a + toNum(r.amount), 0))}</b>. Refund due = received − charges.</p>`,
       async (x) => { await api('/api/bookings', { action: 'cancel-request', id: b.id, reason: x.reason, cancelDate: x.cancelDate, charges: x.charges }); toast('Cancellation sent to Management for approval.'); bookingPage(b.id); });
     if ($('#rebook')) $('#rebook').onclick = () => bookingForm({ id: d.unit.id, unit_no: d.unit.unit_no });
-    if ($('#editBk')) $('#editBk').onclick = () => {
+    if ($('#trReq')) $('#trReq').onclick = async () => {
+      const U = await api(`/api/units?project=${proj}`);
+      const free = U.units.filter((x) => ['available', 'blocked'].includes(x.status) && !x.booking_id && x.id !== d.unit.id);
+      dialog(`<h2>Transfer ${esc(d.unit.unit_no)} to another flat</h2>
+        <p class="muted">The same buyers move to the new flat. Once Head CRM approves, this booking stays on record as Transferred, a new booking is made on the new flat, and (if ticked) the receipts move across. For a different buyer, cancel this booking and make a new one instead.</p>
+        <label>New flat</label><select name="toUnitId" required><option value="">Choose an available flat</option>${free.map((x) => `<option value="${x.id}">${esc(x.unit_no)} · ${esc(x.typology || '')} ${x.carpet_sqft ? toNum(x.carpet_sqft) + ' sq ft' : ''}</option>`).join('')}</select>
+        <div class="row"><div><label>Agreement value of the new flat (₹)</label><input name="agreementValue" inputmode="decimal" required value="${toNum(b.agreement_value)}"></div><div><label>Transfer date</label><input type="date" name="transferDate" max="${todayIso()}" value="${todayIso()}"></div></div>
+        <label class="check"><input type="checkbox" name="moveReceipts" checked> Move this booking's receipts to the new flat</label>
+        <label>Reason</label><input name="reason" required>`,
+      async (x) => { await api('/api/bookings', { action: 'transfer-request', id: b.id, toUnitId: x.toUnitId, agreementValue: x.agreementValue, transferDate: x.transferDate, moveReceipts: x.moveReceipts === 'on', reason: x.reason }); toast('Transfer sent to Head CRM for approval.'); bookingPage(id); });
+    };
+    if ($('#trOk')) $('#trOk').onclick = async () => { if (!confirm('Approve the transfer? This booking becomes Transferred, a new booking is made on the new flat with the same buyers, and the demands are raised there.')) return;
+      try { const r = await api('/api/bookings', { action: 'transfer-approve', id: b.id }); toast(`Transferred. ${r.receiptsMoved} receipt(s) moved; Accounts has been told in Dream Chat.`); go(`#/booking/${r.newBooking}`); } catch (e) { alert(e.message); } };
+    if ($('#trNo')) $('#trNo').onclick = () => { const r = prompt('Reason for rejecting the transfer:'); if (r !== null) act({ action: 'transfer-reject', reason: r }, 'Transfer rejected.'); };
+    if ($('#editBk')) $('#editBk').onclick = async () => {
       const kyc = can('buyer.kyc');
+      const cpHtml = await cpFields(b);
       const ap = (i) => { const a = d.applicants[i - 1] || {}; return `<fieldset class="appl"><legend>Applicant ${i}${i > 1 ? ' (optional)' : ''}</legend>
         <div class="row"><div><label>Full name</label><input name="a${i}_name" value="${esc(a.name || '')}" ${i === 1 ? 'required' : ''}></div><div><label>Mobile</label><input name="a${i}_phone" value="${esc(a.phone || '')}"></div></div>
         <div class="row"><div><label>PAN</label><input name="a${i}_pan" value="${esc(a.pan || '')}"></div><div><label>Aadhaar</label><input name="a${i}_aadhaar" value="${esc(a.aadhaar || '')}"></div></div>
@@ -717,18 +754,27 @@
         <div class="row"><div><label>GST rate %</label><input name="gstRate" value="${toNum(b.gst_rate)}"></div><div><label>Parking</label><input name="parking" type="number" min="0" value="${b.parking || 0}"></div></div>
         <div class="row"><div><label>Development charges (amenity & possession, ₹)</label><input name="devCharges" inputmode="decimal" value="${b.dev_charges != null ? toNum(b.dev_charges) : ''}"></div><div><label>Relationship manager</label><input name="rmName" value="${esc(b.rm_name || '')}"></div></div>
         <div class="row"><div><label>Funding</label><select name="funding"><option value="self" ${b.funding === 'self' ? 'selected' : ''}>Self funding</option><option value="loan" ${b.funding === 'loan' ? 'selected' : ''}>Home loan</option></select></div><div><label>Loan bank</label><input name="loanBank" value="${esc(b.loan_bank || '')}"></div></div>
-        <div class="row"><div><label>Source</label><input name="source" list="srcl" value="${esc(b.source || '')}"><datalist id="srcl"><option>Walk-in</option><option>Channel Partner</option><option>Reference</option><option>Digital</option></datalist></div><div><label>Channel partner</label><input name="cpName" value="${esc(b.cp_name || '')}"></div></div>
-        <div class="row"><div><label>Brokerage (₹)</label><input name="brokerage" inputmode="decimal" value="${b.brokerage != null ? toNum(b.brokerage) : ''}"></div><div></div></div>
+        <div class="row"><div><label>Source</label><input name="source" list="srcl" value="${esc(b.source || '')}"><datalist id="srcl"><option>Walk-in</option><option>Channel Partner</option><option>Reference</option><option>Digital</option></datalist></div><div><label>Brokerage (₹, if not a %)</label><input name="brokerage" inputmode="decimal" value="${b.brokerage != null ? toNum(b.brokerage) : ''}"></div></div>
+        ${cpHtml}
         ${kyc ? `<details><summary>Applicants</summary>${ap(1)}${ap(2)}${ap(3)}</details>` : ''}
         <label>Reason for the change</label><input name="reason" required placeholder="e.g. agreement value corrected after registration">`,
       async (x) => {
-        const body = { action: 'edit', id: b.id, reason: x.reason, bookingDate: x.bookingDate, agreementValue: x.agreementValue, gstRate: x.gstRate, parking: x.parking, devCharges: x.devCharges, rmName: x.rmName, funding: x.funding, loanBank: x.loanBank, source: x.source, cpName: x.cpName, brokerage: x.brokerage };
-        if (kyc) body.applicants = [1, 2, 3].map((i) => ({ name: x[`a${i}_name`], phone: x[`a${i}_phone`], pan: x[`a${i}_pan`], aadhaar: x[`a${i}_aadhaar`], email: x[`a${i}_email`], address: x[`a${i}_address`] })).filter((a) => a.name && a.name.trim());
+        const body = { action: 'edit', id: b.id, reason: x.reason, bookingDate: x.bookingDate, agreementValue: x.agreementValue, gstRate: x.gstRate, parking: x.parking, devCharges: x.devCharges, rmName: x.rmName, funding: x.funding, loanBank: x.loanBank, source: x.source, cpName: x.cpName, brokerage: x.brokerage, brokeragePct: x.brokeragePct };
+        // send only what was changed, so an untouched % does not re-work the brokerage
+        const was = { bookingDate: String(b.booking_date || '').slice(0, 10), agreementValue: String(toNum(b.agreement_value)), gstRate: String(toNum(b.gst_rate)), parking: String(b.parking || 0), devCharges: b.dev_charges != null ? String(toNum(b.dev_charges)) : '',
+          rmName: b.rm_name || '', funding: b.funding || 'self', loanBank: b.loan_bank || '', source: b.source || '', cpName: b.cp_name || '', brokerage: b.brokerage != null ? String(toNum(b.brokerage)) : '', brokeragePct: b.brokerage_pct != null ? String(toNum(b.brokerage_pct)) : '' };
+        for (const k of Object.keys(was)) if (String(body[k] ?? '').trim() === was[k]) delete body[k];
+        if (kyc) {
+          const ap = [1, 2, 3].map((i) => ({ name: x[`a${i}_name`], phone: x[`a${i}_phone`], pan: x[`a${i}_pan`], aadhaar: x[`a${i}_aadhaar`], email: x[`a${i}_email`], address: x[`a${i}_address`] })).filter((a) => a.name && a.name.trim());
+          const sig = (a) => [a.name, a.phone, a.pan, a.aadhaar, a.email, a.address].map((v) => String(v || '').trim()).join('|');
+          if (ap.map(sig).join('#') !== d.applicants.map(sig).join('#')) body.applicants = ap;
+        }
         const r = await api('/api/bookings', body);
-        toast(`Saved: ${r.changed.length ? r.changed.length + ' field(s) changed' : 'applicants updated'}${r.demandsReworked ? `, ${r.demandsReworked} demand(s) re-worked` : ''}.`);
+        toast(`Saved: ${r.changed.length ? r.changed.length + ' field(s) changed' : 'buyer details updated'}${r.demandsReworked ? `, ${r.demandsReworked} demand(s) re-worked` : ''}.`);
         bookingPage(id);
       });
       dl.classList.add('wide');
+      wireCp(dl);
     };
     if ($('#cancelOk')) $('#cancelOk').onclick = () => confirm('Approve the cancellation? The booking stays on record as Cancelled with its receipts, Accounts gets it on the Cancelled flats list for the refund, open demands are cancelled and the flat becomes free to book again.') && act({ action: 'cancel-approve' }, 'Booking cancelled.');
     if ($('#cancelNo')) $('#cancelNo').onclick = () => act({ action: 'cancel-reject' }, 'Cancellation request withdrawn.');
@@ -1108,48 +1154,100 @@
       });
       dl.classList.add('wide');
     };
+    if (cur) unsoldList();
+  }
+
+  // Every unsold flat with its full cost from the current price list, filterable, printable, downloadable.
+  async function unsoldList(parking = 0) {
+    let box = $('#unsold');
+    if (!box) { $('#page').insertAdjacentHTML('beforeend', '<div class="panel" id="unsold"><h2>All unsold flats</h2><p class="muted small">Working it out…</p></div>'); box = $('#unsold'); }
+    const d = await api(`/api/prices?project=${proj}&unsold=1&parking=${parking}`);
+    const wings = [...new Set(d.rows.map((r) => r.wing))], types = [...new Set(d.rows.map((r) => r.typology).filter(Boolean))].sort();
+    const st = { available: 'available', blocked: 'booking being entered', held: 'held' };
+    box.innerHTML = `<h2>All unsold flats (${d.rows.length})</h2><p class="small muted">From the price list "${esc(d.priceList.name)}": carpet area × (base rate + floor rise), ${parking ? parking + ' parking' : 'no parking'}, GST, stamp duty at the normal rate, registration and other charges.</p>
+      <div class="row4 no-print"><div><label>Wing</label><select id="uw"><option value="">All</option>${wings.map((w) => `<option>${esc(w)}</option>`).join('')}</select></div><div><label>Type</label><select id="ut"><option value="">All</option>${types.map((t) => `<option>${esc(t)}</option>`).join('')}</select></div>
+        <div><label>Show</label><select id="us"><option value="">All unsold</option><option value="available">Available only</option><option value="held">Held only</option></select></div><div><label>Parking spaces</label><input id="up" type="number" min="0" value="${parking}"></div></div>
+      <div class="actions no-print"><button class="ghost small" id="uPrint">Print</button><button class="ghost small" id="uCsv">Download (Excel / CSV)</button></div>
+      <div class="table-wrap"><table id="utbl"><tr><th>Flat</th><th class="num">Floor</th><th>Type</th><th class="num">Carpet sq ft</th><th class="num">Rate / sq ft</th><th class="num">Agreement value</th><th class="num">GST</th><th class="num">Stamp duty</th><th class="num">Registration</th><th class="num">Other</th><th class="num">Total cost</th><th>Status</th><th></th></tr>
+        ${d.rows.map((r) => `<tr data-w="${esc(r.wing)}" data-t="${esc(r.typology || '')}" data-st="${r.status === 'held' ? 'held' : 'available'}"><td><b>${esc(r.unit_no)}</b></td><td class="num">${r.floor ?? ''}</td><td>${esc(r.typology || '')}</td><td class="num">${r.carpet_sqft || ''}</td>
+          ${r.error ? `<td colspan="7" class="muted">${esc(r.error)}</td>` : `<td class="num">${inr(r.rate)}</td><td class="num">${inr(r.agreementValue)}</td><td class="num">${inr(r.gst)}</td><td class="num">${inr(r.stampDuty)}</td><td class="num">${inr(r.registration)}</td><td class="num">${r.others ? inr(r.others) : '—'}</td><td class="num"><b>${inr(r.total)}</b></td>`}
+          <td class="small">${esc(st[r.status] || r.status)}${r.held_for ? ': ' + esc(r.held_for) : ''}</td><td class="no-print">${r.error ? '' : `<a class="btn link small" target="_blank" rel="noopener" href="/api/prices?unit=${r.id}&parking=${parking}&html=1">Cost sheet</a>`}</td></tr>`).join('')}</table></div>`;
+    const filt = () => { const w = $('#uw').value, t = $('#ut').value, x = $('#us').value; document.querySelectorAll('#utbl tr[data-w]').forEach((tr) => { tr.style.display = (!w || tr.dataset.w === w) && (!t || tr.dataset.t === t) && (!x || tr.dataset.st === x) ? '' : 'none'; }); };
+    ['uw', 'ut', 'us'].forEach((k) => ($('#' + k).onchange = filt));
+    $('#up').onchange = (e) => unsoldList(Math.max(0, parseInt(e.target.value, 10) || 0));
+    $('#uPrint').onclick = () => { const w = window.open('', '_blank'); w.document.write(`<html><head><title>Unsold flats</title><style>body{font:12px sans-serif}table{border-collapse:collapse;width:100%}td,th{border:1px solid #ccc;padding:4px}td.num,th.num{text-align:right}.no-print{display:none}</style></head><body><h2>Unsold flats · ${esc(d.priceList.name)}</h2>${$('#utbl').outerHTML.replace(/<tr [^>]*style="display: none;"[^>]*>[\s\S]*?<\/tr>/g, '')}</body></html>`); w.document.close(); w.print(); };
+    $('#uCsv').onclick = () => {
+      const vis = d.rows.filter((r) => { const w = $('#uw').value, t = $('#ut').value, x = $('#us').value; return (!w || r.wing === w) && (!t || r.typology === t) && (!x || (r.status === 'held' ? 'held' : 'available') === x); });
+      const q = (v) => `"${String(v ?? '').replace(/"/g, '""')}"`;
+      const csv = [['Flat', 'Floor', 'Type', 'Carpet sq ft', 'Rate per sq ft', 'Agreement value', 'GST', 'Stamp duty', 'Registration', 'Other', 'Total cost', 'Status']].concat(vis.map((r) => [r.unit_no, r.floor, r.typology, r.carpet_sqft, r.rate, r.agreementValue, r.gst, r.stampDuty, r.registration, r.others, r.total, (st[r.status] || r.status) + (r.held_for ? ': ' + r.held_for : '')])).map((l) => l.map(q).join(',')).join('\n');
+      const a = document.createElement('a'); a.href = URL.createObjectURL(new Blob(['\ufeff' + csv], { type: 'text/csv' })); a.download = `unsold-flats-${todayIso()}.csv`; a.click();
+    };
   }
 
   // ---------- channel partners and brokerage ----------
+  // ---------- channel partner ledger, firm by firm ----------
+  const cpForm = (f, after) => dialog(`<h2>${f ? 'Partner firm · ' + esc(f.name) : 'Add a channel partner firm'}</h2>
+      <label>Firm name</label><input name="name" required value="${esc(f ? f.name : '')}">
+      <div class="row"><div><label>Contact person</label><input name="contactPerson" value="${esc(f?.contact_person || '')}"></div><div><label>Mobile</label><input name="phone" value="${esc(f?.phone || '')}"></div></div>
+      <div class="row"><div><label>Email</label><input name="email" value="${esc(f?.email || '')}"></div><div><label>Usual brokerage %</label><input name="defaultPct" inputmode="decimal" value="${f?.default_pct != null ? toNum(f.default_pct) : ''}" placeholder="e.g. 2"></div></div>
+      <div class="row4"><div><label>PAN</label><input name="pan" value="${esc(f?.pan || '')}"></div><div><label>GSTIN</label><input name="gstin" value="${esc(f?.gstin || '')}"></div><div><label>MahaRERA agent no.</label><input name="reraNo" value="${esc(f?.rera_no || '')}"></div><div><label>Active</label><select name="active"><option value="true">Yes</option><option value="false" ${f && !f.active ? 'selected' : ''}>No</option></select></div></div>
+      <label>Note</label><input name="note" value="${esc(f?.note || '')}">`,
+    async (x) => { const r = await api('/api/partners', { action: 'cp-save', id: f ? f.id : null, ...x, active: x.active === 'true' }); toast('Saved.'); after(r.id); });
+
   async function partners() {
     if (!proj) return noProject();
-    const d = await api(`/api/partners?project=${proj}`);
-    const tab = store.get('erp_cptab') || 'due';
-    const TABS = [['due', 'Due now', (r) => r.state === 'Due'], ['later', 'Not yet due', (r) => r.state === 'Not yet due'], ['paid', 'Paid', (r) => r.state === 'Paid'], ['none', 'No amount set', (r) => r.state === 'No amount'], ['all', 'All', () => true]];
-    const sum = (rows, f) => rows.reduce((a, r) => a + toNum(f(r)), 0);
-    const rows = d.rows.filter(TABS.find((t) => t[0] === tab)[2]);
-    const totalB = sum(d.rows, (r) => r.brokerage), paid = sum(d.rows, (r) => toNum(r.paid) + toNum(r.paid_before)), dueNow = sum(d.rows, (r) => r.payable_now), later = sum(d.rows.filter((r) => r.state === 'Not yet due'), (r) => r.balance);
-    $('#page').innerHTML = `<div class="page-head"><div><h1>Channel partners</h1><p class="muted">Brokerage owed to each partner, when it becomes due, and what has been billed and paid. Brokerage is due once ${d.rule.afterRegistration ? 'the agreement is registered and ' : ''}${d.rule.minReceivedPct}% of the agreement value has been received.</p></div>
-      ${d.can.rule ? '<div class="actions" style="margin:0"><button class="ghost" id="rule">Change the rule</button></div>' : ''}</div>
-      <div class="panel"><div class="kpis">${kpi(d.firms.length, 'partner firms')}${kpi(d.rows.length, 'bookings via partners')}${kpi(cr(totalB), 'total brokerage')}${kpi(cr(paid), 'paid')}${kpi(cr(dueNow), 'due now', dueNow ? 'bad' : '')}${kpi(cr(later), 'not yet due')}</div></div>
-      <div class="panel"><h2>By firm</h2><div class="table-wrap" style="max-height:340px"><table><tr><th>Firm</th><th class="num">Units</th><th class="num">Agreement value</th><th class="num">Collected</th><th class="num">Brokerage</th><th class="num">Paid</th><th class="num">Due now</th><th class="num">Not yet due</th></tr>
-        ${d.firms.map((f) => `<tr><td>${esc(f.firm)}</td><td class="num">${f.units}</td><td class="num">${cr(f.agreementValue)}</td><td class="num">${cr(f.received)}</td><td class="num">${inr(f.brokerage)}</td><td class="num">${inr(f.paid)}</td><td class="num">${f.payableNow ? `<b>${inr(f.payableNow)}</b>` : '—'}</td><td class="num">${f.notYetDue ? inr(f.notYetDue) : '—'}</td></tr>`).join('')}</table></div></div>
-      <div class="tabs">${TABS.map(([k, l, f]) => `<button class="tab ${k === tab ? 'on' : ''}" data-t="${k}">${l} (${d.rows.filter(f).length})</button>`).join('')}</div>
-      <div class="panel"><input type="search" id="cpq" placeholder="Find a firm, unit or buyer" style="max-width:320px;margin-bottom:10px">
-        <div class="table-wrap"><table id="cpt"><tr><th>Unit</th><th>Buyer</th><th>Firm</th><th class="num">Brokerage</th><th class="num">Received</th><th>Registered</th><th class="num">Billed</th><th class="num">Paid</th><th>Status</th><th></th></tr>
-        ${rows.map((r) => `<tr data-s="${esc((r.unit_no + ' ' + (r.buyers || '') + ' ' + (r.cp_name || '')).toLowerCase())}"><td><a href="#/booking/${r.booking_id}">${esc(r.unit_no)}</a></td><td>${esc(r.buyers || '')}</td><td>${esc(r.cp_name || '—')}</td>
-          <td class="num">${toNum(r.brokerage) ? inr(r.brokerage) : '—'}</td><td class="num">${toNum(r.received_pct)}%</td><td>${r.registration_date ? fmtD(r.registration_date) : '<span class="muted">no</span>'}</td>
-          <td class="num">${toNum(r.billed) ? inr(r.billed) : '—'}</td><td class="num">${toNum(r.paid) + toNum(r.paid_before) ? inr(toNum(r.paid) + toNum(r.paid_before)) : '—'}${r.paid_before ? '<br><span class="small muted">released per CRM sheet</span>' : ''}</td>
-          <td>${{ Due: '<span class="pill bad">due</span>', 'Not yet due': `<span class="pill grey">not yet due</span><br><span class="small muted">${esc(r.why)}</span>`, Paid: '<span class="pill good">paid</span>', 'No amount': '<span class="pill">no amount</span>' }[r.state]}</td>
-          <td class="num" style="white-space:nowrap">${d.can.bill ? `<button class="ghost small" data-a="amount" data-b="${r.booking_id}">Amount</button>${toNum(r.brokerage) ? `<button class="ghost small" data-a="bill" data-b="${r.booking_id}">Bill</button>` : ''}` : ''}${d.can.pay && r.balance > 1 && toNum(r.brokerage) ? `<button class="small" data-a="payment" data-b="${r.booking_id}">Pay</button>` : ''}</td></tr>`).join('') || '<tr><td colspan="10" class="muted">Nothing in this list.</td></tr>'}</table></div></div>`;
-    document.querySelectorAll('.tab[data-t]').forEach((t) => (t.onclick = () => { store.set('erp_cptab', t.dataset.t); partners(); }));
+    const d = await api(`/api/partners?project=${proj}&ledger=1`);
+    const F = d.firms, sum = (k) => F.reduce((a, f) => a + toNum(f[k]), 0);
+    $('#page').innerHTML = `<div class="page-head"><div><h1>Channel partner ledger</h1><p class="muted">Firm by firm: the brokerage earned on its live bookings, the bills received, pass back, payments (RTGS) and what is still owed. A payment counts once someone else has verified it. Brokerage is due once ${d.rule.afterRegistration ? 'the agreement is registered and ' : ''}${d.rule.minReceivedPct}% of the agreement value has been received.</p></div>
+      <div class="actions" style="margin:0">${d.can.firm ? '<button id="cpAdd">Add a firm</button>' : ''}${d.can.rule ? '<button class="ghost" id="rule">Change the rule</button>' : ''}</div></div>
+      <div class="panel"><div class="kpis">${kpi(F.filter((f) => f.flats).length, 'firms with live bookings')}${kpi(F.reduce((a, f) => a + f.flats, 0), 'bookings via partners')}${kpi(cr(sum('brokerage')), 'brokerage earned')}${kpi(cr(sum('passBack')), 'pass back')}${kpi(cr(sum('paid') + sum('paidBefore')), 'paid (RTGS)')}${kpi(cr(sum('toVerify')), 'waiting to be verified', sum('toVerify') ? 'bad' : '')}${kpi(cr(sum('balance')), 'still owed')}${kpi(cr(sum('dueNow')), 'due now', sum('dueNow') ? 'bad' : '')}</div></div>
+      <div class="panel table-wrap"><input class="search" id="cpq" placeholder="Find a firm"><table id="cpt"><tr><th>Firm</th><th class="num">Flats</th><th class="num">Agreement value</th><th class="num">Collected</th><th class="num">Brokerage</th><th class="num">Billed</th><th class="num">Pass back</th><th class="num">Paid (RTGS)</th><th class="num">To verify</th><th class="num">Balance</th><th class="num">Due now</th></tr>
+        ${F.map((f) => `<tr class="click" data-cp="${f.id}" data-s="${esc(f.name.toLowerCase())}"><td><b>${esc(f.name)}</b>${f.active ? '' : ' <span class="pill grey">inactive</span>'}${f.cancelled ? `<br><span class="small muted">${f.cancelled} cancelled${f.recoverable ? ', ' + inr(f.recoverable) + ' to recover' : ''}</span>` : ''}</td><td class="num">${f.flats}</td><td class="num">${cr(f.agreementValue)}</td><td class="num">${cr(f.received)}</td>
+          <td class="num">${inr(f.brokerage)}</td><td class="num">${f.billed ? inr(f.billed) : '—'}</td><td class="num">${f.passBack ? inr(f.passBack) : '—'}</td><td class="num">${f.paid + f.paidBefore ? inr(f.paid + f.paidBefore) : '—'}</td><td class="num ${f.toVerify ? 'bad-t' : ''}">${f.toVerify ? inr(f.toVerify) : '—'}</td>
+          <td class="num"><b>${inr(f.balance)}</b></td><td class="num ${f.dueNow ? 'bad-t' : ''}">${f.dueNow ? inr(f.dueNow) : '—'}</td></tr>`).join('') || '<tr><td colspan="11" class="muted">No channel partner bookings yet.</td></tr>'}</table></div>`;
+    document.querySelectorAll('tr[data-cp]').forEach((tr) => (tr.onclick = () => go(`#/cp/${tr.dataset.cp}`)));
     $('#cpq').oninput = (e) => { const v = e.target.value.trim().toLowerCase(); document.querySelectorAll('#cpt tr[data-s]').forEach((tr) => { tr.style.display = !v || tr.dataset.s.includes(v) ? '' : 'none'; }); };
+    if ($('#cpAdd')) $('#cpAdd').onclick = () => cpForm(null, (id) => go(`#/cp/${id}`));
     if ($('#rule')) $('#rule').onclick = () => dialog(`<h2>When brokerage becomes due</h2>
       <label class="check"><input type="checkbox" name="afterRegistration" ${d.rule.afterRegistration ? 'checked' : ''}> Only after the agreement is registered</label>
       <label>And at least this % of the agreement value received</label><input name="minReceivedPct" type="number" min="0" max="100" step="0.5" value="${esc(d.rule.minReceivedPct)}">`,
     async (x) => { await api('/api/partners', { action: 'rule', afterRegistration: x.afterRegistration === 'on', minReceivedPct: x.minReceivedPct }); partners(); });
-    document.querySelectorAll('[data-a]').forEach((x) => (x.onclick = () => {
-      const r = d.rows.find((y) => y.booking_id === +x.dataset.b), a = x.dataset.a;
-      if (a === 'amount') return dialog(`<h2>Brokerage · ${esc(r.unit_no)}</h2><div class="row"><div><label>Channel partner firm</label><input name="cpName" value="${esc(r.cp_name || '')}"></div><div><label>Brokerage amount (₹)</label><input name="amount" inputmode="decimal" required value="${esc(toNum(r.brokerage) || '')}"></div></div>
-        <p class="small muted">Agreement value ${inr(r.agreement_value)}.</p>`, async (v) => { await api('/api/partners', { action: 'amount', bookingId: r.booking_id, ...v }); partners(); });
-      const pay = a === 'payment';
-      dialog(`<h2>${pay ? 'Brokerage paid' : 'Brokerage bill received'} · ${esc(r.unit_no)} · ${esc(r.cp_name || '')}</h2>
-        <p class="muted">Brokerage ${inr(r.brokerage)} · paid so far ${inr(toNum(r.paid) + toNum(r.paid_before))} · left ${inr(r.balance)}${pay && !r.eligible ? ` · <b class="bad-t">not due yet (${esc(r.why)})</b>` : ''}</p>
-        <div class="row"><div><label>Date</label><input type="date" name="date" max="${todayIso()}" value="${todayIso()}" required></div><div><label>Amount (₹)</label><input name="amount" inputmode="decimal" required value="${esc(r.balance || '')}"></div></div>
-        <div class="row"><div><label>${pay ? 'UTR / cheque no.' : 'Bill / invoice no.'}</label><input name="reference" required></div><div><label>Note</label><input name="note"></div></div>
-        ${pay && !r.eligible ? '<label class="check"><input type="checkbox" name="override"> Management has approved paying this early</label>' : ''}`,
-      async (v) => { await api('/api/partners', { action: a, bookingId: r.booking_id, ...v, override: v.override === 'on' }); toast('Saved.'); partners(); });
+  }
+
+  async function cpPage(id) {
+    const d = await api(`/api/partners?project=${proj}&cp=${id}`);
+    const f = d.firm;
+    const KIND = { bill: 'Bill received', pass_back: 'Pass back', payment: 'Paid (RTGS)' };
+    const live = d.bookings.filter((b) => b.status === 'active'), canc = d.bookings.filter((b) => b.status === 'cancelled');
+    $('#page').innerHTML = `<p class="crumbs"><a href="#/partners">Channel partner ledger</a> › ${esc(f.name)}</p>
+      <div class="page-head"><div><h1>${esc(f.name)}${f.active ? '' : ' <span class="pill grey">inactive</span>'}</h1><p class="muted">${esc([f.contact_person, f.phone, f.email, f.pan ? 'PAN ' + f.pan : '', f.gstin ? 'GSTIN ' + f.gstin : '', f.rera_no ? 'RERA ' + f.rera_no : '', f.default_pct != null ? 'usual brokerage ' + toNum(f.default_pct) + '%' : ''].filter(Boolean).join(' · ') || 'No contact details yet.')}</p></div>
+        <div class="actions" style="margin:0">${d.can.firm ? '<button class="ghost" id="cpEdit">Firm details</button>' : ''}${d.can.bill ? '<button class="ghost" data-k="bill">Record a bill</button><button class="ghost" data-k="pass_back">Pass back</button>' : ''}${d.can.pay ? '<button data-k="payment">Record a payment (RTGS)</button>' : ''}</div></div>
+      <div class="panel"><div class="kpis">${kpi(f.flats, 'live bookings')}${kpi(cr(f.agreementValue), 'agreement value')}${kpi(cr(f.received), 'collected')}${kpi(inr(f.brokerage), 'brokerage earned')}${kpi(inr(f.passBack), 'pass back')}${kpi(inr(f.paid + f.paidBefore), 'paid (RTGS)')}${kpi(inr(f.toVerify), 'waiting to be verified', f.toVerify ? 'bad' : '')}${kpi(inr(f.balance), 'balance owed')}${kpi(inr(f.dueNow), 'due now', f.dueNow ? 'bad' : '')}</div>
+        <p class="small muted">Balance = brokerage earned − pass back − paid. ${f.billed ? `Bills received: ${inr(f.billed)}.` : 'No bills received yet.'}${f.recoverable ? ` <b class="bad-t">${inr(f.recoverable)} was paid on cancelled bookings: recover or adjust it.</b>` : ''}</p></div>
+      <div class="panel table-wrap"><h2>Bookings</h2><table><tr><th>Flat</th><th>Buyer</th><th class="num">Agreement value</th><th class="num">%</th><th class="num">Brokerage</th><th class="num">Received</th><th>Registered</th><th class="num">Pass back</th><th class="num">Paid</th><th class="num">Balance</th><th>Status</th></tr>
+        ${[...live, ...canc].map((b) => `<tr class="${b.status === 'cancelled' ? 'dim' : ''}"><td><a href="#/booking/${b.booking_id}">${esc(b.unit_no)}</a></td><td>${esc(b.buyers || '')}</td><td class="num">${inr(b.agreement_value)}</td><td class="num">${b.brokerage_pct != null ? toNum(b.brokerage_pct) + '%' : '—'}</td><td class="num">${b.status === 'active' ? inr(b.brokerage) : '—'}</td>
+          <td class="num">${toNum(b.received_pct)}%</td><td>${b.registration_date ? fmtD(b.registration_date) : '<span class="muted">no</span>'}</td><td class="num">${b.pass_back ? inr(b.pass_back) : '—'}</td><td class="num">${b.paid + b.paid_before ? inr(b.paid + b.paid_before) : '—'}${b.to_verify ? `<br><span class="small bad-t">${inr(b.to_verify)} to verify</span>` : ''}</td>
+          <td class="num">${b.status === 'active' ? inr(b.balance) : '—'}</td><td>${{ Due: '<span class="pill bad">due</span>', 'Not yet due': `<span class="pill grey">not yet due</span><br><span class="small muted">${esc(b.why)}</span>`, Paid: '<span class="pill good">paid</span>', 'No amount': '<span class="pill">no amount</span>', Cancelled: '<span class="pill grey">cancelled</span>', 'Cancelled: recover': '<span class="pill bad">cancelled: recover</span>' }[b.state] || ''}</td></tr>`).join('') || '<tr><td colspan="11" class="muted">No bookings through this firm.</td></tr>'}</table></div>
+      <div class="panel table-wrap"><h2>Ledger</h2><table><tr><th>Date</th><th>Entry</th><th>Flat</th><th>Bill / UTR</th><th class="num">Amount</th><th>Status</th><th>By</th><th></th></tr>
+        ${d.entries.map((e) => `<tr><td>${fmtD(e.entry_date)}</td><td>${KIND[e.kind] || e.kind}</td><td>${esc(e.unit_no || 'whole firm')}</td><td>${esc(e.reference || '')}${e.note ? `<br><span class="small muted">${esc(e.note)}</span>` : ''}</td><td class="num">${inr(e.amount)}</td>
+          <td>${e.kind === 'payment' ? (e.verified_at ? `<span class="pill good">verified</span><br><span class="small muted">${esc(e.verified_name || '')}</span>` : '<span class="pill bad">to verify</span>') : ''}</td><td>${esc(e.by_name || '')}</td>
+          <td style="white-space:nowrap">${e.kind === 'payment' && !e.verified_at && d.can.verify && e.created_by !== d.me ? `<button class="small" data-ver="${e.id}">Verify</button>` : ''}${d.can.verify ? ` <button class="link small" data-cx="${e.id}">Cancel</button>` : ''}</td></tr>`).join('') || '<tr><td colspan="8" class="muted">No bills, pass back or payments yet.</td></tr>'}</table>
+        <p class="small muted">Before verifying a payment, check it against the partner's bill, the bookings above and the bank statement. The person who entered a payment cannot verify it.</p></div>
+      <div class="panel" id="cpdocs"><h2>Bills and papers</h2><p class="muted small">Loading…</p></div>`;
+    docsPanel('cp', f.id, $('#cpdocs'), f.name);
+    if ($('#cpEdit')) $('#cpEdit').onclick = () => cpForm(f, () => cpPage(id));
+    document.querySelectorAll('[data-k]').forEach((x) => (x.onclick = () => {
+      const k = x.dataset.k;
+      dialog(`<h2>${KIND[k]} · ${esc(f.name)}</h2>
+        <p class="muted">Balance owed ${inr(f.balance)}${f.toVerify ? `, of which ${inr(f.toVerify)} is already paid and waiting to be verified` : ''}.${k === 'payment' ? ' The payment counts once someone else verifies it.' : ''}</p>
+        <label>Flat (or the whole firm)</label><select name="bookingId"><option value="">Whole firm</option>${live.map((b) => `<option value="${b.booking_id}">${esc(b.unit_no)} · balance ${inr(b.balance)}${b.state === 'Not yet due' ? ' · not yet due' : ''}</option>`).join('')}</select>
+        <div class="row"><div><label>Date</label><input type="date" name="date" max="${todayIso()}" value="${todayIso()}" required></div><div><label>Amount (₹)</label><input name="amount" inputmode="decimal" required></div></div>
+        <div class="row"><div><label>${k === 'bill' ? 'Bill / invoice no.' : k === 'payment' ? 'UTR / cheque no.' : 'Reference (optional)'}</label><input name="reference" ${k === 'pass_back' ? '' : 'required'}></div><div><label>Note</label><input name="note" placeholder="${k === 'pass_back' ? 'e.g. passed back to the buyer of A-1002' : ''}"></div></div>
+        ${k === 'payment' && can('cancellation.approve') ? '<label class="check"><input type="checkbox" name="override"> Management approves paying before the brokerage is due</label>' : ''}`,
+      async (v) => { const r = await api('/api/partners', { action: 'cp-entry', projectId: proj, cpId: f.id, kind: k, ...v, bookingId: v.bookingId || null, override: v.override === 'on' }); toast(r.toVerify ? 'Payment recorded. It counts once someone else verifies it.' : 'Saved.'); cpPage(id); });
     }));
+    document.querySelectorAll('[data-ver]').forEach((x) => (x.onclick = async () => { if (!confirm('Verify this payment? Check it against the bill and the bank statement first.')) return; try { await api('/api/partners', { action: 'cp-verify', id: +x.dataset.ver }); toast('Payment verified.'); cpPage(id); } catch (e) { alert(e.message); } }));
+    document.querySelectorAll('[data-cx]').forEach((x) => (x.onclick = async () => { const r = prompt('Cancel this entry? It stays in the audit log. Reason:'); if (!r) return; try { await api('/api/partners', { action: 'cp-cancel', id: +x.dataset.cx, reason: r }); cpPage(id); } catch (e) { alert(e.message); } }));
   }
 
   // ---------- accounts (the Master Accounts sheet, tab for tab) ----------
@@ -1283,6 +1381,22 @@
     };
     if (unread.length && d.canAct) api('/api/comms', { action: 'read', ids: unread }).catch(() => {});
   }
+  // ---------- install as an app on the computer ----------
+  // Chrome and Edge offer to install the ERP (its own window and a Dream India icon on the desktop / dock).
+  let installEv = null;
+  try { if ('serviceWorker' in navigator) navigator.serviceWorker.register('/sw.js').catch(() => {}); } catch {}
+  window.addEventListener('beforeinstallprompt', (e) => { e.preventDefault(); installEv = e; const b = $('#instApp'); if (b) b.hidden = false; });
+  window.addEventListener('appinstalled', () => { installEv = null; const b = $('#instApp'); if (b) b.hidden = true; });
+  const standalone = () => window.matchMedia && window.matchMedia('(display-mode: standalone)').matches;
+  function installButton() {
+    if (standalone()) return '';
+    return `<button class="ghost small" id="instApp" ${installEv ? '' : 'hidden'} title="Install the ERP on this computer: its own window and a Dream India icon">Install app</button>`;
+  }
+  function wireInstall() {
+    const b = $('#instApp'); if (!b) return;
+    b.onclick = async () => { if (!installEv) { alert('Use the install icon at the right end of the Chrome or Edge address bar, or Chrome menu → Cast, save and share → Install page as app.'); return; } installEv.prompt(); await installEv.userChoice.catch(() => {}); installEv = null; b.hidden = true; };
+  }
+
   // ---------- a new version of the ERP ----------
   // The ERP is one page that stays open all day, so a release is not picked up until the page is reloaded. Every few
   // minutes the page checks whether app.js has changed on the server and, if so, offers to reload.
@@ -1510,6 +1624,7 @@
   }
 
   async function comms() {
+    if (/[?&]f=waiting/.test(location.hash)) store.set('erp_cmf', 'waiting');
     const f = store.get('erp_cmf') || 'mine';
     const [d, st] = await Promise.all([api(`/api/comms?inbox=1&f=${f}`), api('/api/comms?status=1')]);
     const m = st.mail;
@@ -1522,14 +1637,15 @@
       ${st.canTeams ? `<div class="panel"><h2>CRM teams</h2><p class="small muted">Who is told when a buyer replies. Everyone ticked for a wing gets the reply on their own Daily To-Do, the red badge at the top, and an email to their own address (set on Logins). A flat can also be given to one person on its booking page.</p>
         <div class="two">${['A', 'B'].map((w) => `<div><b>${w} Wing</b>${st.crmUsers.map((x) => `<label class="check"><input type="checkbox" data-w="${w}" value="${x.id}" ${(st.teams[w] || []).map(Number).includes(x.id) ? 'checked' : ''}> ${esc(x.name)}</label>`).join('')}</div>`).join('')}</div>
         <div class="actions"><button class="ghost small" id="cmTeams">Save the CRM teams</button></div></div>` : ''}
-      <div class="tabs">${[['mine', `Mine${d.counts.mine ? ' (' + d.counts.mine + ')' : ''}`], ['new', 'All not read'], ['unmatched', 'To link'], ['all', 'All received']].map(([k, l]) => `<button class="tab ${k === f ? 'on' : ''}" data-t="${k}">${l}</button>`).join('')}</div>
-      <div class="panel msgs" id="cml">${d.rows.map((c) => msgHtml(c, { unit: true, actions: d.canAct ? `<div class="msg-x">${c.status === 'unmatched' ? `<button class="small" data-link="${c.id}">Link to a flat</button> <button class="link small" data-dis="${c.id}">Not about a buyer</button>${c.matched_by ? ` <span class="small muted">(${esc(c.matched_by)})</span>` : ''}` : `<a class="small" href="#/booking/${c.booking_id}">Open the booking to reply</a>${!c.read_at ? ` · <button class="link small" data-read="${c.id}">Mark read</button>` : ''}`}</div>` : '' })).join('') || '<p class="muted">Nothing here.</p>'}</div>`;
+      <div class="tabs">${[['mine', `Mine${d.counts.mine ? ' (' + d.counts.mine + ')' : ''}`], ['waiting', `Waiting for our reply${d.counts.waiting ? ' (' + d.counts.waiting + ')' : ''}`], ['new', 'All not read'], ['unmatched', 'To link'], ['all', 'All received']].map(([k, l]) => `<button class="tab ${k === f ? 'on' : ''}" data-t="${k}">${l}</button>`).join('')}</div>
+      <div class="panel msgs" id="cml">${d.rows.map((c) => msgHtml(c, { unit: true, actions: d.canAct ? `<div class="msg-x">${c.status === 'unmatched' ? `<button class="small" data-link="${c.id}">Link to a flat</button> <button class="link small" data-dis="${c.id}">Not about a buyer</button>${c.matched_by ? ` <span class="small muted">(${esc(c.matched_by)})</span>` : ''}` : `${c.waiting ? `<span class="pill ${c.age_hours > 72 ? 'bad' : 'warn'}">waiting ${c.age_hours >= 48 ? Math.round(c.age_hours / 24) + ' days' : c.age_hours + ' hours'} for our reply</span> ` : ''}<a class="small" href="#/booking/${c.booking_id}">Open the booking to reply</a>${!c.read_at ? ` · <button class="link small" data-read="${c.id}">Mark read</button>` : ''}${c.waiting ? ` · <button class="link small" data-nr="${c.id}">No reply needed</button>` : ''}`}</div>` : '' })).join('') || '<p class="muted">Nothing here.</p>'}</div>`;
     wireMsgs($('#cml'));
     document.querySelectorAll('.tab[data-t]').forEach((t) => (t.onclick = () => { store.set('erp_cmf', t.dataset.t); comms(); }));
     if ($('#cmTeams')) $('#cmTeams').onclick = async () => { const teams = { A: [], B: [] }; document.querySelectorAll('[data-w]:checked').forEach((x) => teams[x.dataset.w].push(+x.value)); await api('/api/comms', { action: 'teams', teams }); toast('CRM teams saved.'); };
     if ($('#cmSync')) $('#cmSync').onclick = async (e) => { e.target.disabled = true; e.target.textContent = 'Checking…'; try { const r = await api('/api/comms', { action: 'sync' }); toast(r.ok ? `Checked ${r.looked} new emails: ${r.saved} saved, ${r.inbox} to link.` : r.error || r.reason); } catch (x) { alert(x.message); } comms(); };
     document.querySelectorAll('[data-read]').forEach((x) => (x.onclick = async () => { await api('/api/comms', { action: 'read', ids: [+x.dataset.read] }); comms(); }));
     document.querySelectorAll('[data-dis]').forEach((x) => (x.onclick = async () => { await api('/api/comms', { action: 'dismiss', id: +x.dataset.dis }); toast('Removed from the inbox.'); comms(); }));
+    document.querySelectorAll('[data-nr]').forEach((x) => (x.onclick = async () => { await api('/api/comms', { action: 'noreply', id: +x.dataset.nr }); toast('Marked: no reply needed.'); comms(); }));
     document.querySelectorAll('[data-link]').forEach((x) => (x.onclick = async () => {
       const bk = await api(`/api/bookings?project=${proj}`);
       const list = (bk.rows || bk.bookings || []).filter((r) => r.status === 'active');
@@ -1568,7 +1684,7 @@
       <label>What is it?</label><select name="kind">${m.kinds[owner].map((k) => `<option>${esc(k)}</option>`).join('')}</select>
       <label>Note (optional)</label><input name="title" maxlength="160" placeholder="e.g. Registered on 12 Oct, Sub-registrar Andheri 4">
       <label>File (PDF, photo, Word or Excel, up to 40 MB)</label><input type="file" name="file" required accept=".pdf,.jpg,.jpeg,.png,.webp,.heic,.doc,.docx,.xls,.xlsx,application/pdf,image/*">
-      <p class="small muted" id="upP">The file goes into Google Drive, in this ${owner === 'tenant' ? 'tenant' : 'flat'}'s folder.</p>`,
+      <p class="small muted" id="upP">The file goes into Google Drive, in this ${owner === 'tenant' ? 'tenant' : owner === 'cp' ? 'partner' : 'flat'}'s folder.</p>`,
     async (x, f) => {
       const file = f.querySelector('[name=file]').files[0];
       if (!file) throw new Error('Choose the file.');
@@ -1594,7 +1710,7 @@
     const [m, d] = await Promise.all([docsMeta(), api(`/api/custdocs?${owner}=${id}`)]);
     const have = new Set(d.rows.map((r) => r.kind));
     const missing = owner === 'booking' ? m.check.filter((k) => !have.has(k)) : [];
-    el.innerHTML = `<h2>${owner === 'tenant' ? 'Tenant documents' : 'Customer documents'} ${d.canAdd ? '<button class="small" data-up style="float:right">Add a document</button>' : ''}</h2>
+    el.innerHTML = `<h2>${owner === 'tenant' ? 'Tenant documents' : owner === 'cp' ? 'Bills and papers (Google Drive)' : 'Customer documents'} ${d.canAdd ? '<button class="small" data-up style="float:right">Add a document</button>' : ''}</h2>
       ${m.connected ? '' : '<p class="small bad-t">Google Drive is not connected yet, so documents cannot be added. ' + (m.canConnect ? '<a href="#/custdocs">Connect it</a>.' : 'Ask the Admin to connect it.') + '</p>'}
       ${missing.length ? `<p class="small muted">Still to upload: ${missing.map(esc).join(' · ')}</p>` : ''}
       <div class="table-wrap"><table><tr><th>Document</th><th>File</th><th>Added</th><th></th></tr>

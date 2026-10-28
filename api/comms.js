@@ -54,11 +54,13 @@ module.exports = route({
         crmUsers: canTeams ? await db.q("select id, name from users where not disabled and role in ('crm', 'head_crm') order by name") : [] });
     }
     if (q.inbox) {
-      const f = ['mine', 'new', 'unmatched', 'all'].includes(q.f) ? q.f : 'mine';
+      const f = ['mine', 'new', 'unmatched', 'all', 'waiting'].includes(q.f) ? q.f : 'mine';
+      const W = require('../lib/comms').WAITING_SQL('c');
       const where = f === 'unmatched' ? "c.status = 'unmatched'" : f === 'new' ? "c.direction = 'in' and c.status <> 'dismissed' and c.read_at is null"
+        : f === 'waiting' ? W
         : f === 'mine' ? `c.direction = 'in' and c.status <> 'dismissed' and c.read_at is null and ${await mineSql(u)}` : "c.direction = 'in' and c.status <> 'dismissed'";
-      const rows = await db.q(`select ${COLS} from ${FROM} where ${where} and (c.booking_id is null or u.project_id = any($1)) order by c.sent_at desc limit 300`, [u.projects]);
-      const counts = await db.one(`select count(*) filter (where c.direction = 'in' and c.status <> 'dismissed' and c.read_at is null)::int as new, count(*) filter (where c.status = 'unmatched')::int as unmatched,
+      const rows = await db.q(`select ${COLS}, (${W}) as waiting, round(extract(epoch from now() - c.sent_at) / 3600)::int as age_hours from ${FROM} where ${where} and (c.booking_id is null or u.project_id = any($1)) order by c.sent_at ${f === 'waiting' ? 'asc' : 'desc'} limit 300`, [u.projects]);
+      const counts = await db.one(`select count(*) filter (where c.direction = 'in' and c.status <> 'dismissed' and c.read_at is null)::int as new, count(*) filter (where c.status = 'unmatched')::int as unmatched, count(*) filter (where ${W})::int as waiting,
           count(*) filter (where c.direction = 'in' and c.status <> 'dismissed' and c.read_at is null and ${await mineSql(u)})::int as mine
         from ${FROM} where c.booking_id is null or u.project_id = any($1)`, [u.projects]);
       return res.json({ rows, counts, f, canAct: act(u) });
@@ -72,6 +74,12 @@ module.exports = route({
       return res.json(await require('../lib/mail-sync').sync({ trigger: 'manual' }));
     }
     if (!act(u)) throw fail(403, 'Your role cannot change buyer communication.');
+    if (b.action === 'noreply' || b.action === 'reopen-reply') {
+      const c = await db.one("select id from communications where id = $1 and direction = 'in'", [intOr(b.id)]); if (!c) throw fail(404, 'That message is not there.');
+      await db.q(b.action === 'noreply' ? 'update communications set reply_closed_at = now(), reply_closed_by = $2 where id = $1' : 'update communications set reply_closed_at = null, reply_closed_by = null where id = $1', b.action === 'noreply' ? [c.id, u.id] : [c.id]);
+      await audit.record(db.q, { user: u, action: b.action, entity: 'communication', entityId: c.id });
+      return res.json({ ok: true });
+    }
     if (b.action === 'read') {
       const ids = (Array.isArray(b.ids) ? b.ids : [b.id]).map((x) => intOr(x)).filter(Boolean).slice(0, 500);
       await db.q('update communications set read_by = $2, read_at = now() where id = any($1) and read_at is null', [ids, u.id]);

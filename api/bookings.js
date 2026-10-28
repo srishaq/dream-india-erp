@@ -1,5 +1,6 @@
 // Bookings. GET ?project=ID (list) or ?id=ID (one booking with its demands and receipts).
-// POST {action}: create, approve, reject, register, edit (Head CRM), cancel-request, cancel-approve, cancel-reject.
+// POST {action}: create, approve, reject, register, edit (Head CRM), cancel-request, cancel-approve, cancel-reject,
+//   transfer-request, transfer-approve, transfer-reject (a buyer moving to another flat; Head CRM approves).
 const db = require('../lib/db');
 const auth = require('../lib/auth');
 const audit = require('../lib/audit');
@@ -16,14 +17,14 @@ const mask = (s, keep = 4) => (s ? '•'.repeat(Math.max(String(s).length - keep
 
 async function list(projectId) {
   return db.q(
-    `select b.id, b.status, b.booking_date, b.agreement_value, b.registration_date, b.cancel_reason, b.cancel_requested_at, b.sample,
+    `select b.id, b.status, b.booking_date, b.agreement_value, b.registration_date, b.cancel_reason, b.cancel_requested_at, b.transfer_requested_at, b.sample,
             u.unit_no, u.id as unit_id, bl.code as building, c.name as created_by_name, b.created_by, a.name as approved_by_name,
             (select string_agg(y.name, ' & ' order by ap.seq) from booking_applicants ap join buyers y on y.id = ap.buyer_id where ap.booking_id = b.id) as buyers,
             bb.demanded, bb.credit_av, bb.outstanding, bb.overdue
        from bookings b join units u on u.id = b.unit_id join buildings bl on bl.id = u.building_id
        left join users c on c.id = b.created_by left join users a on a.id = b.approved_by
        left join booking_balances bb on bb.booking_id = b.id
-      where u.project_id = $1 order by (b.status = 'pending') desc, b.cancel_requested_at is null, u.unit_no`, [projectId]);
+      where u.project_id = $1 order by (b.status = 'pending') desc, (b.cancel_requested_at is null and b.transfer_requested_at is null), u.unit_no`, [projectId]);
 }
 
 async function detail(u, id) {
@@ -45,7 +46,10 @@ async function detail(u, id) {
   const unit = await db.one('select u.id, u.status, u.unit_no, u.floor, u.typology, u.carpet_sqft, bl.name as building, p.name as project, c.name as company from units u join buildings bl on bl.id = u.building_id join projects p on p.id = u.project_id join companies c on c.id = p.company_id where u.id = $1', [b.unit_id]);
   const current = b.status === 'cancelled' ? await db.one(`select b2.id, (select string_agg(y.name, ' & ' order by ap.seq) from booking_applicants ap join buyers y on y.id = ap.buyer_id where ap.booking_id = b2.id) as buyers, b2.status
       from bookings b2 where b2.unit_id = $1 and b2.status in ('active', 'pending') limit 1`, [b.unit_id]) : null;
-  return { booking: b, unit, applicants, demands, receipts, balance, plan, cancellation, earlier, current };
+  const transfer = b.transfer_to_unit_id || b.transferred_to || b.transferred_from ? await db.one(`select (select unit_no from units where id = $1) as to_unit,
+      (select u2.unit_no from bookings b2 join units u2 on u2.id = b2.unit_id where b2.id = $2) as to_booking_unit, (select u3.unit_no from bookings b3 join units u3 on u3.id = b3.unit_id where b3.id = $3) as from_unit,
+      (select name from users where id = $4) as requested_by`, [b.transfer_to_unit_id, b.transferred_to, b.transferred_from, b.transfer_requested_by]) : null;
+  return { booking: b, unit, applicants, demands, receipts, balance, plan, cancellation, earlier, current, transfer };
 }
 
 function cleanApplicants(list) {
@@ -84,16 +88,20 @@ module.exports = route({
       const gstRate = b.gstRate === '' || b.gstRate == null ? 5 : Number(b.gstRate);
       if (!(gstRate >= 0 && gstRate <= 28)) throw fail(400, 'GST rate looks wrong.');
       const people = cleanApplicants(b.applicants);
-      const brokerage = b.brokerage === '' || b.brokerage == null ? null : toPaise(b.brokerage);
+      const pct = b.brokeragePct === '' || b.brokeragePct == null ? null : Number(b.brokeragePct);
+      if (pct !== null && !(pct >= 0 && pct <= 20)) throw fail(400, 'Brokerage % looks wrong.');
+      const brokerage = pct !== null ? Math.round(av * pct / 100) : b.brokerage === '' || b.brokerage == null ? null : toPaise(b.brokerage);
       if (brokerage !== null && !(brokerage >= 0)) throw fail(400, 'Brokerage looks wrong.');
       const id = await db.tx(async (t) => {
         const cur = await t.one('select status from units where id = $1 for update', [unit.id]);
         if (!['available', 'blocked'].includes(cur.status)) throw fail(409, `Unit ${unit.unit_no} is not available (${cur.status}).`);
+        const firm = await require('../lib/cp').firmFor(t, { cpId: intOr(b.cpId), cpName: b.cpName, userId: u.id });
         const row = await t.one(
-          `insert into bookings (unit_id, plan_id, booking_date, agreement_value, gst_rate, parking, funding, loan_bank, source, cp_name, brokerage, rm_name, created_by)
-           values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13) returning id`,
+          `insert into bookings (unit_id, plan_id, booking_date, agreement_value, gst_rate, parking, funding, loan_bank, source, cp_name, brokerage, rm_name, created_by, cp_id, brokerage_pct)
+           values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15) returning id`,
           [unit.id, plan.id, bookingDate, rupees(av), gstRate, Math.max(intOr(b.parking, 0), 0), ['self', 'loan'].includes(b.funding) ? b.funding : null,
-            str(b.loanBank, 80) || null, str(b.source, 80) || null, str(b.cpName, 120) || null, brokerage === null ? null : rupees(brokerage), str(b.rmName, 80) || null, u.id]);
+            str(b.loanBank, 80) || null, str(b.source, 80) || null, firm ? firm.name : str(b.cpName, 120) || null, brokerage === null ? null : rupees(brokerage), str(b.rmName, 80) || null, u.id,
+            firm ? firm.id : null, pct !== null ? pct : brokerage && av ? Math.round((brokerage / av) * 100000) / 1000 : null]);
         for (let i = 0; i < people.length; i++) {
           const y = await t.one('insert into buyers (name, pan, aadhaar, phone, email, address) values ($1, $2, $3, $4, $5, $6) returning id', Object.values(people[i]));
           await t.q('insert into booking_applicants (booking_id, seq, buyer_id) values ($1, $2, $3)', [row.id, i + 1, y.id]);
@@ -174,6 +182,19 @@ module.exports = route({
       if ('funding' in b) set.funding = ['self', 'loan'].includes(b.funding) ? b.funding : null;
       for (const [k, col, n] of [['loanBank', 'loan_bank', 80], ['source', 'source', 80], ['cpName', 'cp_name', 120], ['rmName', 'rm_name', 80]]) if (k in b) set[col] = str(b[k], n) || null;
       money('brokerage', 'brokerage'); money('devCharges', 'dev_charges');
+      if ('brokeragePct' in b && b.brokeragePct !== '' && b.brokeragePct != null) {
+        const pct = Number(b.brokeragePct); if (!(pct >= 0 && pct <= 20)) throw fail(400, 'Brokerage % looks wrong.');
+        set.brokerage_pct = pct; set.brokerage = Math.round(Number(set.agreement_value ?? cur.agreement_value) * pct) / 100;
+      }
+      // a new agreement value keeps the brokerage at the same % (unless the brokerage itself was changed)
+      if (set.agreement_value != null && !('brokerage' in b) && !('brokeragePct' in b) && cur.brokerage_pct != null && Number(set.agreement_value) !== Number(cur.agreement_value))
+        set.brokerage = Math.round(Number(set.agreement_value) * Number(cur.brokerage_pct)) / 100;
+      if ('brokerage' in b && !('brokeragePct' in b) && set.brokerage != null && Number(set.agreement_value ?? cur.agreement_value) > 0)
+        set.brokerage_pct = Math.round((Number(set.brokerage) / Number(set.agreement_value ?? cur.agreement_value)) * 100000) / 1000;
+      if ('cpId' in b || 'cpName' in b) {
+        const f = await require('../lib/cp').firmFor(db, { cpId: intOr(b.cpId), cpName: b.cpName, userId: u.id });
+        set.cp_id = f ? f.id : null; set.cp_name = f ? f.name : null;
+      }
       const norm = (v) => (v == null || v === '' ? '' : v instanceof Date ? v.toISOString().slice(0, 10) : typeof v === 'number' || /^-?\d+(\.\d+)?$/.test(String(v)) ? String(Number(v)) : String(v).slice(0, 10) === String(v) ? String(v) : String(v));
       const changed = Object.keys(set).filter((c) => norm(cur[c]) !== norm(set[c]) && !(c === 'booking_date' && norm(cur[c]).slice(0, 10) === norm(set[c])));
       const people = Array.isArray(b.applicants) ? cleanApplicants(b.applicants) : null;
@@ -219,10 +240,71 @@ module.exports = route({
       return res.json({ ok: true, ...(await detail(u, bk.id)) });
     }
 
+    if (b.action === 'transfer-request') {
+      need('booking.create');
+      if (bk.status !== 'active') throw fail(409, 'Only an active booking can be transferred.');
+      if (bk.cancel_requested_at || bk.transfer_requested_at) throw fail(409, 'A cancellation or transfer is already waiting for approval.');
+      const to = await db.one('select id, unit_no, status, project_id from units where id = $1', [intOr(b.toUnitId)]);
+      if (!to || to.project_id !== bk.project_id) throw fail(400, 'Choose the new flat.');
+      if (!['available', 'blocked'].includes(to.status) || to.id === bk.unit_id) throw fail(409, `Flat ${to.unit_no} is not available (${to.status}).`);
+      const av = toPaise(b.agreementValue); if (!(av > 0)) throw fail(400, 'Enter the agreement value of the new flat.');
+      const reason = str(b.reason, 400); if (!reason) throw fail(400, 'Give the reason for the transfer.');
+      const date = dateOr(b.transferDate) || today();
+      await db.tx(async (t) => {
+        await t.q('update bookings set transfer_to_unit_id = $2, transfer_av = $3, transfer_reason = $4, transfer_date = $5, transfer_requested_by = $6, transfer_requested_at = now(), transfer_move_receipts = $7 where id = $1',
+          [bk.id, to.id, rupees(av), reason, date, u.id, b.moveReceipts !== false]);
+        await t.q("update units set status = 'blocked' where id = $1 and status = 'available'", [to.id]);
+        await log(t, 'transfer-request', { to: to.unit_no, agreementValue: rupees(av), date, moveReceipts: b.moveReceipts !== false }, reason);
+      });
+      return res.json({ ok: true, ...(await detail(u, bk.id)) });
+    }
+    if (b.action === 'transfer-approve' || b.action === 'transfer-reject') {
+      need('booking.approve');
+      if (!bk.transfer_requested_at || bk.status !== 'active') throw fail(409, 'No transfer is waiting for approval.');
+      notOwn(u, bk.transfer_requested_by);
+      const to = await db.one('select id, unit_no, building_id from units where id = $1', [bk.transfer_to_unit_id]);
+      if (b.action === 'transfer-reject') {
+        await db.tx(async (t) => {
+          await t.q('update bookings set transfer_to_unit_id = null, transfer_av = null, transfer_reason = null, transfer_date = null, transfer_requested_by = null, transfer_requested_at = null where id = $1', [bk.id]);
+          await t.q("update units set status = 'available' where id = $1 and status = 'blocked' and not exists (select 1 from bookings x where x.unit_id = $1 and x.status in ('pending', 'active'))", [to.id]);
+          await log(t, 'transfer-reject', { to: to.unit_no }, str(b.reason, 300) || null);
+        });
+        return res.json({ ok: true, ...(await detail(u, bk.id)) });
+      }
+      let newId, moved = 0;
+      await db.tx(async (t) => {
+        const cur = await t.one('select status from units where id = $1 for update', [to.id]);
+        if (!['available', 'blocked'].includes(cur.status)) throw fail(409, `Flat ${to.unit_no} is no longer free (${cur.status}).`);
+        const old = await t.one('select * from bookings where id = $1', [bk.id]);
+        const nb = await t.one(`insert into bookings (unit_id, plan_id, booking_date, agreement_value, gst_rate, parking, funding, loan_bank, source, cp_name, cp_id, brokerage_pct, brokerage, rm_name,
+            status, created_by, approved_by, approved_at, transferred_from, crm_user_id, dev_charges)
+          values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, case when $12::numeric is not null then round($4::numeric * $12::numeric / 100, 2) end, $13, 'active', $14, $15, now(), $16, $17, $18) returning id`,
+        [to.id, old.plan_id, old.transfer_date || today(), old.transfer_av, old.gst_rate, old.parking, old.funding, old.loan_bank, old.source, old.cp_name, old.cp_id, old.brokerage_pct, old.rm_name,
+          old.transfer_requested_by, u.id, old.id, old.crm_user_id, old.dev_charges]);
+        newId = nb.id;
+        await t.q('insert into booking_applicants (booking_id, seq, buyer_id) select $2, seq, buyer_id from booking_applicants where booking_id = $1', [old.id, newId]);
+        // the old booking stays on record, as Transferred
+        await t.q("update bookings set status = 'transferred', transferred_to = $2, cancelled_by = $3, cancelled_at = now(), cancel_reason = $4 where id = $1", [old.id, newId, u.id, 'Transferred to ' + to.unit_no + ': ' + (old.transfer_reason || '')]);
+        await t.q("update demands set status = 'cancelled' where booking_id = $1 and status = 'raised'", [old.id]);
+        await t.q("update units set status = 'available' where id = $1", [old.unit_id]);
+        await t.q("update units set status = 'booked' where id = $1", [to.id]);
+        if (old.transfer_move_receipts) moved = (await t.q("update receipts set booking_id = $2, moved_from_booking = $1 where booking_id = $1 and status in ('pending', 'approved') returning id", [old.id, newId])).length;
+        // demands on the new flat: the booking stage, and every construction stage already completed in its building
+        const days = await daysToPay(t), d0 = old.transfer_date || today();
+        const first = await t.one('select name from plan_stages where plan_id = $1 order by seq limit 1', [old.plan_id]);
+        await raise(t, { bookingId: newId, stageName: first.name, demandDate: d0, dueDate: addDays(d0, days) });
+        const done = await t.q(`select s.name from stage_completions c join plan_stages s on s.name = c.stage_name and s.plan_id = $2 where c.building_id = $1 and s.construction_linked order by s.seq`, [to.building_id, old.plan_id]);
+        for (const st of done) await raise(t, { bookingId: newId, stageName: st.name, demandDate: today(), dueDate: addDays(today(), days) });
+        await log(t, 'transfer', { status: 'transferred', to: to.unit_no, newBooking: newId, receiptsMoved: moved }, old.transfer_reason);
+      });
+      await require('../lib/team').system('accounts', `Flat transfer approved: ${bk.unit_no} → ${to.unit_no} (same buyers). ${moved} receipt(s) moved to the new booking in the ERP. Please re-tag them to ${to.unit_no} in the Accounts registers and Tally.`, { bookingId: newId, needsAction: true });
+      return res.json({ ok: true, newBooking: newId, receiptsMoved: moved, ...(await detail(u, bk.id)) });
+    }
+
     if (b.action === 'cancel-request') {
       need('booking.create');
       if (bk.status !== 'active') throw fail(409, 'Only an active booking can be cancelled.');
-      if (bk.cancel_requested_at) throw fail(409, 'A cancellation is already waiting for approval.');
+      if (bk.cancel_requested_at || bk.transfer_requested_at) throw fail(409, 'A cancellation or transfer is already waiting for approval.');
       const reason = str(b.reason, 400); if (!reason) throw fail(400, 'Give the reason for cancelling.');
       const cdate = dateOr(b.cancelDate) || today();
       if (cdate < String(bk.booking_date).slice(0, 10)) throw fail(400, 'The cancellation date is before the booking date.');

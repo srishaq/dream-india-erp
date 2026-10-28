@@ -1,5 +1,6 @@
 // Price lists and cost sheets.
 // GET ?project=ID                         → price lists for the project
+// GET ?project=ID&unsold=1[&parking=N]    → every unsold flat with its full cost from the current price list
 // GET ?unit=ID[&list=ID&parking=&woman=1&discount=][&html=1] → cost sheet for an unsold unit (JSON, or a printable page)
 // POST {action:'create', projectId, ...}  → a new price list (older ones stay on record); {action:'deactivate', id}
 const db = require('../lib/db');
@@ -31,6 +32,22 @@ module.exports = route({
       return res.end(docs.page(`Cost sheet ${unit.unit_no}`, [docs.costSheetHtml(cs, { unit, project: unit.project, rera: unit.rera_no, date: today(), buyer: str(q.buyer, 120) })]));
     }
     const projectId = needProject(u, intOr(q.project));
+    if (q.unsold) {
+      const pl = await db.one('select * from price_lists where project_id = $1 and active order by effective_from desc, id desc limit 1', [projectId]);
+      if (!pl) return res.json({ priceList: null, rows: [] });
+      const units = await db.q(`select u.id, u.unit_no, u.floor, u.typology, u.carpet_sqft, u.status, u.sheet_status, u.hold_note, bl.code as wing
+        from units u join buildings bl on bl.id = u.building_id where u.project_id = $1 and not u.sample and u.status in ('available', 'blocked', 'held') and coalesce(bl.kind, '') <> 'rehab'
+          and not exists (select 1 from bookings b where b.unit_id = u.id and b.status in ('pending', 'active')) order by bl.code, u.floor desc nulls last, u.unit_no`, [projectId]);
+      const parking = Math.max(0, intOr(q.parking, 0));
+      const rows = units.map((x) => {
+        if (!(Number(x.carpet_sqft) > 0)) return { ...x, error: 'no carpet area' };
+        const cs = costsheet.fromPriceList(pl, x, { parking });
+        const rate = Number(pl.base_rate) + Number(pl.floor_rise || 0) * Math.max(0, (Number(x.floor) || 0) - (Number(pl.floor_rise_from) || 0));
+        return { id: x.id, unit_no: x.unit_no, wing: x.wing, floor: x.floor, typology: x.typology, carpet_sqft: Number(x.carpet_sqft), status: x.status, held_for: x.status === 'held' ? String(x.sheet_status || x.hold_note || '').replace(/^Sheet status:\s*/i, '') : null,
+          rate, agreementValue: cs.agreementValue, gst: cs.gst, stampDuty: cs.stampDuty, registration: cs.registration, others: cs.otherTotal, total: cs.total };
+      });
+      return res.json({ priceList: { id: pl.id, name: pl.name, effective_from: pl.effective_from, base_rate: pl.base_rate, floor_rise: pl.floor_rise, parking_price: pl.parking_price }, parking, rows });
+    }
     const lists = await db.q('select l.*, x.name as created_by_name from price_lists l left join users x on x.id = l.created_by where l.project_id = $1 order by l.active desc, l.effective_from desc, l.id desc', [projectId]);
     return res.json({ lists, canEdit: has(u, 'price.manage') });
   },
