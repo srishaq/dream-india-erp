@@ -78,6 +78,12 @@ async function seed() {
   const ay = (await api('', '/api/session', { action: 'login', username: 'ayesha', password: PW })).cookie;
   await api(ay, '/api/bookings', { action: 'cancel-request', id: IDS.req, reason: 'Buyer could not get the home loan', cancelDate: addDays(t, -1), charges: '50000' });
   IDS.pendingBk = (await db.one("select b.id from bookings b where b.status = 'pending' order by b.id limit 1")).id;
+  IDS.flat = (await db.one(`select b.id from bookings b join units u on u.id = b.unit_id join booking_balances bb on bb.booking_id = b.id
+    where b.status = 'active' and b.id not in ($1, $2) and exists (select 1 from receipts r where r.booking_id = b.id and r.status = 'approved') order by bb.overdue desc, u.unit_no limit 1`, [IDS.req, IDS.cancel])).id;
+  const ayId = (await db.one("select id from users where username = 'ayesha'")).id;
+  const wings = Object.fromEntries((await db.q('select code from buildings')).map((x) => [x.code, [ayId]]));
+  await db.q("insert into settings (key, value) values ('crm_wings', $1) on conflict (key) do update set value = excluded.value", [JSON.stringify(wings)]);
+  await db.q("insert into communications (booking_id, channel, direction, from_addr, subject, body, sent_at, status, read_at) values ($1, 'email', 'in', 'sample.buyer@example.com', 'Registration date', 'Dear Sir, can we fix the registration next week? Regards', now() - interval '3 days', 'matched', now())", [IDS.flat]);
   return { sig };
 }
 
@@ -132,6 +138,21 @@ function say(text) {
   return { f, ms: wavMs(f) };
 }
 let T0 = 0; const CUES = [];
+const TONE = path.join(TMP, 'mail-tone.wav');
+(function bell() {
+  const sr = 44100, len = Math.floor(sr * 0.95), d = new Float32Array(len);
+  for (const [fq, t] of [[1047, 0], [1319, 0.11], [1568, 0.22]]) for (let i = Math.floor(t * sr); i < len; i++) {
+    const x = i / sr - t; if (x > 0.65) break;
+    const env = x < 0.01 ? x / 0.01 : Math.exp(-(x - 0.01) * 9);
+    const tri = (2 / Math.PI) * Math.asin(Math.sin(2 * Math.PI * fq * x));
+    d[i] += 0.22 * env * (tri + 0.5 * Math.sin(2 * Math.PI * fq * 2 * x));
+  }
+  const b = Buffer.alloc(44 + len * 2);
+  b.write('RIFF', 0); b.writeUInt32LE(36 + len * 2, 4); b.write('WAVEfmt ', 8); b.writeUInt32LE(16, 16); b.writeUInt16LE(1, 20); b.writeUInt16LE(1, 22);
+  b.writeUInt32LE(sr, 24); b.writeUInt32LE(sr * 2, 28); b.writeUInt16LE(2, 32); b.writeUInt16LE(16, 34); b.write('data', 36); b.writeUInt32LE(len * 2, 40);
+  for (let i = 0; i < len; i++) b.writeInt16LE(Math.max(-32767, Math.min(32767, Math.round(d[i] * 32767))), 44 + i * 2);
+  fs.writeFileSync(TONE, b);
+})();
 const IDS = {};
 const V = (x) => (typeof x === 'function' ? x() : x);
 async function speak(page, text, minMs) {
@@ -175,6 +196,11 @@ async function play(page, steps) {
       else if (op === 'scroll') { await page.mouse.wheel(0, a); await page.waitForTimeout(b || 1200); }
       else if (op === 'top') { await page.evaluate(() => window.scrollTo({ top: 0, behavior: 'smooth' })); await page.waitForTimeout(800); }
       else if (op === 'wait') await page.waitForTimeout(a);
+      else if (op === 'mailnow') {
+        await db.q("insert into communications (booking_id, channel, direction, from_addr, subject, body, sent_at, status) values ($1, 'email', 'in', 'sample.buyer@example.com', 'When is the next demand due?', 'Dear Sir, please tell me when the next demand is due and the amount. Regards', now(), 'matched')", [IDS.flat]);
+        await page.evaluate(() => window.__erpMailCheck && window.__erpMailCheck());
+        CUES.push({ t: Date.now() - T0, f: TONE }); await page.waitForTimeout(1600);
+      }
       else if (op === 'end') { await page.evaluate(() => { window.__cap(); window.__box(); }); await page.evaluate(([x, y, z]) => window.__title(x, y, z), ['Dream India ERP · Training', a, b || 'Next: open the next video on the Training videos page.']); await speak(page, 'That is the end of this video. Open the next one on the Training videos page.', 3200); }
     } catch (e) { console.warn(`    step ${op} ${a || ''}: ${e.message.split('\n')[0]}`); }
   }
@@ -182,77 +208,119 @@ async function play(page, steps) {
 
 // ---------- the lessons ----------
 const L = {
-  'crm-full': { user: 'demo', steps: [
-    ['title', 'Training · Sales & CRM', 'The complete CRM course', 'Bookings, receipts, cancellations, demands, letters and more'],
-    ['chapter', 'Part 1', 'Booking a flat'],
-    ['hash', '#/bookings'], ['cap', 'Every booking starts on the Bookings page. Tap New booking.'],
-    ['click', '#new'], ['cap', 'Pick the flat, then fill in the booking date, the agreement value, GST, parking and how the buyer is paying.'],
-    ['pick', 'dialog select[name=unitId]', 3], ['fill', 'dialog input[name=bookingDate]', () => ist()], ['set', 'dialog input[name=agreementValue]', '8500000'],
-    ['cap', 'Add up to three applicants with their PAN, Aadhaar, mobile, email and address.'],
+  // ---------- Sales & CRM (the one-window CRM, 29 Oct 2026) ----------
+  'crm-new': { user: 'ayesha', steps: [
+    ['title', 'Training · Sales & CRM', 'The new CRM in five minutes', 'One window for every flat and its buyer'],
+    ['hash', '#/project/1/crm'], ['cap', 'The CRM is built around one idea: one flat, one window. Everything about a buyer is in one place.'],
+    ['hl', '.hgroup >> nth=0', 2200], ['cap', 'Your daily work is six tiles: Today, Flats and buyers, Book a flat, Receipts, Inbox and Dream Chat.'],
+    ['hl', '.hgroup.more', 2000], ['cap', 'The tools for many flats at once, such as demand runs and the price list, are underneath.'],
+    ['hash', '#/flats?f=all'], ['cap', 'Flats and buyers is the one list of every flat and buyer. It replaces the old Bookings, Customer ledgers and Follow-ups pages.'],
+    ['hl', '.chips', 2200], ['cap', 'The buttons at the top filter the list: who to call today, broken promises, never called, overdue, and bookings waiting for approval.'],
+    ['type', '#q', 'A-1'], ['cap', 'Or search for any flat number, buyer name or phone number.'], ['fill', '#q', ''],
+    ['click', () => `tr[data-b="${IDS.flat}"]`, 2000], ['cap', 'Tap a flat to open its flat file.'],
+    ['hl', '.ff-head', 2400], ['cap', 'At the top are the buyers with their phone, WhatsApp and email, and the money: agreement value, received, balance due, overdue and GST.'],
+    ['hl', '.ff-actions', 2200], ['cap', 'Below are the everyday buttons: log a call, enter a receipt, email the buyer and send a demand letter. Less common actions are under More.'],
+    ['hl', '#ffNext', 2200], ['cap', 'The Overview tab shows where the buyer stands: overdue, last contact, promise to pay, next call and last receipt.'],
+    ['click', '[data-ff=payments]'], ['cap', 'Payments has every receipt and where each cheque is, the payment plan, and the full ledger.'], ['scroll', 700, 1800], ['top'],
+    ['click', '[data-ff=calls]'], ['cap', 'Calls and follow-ups lists every call logged for this buyer.'],
+    ['click', '[data-ff=messages]'], ['cap', 'Messages has the buyer’s emails and WhatsApps, and Dream Chat with Accounts about this flat.'],
+    ['click', '[data-ff=documents]'], ['cap', 'Documents has the cost sheet, allotment letter, booking form and statement, and every signed paper uploaded for this flat.'],
+    ['click', '[data-ff=history]'], ['cap', 'History shows every change on this flat, who made it and when.'],
+    ['click', '[data-ff=overview]'], ['cap', 'Buyer details are kept only here, and only Head CRM can change them. So there is never a second copy to go wrong.'],
+    ['end', 'The new CRM in five minutes', 'Next: Today and follow-up calls.'],
+  ] },
+  'crm-calls': { user: 'ayesha', steps: [
+    ['title', 'Training · Sales & CRM', 'Today and follow-up calls', 'Who to call, and how to log each call'],
+    ['hash', '#/crmtodo'], ['cap', 'Start every morning with Today. At 9 am the ERP makes your list: calls, approvals, letters, and what Accounts needs the CRM to fix.'],
+    ['hl', '.td.hi >> nth=0', 2200], ['cap', 'Urgent lines have a red edge. Do these first. Tap a line to go straight to the work.'],
+    ['hash', '#/flats?f=call'], ['cap', 'Call today shows the buyers with dues whose next call is today or earlier.'],
+    ['hl', 'table.flats tr.click >> nth=0', 2200], ['cap', 'Tap Call or WhatsApp to reach the buyer from your phone. Then open the flat.'],
+    ['click', 'table.flats tr.click >> nth=0', 2000],
+    ['click', '#logf'], ['cap', 'After the call, tap Log a call. Choose how you reached the buyer and what they said.'],
+    ['select', 'dialog select[name=outcome]', 'Promised to pay'], ['type', 'dialog textarea[name=note]', 'Will pay the plinth demand by Friday'],
+    ['fill', 'dialog input[name=promiseDate]', () => addDays(ist(), 4)], ['type', 'dialog input[name=promiseAmount]', '250000'],
+    ['click', 'dialog [data-n] >> nth=1'], ['cap', 'If they promise to pay, enter the date and the amount, and pick when to call next.'],
+    ['click', 'dialog button[value=save]', 2200], ['cap', 'Saved. The Overview now shows the promise and the next call, and the buyer leaves today’s list until then.'],
+    ['hl', '#ffNext', 2200],
+    ['click', '[data-ff=calls]'], ['cap', 'Every call stays here, with who made it and when.'],
+    ['hash', '#/flats'], ['click', '.chip[data-f=broken]'], ['cap', 'Broken promises: the promised date passed and nothing came in. Call these first.'],
+    ['click', '.chip[data-f=never]'], ['cap', 'Never called: buyers with dues nobody has called yet. Make the first call and log it.'],
+    ['end', 'Today and follow-up calls', 'Next: Receipts and cheques.'],
+  ] },
+  'crm-receipts': { user: 'ayesha', steps: [
+    ['title', 'Training · Sales & CRM', 'Receipts and cheques', 'From the buyer’s cheque to the bank statement'],
+    ['hash', () => `#/booking/${IDS.flat}`], ['cap', 'When a buyer pays, open the flat and tap Enter a receipt.'],
+    ['click', '#receipt'], ['fill', 'dialog input[name=receivedOn]', () => ist()], ['set', 'dialog input[name=amount]', '250000'], ['set', 'dialog select[name=mode]', 'Cheque'],
+    ['set', 'dialog input[name=bank]', 'Sample Bank'], ['set', 'dialog input[name=instrumentNo]', '000452'],
+    ['cap', 'Enter the date, the amount, how it was paid, the bank and the cheque number. Tap Split as AV plus GST, then save.'],
+    ['click', 'dialog #auto', 1200], ['click', 'dialog button[value=save]', 2000],
+    ['cap', 'Accounts is told at once, in Dream Chat, that there is a cheque to deposit.'],
+    ['click', '[data-ff=payments]'], ['hl', 'td:has-text("with CRM") >> nth=0', 2200],
+    ['cap', 'Each receipt shows where the cheque is: with CRM, with Accounts, deposited, and finally in the bank.'],
+    ['cap', 'Accounts marks it received and deposited. At 3:10 pm the bank statement is checked, and a cheque that matches is approved by itself.'],
+    ['cap', 'If a cheque comes back, the ERP marks it returned, tells you in Dream Chat, and puts the buyer on your Today list to call.'],
+    ['click', 'button[data-doc] >> nth=-1'], ['cap', 'Tap Receipt to open the numbered payment receipt as a PDF, email it to the buyer, or send it on WhatsApp.'],
+    ['wait', 1500], ['key', 'Escape'],
+    ['hash', '#/receipts'], ['cap', 'The Receipts page lists every receipt for the project, and the cheques still to be deposited.'],
+    ['end', 'Receipts and cheques', 'Next: Buyer emails, Dream Chat and documents.'],
+  ] },
+  'crm-messages': { user: 'ayesha', steps: [
+    ['title', 'Training · Sales & CRM', 'Buyer emails, Dream Chat and documents', 'Every message about a flat, kept with that flat'],
+    ['hash', '#/flats'], ['cap', 'Every email or WhatsApp a buyer sends to the CRM mailbox comes into the ERP within a few minutes, filed with that flat.'],
+    ['mailnow'], ['cap', 'You hear this bell, a box shows who wrote, and the red badge at the top counts the unread ones.'],
+    ['hl', '#mailpop', 1800], ['click', '#mailpop', 2200], ['cap', 'Tap the box to open the flat’s Messages tab, with the whole conversation.'],
+    ['hl', '#ccomm', 2000],
+    ['click', '#ffMail'], ['cap', 'To write to the buyer, tap Email the buyer. Choose the purpose, check the message and send. The reply comes back to this flat.'],
+    ['wait', 1200], ['key', 'Escape'],
+    ['hl', '#ffChat', 1800], ['type', '#ffChatF input[name=body]', 'Please confirm the cheque for this flat is deposited'],
+    ['cap', 'Dream Chat about this flat goes straight to Accounts. They hear a chime, and the message stays here with the flat.'],
+    ['click', '#ffChatF button', 1600],
+    ['hash', '#/comms'], ['cap', 'The Inbox lists every buyer message. Messages from addresses the ERP does not know wait to be linked: link each one to its flat once.'],
+    ['cap', 'If a buyer waits more than a day for a reply, it goes on the Today list at 9 am.'],
+    ['hash', () => `#/booking/${IDS.flat}?tab=documents`], ['cap', 'Documents holds the letters the ERP makes, and every signed or scanned paper for the flat, kept in Google Drive.'],
+    ['hl', '#cdocs', 2000], ['cap', 'Tap Add a document to upload one. The list shows what is still to come, like the agreement or Index Two.'],
+    ['end', 'Buyer emails, Dream Chat and documents', 'Next: Booking, approval and cancellation.'],
+  ] },
+  'crm-booking': { user: 'demo', steps: [
+    ['title', 'Training · Sales & CRM', 'Booking, approval and cancellation', 'Booking a flat, Head CRM’s approval, cancelling and rebooking'],
+    ['hash', '#/units'], ['cap', 'To book a flat, open Book a flat. Every flat is shown floor by floor. The colour shows sold, available or held.'],
+    ['click', 'button.unit.s-available >> nth=3'], ['cap', 'Tap an available flat, then tap Book this unit.'], ['click', '#book'],
+    ['fill', 'dialog input[name=bookingDate]', () => ist()], ['set', 'dialog input[name=agreementValue]', '8500000'],
     ['set', 'dialog input[name=a1_name]', 'Training Buyer One'], ['set', 'dialog input[name=a1_phone]', '9800000001'], ['set', 'dialog input[name=a1_pan]', 'ABCDE1234F'],
-    ['cap', 'Add the source and the channel partner if there is one, then save. The booking now waits for Head CRM.'],
+    ['cap', 'Fill in the booking date, the agreement value and the buyers, with the channel partner and brokerage if there is one. Then save.'],
+    ['click', 'dialog button[value=save]', 2000],
+    ['cap', 'The booking now waits for Head CRM. The person who enters a booking can never approve it.'],
+    ['hash', '#/flats?f=approval'], ['cap', 'Head CRM opens Flats and buyers, Waiting for approval.'],
+    ['click', () => `tr[data-b="${IDS.pendingBk}"]`, 2000], ['hl', '#approve', 1600], ['cap', 'After checking the cost sheet and the KYC, Head CRM taps Approve booking. The booking stage demand is raised at once.'],
+    ['click', '#approve', 2000],
+    ['click', '.ff-more summary', 900], ['hl', '.ff-menu', 2000], ['cap', 'Under More: the statement, registration, Edit booking for Head CRM, transfer to another flat, and cancellation. Every change is kept in History, with the reason.'],
+    ['key', 'Escape'],
+    ['hash', () => `#/booking/${IDS.cancel}`], ['cap', 'To cancel, open the flat, then More, then Request cancellation. Write the reason, the date and any cancellation charges.'],
+    ['click', '.ff-more summary', 800], ['click', '#cancelReq'], ['set', 'dialog textarea[name=reason]', 'Buyer wants a bigger flat'], ['set', 'dialog input[name=charges]', '25000'],
     ['click', 'dialog button[value=save]', 1800],
-    ['cap', 'The person who enters a booking can never approve it. Head CRM opens the bookings waiting for approval.'],
-    ['hash', '#/bookings'], ['click', '.tab[data-t=pending]'], ['click', () => `tr[data-b="${IDS.pendingBk}"]`],
-    ['cap', 'Head CRM checks the cost sheet and the documents, then taps Approve booking. The booking stage demand is raised at once.'],
-    ['click', '#approve', 1800],
-    ['cap', 'The booking page holds everything about the flat: the buyers, the payment plan, demands, receipts, and documents such as the allotment letter and booking form.'],
-    ['scroll', 600, 2200], ['top'],
-    ['chapter', 'Part 2', 'Receipts and bounced cheques'],
-    ['cap', 'When the buyer pays, open the booking and tap Enter a receipt.'], ['click', '#receipt'],
-    ['cap', 'Enter the date, the amount, how it was paid, the bank and the cheque or U T R number. Then tap Split as AV plus GST, and save.'],
-    ['fill', 'dialog input[name=receivedOn]', () => ist()], ['set', 'dialog input[name=amount]', '250000'], ['set', 'dialog select[name=mode]', 'Bank transfer'], ['set', 'dialog input[name=instrumentNo]', 'UTR998877'],
-    ['click', 'dialog #auto', 1200], ['click', 'dialog button[value=save]', 1600],
-    ['cap', 'A receipt counts in the buyer’s balance only after Head Accounts approves it, on the Receipts page.'],
-    ['hash', '#/receipts'], ['hl', '[data-ok] >> nth=0'], ['click', '[data-ok] >> nth=0', 1600],
-    ['cap', 'If a cheque comes back, tap Bounced on that receipt. It is never deleted: the buyer’s balance goes back up, and the CRM team follows up for a fresh payment.'],
-    ['click', '.tab[data-t=approved]'], ['hl', '[data-bounce] >> nth=0', 2200],
-    ['chapter', 'Part 3', 'Cancelling a flat, the new way'],
-    ['cap', 'This is the most important change. A cancelled booking is never deleted any more, in the ERP or in any Excel sheet.'],
-    ['hash', () => `#/booking/${IDS.cancel}`],
-    ['cap', 'Open the booking and tap Request cancellation. Write the reason, the cancellation date, and any cancellation charges.'],
-    ['click', '#cancelReq'], ['set', 'dialog textarea[name=reason]', 'Buyer wants a bigger flat'], ['set', 'dialog input[name=charges]', '25000'],
-    ['cap', 'The form shows how much the buyer has paid so far. The refund due is what they paid, minus the charges.'],
-    ['click', 'dialog button[value=save]', 1600],
-    ['cap', 'Management approves the cancellation. The person who asked for it cannot approve it. Here is one that Ayesha asked for yesterday.'],
-    ['hash', '#/bookings'], ['click', '.tab[data-t=cancel]'], ['click', () => `tr[data-b="${IDS.req}"]`],
-    ['hl', '#cancelOk'], ['click', '#cancelOk', 1800],
-    ['cap', 'The booking now shows as Cancelled, but nothing is lost. The buyer’s name, every receipt, the charges and the refund due all stay on this page.'],
-    ['hl', '.cancel-box', 2400],
-    ['cap', 'At the same moment, Accounts gets this flat on its Cancelled flats list, with the same figures. So the CRM and the books always agree at audit.'],
-    ['cap', 'When Accounts pays the refund, the refund status shows here as well.'],
-    ['cap', 'The flat itself is free again. Tap Book this flat for a new buyer.'],
+    ['cap', 'Management approves it. Here is one Ayesha asked for yesterday.'],
+    ['hash', '#/flats?f=approval'], ['click', () => `tr[data-b="${IDS.req}"]`, 2000], ['hl', '#cancelOk', 1400], ['click', '#cancelOk', 2000],
+    ['hl', '.cancel-box', 2400], ['cap', 'Nothing is lost. The buyer, every receipt, the charges and the refund due stay on this flat, and Accounts gets it on the Cancelled flats list for the refund.'],
+    ['cap', 'The flat is free again. Tap Book this flat for a new buyer.'],
     ['click', '#rebook'], ['fill', 'dialog input[name=bookingDate]', () => ist()], ['set', 'dialog input[name=agreementValue]', '9000000'], ['set', 'dialog input[name=a1_name]', 'Training Buyer Two'],
     ['click', 'dialog button[value=save]', 2000],
-    ['cap', 'The new booking goes for approval as usual. Its page lists the earlier cancelled booking with its refund status, so each flat keeps its full history.'],
-    ['hl', '.note >> nth=0', 2400],
-    ['chapter', 'Part 4', 'Construction stages and demands'],
-    ['hash', '#/demands'], ['cap', 'When site completes a stage, it is recorded here, with the date and who certified it.'],
+    ['cap', 'The new booking goes for approval as usual, and the flat file shows the earlier cancelled booking, so each flat keeps its full history.'],
+    ['end', 'Booking, approval and cancellation', 'Next: Demands and demand letters.'],
+  ] },
+  'crm-letters': { user: 'demo', steps: [
+    ['title', 'Training · Sales & CRM', 'Demands and demand letters', 'From a construction stage to the letter in the buyer’s inbox'],
+    ['hash', '#/demands'], ['cap', 'When the site completes a stage, it is recorded on Stages and demands, in CRM tools, with the date and who certified it.'],
     ['click', '#stage'], ['set', 'dialog select[name=buildingId]', 'A Wing'], ['set', 'dialog select[name=stageName]', 'On Completion of Plinth (10%)'], ['fill', 'dialog input[name=completedOn]', () => addDays(ist(), -1)], ['set', 'dialog input[name=certifiedBy]', 'Site engineer'],
     ['click', 'dialog button[value=save]', 1600],
-    ['cap', 'Then CRM prepares the demand run for that wing and stage.'], ['click', '#run'], ['click', 'dialog button[value=save]', 2000],
-    ['cap', 'The run lists every buyer with the amount and GST. Check it. Head CRM then taps Approve and raise demands. Buyers who already have this stage are skipped.'],
-    ['hl', '#ok', 2200],
-    ['chapter', 'Part 5', 'Demand letters'],
-    ['hash', '#/letters'], ['cap', 'Choose the letter type: a demand letter, reminder one or two, or a demand with delay charges.'],
-    ['set', '#type', 'Reminder I'], ['hl', '#show'],
-    ['cap', 'Show only buyers with no letter yet, or only overdue buyers. Tick the buyers, then tap Prepare letters.'],
+    ['cap', 'Then prepare the demand run for that wing and stage.'], ['click', '#run'], ['click', 'dialog button[value=save]', 2000],
+    ['cap', 'The run lists every buyer with the amount and GST. Head CRM checks it and taps Approve and raise demands.'], ['hl', '#ok', 2200],
+    ['hash', () => `#/booking/${IDS.flat}`], ['cap', 'For one buyer, open the flat and tap Demand letter.'],
+    ['click', '#ffLetter', 1600], ['cap', 'Choose the letter type and how to send it: email, print, or mark it sent on WhatsApp or by courier. Preview shows the letter first.'],
+    ['hl', 'dialog select[name=type]', 1600], ['wait', 1200], ['key', 'Escape'],
+    ['hash', '#/letters'], ['cap', 'For many buyers at once, use Demand letters in CRM tools. Tick the buyers and tap Prepare letters.'],
     ['click', '#all', 900], ['hl', '#prepare', 1800],
-    ['cap', 'Each letter is in our format, with the amounts from the ledger. Email it, or print it for courier or WhatsApp, and record how it went. Until the ERP is live, emails go only to the test address.'],
-    ['cap', 'Letter settings holds the bank details, the signatory and the test email address. Only Head CRM changes it.'], ['hl', '#settings'],
-    ['chapter', 'Part 6', 'Price list and cost sheet'],
-    ['hash', '#/prices'], ['cap', 'Management sets the price list: the rate per square foot, floor rise, parking, GST, stamp duty and registration.'],
-    ['click', '#newPl'], ['set', 'dialog input[name=name]', 'October 2026'], ['set', 'dialog input[name=baseRate]', '21000'], ['set', 'dialog input[name=floorRise]', '60'], ['set', 'dialog input[name=floorRiseFrom]', '10'], ['set', 'dialog input[name=parkingPrice]', '600000'],
-    ['click', 'dialog button[value=save]', 1800],
-    ['cap', 'Now make a cost sheet for any unsold flat. Pick the unit, parking and any discount. It shows the agreement value, the taxes and the payment schedule, ready to give the buyer.'],
-    ['pick', '#csf select[name=unit]', 2], ['click', '#csf button', 2200],
-    ['chapter', 'Part 7', 'Partners, dashboard and checks'],
-    ['hash', '#/partners'], ['cap', 'Channel partners shows the brokerage owed to each firm. It falls due once the agreement is registered and ten percent of the agreement value is received.'],
-    ['go', '/dashboard?project=1'], ['cap', 'The Collections dashboard is the daily view for management: collections, dues, important dates and the status of every flat in each tower.'],
-    ['click', '[data-v=collections]', 1800], ['click', '[data-v=dues]', 1800],
-    ['go', '/#/verify'], ['cap', 'Data to verify lists anything from the old CRM sheet that does not add up. Check each item, correct it, and close it with a note.'],
-    ['hash', '#/crmtodo'], ['cap', 'And every morning, start with your Daily To-Do. It brings all of this together: calls, approvals, letters, and what Accounts needs the CRM to fix.'],
-    ['end', 'The complete CRM course'],
+    ['cap', 'Until the ERP goes live, every email goes only to the test address, never to buyers.'],
+    ['end', 'Demands and demand letters', 'That is the whole CRM. Start each morning with Today.'],
   ] },
   'acc-full': { user: 'demo', steps: [
     ['title', 'Training · Accounts', 'The complete Accounts course', 'Daily entries, bank checks, registers, refunds, reports and Tally'],
@@ -323,60 +391,13 @@ const L = {
     ['cap', 'The first time, the ERP may ask you to choose your own password. Keep it to yourself.'],
     ['cap', 'This is the home page. Your projects are at the top; tools for everyone are below.'],
     ['hl', '.tile >> nth=0'], ['cap', 'Tap a project to open it.'], ['click', '.tile >> nth=0'],
-    ['cap', 'Each project has its departments: Sales & CRM, Accounts, CA / Tax and more. You only see the ones your login is allowed.'],
+    ['cap', 'Each project has its departments: Sales and CRM, Accounts, Construction and more. You see only the ones your login is allowed.'],
     ['hl', '.tile >> nth=0', 2200], ['click', '.tile >> nth=0'],
-    ['cap', 'Inside a department, every working page is a tile. Daily To-Do is always first: start your day there.'],
+    ['cap', 'Inside a department, your daily work comes first, and Today is always the first tile. Start your day there.'],
     ['hl', '.side .group-btn.open', 2000], ['cap', 'The same pages are in the menu on the left. Tap a heading to open or close it.'],
     ['hl', '#cpw', 1600], ['cap', 'Change password and Sign out are at the top right. Always sign out on a shared computer.'],
+    ['cap', 'On your phone, add the ERP to your home screen and it opens like an app.'],
     ['end', 'Getting started'],
-  ] },
-  'crm-todo': { user: 'ayesha', steps: [
-    ['title', 'Training · Sales & CRM', 'Your Daily To-Do', 'The list the ERP makes for you every morning at 9 am'],
-    ['hash', '#/crmtodo'], ['cap', 'Every morning at 9 am the ERP makes today’s list: calls to make, approvals, letters, and what Accounts found that the CRM must fix.'],
-    ['hl', '.kpis'], ['cap', 'At the top: how many lines are open, how many are urgent, and how many are done.'],
-    ['hl', '.td.hi >> nth=0', 2200], ['cap', 'Urgent lines have a red edge. Do these first.'],
-    ['click', '.td .td-title a >> nth=0'], ['cap', 'Tap a line to go straight to the page where you do the work.'], ['hash', '#/crmtodo'],
-    ['type', '.note >> nth=0', 'Called 12 buyers, rest tomorrow'], ['cap', 'When a line is done, you can write a short note, then tick it.'],
-    ['click', '.tk >> nth=0'], ['cap', 'Ticked lines move off the Open list. Open the All tab to see what was done, by whom and when.'],
-    ['click', '.tab[data-f=all]'], ['wait', 1200], ['click', '.tab[data-f=open]'],
-    ['hl', '.asg >> nth=0'], ['cap', 'Use the box on the right to give a line to one person. Mine shows only your lines.'],
-    ['scroll', 700], ['type', '#addT input[name=title]', 'Send the possession checklist to A-1203'], ['click', '#addT button'],
-    ['cap', 'Add your own tasks at the bottom. They stay on the list, day after day, until someone ticks them.'],
-    ['cap', 'If a 9 am line is not fixed, it comes back the next morning with the date it was first found.'],
-    ['end', 'Your Daily To-Do'],
-  ] },
-  followups: { user: 'ayesha', steps: [
-    ['title', 'Training · Sales & CRM', 'Follow-up calls', 'Who to call today and how to log each call'],
-    ['hash', '#/followups'], ['cap', 'Follow-ups is one shared list of every buyer with overdue dues.'],
-    ['hl', '.kpis'], ['cap', 'Buyers owing, to follow up today, broken promises and never contacted.'],
-    ['click', '.tab[data-t=due]'], ['cap', 'Due today: these buyers must be called today.'],
-    ['click', 'button[data-log] >> nth=0'], ['cap', 'After each call, tap Log. Choose how you contacted the buyer and what they said.'],
-    ['select', 'dialog select[name=outcome]', 'Promised to pay'], ['type', 'dialog textarea[name=note]', 'Will pay the plinth demand by Friday'],
-    ['fill', 'dialog input[name=promiseDate]', addDays(ist(), 4)], ['type', 'dialog input[name=promiseAmount]', '250000'],
-    ['click', 'dialog [data-n] >> nth=1'], ['cap', 'If they promise to pay, put the date and amount. Pick when to call next.'],
-    ['click', 'dialog button[value=save]'], ['cap', 'Saved. The buyer moves off today’s list until the next follow-up date.'],
-    ['click', '.tab[data-t=broken]'], ['cap', 'Broken promises: the promised date passed and nothing came in. Call these first.'],
-    ['end', 'Follow-up calls'],
-  ] },
-  bookings: { user: 'ayesha', steps: [
-    ['title', 'Training · Sales & CRM', 'Units, bookings and ledgers', 'Finding a flat, its booking and the buyer’s statement'],
-    ['hash', '#/units'], ['cap', 'Units & inventory shows every flat, floor by floor. The colour shows sold, available or held.'],
-    ['hl', '.tabs'], ['cap', 'Pick a wing at the top.'], ['scroll', 300], ['click', 'button.unit.s-booked >> nth=5'],
-    ['cap', 'Tap a flat to see its buyer, agreement value and dues.'], ['wait', 1500], ['key', 'Escape'],
-    ['hash', '#/bookings'], ['cap', 'Bookings lists every booking. New bookings wait here for Head CRM to approve.'],
-    ['type', '#q', 'B-'], ['cap', 'Search by flat or buyer.'],
-    ['click', 'tr[data-b] >> visible=true >> nth=0'], ['cap', 'The booking page has the applicants, the payment plan, demands and receipts.'], ['scroll', 500],
-    ['hash', '#/ledgers'], ['cap', 'Customer ledgers: the statement of account for each buyer. Print it or save it as a PDF to send.'],
-    ['end', 'Units, bookings and ledgers'],
-  ] },
-  letters: { user: 'ayesha', steps: [
-    ['title', 'Training · Sales & CRM', 'Demands and demand letters', 'From a construction stage to the letter in the buyer’s inbox'],
-    ['hash', '#/demands'], ['cap', 'When the site completes a stage, it is recorded here. Then a demand run is prepared for that stage.'],
-    ['hl', '#run'], ['cap', 'Head CRM checks the run and approves it. Approving raises the demand on every booking in that wing.'],
-    ['hash', '#/letters'], ['cap', 'Demand letters: choose the letter type, tick the buyers, and prepare the letters.'],
-    ['hl', '#type'], ['hl', '#prepare'], ['cap', 'Send each letter by email or courier, and record how it went. The ERP keeps a copy.'],
-    ['cap', 'Until the ERP is live, emails go only to the test address, never to buyers.'],
-    ['end', 'Demands and demand letters'],
   ] },
   'acc-todo': { user: 'imran', steps: [
     ['title', 'Training · Accounts', 'The 9 am audit and your Daily To-Do', 'What the audit checks and how to clear it'],
@@ -451,5 +472,13 @@ const L = {
     console.log('  saved', mp4, Math.round(fs.statSync(mp4).size / 1024) + ' KB');
   }
   await browser.close();
+  // The complete CRM course is the six CRM videos joined in order (same voice, no second recording).
+  const parts = ['crm-new', 'crm-calls', 'crm-receipts', 'crm-messages', 'crm-booking', 'crm-letters'].map((x) => path.join(OUT, x + '.mp4'));
+  if ((!only.length || only.includes('crm-full')) && parts.every((f) => fs.existsSync(f))) {
+    const list = path.join(TMP, 'crm-full.txt'); fs.writeFileSync(list, parts.map((f) => `file '${f}'`).join('\n'));
+    execFileSync('ffmpeg', ['-y', '-loglevel', 'error', '-f', 'concat', '-safe', '0', '-i', list, '-c', 'copy', '-movflags', '+faststart', path.join(OUT, 'crm-full.mp4')]);
+    fs.copyFileSync(path.join(OUT, 'crm-new.jpg'), path.join(OUT, 'crm-full.jpg'));
+    console.log('  saved the complete CRM course');
+  }
   process.exit(0);
 })().catch((e) => { console.error(e); process.exit(1); });

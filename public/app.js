@@ -1744,6 +1744,7 @@
     }
     function schedule() { clearTimeout(timer); timer = setTimeout(async () => { await check(); schedule(); }, document.hidden ? 180000 : 60000); }
     document.addEventListener('visibilitychange', () => { if (!document.hidden && me) { check(); schedule(); } });
+    window.__erpMailCheck = check; // the training recorder shows a new email arriving
     return { paint: () => { draw(); check(); schedule(); }, check };
   })();
 
