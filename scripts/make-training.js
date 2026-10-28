@@ -214,7 +214,7 @@ const L = {
     ['hash', '#/project/1/crm'], ['cap', 'The CRM is built around one idea: one flat, one window. Everything about a buyer is in one place.'],
     ['hl', '.hgroup >> nth=0', 2200], ['cap', 'Your daily work is six tiles: Today, Flats and buyers, Book a flat, Receipts, Inbox and Dream Chat.'],
     ['hl', '.hgroup.more', 2000], ['cap', 'The tools for many flats at once, such as demand runs and the price list, are underneath.'],
-    ['hash', '#/flats?f=all'], ['cap', 'Flats and buyers is the one list of every flat and buyer. It replaces the old Bookings, Customer ledgers and Follow-ups pages.'],
+    ['hash', '#/flats'], ['cap', 'Flats and buyers is the one list of every flat and buyer. It replaces the old Bookings, Customer ledgers and Follow-ups pages.'],
     ['hl', '.chips', 2200], ['cap', 'The buttons at the top filter the list: who to call today, broken promises, never called, overdue, and bookings waiting for approval.'],
     ['type', '#q', 'A-1'], ['cap', 'Or search for any flat number, buyer name or phone number.'], ['fill', '#q', ''],
     ['click', () => `tr[data-b="${IDS.flat}"]`, 2000], ['cap', 'Tap a flat to open its flat file.'],

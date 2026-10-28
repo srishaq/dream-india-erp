@@ -593,21 +593,21 @@
     const rows = B.rows.map((r) => ({ ...r, f: fu.get(r.id) }));
     const req = (r) => r.status === 'active' && (r.cancel_requested_at || r.transfer_requested_at);
     const SETS = [
+      ['bookings', 'All bookings', () => true, 'Every booking: active, waiting for approval, cancelled and transferred'],
       ['call', 'Call today', (r) => r.f && r.f.due, 'Buyers with dues whose next call is today or earlier'],
       ['broken', 'Broken promises', (r) => r.f && r.f.broken, 'They promised to pay by a date that has passed'],
       ['never', 'Never called', (r) => r.f && !r.f.count, 'Buyers with dues nobody has called yet'],
       ['overdue', 'Overdue', (r) => r.status === 'active' && toNum(r.overdue) > 0, 'Every buyer with an overdue amount'],
       ['approval', 'Waiting for approval', (r) => r.status === 'pending' || req(r), 'New bookings, cancellations and transfers to approve'],
-      ['all', 'All active', (r) => r.status === 'active', 'Every live booking'],
       ['closed', 'Cancelled / transferred', (r) => ['cancelled', 'rejected', 'transferred'].includes(r.status), 'Kept on record'],
     ];
     const qf = (location.hash.split('?')[1] || '').match(/f=(\w+)/);
-    let f = (qf && qf[1]) || store.get('erp_flats_f') || 'call';
-    if (!SETS.some(([k]) => k === f)) f = 'all';
-    const set = SETS.find(([k]) => k === f);
-    if (f === 'call' && !rows.some(set[2]) && !qf) f = 'all';
+    // opens on All bookings; a filter is a click away (and the To-Do and dashboard links open one directly)
+    let f = (qf && qf[1]) || 'bookings';
+    if (f === 'all') f = 'bookings';
+    if (!SETS.some(([k]) => k === f)) f = 'bookings';
     const cur = SETS.find(([k]) => k === f);
-    const list = rows.filter(cur[2]).sort((a, b) => (f === 'all' || f === 'closed' || f === 'approval' ? a.unit_no.localeCompare(b.unit_no, 'en', { numeric: true }) : toNum(b.overdue) - toNum(a.overdue)));
+    const list = rows.filter(cur[2]).sort((a, b) => (f === 'bookings' || f === 'closed' || f === 'approval' ? a.unit_no.localeCompare(b.unit_no, 'en', { numeric: true }) : toNum(b.overdue) - toNum(a.overdue)));
     const todo = (r) => r.status === 'pending' ? '<span class="pill">needs approval</span>' : r.cancel_requested_at && r.status === 'active' ? '<span class="pill bad">cancel requested</span>' : r.transfer_requested_at && r.status === 'active' ? '<span class="pill warn">transfer requested</span>'
       : r.status !== 'active' ? `<span class="pill grey">${esc(r.status)}</span>` : r.f && r.f.broken ? '<span class="pill bad">promise broken</span>' : r.f && r.f.due ? '<span class="pill warn">call today</span>' : toNum(r.overdue) > 0 ? '<span class="pill warn">overdue</span>' : '<span class="pill good">on track</span>';
     $('#page').innerHTML = `<div class="page-head"><div><h1>Flats &amp; buyers</h1><p class="muted">Every flat and buyer in one list. Open a flat to see and do everything for it: payments, calls, messages, documents and history.</p></div>
@@ -622,7 +622,7 @@
         <td class="small">${r.f && r.f.count ? `${fmtD(r.f.last_at.slice(0, 10))} · ${esc(r.f.outcome || r.f.kind || '')}` : r.f ? '<span class="muted">never</span>' : ''}</td>
         <td class="small">${r.f && r.f.next_date ? fmtD(r.f.next_date) : ''}${r.f && r.f.promise_date ? `<br><span class="muted">promised ${fmtD(r.f.promise_date)}</span>` : ''}</td>
         <td class="small" style="white-space:nowrap">${r.f && r.f.mobile && r.f.wa ? `<a href="tel:+91${esc(r.f.mobile)}" data-stop>Call</a> · <a href="${esc(r.f.wa)}" target="_blank" rel="noopener" data-stop>WhatsApp</a>` : ''}</td></tr>`).join('') || '<tr><td colspan="8" class="muted">Nothing here.</td></tr>'}</table></div>`;
-    document.querySelectorAll('.chip[data-f]').forEach((x) => (x.onclick = () => { store.set('erp_flats_f', x.dataset.f); history.replaceState(null, '', '#/flats'); flats(); }));
+    document.querySelectorAll('.chip[data-f]').forEach((x) => (x.onclick = () => { history.replaceState(null, '', x.dataset.f === 'bookings' ? '#/flats' : '#/flats?f=' + x.dataset.f); flats(); }));
     document.querySelectorAll('tr[data-b]').forEach((tr) => (tr.onclick = (e) => { if (e.target.closest('[data-stop]')) return; go(`#/booking/${tr.dataset.b}`); }));
     $('#q').oninput = (e) => { const q = e.target.value.toLowerCase().trim(); document.querySelectorAll('tr[data-s]').forEach((tr) => (tr.style.display = tr.dataset.s.includes(q) ? '' : 'none')); };
   }

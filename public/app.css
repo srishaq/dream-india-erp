@@ -444,3 +444,4 @@ table.flats tr.click:hover td { background: var(--brand-tint); }
 @media (max-width: 900px) { .mg-six { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
 @media (max-width: 520px) { .mg-six { grid-template-columns: 1fr; gap: 10px; } .mg-big { padding: 14px 16px; } .mg-big .mg-v { font-size: 26px; } .mg-bar { flex-wrap: wrap; } }
 .mg-six + .mg-sec { margin-top: 12px; }
+table.flats td:first-child, table.flats td .pill { white-space: nowrap; }
