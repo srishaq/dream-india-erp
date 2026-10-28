@@ -445,3 +445,31 @@ table.flats tr.click:hover td { background: var(--brand-tint); }
 @media (max-width: 520px) { .mg-six { grid-template-columns: 1fr; gap: 10px; } .mg-big { padding: 14px 16px; } .mg-big .mg-v { font-size: 26px; } .mg-bar { flex-wrap: wrap; } }
 .mg-six + .mg-sec { margin-top: 12px; }
 table.flats td:first-child, table.flats td .pill { white-space: nowrap; }
+/* management dashboard in the Collections dashboard's look */
+.mg-hero .hero-in { padding-bottom: 0; }
+.mg-sync { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; color: #C6CCEB; font-size: 14px; margin: 6px 0 14px; }
+.mg-sync .dot { width: 9px; height: 9px; border-radius: 50%; background: #3FBF7F; }
+.mg-act { margin-left: auto; display: inline-flex; gap: 8px; }
+.mg-btn { background: transparent; color: #fff; border: 1px solid rgba(255,255,255,.35); border-radius: 8px; padding: 7px 14px; font-weight: 600; font-size: 14px; }
+.mg-btn:hover { background: rgba(255,255,255,.1); }
+.mg-tabs2 { display: flex; gap: 28px; overflow-x: auto; }
+.mg-tabs2 button { all: unset; cursor: pointer; padding: 10px 2px 12px; color: #C6CCEB; font-weight: 700; font-size: 17px; border-bottom: 4px solid transparent; white-space: nowrap; }
+.mg-tabs2 button[aria-selected="true"] { color: #fff; border-bottom-color: #64C2E6; }
+.mg-tabs2 button:focus-visible { outline: 2px solid #64C2E6; outline-offset: 2px; }
+.mfigs { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); background: #fff; border: 1px solid #D9DDD6; border-radius: 14px; overflow: hidden; }
+.mfigs.in { border-radius: 10px; }
+.mfig { display: grid; align-content: start; gap: 4px; padding: 18px 20px; box-shadow: 0 0 0 .5px #D9DDD6; color: inherit; text-decoration: none; min-width: 0; }
+.mfig:hover { box-shadow: 0 0 0 2px #64C2E6 inset; }
+.mfig span { font-size: 15px; color: #5E6A72; }
+.mfig b { font-size: 30px; font-weight: 700; letter-spacing: -.02em; color: #140C59; line-height: 1.15; overflow-wrap: anywhere; }
+.mfig small { font-size: 14px; color: #5E6A72; line-height: 1.4; }
+.mfig.good b { color: #117A65; } .mfig.warn b { color: #B7791F; } .mfig.bad b { color: #B42318; }
+.mfig ul { list-style: none; margin: 8px 0 0; padding: 8px 0 0; border-top: 1px solid #ECEEE9; display: grid; gap: 3px; }
+.mfig li { display: flex; justify-content: space-between; gap: 10px; font-size: 13px; color: #5E6A72; }
+.mfig li i { font-style: normal; min-width: 0; overflow-wrap: anywhere; } .mfig li em { font-style: normal; font-weight: 600; color: #140C59; white-space: nowrap; }
+.mfig li.good em { color: #117A65; } .mfig li.warn em { color: #B7791F; } .mfig li.bad em { color: #B42318; }
+.mpanel { background: #fff; border: 1px solid #D9DDD6; border-radius: 14px; padding: 18px 20px; display: grid; gap: 14px; margin-top: 18px; }
+.mpanel h2 { margin: 0; font-size: 20px; color: #140C59; letter-spacing: 0; text-transform: none; }
+.mpanel .mg-att a { border-color: #ECEEE9; }
+@media (max-width: 900px) { .mfigs { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+@media (max-width: 600px) { .mfig { padding: 14px 14px; } .mfig b { font-size: 24px; } .mfig span { font-size: 14px; } .mfig small { font-size: 12.5px; } .mpanel { padding: 14px; } .mg-tabs2 button { font-size: 16px; } .mg-act { margin-left: 0; } }

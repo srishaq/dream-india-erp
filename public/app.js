@@ -2035,22 +2035,25 @@
     // Today: six numbers and only what needs attention. Full report: every figure, for the monthly review.
     let view = store.get('erp_mg_view') === 'full' ? 'full' : 'today';
     const D = d.daily || { top: [], attention: [], limits: {} };
-    const big = (x) => `<a class="mg-big ${tone(x.tone)}" href="${href(x.link)}"><span class="mg-t">${esc(x.title)}</span><span class="mg-v">${esc(x.value)}</span><span class="mg-s">${esc(x.sub || '')}</span></a>`;
+    // the same look as the Collections dashboard: a grid of figures, big coloured numbers, a short line under each
+    const fig = (x) => `<a class="mfig ${tone(x.tone)}" href="${href(x.link)}"><span>${esc(x.title)}</span><b>${esc(x.value)}</b>${x.sub ? `<small>${esc(x.sub)}</small>` : ''}</a>`;
+    const rfig = (t) => `<a class="mfig ${tone(t.tone)}" href="${href(t.link)}"><span>${esc(t.title)}</span><b>${esc(t.value)}</b>${t.sub ? `<small>${esc(t.sub)}</small>` : ''}
+        ${(t.lines || []).length ? `<ul>${t.lines.slice(0, 5).map(([l, v, tn]) => `<li class="${tone(tn)}"><i>${esc(l)}</i><em>${esc(v)}</em></li>`).join('')}</ul>` : ''}</a>`;
     const att = D.attention.length
       ? `<ul class="mg-att">${D.attention.map((a) => `<li class="${tone(a.tone)}"><a href="${href(a.link)}"><span class="dot"></span><span>${esc(a.text)}</span><b>→</b></a></li>`).join('')}</ul>`
       : '<div class="mg-clear">✓ All clear. Nothing needs your attention today.</div>';
-    $('#page').innerHTML = heroHtml(`${d.project ? d.project.name + ' · ' : ''}${fmtD(d.today)}`, 'Management dashboard', `Figures as of ${at} today, straight from the ERP. Tap any number to open the page behind it.`, ['#/home', 'Home']) + `
+    $('#page').innerHTML = `<div class="hero mg-hero"><div class="hero-in"><a class="back" href="#/home">← Home</a><span class="eyebrow">${esc(d.project ? d.project.name : '')} · ${esc(fmtD(d.today))}</span>
+        <h1>Management dashboard</h1>
+        <div class="mg-sync"><span class="dot"></span><span>Figures as of ${at} today, live from the ERP</span><span class="mg-act"><button class="mg-btn" id="mgLim" title="When an item comes on the attention list">Alert limits</button><button class="mg-btn" id="mgRe">Refresh</button></span></div>
+        <nav class="mg-tabs2" role="tablist">${[['today', 'Today'], ['full', 'Full report']].map(([k, l]) => `<button type="button" role="tab" data-mv="${k}" aria-selected="${k === view}">${l}</button>`).join('')}</nav></div></div>
       <div class="hm mg">
-        <div class="mg-bar"><div class="ff-tabs mg-tabs" role="tablist" style="margin:0">${[['today', 'Today'], ['full', 'Full report']].map(([k, l]) => `<button type="button" role="tab" data-mv="${k}" aria-selected="${k === view}">${l}</button>`).join('')}</div>
-          <span><button class="ghost small" id="mgLim" title="When an item comes on the attention list">Alert limits</button> <button class="ghost small" id="mgRe">Refresh</button></span></div>
         <div data-mvp="today" ${view === 'today' ? '' : 'hidden'}>
-          <div class="mg-six">${D.top.map(big).join('')}</div>
-          <section class="mg-sec"><h2>Needs your attention ${D.attention.length ? `<span class="mg-cnt">${D.attention.length}</span>` : ''}</h2>${att}</section>
+          <div class="mfigs">${D.top.map(fig).join('')}</div>
+          <section class="mpanel"><h2>Needs your attention ${D.attention.length ? `<span class="mg-cnt">${D.attention.length}</span>` : ''}</h2>${att}</section>
         </div>
         <div data-mvp="full" ${view === 'full' ? '' : 'hidden'}>
-          <div class="mg-bar"><span class="muted small">Red needs action today · amber to watch · green is fine</span></div>
           ${salesStrip(d.sales, { title: 'Sales: saleable flats, area sold and the average rate', link: '#/units' })}
-          ${d.sections.map((s) => `<section class="mg-sec"><h2>${esc(s.title)}</h2><div class="mg-grid">${s.tiles.map(card).join('')}</div></section>`).join('')}
+          ${d.sections.map((s) => `<section class="mpanel"><h2>${esc(s.title)}</h2><div class="mfigs in">${s.tiles.map(rfig).join('')}</div></section>`).join('')}
         </div>
       </div>`;
     document.querySelectorAll('[data-mv]').forEach((b) => (b.onclick = () => { view = b.dataset.mv; store.set('erp_mg_view', view);
