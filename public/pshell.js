@@ -88,7 +88,7 @@
     if (!me.hub && (me.aspire || []).length) mine.push(['aspire', 'Dream Aspire', '/aspire', 'Aspire']);
     // Home (the tiles page) is for Admin and Management only; everyone else sees just their sections.
     const onHome = false;
-    const home = true ? `<a class="shl-home" href="/#/project/1" ${onHome ? 'aria-current="page"' : ''} title="Dream Signature: all departments" aria-label="Dream Signature"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 10.5 12 3l9 7.5V21H3z"/><path d="M9 21v-6h6v6"/></svg><span class="t">Dream Signature</span></a>` : '';
+    const home = me.role !== 'consultant' ? `<a class="shl-home" href="/#/project/1" ${onHome ? 'aria-current="page"' : ''} title="Dream Signature: all departments" aria-label="Dream Signature"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 10.5 12 3l9 7.5V21H3z"/><path d="M9 21v-6h6v6"/></svg><span class="t">Dream Signature</span></a>` : '';
     // Only the Home button: the departments are reached from the ERP's Home and its side menu, not a second bar here.
     const showTabs = false;
     if (modsEl) modsEl.innerHTML = `<div class="shl-left">${home}${showTabs && mine.length > 1 && !onHome

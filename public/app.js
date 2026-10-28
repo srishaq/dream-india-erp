@@ -31,6 +31,7 @@
     if (!s.user) return login();
     me = s.user;
     if (me.mustChange) return changePassword(true);
+    if (me.role === 'consultant') { location.replace('/drawings'); return; } // consultants see the drawings only
     shell();
   }
 
