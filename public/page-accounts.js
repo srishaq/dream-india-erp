@@ -139,7 +139,7 @@ function niceStep(x){const p=Math.pow(10,Math.floor(Math.log10(x)));const f=x/p;
 const MNL=['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'],mLab=m=>MNL[+m.split('-')[1]-1]+' '+m.split('-')[0];
 const flowD=D.flow12.map(d=>({in:RC('Money in · '+mLab(d.m),r=>okR(r)&&r.ym===d.m),out:PC('Money out · '+mLab(d.m),r=>r.ym===d.m)}));
 drawFlow=function(){const data=D.flow12,box=$('#chFlow');const W=Math.max(340,box.clientWidth||900),h=320,pad={l:78,r:8,t:10,b:30};
- const mx=Math.max(...data.flatMap(d=>[d.in,d.out]));const step=niceStep(mx/7);const top=Math.ceil(mx/step)*step;const y=v=>pad.t+(h-pad.t-pad.b)*(1-v/top);
+ const mx=Math.max(100000,...data.flatMap(d=>[+d.in||0,+d.out||0]));const step=niceStep(mx/7)||100000;const top=Math.ceil(mx/step)*step;const y=v=>pad.t+(h-pad.t-pad.b)*(1-v/top);
  const bw=(W-pad.l-pad.r)/data.length;let s=`<svg width="100%" viewBox="0 0 ${W} ${h}" role="img" aria-label="Money in and out by month">`;
  for(let v=0;v<=top+1;v+=step)s+=`<line x1="${pad.l}" x2="${W-pad.r}" y1="${y(v)}" y2="${y(v)}" stroke="${css('--line')}"/><text x="${pad.l-8}" y="${y(v)+4}" text-anchor="end">${v?'₹'+(v/1e7).toFixed(2)+' Cr':'₹0'}</text>`;
  const every=Math.ceil(data.length/(W/64));
