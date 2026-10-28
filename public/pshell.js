@@ -89,7 +89,9 @@
     // Home (the tiles page) is for Admin and Management only; everyone else sees just their sections.
     const onHome = false;
     const home = true ? `<a class="shl-home" href="/#/home" ${onHome ? 'aria-current="page"' : ''} title="Dream India Home" aria-label="Dream India Home"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 10.5 12 3l9 7.5V21H3z"/><path d="M9 21v-6h6v6"/></svg><span class="t">Home</span></a>` : '';
-    if (modsEl) modsEl.innerHTML = `<div class="shl-left">${home}${mine.length > 1 && !onHome
+    // Only the Home button: the departments are reached from the ERP's Home and its side menu, not a second bar here.
+    const showTabs = false;
+    if (modsEl) modsEl.innerHTML = `<div class="shl-left">${home}${showTabs && mine.length > 1 && !onHome
       ? `<nav class="shl-mods" aria-label="Departments">${mine.map(([k, l, href, short]) => `<a href="${href}" ${k === module ? 'aria-current="page"' : ''}>${short ? `<span class="f">${l}</span><span class="s">${short}</span>` : l}</a>`).join('')}</nav>` : ''}</div>`;
     if (!userEl) return;
     userEl.className = 'shl-user';
