@@ -14,10 +14,53 @@ const { route, fail, str, intOr } = require('../lib/http');
 const HEADS = ['av', 'gst', 'tds', 'stamp_duty', 'registration', 'other'];
 const MODES = ['bank', 'cheque', 'loan', 'tds', 'other'];
 
+// ---------- the payment receipt given to the buyer ----------
+const HEAD_LABEL = { av: 'Agreement value (flat cost)', gst: 'GST', tds: 'TDS (Section 194-IA)', stamp_duty: 'Stamp duty', registration: 'Registration charges', other: 'Other' };
+const fyOf = (iso) => { const [y, m] = iso.split('-').map(Number); const s = m >= 4 ? y : y - 1; return `${s}-${String((s + 1) % 100).padStart(2, '0')}`; };
+// The receipt number is given once, in order of issue: DS/2026-27/0001 (project initials / financial year / running number).
+async function issueNo(r) {
+  if (r.receipt_no) return r.receipt_no;
+  return db.tx(async (t) => {
+    await t.q('select pg_advisory_xact_lock(7316020)');
+    const cur = await t.one('select receipt_no from receipts where id = $1', [r.id]); if (cur.receipt_no) return cur.receipt_no;
+    const p = await t.one('select code, name from projects where id = $1', [r.project_id]);
+    const pre = (p.code === 'SIGNATURE' ? 'DS' : String(p.code || p.name).replace(/[^A-Za-z]/g, '').slice(0, 3).toUpperCase()) + '/' + fyOf(today()) + '/';
+    const last = await t.one("select max(substring(receipt_no from '[0-9]+$')::int) as n from receipts where receipt_no like $1", [pre + '%']);
+    const no = pre + String((last.n || 0) + 1).padStart(4, '0');
+    await t.q('update receipts set receipt_no = $2, receipt_issued_at = now() where id = $1', [r.id, no]);
+    return no;
+  });
+}
+async function receiptFigures(u, id) {
+  const r = await db.one('select * from receipts where id = $1', [id]);
+  if (!r) throw fail(404, 'Receipt not found.');
+  needProject(u, r.project_id);
+  if (!['pending', 'approved'].includes(r.status)) throw fail(409, `This receipt is ${r.status}, so no receipt can be given for it.`);
+  if (r.opening) throw fail(409, 'This is an opening balance from the import, not a payment received in the ERP.');
+  const bk = await db.one(`select b.id, u.unit_no, p.name as project from bookings b join units u on u.id = b.unit_id join projects p on p.id = u.project_id where b.id = $1`, [r.booking_id]);
+  const ap = await db.q('select y.name, y.address, y.email from booking_applicants a join buyers y on y.id = a.buyer_id where a.booking_id = $1 order by a.seq', [r.booking_id]);
+  const splits = await db.q('select head, amount from receipt_splits where receipt_id = $1 and amount > 0', [id]);
+  const set = (await db.one("select value from settings where key = 'letters'"))?.value || {};
+  const no = await issueNo(r);
+  const iso = (d) => (d instanceof Date ? d.toISOString() : String(d)).slice(0, 10);
+  const { words } = require('../lib/docs');
+  const order = ['av', 'gst', 'tds', 'stamp_duty', 'registration', 'other'];
+  return {
+    r: { ...r, receipt_no: no }, bk, emails: ap.flatMap((a) => String(a.email || '').split(/[\/,;\s]+/).filter((e) => /@/.test(e))),
+    doc: {
+      receiptNo: no, date: iso(r.received_on), unit: bk.unit_no, projectName: bk.project, reference: set.reference || null,
+      name: ap.map((a) => a.name).join(' & '), addressLines: String(ap[0]?.address || '').split(/\n|,\s*(?=\S)/).map((x) => x.trim()).filter(Boolean).slice(0, 4),
+      amount: Number(r.amount), words: words(r.amount), mode: r.mode, instrument: r.instrument_no, drawnOn: r.bank,
+      splits: splits.sort((a, b) => order.indexOf(a.head) - order.indexOf(b.head)).map((x) => [HEAD_LABEL[x.head] || x.head, Number(x.amount)]),
+      cleared: r.status === 'approved' || r.bank_status === 'cleared', signedFor: set.signedFor, signatory: set.signatory, signatoryTitle: set.signatoryTitle,
+    },
+  };
+}
+
 async function list(projectId, status) {
   return db.q(
     `select r.id, r.received_on, r.amount, r.mode, r.bank, r.instrument_no, r.status, r.note, r.reverse_reason, r.opening, r.created_by, r.booking_id,
-            u.unit_no, c.name as created_by_name, a.name as approved_by_name, r.approved_at, r.approved_note,
+            u.unit_no, c.name as created_by_name, a.name as approved_by_name, r.approved_at, r.approved_note, r.receipt_no, r.receipt_sent_at,
             r.handed_on, r.deposited_on, r.bank_status, r.bank_on, r.bank_ref, r.bank_match, h.name as handed_by_name, dp.name as deposited_by_name,
             (select string_agg(y.name, ' & ' order by ap.seq) from booking_applicants ap join buyers y on y.id = ap.buyer_id where ap.booking_id = r.booking_id) as buyers,
             coalesce((select json_object_agg(s.head, s.amount) from receipt_splits s where s.receipt_id = r.id), '{}') as splits
@@ -32,6 +75,13 @@ module.exports = route({
   GET: async (req, res) => {
     const u = await auth.guard(req, res); if (!u) return;
     if (!['receipt.enter', 'receipt.approve', 'ledger.view'].some((p) => has(u, p))) return res.status(403).json({ error: 'Your role does not allow this.' });
+    if (req.query.pdf) {
+      const f = await receiptFigures(u, intOr(req.query.pdf));
+      const buf = require('../lib/demand-letter').buildReceipt(f.doc);
+      res.setHeader('Content-Type', 'application/pdf');
+      res.setHeader('Content-Disposition', `inline; filename="Receipt_${f.doc.receiptNo.replace(/[^A-Za-z0-9-]+/g, '_')}_${f.doc.unit}.pdf"`);
+      return res.end(buf);
+    }
     const status = ['pending', 'approved', 'rejected', 'bounced', 'reversed'].includes(req.query.status) ? req.query.status : null;
     return res.json({ rows: await list(needProject(u, intOr(req.query.project)), status) });
   },
@@ -75,6 +125,27 @@ module.exports = route({
       return res.json({ ok: true, id });
     }
 
+    // Email the payment receipt (PDF attached) to the buyer; until the ERP is live, to the test address only.
+    if (b.action === 'receipt-email') {
+      if (!(has(u, 'receipt.enter') || has(u, 'receipt.approve') || has(u, 'demand.raise'))) throw fail(403, 'Your role does not allow this.');
+      const mailer = require('../lib/mailer');
+      if (!mailer.configured()) throw fail(409, 'Email is not set up yet, so the receipt could not be sent.');
+      const f = await receiptFigures(u, intOr(b.id));
+      const live = process.env.ERP_LIVE === '1';
+      const set = (await db.one("select value from settings where key = 'letters'"))?.value || {};
+      const to = live ? [...new Set(f.emails)] : String(set.testEmail || '').split(/[,;\s]+/).filter((e) => /@/.test(e)).slice(0, 1);
+      if (!to.length) throw fail(409, live ? `${f.doc.unit}: no email address on this booking.` : 'Test version: set a test email address in Letter settings first.');
+      const bm = require('../lib/buyer-mail'), x = await bm.context(f.bk.id), sig = await bm.signature(u);
+      const subject = `Payment receipt ${f.doc.receiptNo}: ${f.doc.projectName} ${f.doc.unit}`;
+      const text = bm.compose({ people: x.people, sig, body: `Thank you for your payment of Rs. ${Math.round(f.doc.amount).toLocaleString('en-IN')} towards unit ${f.doc.unit}. Please find your payment receipt ${f.doc.receiptNo} attached.${f.doc.mode === 'cheque' && !f.doc.cleared ? '\n\nThe receipt is subject to realisation of the cheque.' : ''}` });
+      const pdf = require('../lib/demand-letter').buildReceipt(f.doc);
+      const cn = await mailer.connect(); let sent;
+      try { sent = await cn.send({ to, subject: (live ? '' : '[TEST] ') + subject, text, attachments: [{ filename: `Receipt_${f.doc.receiptNo.replace(/[^A-Za-z0-9-]+/g, '_')}.pdf`, type: 'application/pdf', content: pdf }] }); } finally { await cn.close().catch(() => {}); }
+      await db.q('update receipts set receipt_sent_at = now() where id = $1', [f.r.id]);
+      await require('../lib/comms').logSent({ bookingId: f.bk.id, to, subject, body: text, sent, kind: 'receipt', userId: u.id, test: !live });
+      await audit.record(db.q, { user: u, action: 'receipt-email', entity: 'receipt', entityId: f.r.id, projectId: f.r.project_id, after: { receiptNo: f.doc.receiptNo, to: live ? to : ['test'] } });
+      return res.json({ ok: true, to, receiptNo: f.doc.receiptNo, test: !live });
+    }
     if (b.action === 'bankcheck') {
       if (!(has(u, 'receipt.approve') || has(u, 'accounts.enter'))) throw fail(403, 'Your role does not allow this.');
       return res.json({ ok: true, ...(await require('../lib/cheque-match').run({ user: u, trigger: 'manual' })) });

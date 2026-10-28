@@ -1,5 +1,5 @@
 // Bookings. GET ?project=ID (list) or ?id=ID (one booking with its demands and receipts).
-// POST {action}: create, approve, reject, register, cancel-request, cancel-approve, cancel-reject.
+// POST {action}: create, approve, reject, register, edit (Head CRM), cancel-request, cancel-approve, cancel-reject.
 const db = require('../lib/db');
 const auth = require('../lib/auth');
 const audit = require('../lib/audit');
@@ -152,6 +152,55 @@ module.exports = route({
         await log(t, 'register', { agreementDate, registrationDate, demand: d });
       });
       return res.json({ ok: true, ...(await detail(u, bk.id)) });
+    }
+
+    // Changes to a booking after it was entered: only Head CRM (or Management / Admin), with a reason, every field's old
+    // and new value in the audit log. A new agreement value or GST rate re-works the demands already raised.
+    if (b.action === 'edit') {
+      need('booking.approve');
+      if (!['active', 'pending'].includes(bk.status)) throw fail(409, 'Only an active or pending booking can be edited.');
+      const reason = str(b.reason, 300); if (!reason) throw fail(400, 'Give the reason for the change.');
+      const cur = await db.one('select * from bookings where id = $1', [bk.id]);
+      const set = {};
+      const money = (k, col, allowNull = true) => {
+        if (!(k in b)) return;
+        if ((b[k] === '' || b[k] == null) && allowNull) { set[col] = null; return; }
+        const p = toPaise(b[k]); if (!(p >= 0)) throw fail(400, `${k} looks wrong.`); set[col] = rupees(p);
+      };
+      if ('bookingDate' in b) { const d = dateOr(b.bookingDate); if (!d || d > today()) throw fail(400, 'Booking date looks wrong.'); set.booking_date = d; }
+      if ('agreementValue' in b) { const p = toPaise(b.agreementValue); if (!(p > 0)) throw fail(400, 'Enter the agreement value.'); set.agreement_value = rupees(p); }
+      if ('gstRate' in b) { const g = Number(b.gstRate); if (!(g >= 0 && g <= 28)) throw fail(400, 'GST rate looks wrong.'); set.gst_rate = g; }
+      if ('parking' in b) set.parking = Math.max(intOr(b.parking, 0), 0);
+      if ('funding' in b) set.funding = ['self', 'loan'].includes(b.funding) ? b.funding : null;
+      for (const [k, col, n] of [['loanBank', 'loan_bank', 80], ['source', 'source', 80], ['cpName', 'cp_name', 120], ['rmName', 'rm_name', 80]]) if (k in b) set[col] = str(b[k], n) || null;
+      money('brokerage', 'brokerage'); money('devCharges', 'dev_charges');
+      const norm = (v) => (v == null || v === '' ? '' : v instanceof Date ? v.toISOString().slice(0, 10) : typeof v === 'number' || /^-?\d+(\.\d+)?$/.test(String(v)) ? String(Number(v)) : String(v).slice(0, 10) === String(v) ? String(v) : String(v));
+      const changed = Object.keys(set).filter((c) => norm(cur[c]) !== norm(set[c]) && !(c === 'booking_date' && norm(cur[c]).slice(0, 10) === norm(set[c])));
+      const people = Array.isArray(b.applicants) ? cleanApplicants(b.applicants) : null;
+      if (people && !has(u, 'buyer.kyc')) throw fail(403, 'Your role cannot change buyer details.');
+      if (!changed.length && !people) throw fail(400, 'Nothing was changed.');
+      const before = Object.fromEntries(changed.map((c) => [c, cur[c]])), after = Object.fromEntries(changed.map((c) => [c, set[c]]));
+      let redone = 0;
+      await db.tx(async (t) => {
+        if (changed.length) await t.q(`update bookings set ${changed.map((c, i) => `${c} = $${i + 2}`).join(', ')} where id = $1`, [bk.id, ...changed.map((c) => set[c])]);
+        if (changed.includes('agreement_value') || changed.includes('gst_rate')) {
+          redone = (await t.q(`update demands d set amount = round(b.agreement_value * d.pct / 100, 2), gst = round(round(b.agreement_value * d.pct / 100, 2) * b.gst_rate / 100, 2)
+            from bookings b where b.id = d.booking_id and d.booking_id = $1 and d.status = 'raised' and not d.opening returning d.id`, [bk.id])).length;
+        }
+        if (people) {
+          const ex = await t.q('select ap.seq, y.* from booking_applicants ap join buyers y on y.id = ap.buyer_id where ap.booking_id = $1 order by ap.seq', [bk.id]);
+          before.applicants = ex.map((a) => ({ name: a.name, pan: a.pan, phone: a.phone, email: a.email }));
+          for (let i = 0; i < people.length; i++) {
+            const v = people[i], e = ex[i];
+            if (e) await t.q('update buyers set name = $2, pan = $3, aadhaar = $4, phone = $5, email = $6, address = $7 where id = $1', [e.id, v.name, v.pan, v.aadhaar, v.phone, v.email, v.address]);
+            else { const y = await t.one('insert into buyers (name, pan, aadhaar, phone, email, address) values ($1, $2, $3, $4, $5, $6) returning id', Object.values(v)); await t.q('insert into booking_applicants (booking_id, seq, buyer_id) values ($1, $2, $3)', [bk.id, i + 1, y.id]); }
+          }
+          for (const e of ex.slice(people.length)) await t.q('delete from booking_applicants where booking_id = $1 and seq = $2', [bk.id, e.seq]); // the buyer row stays on record
+          after.applicants = people.map((a) => ({ name: a.name, pan: a.pan, phone: a.phone, email: a.email }));
+        }
+        await audit.record(t.q, { user: u, action: 'edit', entity: 'booking', entityId: bk.id, projectId: bk.project_id, before, after: { ...after, demandsReworked: redone }, note: reason });
+      });
+      return res.json({ ok: true, changed, demandsReworked: redone, ...(await detail(u, bk.id)) });
     }
 
     if (b.action === 'dates') {

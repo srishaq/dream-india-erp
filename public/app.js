@@ -135,6 +135,7 @@
     { key: 'reg-payments', label: 'Payments Out', show: () => can('accounts.view') },
     { key: 'reg-pdc', label: 'PDC', show: () => can('accounts.view') },
     { key: 'reg-tds', label: 'TDS Tracker', show: () => can('accounts.view') },
+    { key: 'sdr', label: 'SDR challans', show: () => can('accounts.view') },
     { key: 'reg-recon', label: 'Reconciling Items', show: () => can('accounts.view') },
     { key: 'reg-compliance', label: 'Compliance Calendar', show: () => can('accounts.view') },
     { key: 'reg-tenants', label: 'SRA Tenants', show: () => can('accounts.view') },
@@ -217,7 +218,7 @@
     $('#cpw').onclick = () => changePassword(false);
     if ($('#proj')) $('#proj').onchange = (e) => { proj = +e.target.value; store.set('erp_project', proj); shell(); };
     if (/^reg-/.test(page || '') && can('accounts.view')) { try { await accRegister(page.slice(4)); } catch (e) { $('#page').innerHTML = `<div class="err">${esc(e.message)}</div>`; } return; }
-    const fn = { home, mgmt, custdocs, comms, team: teamPage, accteam: teamPage, project: projectHome, crmtodo: () => dailyTodo('crm'), acctodo: () => dailyTodo('accounts'), training, projects, plans, users, audit, units, bookings, demands, receipts, ledgers, letters, followups, verify, prices, partners, balances: accBalances, bankauto: bankAuto, bookscrm: booksCrm, accreports: accReports, checks: accChecks, accsetup: accSetup, import: importPage, booking: bookingPage, statement: statementPage, run: runPage };
+    const fn = { home, mgmt, custdocs, comms, team: teamPage, accteam: teamPage, sdr: sdrPage, project: projectHome, crmtodo: () => dailyTodo('crm'), acctodo: () => dailyTodo('accounts'), training, projects, plans, users, audit, units, bookings, demands, receipts, ledgers, letters, followups, verify, prices, partners, balances: accBalances, bankauto: bankAuto, bookscrm: booksCrm, accreports: accReports, checks: accChecks, accsetup: accSetup, import: importPage, booking: bookingPage, statement: statementPage, run: runPage };
     const key = DETAIL[page] && arg ? page : cur.key;
     try { await fn[key](arg ? +arg : undefined); } catch (e) { $('#page').innerHTML = `<div class="err">${esc(e.message)}</div>`; }
   }
@@ -260,12 +261,12 @@
     accdash: 'Bank balances, collections, refunds, TDS, PDC, SRA tenants and reconciliation',
     balances: 'Closing balance of every bank account, day by day', bankauto: 'The 3:10 pm check of bank statements against the books',
     'reg-receipts': 'Every receipt as it came into the bank', 'reg-payments': 'Every payment out, by head', 'reg-pdc': 'Post-dated cheques and their reminders',
-    'reg-tds': 'TDS deducted and challans paid', 'reg-recon': 'Items the bank and the books do not yet agree on', 'reg-compliance': 'GST, TDS and RERA due dates',
+    'reg-tds': 'TDS deducted and challans paid', sdr: 'Stamp duty and registration challans, one per flat (a second one is blocked)', 'reg-recon': 'Items the bank and the books do not yet agree on', 'reg-compliance': 'GST, TDS and RERA due dates',
     'reg-tenants': 'SRA tenants and their rent', 'reg-rentLinks': 'Rent payment links for each tenant', 'reg-cancellations': 'Cancelled flats and refunds still to pay',
     accreports: 'Reports and the Tally import', checks: 'Daily checks on the registers', bookscrm: 'Tally receipts flat by flat against the CRM',
     ca: 'GST, TDS payable, RERA quarterly and cash flow, for the CA', accsetup: 'Bank accounts, heads, statement folders and imports', audit: 'Who changed what, and when',
   };
-  const PICON = { comms: 'mail', team: 'users', accteam: 'users', custdocs: 'book', site: 'tower', crmtodo: 'check', acctodo: 'check', training: 'book', dashboard: 'chart', units: 'grid', bookings: 'book', demands: 'tower', receipts: 'rupee', ledgers: 'book', letters: 'mail', followups: 'phone', verify: 'check', prices: 'rupee', partners: 'users',
+  const PICON = { comms: 'mail', team: 'users', accteam: 'users', sdr: 'rupee', custdocs: 'book', site: 'tower', crmtodo: 'check', acctodo: 'check', training: 'book', dashboard: 'chart', units: 'grid', bookings: 'book', demands: 'tower', receipts: 'rupee', ledgers: 'book', letters: 'mail', followups: 'phone', verify: 'check', prices: 'rupee', partners: 'users',
     accdash: 'chart', balances: 'rupee', bankauto: 'check', 'reg-cancellations': 'users', bookscrm: 'check', checks: 'check', audit: 'book', ca: 'chart', accsetup: 'grid' };
   const DEPTS = [
     { key: 'crm', title: 'Sales & CRM', sub: 'Collections, units, bookings, demands, receipts and follow-ups', icon: 'chart', tone: '#2B5C8A', group: 'CRM' },
@@ -620,6 +621,7 @@
     if (b.status === 'active' && can('receipt.enter')) actions.push('<button class="ghost" id="receipt">Enter a receipt</button>');
     if (b.status === 'active' && can('ledger.view')) actions.push(`<a class="btn ghost" href="#/statement/${b.id}">Statement of account</a>`);
     if (b.status === 'active' && can('demand.raise')) actions.push('<button class="ghost" id="logf">Log a follow-up</button>');
+    if (['active', 'pending'].includes(b.status) && can('booking.approve')) actions.push('<button class="ghost" id="editBk" title="Only Head CRM can change a booking; every change is kept in the audit log">Edit booking</button>');
     if (b.status === 'active' && !b.cancel_requested_at && can('booking.create')) actions.push('<button class="danger" id="cancelReq">Request cancellation</button>');
     const docBtns = [`<a class="btn ghost small" target="_blank" rel="noopener" href="/api/docs?booking=${b.id}&doc=costsheet">Cost sheet</a>`];
     if (can('buyer.kyc')) docBtns.push(`<a class="btn ghost small" target="_blank" rel="noopener" href="/api/docs?booking=${b.id}&doc=allotment">Allotment letter</a>`, `<a class="btn ghost small" target="_blank" rel="noopener" href="/api/docs?booking=${b.id}&doc=form">Booking form</a>`);
@@ -656,9 +658,11 @@
       </div>
       <div class="panel"><h2>Payment plan</h2><div class="table-wrap"><table><tr><th class="num">#</th><th>Stage</th><th class="num">%</th><th class="num">Amount</th><th>Demanded on</th><th>Due</th></tr>
         ${d.plan.map((s) => { const x = demanded.get(s.name); return `<tr class="${x ? '' : 'dim'}"><td class="num">${s.seq}</td><td>${esc(s.name)}</td><td class="num">${toNum(s.pct)}%</td><td class="num">${inr(toNum(b.agreement_value) * toNum(s.pct) / 100)}</td><td>${x ? fmtD(x.demand_date) : 'not yet'}</td><td>${x ? fmtD(x.due_date) : ''}</td></tr>`; }).join('')}</table></div></div>
-      <div class="panel"><h2>Receipts</h2><div class="table-wrap"><table><tr><th>Date</th><th>Bank / instrument</th><th class="num">Amount</th><th>Split</th><th>Status</th></tr>
+      <div class="panel"><h2>Receipts</h2><div class="table-wrap"><table><tr><th>Date</th><th>Bank / instrument</th><th class="num">Amount</th><th>Split</th><th>Status</th><th></th></tr>
         ${d.receipts.map((r) => `<tr><td>${fmtD(r.received_on)}</td><td>${esc([r.bank, r.instrument_no].filter(Boolean).join(' · ') || r.mode)}</td><td class="num">${inr(r.amount, 2)}</td>
-          <td class="small">${Object.entries(r.splits).map(([h, v]) => `${HEAD[h] || h} ${inr(v, 2)}`).join(' · ')}</td><td>${rStatus(r)}</td></tr>`).join('') || '<tr><td colspan="5" class="muted">No receipts yet.</td></tr>'}</table></div></div>`;
+          <td class="small">${Object.entries(r.splits).map(([h, v]) => `${HEAD[h] || h} ${inr(v, 2)}`).join(' · ')}</td><td>${rStatus(r)}</td>
+          <td>${['pending', 'approved'].includes(r.status) && !r.opening ? `<button class="ghost small" data-doc="${r.id}">Receipt</button>` : ''}</td></tr>`).join('') || '<tr><td colspan="6" class="muted">No receipts yet.</td></tr>'}</table></div></div>`;
+    document.querySelectorAll('[data-doc]').forEach((x) => (x.onclick = () => receiptDocDialog(+x.dataset.doc)));
     if ($('#cdocs')) docsPanel('booking', b.id, $('#cdocs'), `${d.unit.unit_no} · ${d.applicants.map((a) => a.name).join(' & ')}`);
     if ($('#ccomm')) commPanel(b.id, d.unit.unit_no, $('#ccomm'));
     const iv = await api(`/api/verify?booking=${b.id}`).catch(() => ({ rows: [] }));
@@ -701,6 +705,31 @@
       <p class="small muted">Received so far from this buyer: <b>${inr(d.receipts.filter((r) => r.status === 'approved').reduce((a, r) => a + toNum(r.amount), 0))}</b>. Refund due = received − charges.</p>`,
       async (x) => { await api('/api/bookings', { action: 'cancel-request', id: b.id, reason: x.reason, cancelDate: x.cancelDate, charges: x.charges }); toast('Cancellation sent to Management for approval.'); bookingPage(b.id); });
     if ($('#rebook')) $('#rebook').onclick = () => bookingForm({ id: d.unit.id, unit_no: d.unit.unit_no });
+    if ($('#editBk')) $('#editBk').onclick = () => {
+      const kyc = can('buyer.kyc');
+      const ap = (i) => { const a = d.applicants[i - 1] || {}; return `<fieldset class="appl"><legend>Applicant ${i}${i > 1 ? ' (optional)' : ''}</legend>
+        <div class="row"><div><label>Full name</label><input name="a${i}_name" value="${esc(a.name || '')}" ${i === 1 ? 'required' : ''}></div><div><label>Mobile</label><input name="a${i}_phone" value="${esc(a.phone || '')}"></div></div>
+        <div class="row"><div><label>PAN</label><input name="a${i}_pan" value="${esc(a.pan || '')}"></div><div><label>Aadhaar</label><input name="a${i}_aadhaar" value="${esc(a.aadhaar || '')}"></div></div>
+        <div class="row"><div><label>Email</label><input name="a${i}_email" value="${esc(a.email || '')}"></div><div><label>Address</label><input name="a${i}_address" value="${esc(a.address || '')}"></div></div></fieldset>`; };
+      const dl = dialog(`<h2>Edit booking · ${esc(d.unit.unit_no)}</h2>
+        <p class="muted small">Only Head CRM can change a booking. Every change is kept in the audit log with the old and new value and your reason. A new agreement value or GST rate re-works the demands already raised.</p>
+        <div class="row"><div><label>Booking date</label><input name="bookingDate" type="date" max="${todayIso()}" value="${esc(String(b.booking_date || '').slice(0, 10))}"></div><div><label>Agreement value (₹, incl. parking)</label><input name="agreementValue" inputmode="decimal" value="${toNum(b.agreement_value)}"></div></div>
+        <div class="row"><div><label>GST rate %</label><input name="gstRate" value="${toNum(b.gst_rate)}"></div><div><label>Parking</label><input name="parking" type="number" min="0" value="${b.parking || 0}"></div></div>
+        <div class="row"><div><label>Development charges (amenity & possession, ₹)</label><input name="devCharges" inputmode="decimal" value="${b.dev_charges != null ? toNum(b.dev_charges) : ''}"></div><div><label>Relationship manager</label><input name="rmName" value="${esc(b.rm_name || '')}"></div></div>
+        <div class="row"><div><label>Funding</label><select name="funding"><option value="self" ${b.funding === 'self' ? 'selected' : ''}>Self funding</option><option value="loan" ${b.funding === 'loan' ? 'selected' : ''}>Home loan</option></select></div><div><label>Loan bank</label><input name="loanBank" value="${esc(b.loan_bank || '')}"></div></div>
+        <div class="row"><div><label>Source</label><input name="source" list="srcl" value="${esc(b.source || '')}"><datalist id="srcl"><option>Walk-in</option><option>Channel Partner</option><option>Reference</option><option>Digital</option></datalist></div><div><label>Channel partner</label><input name="cpName" value="${esc(b.cp_name || '')}"></div></div>
+        <div class="row"><div><label>Brokerage (₹)</label><input name="brokerage" inputmode="decimal" value="${b.brokerage != null ? toNum(b.brokerage) : ''}"></div><div></div></div>
+        ${kyc ? `<details><summary>Applicants</summary>${ap(1)}${ap(2)}${ap(3)}</details>` : ''}
+        <label>Reason for the change</label><input name="reason" required placeholder="e.g. agreement value corrected after registration">`,
+      async (x) => {
+        const body = { action: 'edit', id: b.id, reason: x.reason, bookingDate: x.bookingDate, agreementValue: x.agreementValue, gstRate: x.gstRate, parking: x.parking, devCharges: x.devCharges, rmName: x.rmName, funding: x.funding, loanBank: x.loanBank, source: x.source, cpName: x.cpName, brokerage: x.brokerage };
+        if (kyc) body.applicants = [1, 2, 3].map((i) => ({ name: x[`a${i}_name`], phone: x[`a${i}_phone`], pan: x[`a${i}_pan`], aadhaar: x[`a${i}_aadhaar`], email: x[`a${i}_email`], address: x[`a${i}_address`] })).filter((a) => a.name && a.name.trim());
+        const r = await api('/api/bookings', body);
+        toast(`Saved: ${r.changed.length ? r.changed.length + ' field(s) changed' : 'applicants updated'}${r.demandsReworked ? `, ${r.demandsReworked} demand(s) re-worked` : ''}.`);
+        bookingPage(id);
+      });
+      dl.classList.add('wide');
+    };
     if ($('#cancelOk')) $('#cancelOk').onclick = () => confirm('Approve the cancellation? The booking stays on record as Cancelled with its receipts, Accounts gets it on the Cancelled flats list for the refund, open demands are cancelled and the flat becomes free to book again.') && act({ action: 'cancel-approve' }, 'Booking cancelled.');
     if ($('#cancelNo')) $('#cancelNo').onclick = () => act({ action: 'cancel-reject' }, 'Cancellation request withdrawn.');
   }
@@ -732,15 +761,32 @@
       let bookingId = booking && booking.id;
       if (!bookingId) { const c = choices.find((c) => c.label === x.pick); if (!c) throw new Error('Choose the booking from the list.'); bookingId = c.id; }
       const splits = Object.fromEntries(Object.keys(HEAD).map((h) => [h, x['s_' + h]]));
-      await api('/api/receipts', { action: 'create', bookingId, receivedOn: x.receivedOn, amount: x.amount, mode: x.mode, bank: x.bank, instrumentNo: x.instrumentNo, accountNo: x.accountNo, note: x.note, splits });
-      toast('Receipt saved. It counts once Head Accounts approves it.');
+      const made = await api('/api/receipts', { action: 'create', bookingId, receivedOn: x.receivedOn, amount: x.amount, mode: x.mode, bank: x.bank, instrumentNo: x.instrumentNo, accountNo: x.accountNo, note: x.note, splits });
+      toast('Receipt saved. It counts once Head Accounts approves it (or the bank statement matches the cheque).');
       after();
+      receiptDocDialog(made.id);
     });
     dl.classList.add('wide');
     const f = $('form', dl);
     const sum = () => { const tot = Object.keys(HEAD).reduce((a, h) => a + toNum(f['s_' + h].value), 0); const amt = toNum(f.amount.value); $('#sumline', dl).textContent = `Parts: ${inr(tot, 2)} of ${inr(amt, 2)}${Math.abs(tot - amt) < 0.005 && amt ? ' ✓' : ''}`; };
     f.addEventListener('input', sum);
     $('#auto', dl).onclick = () => { const amt = toNum(f.amount.value); const rate = (booking && booking.gstRate) || 5; const av = Math.round((amt / (1 + rate / 100)) * 100) / 100; f.s_av.value = av.toFixed(2); f.s_gst.value = (Math.round((amt - av) * 100) / 100).toFixed(2); sum(); };
+  }
+
+  // The payment receipt for the buyer: open it as a PDF, or email it (WhatsApp once connected).
+  function receiptDocDialog(id) {
+    const dl = dialog(`<h2>Payment receipt for the buyer</h2>
+      <p class="muted">Opening the receipt gives it its number (DS/2026-27/0001 and so on). A cheque not yet cleared is marked "subject to realisation".</p>
+      <div class="actions"><a class="btn" target="_blank" rel="noopener" href="/api/receipts?pdf=${id}">Open the receipt (PDF)</a><button type="button" class="ghost" id="rcEmail">Email it to the buyer</button>
+        <button type="button" class="ghost" disabled title="Switches on once WhatsApp is connected">Send on WhatsApp</button></div>
+      <p class="small muted" id="rcMsg"></p>`, async () => {});
+    $('[value=save]', dl).remove(); $('[value=cancel]', dl).textContent = 'Close';
+    $('#rcEmail', dl).onclick = async (e) => {
+      e.target.disabled = true;
+      try { const r = await api('/api/receipts', { action: 'receipt-email', id }); $('#rcMsg', dl).textContent = `Receipt ${r.receiptNo} emailed to ${r.to.join(', ')}${r.test ? ' (test address: the ERP is not live yet)' : ''}.`; }
+      catch (err) { $('#rcMsg', dl).textContent = err.message; e.target.disabled = false; }
+    };
+    return dl;
   }
 
   async function receipts() {
@@ -760,12 +806,14 @@
         <td class="num" style="white-space:nowrap">${r.status === 'pending' && can('receipt.approve') ? `<button class="small" data-ok="${r.id}">Approve</button> <button class="ghost small" data-no="${r.id}">Reject</button>` : ''}
           ${r.status === 'approved' && can('receipt.approve') ? `<button class="danger small" data-bounce="${r.id}">Bounced</button>` : ''}
           ${r.mode === 'cheque' && !r.bank_status && ['pending', 'approved'].includes(r.status) ? `${!r.handed_on && !r.deposited_on && can('receipt.enter') ? `<button class="ghost small" data-hand="${r.id}">Given to Accounts</button>` : ''}${!r.deposited_on && canDep ? ` <button class="ghost small" data-dep="${r.id}">Deposited</button>` : ''}` : ''}
+          ${['pending', 'approved'].includes(r.status) && !r.opening ? `<button class="ghost small" data-doc="${r.id}" title="${r.receipt_no ? 'Receipt ' + esc(r.receipt_no) + (r.receipt_sent_at ? ', emailed' : '') : 'Give the buyer a payment receipt'}">${r.receipt_no ? 'Receipt ✓' : 'Receipt'}</button>` : ''}
           <a class="btn link small" href="#/${can('accounts.view') && !can('demand.raise') ? 'accteam' : 'team'}/${r.booking_id}" title="Dream Chat with the other team about this flat">Chat</a></td></tr>`).join('') || '<tr><td colspan="10" class="muted">Nothing here.</td></tr>'}</table></div>`;
     document.querySelectorAll('.tab[data-t]').forEach((t) => (t.onclick = () => { store.set('erp_rtab', t.dataset.t); receipts(); }));
     $('#q').oninput = (e) => { const q = e.target.value.toLowerCase(); document.querySelectorAll('tr[data-s]').forEach((tr) => (tr.style.display = tr.dataset.s.includes(q) ? '' : 'none')); };
     const act = async (body, msg) => { try { await api('/api/receipts', body); toast(msg); receipts(); } catch (e) { alert(e.message); } };
     document.querySelectorAll('[data-ok]').forEach((x) => (x.onclick = () => act({ action: 'approve', id: +x.dataset.ok }, 'Receipt approved.')));
     document.querySelectorAll('[data-no]').forEach((x) => (x.onclick = () => { const r = prompt('Reason for rejecting:'); if (r !== null) act({ action: 'reject', id: +x.dataset.no, reason: r }, 'Receipt rejected.'); }));
+    document.querySelectorAll('[data-doc]').forEach((x) => (x.onclick = () => receiptDocDialog(+x.dataset.doc)));
     document.querySelectorAll('[data-hand]').forEach((x) => (x.onclick = () => act({ action: 'handed', id: +x.dataset.hand }, 'Marked as given to Accounts today.')));
     document.querySelectorAll('[data-dep]').forEach((x) => (x.onclick = () => { const on = prompt('Deposited on (YYYY-MM-DD):', todayIso()); if (on) act({ action: 'deposited', id: +x.dataset.dep, on }, 'Marked deposited. The bank statement check will find it.'); }));
     if ($('#bankNow')) $('#bankNow').onclick = async () => { try { const o = await api('/api/receipts', { action: 'bankcheck' }); toast(`Found in the bank: ${o.linked} (${o.approved} approved by the bank statement, ${o.waiting} for Head Accounts). Returned: ${o.bounced}.`); receipts(); } catch (e) { alert(e.message); } };
@@ -914,8 +962,18 @@
       <div class="row"><div><label>Delay charges (% a year)</label><input name="delayRate" value="${esc(s.delayRate)}"></div><div><label>Leave out buyers owing less than (₹)</label><input name="minDue" value="${esc(s.minDue)}"></div></div>
       <label>Signed for</label><input name="signedFor" value="${esc(s.signedFor)}">
       <label>CC on every email (once live)</label><input name="cc" value="${esc(s.cc)}" placeholder="crm.prime@dreamindiagroup.com">
-      <label>Test email address (test version: all letters go here)</label><input name="testEmail" value="${esc(s.testEmail)}">`,
-    async (x) => { await api('/api/letters', { action: 'settings', ...x }); letters(); });
+      <label>Test email address (test version: all letters go here)</label><input name="testEmail" value="${esc(s.testEmail)}">
+      <div class="row"><div><label>Signatory name (printed under "For …")</label><input name="signatory" value="${esc(s.signatory || '')}" placeholder="leave blank for no name"></div><div><label>Signatory designation</label><input name="signatoryTitle" value="${esc(s.signatoryTitle || '')}" placeholder="Authorised Signatory"></div></div>
+      <label>Reference line (property)</label><input name="reference" value="${esc(s.reference || '')}" placeholder="C.T.S. Nos. 446C/2, Relief Road, Near Oshiwara Bridge, Jogeshwari (W), Mumbai - 400102">
+      <h3 style="margin:14px 0 4px">Bank accounts printed on demand letters and receipts</h3><p class="small muted">Leave empty to keep the accounts the letters print today (YES Bank RERA account for the flat cost, YES Bank GST account).</p>
+      ${[0, 1, 2].map((i) => { const k = (s.banks || [])[i] || {}; return `<fieldset class="appl"><legend>Account ${i + 1}</legend>
+        <div class="row"><div><label>For (particulars)</label><input name="b${i}_particulars" value="${esc(k.particulars || '')}" placeholder="${i === 0 ? 'Flat Cost' : i === 1 ? 'Goods and Services Tax' : ''}"></div><div><label>Cheque favouring</label><input name="b${i}_favouring" value="${esc(k.favouring || '')}" placeholder="${i === 0 ? 'PRIME REALTORS RERA' : i === 1 ? 'PRIME REALTORS AC GST' : ''}"></div></div>
+        <div class="row4"><div><label>Bank</label><input name="b${i}_bank" value="${esc(k.bank || '')}"></div><div><label>Account no.</label><input name="b${i}_accountNo" value="${esc(k.accountNo || '')}"></div><div><label>IFSC</label><input name="b${i}_ifsc" value="${esc(k.ifsc || '')}"></div><div><label>Branch</label><input name="b${i}_branch" value="${esc(k.branch || '')}"></div></div></fieldset>`; }).join('')}`,
+    async (x) => {
+      const banks = [0, 1, 2].map((i) => ({ particulars: x[`b${i}_particulars`], favouring: x[`b${i}_favouring`], bank: x[`b${i}_bank`], accountNo: x[`b${i}_accountNo`], ifsc: x[`b${i}_ifsc`], branch: x[`b${i}_branch`] }));
+      await api('/api/letters', { action: 'settings', delayRate: x.delayRate, minDue: x.minDue, signedFor: x.signedFor, cc: x.cc, testEmail: x.testEmail, signatory: x.signatory, signatoryTitle: x.signatoryTitle, reference: x.reference, banks });
+      letters();
+    }).classList.add('wide');
   }
   function preparedPanel(list, m) {
     const ids = list.map((l) => l.id), withEmail = list.filter((l) => l.hasEmail).map((l) => l.id);
@@ -1369,6 +1427,51 @@
     return { mount, unmount, seen, sound };
   })();
 
+  // ---------- SDR (stamp duty and registration) challans ----------
+  async function sdrPage() {
+    if (!proj) return noProject();
+    const d = await api(`/api/sdr?project=${proj}`);
+    const KL = { stamp_duty: 'Stamp duty', registration: 'Registration', both: 'Stamp duty + registration' };
+    const SL = { generated: 'Generated', paid: 'Paid', used: 'Used at registration', cancelled: 'Cancelled', refund_claimed: 'Refund claimed' };
+    const has = new Set(d.rows.filter((r) => r.status !== 'cancelled').map((r) => r.unit_no));
+    const regNo = d.flats.filter((f) => f.registration_date && !has.has(f.unit_no));
+    $('#page').innerHTML = `<div class="page-head"><div><h1>SDR challans</h1><p class="muted">Every stamp duty and registration challan, one per flat. A second challan for the same flat is refused unless Head Accounts gives the reason, and the same GRN can never be entered twice, so the same duty is not paid twice.</p></div>
+      ${d.canEnter ? '<div class="actions" style="margin:0"><button id="sdrAdd">Add a challan</button></div>' : ''}</div>
+      ${d.dupes.length ? `<div class="err">Flats with more than one stamp duty challan: ${d.dupes.map((x) => `${esc(x.unit_no)} (${x.n}, ${inr(x.amount)})`).join(', ')}. Check each one: claim a refund for a challan that was not used.</div>` : ''}
+      <div class="panel"><div class="kpis">${kpi(d.rows.filter((r) => r.status !== 'cancelled').length, 'challans')}${kpi(inr(d.rows.filter((r) => r.status !== 'cancelled').reduce((a, r) => a + toNum(r.amount), 0)), 'total')}${kpi(regNo.length, 'registered flats with no challan here', regNo.length ? 'bad' : '')}${kpi(d.dupes.length, 'flats with two challans', d.dupes.length ? 'bad' : '')}</div></div>
+      <div class="panel table-wrap"><input class="search" id="q" placeholder="Search flat or GRN"><table><tr><th>Flat</th><th>For</th><th>GRN / challan no.</th><th>Date</th><th class="num">Amount</th><th>Paid from</th><th>Status</th><th>Entered by</th><th></th></tr>
+        ${d.rows.map((r) => `<tr data-s="${esc((r.unit_no + ' ' + (r.grn || '') + ' ' + (r.challan_no || '')).toLowerCase())}" class="${r.status === 'cancelled' ? 'dim' : ''}"><td>${r.booking_id ? `<a href="#/booking/${r.booking_id}">${esc(r.unit_no)}</a>` : esc(r.unit_no)}</td><td>${esc(KL[r.kind] || r.kind)}</td>
+          <td>${esc([r.grn, r.challan_no].filter(Boolean).join(' · ') || '—')}</td><td>${fmtD(r.challan_date)}</td><td class="num">${inr(r.amount)}</td><td>${esc(r.paid_from || '')}</td>
+          <td>${esc(SL[r.status] || r.status)}${r.duplicate_reason ? `<br><span class="small bad-t">second challan: ${esc(r.duplicate_reason)}</span>` : ''}${r.note ? `<br><span class="small muted">${esc(r.note)}</span>` : ''}</td><td>${esc(r.by_name || '')}</td>
+          <td>${d.canEnter ? `<button class="ghost small" data-ed="${r.id}">Update</button>` : ''}</td></tr>`).join('') || '<tr><td colspan="9" class="muted">No challans entered yet.</td></tr>'}</table></div>
+      ${regNo.length ? `<div class="panel table-wrap"><h2>Registered flats with no challan here (${regNo.length})</h2><p class="small muted">Registered in the ERP, but their stamp duty challan is not in this register yet. Enter the challan so the register is complete.</p><table><tr><th>Flat</th><th>Buyer</th><th>Registered</th><th class="num">Stamp duty</th><th class="num">SDR received from buyer</th></tr>
+        ${regNo.slice(0, 300).map((f) => `<tr><td><a href="#/booking/${f.booking_id}">${esc(f.unit_no)}</a></td><td>${esc(f.buyers || '')}</td><td>${fmtD(f.registration_date)}</td><td class="num">${f.stamp_duty ? inr(f.stamp_duty) : '—'}</td><td class="num">${inr(f.sdr_received)}</td></tr>`).join('')}</table></div>` : ''}`;
+    $('#q').oninput = (e) => { const q = e.target.value.toLowerCase(); document.querySelectorAll('tr[data-s]').forEach((tr) => (tr.style.display = tr.dataset.s.includes(q) ? '' : 'none')); };
+    const form = (dup) => dialog(`<h2>Add a stamp duty / registration challan</h2>
+      <div class="row"><div><label>Flat</label><input name="unit" required placeholder="A-1001" list="sdrfl"><datalist id="sdrfl">${d.flats.map((f) => `<option value="${esc(f.unit_no)}">${esc(f.buyers || '')}</option>`).join('')}</datalist></div>
+        <div><label>For</label><select name="kind">${d.kinds.map((k) => `<option value="${k}">${KL[k]}</option>`).join('')}</select></div></div>
+      <div class="row"><div><label>GRN</label><input name="grn"></div><div><label>Challan no.</label><input name="challanNo"></div></div>
+      <div class="row"><div><label>Challan date</label><input type="date" name="challanDate" max="${todayIso()}" value="${todayIso()}"></div><div><label>Amount (₹)</label><input name="amount" inputmode="decimal" required></div></div>
+      <div class="row"><div><label>Paid from (bank)</label><input name="paidFrom"></div><div><label>Status</label><select name="status">${d.statuses.filter((x) => x !== 'cancelled').map((k) => `<option value="${k}">${SL[k]}</option>`).join('')}</select></div></div>
+      <label>Note</label><input name="note">
+      <div id="sdrWarn"></div>`,
+    async (x, f) => {
+      const body = { action: 'add', projectId: proj, ...x };
+      try { await api('/api/sdr', body); toast('Challan added.'); sdrPage(); }
+      catch (e) {
+        if (!(e.data && e.data.duplicate)) throw e;
+        if (!d.canManage) throw new Error(e.message + ' Ask Head Accounts if a second challan is really needed.');
+        const reason = prompt(e.message + '\n\nIf a second challan is really needed (the first failed, a re-registration), type the reason. Otherwise press Cancel.');
+        if (!reason) throw new Error('Not added: this flat already has a challan.');
+        await api('/api/sdr', { ...body, duplicateReason: reason }); toast('Second challan added, with the reason recorded.'); sdrPage();
+      }
+    });
+    if ($('#sdrAdd')) $('#sdrAdd').onclick = () => form();
+    document.querySelectorAll('[data-ed]').forEach((b) => (b.onclick = () => { const r = d.rows.find((x) => x.id === +b.dataset.ed);
+      dialog(`<h2>Challan · ${esc(r.unit_no)}</h2><div class="row"><div><label>Status</label><select name="status">${d.statuses.map((k) => `<option value="${k}" ${k === r.status ? 'selected' : ''}>${SL[k]}</option>`).join('')}</select></div><div><label>Paid from</label><input name="paidFrom" value="${esc(r.paid_from || '')}"></div></div>
+        <label>Note</label><input name="note" value="${esc(r.note || '')}">`, async (x) => { await api('/api/sdr', { action: 'update', projectId: proj, id: r.id, ...x }); toast('Saved.'); sdrPage(); }); }));
+  }
+
   // ---------- Dream Chat, full page ----------
   async function teamPage(bookingId) {
     const base = location.hash.split('/')[1] === 'accteam' ? 'accteam' : 'team';
@@ -1607,8 +1710,9 @@
     const date = dateArg || store.get('erp_todo_date_' + dept) || todayIso();
     const d = await api(`/api/tasks?dept=${dept}&date=${date}`);
     const isToday = d.date === d.today;
-    const f = store.get('erp_todo_f_' + dept) || 'open';
-    const rows = d.rows.filter((r) => (f === 'open' ? !r.done_at : f === 'mine' ? !r.done_at && (r.assigned_to === d.me || (!r.assigned_to && r.created_by === d.me)) : true));
+    // Team members open on their own list; the heads (who can run the audit) see the whole team's.
+    const f = store.get('erp_todo_f_' + dept) || (d.can.run ? 'open' : 'mine');
+    const rows = d.rows.filter((r) => (f === 'open' ? !r.done_at : f === 'mine' ? !r.done_at && (r.assigned_to === d.me || !r.assigned_to) : true));
     const open = d.rows.filter((r) => !r.done_at), urgent = open.filter((r) => r.priority === 'high');
     const run = d.runs[0];
     const ago = (x) => { const k = Math.round((Date.parse(d.date) - Date.parse(x)) / 864e5); return k > 0 ? `open since ${fmtD(x)} (${k} day${k > 1 ? 's' : ''})` : ''; };
@@ -1627,7 +1731,7 @@
       <div class="kpis"><div class="kpi"><span>Open</span><b>${open.length}</b></div><div class="kpi"><span>Urgent</span><b class="${urgent.length ? 'bad-t' : ''}">${urgent.length}</b></div><div class="kpi"><span>Done</span><b class="good-t">${d.rows.length - open.length}</b></div>
         <div class="kpi"><span>Audit</span><b style="font-size:14px">${run ? `${new Date(run.run_at).toLocaleTimeString('en-IN', { hour: 'numeric', minute: '2-digit', timeZone: 'Asia/Kolkata' })} · ${run.found} found${run.error ? ' · error' : ''}` : isToday ? 'Runs at 9 am' : 'Did not run'}</b></div></div>
       <div class="panel"><div class="row" style="grid-template-columns:180px 1fr;align-items:end"><div><label>Day</label><input type="date" id="tdd" value="${esc(d.date)}" max="${esc(d.today)}"></div>
-        <div class="tabs" style="margin:0">${[['open', 'Open'], ['mine', 'Mine'], ['all', 'All, with done']].map(([k, l]) => `<button class="tab ${k === f ? 'on' : ''}" data-f="${k}">${l}</button>`).join('')}</div></div>
+        <div class="tabs" style="margin:0">${[['mine', 'Mine (mine + whole team)'], ['open', 'Everyone\'s open'], ['all', 'All, with done']].map(([k, l]) => `<button class="tab ${k === f ? 'on' : ''}" data-f="${k}">${l}</button>`).join('')}</div></div>
         ${run && run.error ? `<p class="err">The audit could not finish: ${esc(run.error)}</p>` : ''}
         ${run && run.mail && dept === 'accounts' ? `<p class="small muted">Email: ${run.mail.sent ? 'sent to ' + esc((run.mail.to || []).join(', ')) + (run.mail.test ? ' (test address)' : '') : esc(run.mail.reason || 'not sent')}</p>` : ''}
         <div class="tdl">${rows.map(line).join('') || `<p class="muted">${f === 'open' ? 'Nothing open. Well done.' : 'Nothing here.'}</p>`}</div></div>

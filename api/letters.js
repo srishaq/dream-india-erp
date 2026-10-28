@@ -53,8 +53,16 @@ async function letterData(bookingId, type, letterDate, set) {
       words: words(latest.stage_name), pct: cumPct / 100, invoiceDate, letterDate: date, dueDate: due,
       av: Math.round(Number(b.agreement_value)), received: Math.round(toPaise(b.credit_av) / 100), flatDue,
       gstRec: Math.round(toPaise(b.received_gst) / 100), gstDue, delay, total: flatDue + gstDue + delay, signedFor: set.signedFor,
+      signatory: set.signatory || null, signatoryTitle: set.signatoryTitle || null, banks: letterBanks(set),
     },
   };
+}
+
+// The bank accounts printed on demand letters and receipts (Letter settings); the letter's own defaults until set.
+function letterBanks(set) {
+  const list = (set.banks || []).filter((x) => x && x.favouring && x.accountNo);
+  if (!list.length) return undefined;
+  return list.map((x) => ({ particulars: x.particulars || '', favouring: x.favouring, details: [`Bank Name: ${x.bank || ''}`, `A/c No. ${x.accountNo}`, x.ifsc ? `IFSC Code: ${x.ifsc}` : '', x.branch ? `Branch: ${x.branch}` : ''].filter(Boolean).join('\n') }));
 }
 
 async function queue(projectId, set) {
@@ -100,7 +108,7 @@ module.exports = route({
       return sendPdf(res, buildLetter(d.letter), `preview_${d.letter.unit}.pdf`);
     }
     const projectId = needProject(u, intOr(q.project));
-    return res.json({ rows: await queue(projectId, set), settings: { ...set, canEdit: has(u, 'demand.approve') }, mail: { configured: mailer.configured(), from: mailer.sender(), live: live() }, types: TYPES });
+    return res.json({ rows: await queue(projectId, set), settings: { ...set, canEdit: has(u, 'demand.approve') || has(u, 'accounts.manage') }, mail: { configured: mailer.configured(), from: mailer.sender(), live: live() }, types: TYPES });
   },
 
   POST: async (req, res, b) => {
@@ -108,13 +116,18 @@ module.exports = route({
     const set = await settings();
 
     if (b.action === 'settings') {
-      if (!has(u, 'demand.approve')) throw fail(403, 'Only Head CRM or Admin can change letter settings.');
+      if (!has(u, 'demand.approve') && !has(u, 'accounts.manage')) throw fail(403, 'Only Head CRM, Head Accounts or Admin can change letter settings.');
       const v = { ...set };
       if (b.delayRate != null) { const r = Number(b.delayRate); if (!(r >= 0 && r <= 36)) throw fail(400, 'Delay rate: 0 to 36% a year.'); v.delayRate = r; }
       if (b.minDue != null) v.minDue = Math.max(0, Number(b.minDue) || 0);
       if (b.signedFor != null) v.signedFor = str(b.signedFor, 80) || DEFAULTS.signedFor;
       if (b.cc != null) v.cc = emails(b.cc).join(', ');
       if (b.testEmail != null) v.testEmail = emails(b.testEmail).slice(0, 1).join('');
+      if (b.signatory != null) v.signatory = str(b.signatory, 80) || null;
+      if (b.signatoryTitle != null) v.signatoryTitle = str(b.signatoryTitle, 80) || null;
+      if (b.reference != null) v.reference = str(b.reference, 240) || null;
+      if (Array.isArray(b.banks)) v.banks = b.banks.slice(0, 4).map((x) => ({ particulars: str(x.particulars, 60), favouring: str(x.favouring, 80), bank: str(x.bank, 60), accountNo: str(x.accountNo, 30).replace(/\s/g, ''), ifsc: str(x.ifsc, 15).toUpperCase(), branch: str(x.branch, 60) }))
+        .filter((x) => x.favouring && x.accountNo);
       delete v.canEdit;
       await db.tx(async (t) => {
         await t.q("insert into settings (key, value) values ('letters', $1) on conflict (key) do update set value = excluded.value", [v]);
