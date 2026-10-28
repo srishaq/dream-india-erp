@@ -14,4 +14,11 @@ module.exports = route({
     const projectId = p ? needProject(u, p) : undefined;
     return res.json(await mgmt.build({ projectId }));
   },
+  // the limits for "Needs your attention" (days, amounts)
+  POST: async (req, res, b) => {
+    const u = await auth.guard(req, res); if (!u) return;
+    if (!has(u, 'mgmt.view')) throw fail(403, 'The Management dashboard is for Admin and Management logins.');
+    if (b.action !== 'alerts') throw fail(400, 'Unknown action.');
+    return res.json({ ok: true, limits: await mgmt.saveAlertLimits(b.limits || {}) });
+  },
 });

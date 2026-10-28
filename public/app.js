@@ -2018,13 +2018,39 @@
         ${t.note ? `<p class="mg-n">${esc(t.note)}</p>` : ''}
         <a class="mg-go" href="${href(t.link)}">Open →</a></article>`;
     const at = new Date(d.generatedAt).toLocaleTimeString('en-IN', { hour: 'numeric', minute: '2-digit', timeZone: 'Asia/Kolkata' });
-    $('#page').innerHTML = heroHtml(`${d.project ? d.project.name + ' · ' : ''}${fmtD(d.today)}`, 'Management dashboard', `Figures as of ${at} today, straight from the ERP. Tap a tile to open the page behind it.`, ['#/home', 'Home']) + `
+    // Today: six numbers and only what needs attention. Full report: every figure, for the monthly review.
+    let view = store.get('erp_mg_view') === 'full' ? 'full' : 'today';
+    const D = d.daily || { top: [], attention: [], limits: {} };
+    const big = (x) => `<a class="mg-big ${tone(x.tone)}" href="${href(x.link)}"><span class="mg-t">${esc(x.title)}</span><span class="mg-v">${esc(x.value)}</span><span class="mg-s">${esc(x.sub || '')}</span></a>`;
+    const att = D.attention.length
+      ? `<ul class="mg-att">${D.attention.map((a) => `<li class="${tone(a.tone)}"><a href="${href(a.link)}"><span class="dot"></span><span>${esc(a.text)}</span><b>→</b></a></li>`).join('')}</ul>`
+      : '<div class="mg-clear">✓ All clear. Nothing needs your attention today.</div>';
+    $('#page').innerHTML = heroHtml(`${d.project ? d.project.name + ' · ' : ''}${fmtD(d.today)}`, 'Management dashboard', `Figures as of ${at} today, straight from the ERP. Tap any number to open the page behind it.`, ['#/home', 'Home']) + `
       <div class="hm mg">
-        <div class="mg-bar"><span class="muted small">Red needs action today · amber to watch · green is fine</span><button class="ghost small" id="mgRe">Refresh</button></div>
-        ${salesStrip(d.sales, { title: 'Sales: saleable flats, area sold and the average rate', link: '#/units' })}
-        ${d.sections.map((s) => `<section class="mg-sec"><h2>${esc(s.title)}</h2><div class="mg-grid">${s.tiles.map(card).join('')}</div></section>`).join('')}
+        <div class="mg-bar"><div class="ff-tabs mg-tabs" role="tablist" style="margin:0">${[['today', 'Today'], ['full', 'Full report']].map(([k, l]) => `<button type="button" role="tab" data-mv="${k}" aria-selected="${k === view}">${l}</button>`).join('')}</div>
+          <span><button class="ghost small" id="mgLim" title="When an item comes on the attention list">Alert limits</button> <button class="ghost small" id="mgRe">Refresh</button></span></div>
+        <div data-mvp="today" ${view === 'today' ? '' : 'hidden'}>
+          <div class="mg-six">${D.top.map(big).join('')}</div>
+          <section class="mg-sec"><h2>Needs your attention ${D.attention.length ? `<span class="mg-cnt">${D.attention.length}</span>` : ''}</h2>${att}</section>
+        </div>
+        <div data-mvp="full" ${view === 'full' ? '' : 'hidden'}>
+          <div class="mg-bar"><span class="muted small">Red needs action today · amber to watch · green is fine</span></div>
+          ${salesStrip(d.sales, { title: 'Sales: saleable flats, area sold and the average rate', link: '#/units' })}
+          ${d.sections.map((s) => `<section class="mg-sec"><h2>${esc(s.title)}</h2><div class="mg-grid">${s.tiles.map(card).join('')}</div></section>`).join('')}
+        </div>
       </div>`;
+    document.querySelectorAll('[data-mv]').forEach((b) => (b.onclick = () => { view = b.dataset.mv; store.set('erp_mg_view', view);
+      document.querySelectorAll('[data-mv]').forEach((x) => x.setAttribute('aria-selected', x.dataset.mv === view));
+      document.querySelectorAll('[data-mvp]').forEach((x) => (x.hidden = x.dataset.mvp !== view)); }));
     $('#mgRe').onclick = () => mgmt();
+    $('#mgLim').onclick = () => { const L = D.limits;
+      const f = (k, label, unit) => `<div><label>${label}</label><input name="${k}" inputmode="decimal" value="${esc(L[k] ?? '')}"><span class="small muted">${unit}</span></div>`;
+      dialog(`<h2>Alert limits</h2><p class="muted small">An item comes on "Needs your attention" only when it crosses these limits.</p>
+        <div class="row">${f('approvalDays', 'Approval waiting more than', 'days')}${f('hindranceDays', 'Site hindrance open more than', 'days')}</div>
+        <div class="row">${f('taxDays', 'Tax or compliance filing due within', 'days (overdue ones always show)')}${f('siteDelay', 'Tower behind the slab schedule by more than', 'days')}</div>
+        <div class="row">${f('refundDays', 'Refund on a cancelled flat pending more than', 'days')}${f('tallyGap', 'Tally and CRM differ by more than', '₹')}</div>
+        <div class="row">${f('brokenAmount', 'Broken promises to pay totalling at least', '₹')}<div></div></div>`,
+      async (x) => { await api('/api/mgmt', { action: 'alerts', limits: x }); toast('Saved.'); mgmt(); }); };
   }
 
   async function dailyTodo(dept, dateArg) {

@@ -423,3 +423,24 @@ table.flats tr.click:hover td { background: var(--brand-tint); }
 .mailpop { position: fixed; right: 18px; bottom: 92px; z-index: 60; max-width: 340px; background: #fff; color: var(--ink); border: 1.5px solid #140C59; border-left: 6px solid #0E8C9B; border-radius: 12px; padding: 12px 14px; box-shadow: 0 12px 30px rgba(20,12,89,.2); text-decoration: none; font-size: 14px; line-height: 1.4; }
 .mailpop b { color: #140C59; }
 .mailpop[hidden] { display: none; }
+/* management dashboard: the daily view */
+.mg-tabs button { flex: 0 0 auto; min-width: 130px; }
+.mg-six { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 14px; }
+.mg-big { --tone: #140C59; display: grid; gap: 4px; align-content: start; background: var(--panel); border: 1px solid var(--line); border-left: 5px solid var(--tone); border-radius: 14px; padding: 18px 20px; text-decoration: none; color: inherit; box-shadow: 0 1px 2px rgba(16,24,40,.05), 0 8px 24px rgba(20,12,89,.06); min-width: 0; }
+.mg-big:hover { border-color: #9AA6C8; border-left-color: var(--tone); }
+.mg-big.good { --tone: var(--good); } .mg-big.warn { --tone: #d18b0b; } .mg-big.bad { --tone: var(--bad); }
+.mg-big .mg-v { font-size: 30px; letter-spacing: -.01em; color: #140C59; }
+.mg-big.bad .mg-v { color: var(--bad); }
+.mg-big .mg-s { font-size: 13.5px; }
+.mg-cnt { display: inline-block; margin-left: 6px; background: var(--bad); color: #fff; border-radius: 10px; padding: 0 8px; font-size: 12px; letter-spacing: 0; vertical-align: 1px; }
+.mg-att { list-style: none; margin: 0; padding: 0; display: grid; gap: 8px; }
+.mg-att a { display: grid; grid-template-columns: 12px 1fr auto; gap: 12px; align-items: center; background: var(--panel); border: 1px solid var(--line); border-radius: 12px; padding: 13px 16px; text-decoration: none; color: var(--ink); font-size: 15px; font-weight: 500; }
+.mg-att a:hover { background: var(--brand-tint); }
+.mg-att .dot { width: 10px; height: 10px; border-radius: 50%; background: #d18b0b; }
+.mg-att li.bad .dot { background: var(--bad); }
+.mg-att li.bad a { border-left: 4px solid var(--bad); } .mg-att li.warn a { border-left: 4px solid #d18b0b; }
+.mg-att b { color: #140C59; }
+.mg-clear { background: var(--good-tint); color: var(--good); border-radius: 12px; padding: 16px 18px; font-weight: 700; font-size: 15px; }
+@media (max-width: 900px) { .mg-six { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+@media (max-width: 520px) { .mg-six { grid-template-columns: 1fr; gap: 10px; } .mg-big { padding: 14px 16px; } .mg-big .mg-v { font-size: 26px; } .mg-bar { flex-wrap: wrap; } }
+.mg-six + .mg-sec { margin-top: 12px; }
