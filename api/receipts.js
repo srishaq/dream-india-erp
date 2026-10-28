@@ -1,5 +1,6 @@
 // Buyer receipts. GET ?project=ID[&status=pending]. POST {action}: create, approve, reject, bounce, reverse,
-// handed (cheque given to Accounts), deposited (Accounts deposited it), bankcheck (look for the cheques in the bank now).
+// handed (CRM gave the cheque to Accounts), received (Accounts has it), deposited (one cheque, or ids[] at once with the
+// bank account), bankcheck (look for the cheques in the bank now). GET ?todeposit=1 → the count for the top bar.
 // Each cheque is then found on the bank statement by itself (lib/cheque-match.js).
 // A receipt counts towards a buyer's balance only once Head Accounts (not the person who entered it) approves it.
 const db = require('../lib/db');
@@ -61,12 +62,12 @@ async function list(projectId, status) {
   return db.q(
     `select r.id, r.received_on, r.amount, r.mode, r.bank, r.instrument_no, r.status, r.note, r.reverse_reason, r.opening, r.created_by, r.booking_id,
             u.unit_no, c.name as created_by_name, a.name as approved_by_name, r.approved_at, r.approved_note, r.receipt_no, r.receipt_sent_at,
-            r.handed_on, r.deposited_on, r.bank_status, r.bank_on, r.bank_ref, r.bank_match, h.name as handed_by_name, dp.name as deposited_by_name,
+            r.handed_on, r.deposited_on, r.bank_status, r.bank_on, r.bank_ref, r.bank_match, h.name as handed_by_name, dp.name as deposited_by_name, r.acc_received_at, ar.name as acc_received_by_name, r.deposit_bank,
             (select string_agg(y.name, ' & ' order by ap.seq) from booking_applicants ap join buyers y on y.id = ap.buyer_id where ap.booking_id = r.booking_id) as buyers,
             coalesce((select json_object_agg(s.head, s.amount) from receipt_splits s where s.receipt_id = r.id), '{}') as splits
        from receipts r left join bookings b on b.id = r.booking_id left join units u on u.id = b.unit_id
        left join users c on c.id = r.created_by left join users a on a.id = r.approved_by
-       left join users h on h.id = r.handed_by left join users dp on dp.id = r.deposited_by
+       left join users h on h.id = r.handed_by left join users dp on dp.id = r.deposited_by left join users ar on ar.id = r.acc_received_by
       where r.project_id = $1 and ($2::text is null or r.status = $2)
       order by (r.status = 'pending') desc, r.received_on desc, r.id desc limit 1000`, [projectId, status]);
 }
@@ -75,6 +76,12 @@ module.exports = route({
   GET: async (req, res) => {
     const u = await auth.guard(req, res); if (!u) return;
     if (!['receipt.enter', 'receipt.approve', 'ledger.view'].some((p) => has(u, p))) return res.status(403).json({ error: 'Your role does not allow this.' });
+    if (req.query.todeposit) {
+      const c = await db.one(`select count(*)::int as n, coalesce(sum(r.amount), 0) as amt from receipts r join bookings b on b.id = r.booking_id
+        where r.mode = 'cheque' and not r.opening and not b.sample and r.status in ('pending', 'approved') and r.bank_status is null and r.deposited_on is null and r.project_id = any($1)`, [u.projects]);
+      return res.json(c);
+    }
+    if (req.query.banks) return res.json({ banks: await db.q("select name from acc_banks where active order by name") });
     if (req.query.pdf) {
       const f = await receiptFigures(u, intOr(req.query.pdf));
       const buf = require('../lib/demand-letter').buildReceipt(f.doc);
@@ -122,6 +129,8 @@ module.exports = route({
         await audit.record(t.q, { user: u, action: 'create', entity: 'receipt', entityId: row.id, projectId: bk.project_id, after: { unit: bk.unit_no, receivedOn: on, amount: rupees(amount), mode, instrument, splits: Object.fromEntries(Object.entries(splits).map(([h, p]) => [h, rupees(p)])) } });
         return row.id;
       });
+      // a cheque: Accounts is told straight away, in Dream Chat (with the chime) and on the top bar count
+      if (mode === 'cheque') await require('../lib/team').system('accounts', `Cheque to deposit: ${bk.unit_no}, ₹${Math.round(rupees(amount)).toLocaleString('en-IN')}${instrument ? ', cheque ' + instrument : ''}${b.bank ? ' (' + str(b.bank, 80) + ')' : ''}, received ${on}, entered by ${u.name}. Mark it Received when you have it, and Deposited when it goes to the bank.`, { bookingId: bk.id, receiptId: id, needsAction: true });
       return res.json({ ok: true, id });
     }
 
@@ -150,9 +159,29 @@ module.exports = route({
       if (!(has(u, 'receipt.approve') || has(u, 'accounts.enter'))) throw fail(403, 'Your role does not allow this.');
       return res.json({ ok: true, ...(await require('../lib/cheque-match').run({ user: u, trigger: 'manual' })) });
     }
+    // Several cheques deposited together (one paying-in slip), into one bank account.
+    if (b.action === 'deposited' && Array.isArray(b.ids)) {
+      if (!(has(u, 'accounts.enter') || has(u, 'receipt.approve'))) throw fail(403, 'Only Accounts marks a cheque deposited.');
+      const ids = b.ids.map((x) => intOr(x)).filter(Boolean).slice(0, 300); if (!ids.length) throw fail(400, 'Tick the cheques deposited.');
+      const on = /^\d{4}-\d{2}-\d{2}$/.test(b.on || '') ? b.on : today(); if (on > today()) throw fail(400, 'The date cannot be in the future.');
+      const bank = str(b.bank, 80) || null;
+      const rows = await db.q(`update receipts set deposited_on = $2, deposited_by = $3, deposit_bank = coalesce($4, deposit_bank), handed_on = coalesce(handed_on, $2),
+          acc_received_at = coalesce(acc_received_at, now()), acc_received_by = coalesce(acc_received_by, $3)
+        where id = any($1) and project_id = any($5) and mode = 'cheque' and bank_status is null and deposited_on is null and received_on <= $2 returning id, project_id`, [ids, on, u.id, bank, u.projects]);
+      for (const x of rows) await audit.record(db.q, { user: u, action: 'deposited', entity: 'receipt', entityId: x.id, projectId: x.project_id, after: { on, bank } });
+      await db.q("update team_messages set done_at = now(), done_by = $2 where receipt_id = any($1) and kind = 'system' and done_at is null and body like 'Cheque to deposit%'", [rows.map((x) => x.id), u.id]);
+      return res.json({ ok: true, count: rows.length, skipped: ids.length - rows.length });
+    }
     const r = await db.one('select * from receipts where id = $1', [intOr(b.id)]);
     if (!r) throw fail(404, 'Receipt not found.');
     needProject(u, r.project_id);
+    if (b.action === 'received') {
+      if (!(has(u, 'accounts.enter') || has(u, 'receipt.approve'))) throw fail(403, 'Only Accounts confirms a cheque received.');
+      if (r.mode !== 'cheque' || r.acc_received_at) throw fail(409, r.acc_received_at ? 'Already marked received.' : 'This receipt is not a cheque.');
+      await db.q('update receipts set acc_received_at = now(), acc_received_by = $2, handed_on = coalesce(handed_on, $3) where id = $1', [r.id, u.id, today()]);
+      await audit.record(db.q, { user: u, action: 'received', entity: 'receipt', entityId: r.id, projectId: r.project_id });
+      return res.json({ ok: true });
+    }
     if (b.action === 'handed' || b.action === 'deposited') {
       if (b.action === 'handed') need('receipt.enter'); else if (!(has(u, 'accounts.enter') || has(u, 'receipt.approve'))) throw fail(403, 'Only Accounts marks a cheque deposited.');
       if (r.mode !== 'cheque') throw fail(400, 'This receipt is not a cheque.');
@@ -160,7 +189,10 @@ module.exports = route({
       const on = /^\d{4}-\d{2}-\d{2}$/.test(b.on || '') ? b.on : today();
       if (on > today() || on < String(r.received_on instanceof Date ? r.received_on.toISOString() : r.received_on).slice(0, 10)) throw fail(400, 'The date must be between the day the cheque was received and today.');
       if (b.action === 'handed') await db.q('update receipts set handed_on = $2, handed_by = $3 where id = $1', [r.id, on, u.id]);
-      else await db.q('update receipts set deposited_on = $2, deposited_by = $3, handed_on = coalesce(handed_on, $2) where id = $1', [r.id, on, u.id]);
+      else {
+        await db.q('update receipts set deposited_on = $2, deposited_by = $3, handed_on = coalesce(handed_on, $2), deposit_bank = coalesce($4, deposit_bank), acc_received_at = coalesce(acc_received_at, now()), acc_received_by = coalesce(acc_received_by, $3) where id = $1', [r.id, on, u.id, str(b.bank, 80) || null]);
+        await db.q("update team_messages set done_at = now(), done_by = $2 where receipt_id = $1 and kind = 'system' and done_at is null and body like 'Cheque to deposit%'", [r.id, u.id]);
+      }
       await audit.record(db.q, { user: u, action: b.action, entity: 'receipt', entityId: r.id, projectId: r.project_id, after: { on } });
       return res.json({ ok: true });
     }

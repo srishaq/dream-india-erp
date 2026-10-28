@@ -214,6 +214,7 @@
       </div></div>`;
     wireNav();
     chat.mount();
+    if (anyOf('accounts.enter', 'receipt.approve')) api('/api/receipts?todeposit=1').then((r) => { if (r.n && $('.top .who:last-child')) $('.top .who:last-child').insertAdjacentHTML('afterbegin', `<a class="mbadge dep" href="#/receipts?t=cheques" title="Cheques the CRM has entered that are not deposited yet">🏦 ${r.n} cheque${r.n === 1 ? '' : 's'} to deposit</a>`); }).catch(() => {});
     if (can('ledger.view')) api('/api/comms?badge=1').then((r) => { if (r.mine && $('.top .who')) $('.top .who').insertAdjacentHTML('beforeend', `<a class="mbadge" href="#/comms" title="Buyers' replies on your flats, not read yet">✉ ${r.mine} new</a>`); }).catch(() => {});
     $('#out').onclick = signOut;
     wireInstall();
@@ -275,6 +276,7 @@
     { key: 'construction', title: 'Construction', sub: 'Site Office: slab cycle, daily progress reports, hindrances, materials and stages', icon: 'hammer', tone: '#B7791F', pages: ['site', 'demands'], later: ['Contractor billing'] },
     { key: 'accounts', title: 'Accounts', sub: 'Bank, receipts, payments, PDC, TDS, SRA rent, GST, SDR and Tally', icon: 'book', tone: '#117A65', group: 'Accounts', skip: ['ca', 'bookscrm', 'checks'] },
     { key: 'audit', title: 'CRM/Accounts Audit', sub: 'Tally against the CRM, checks, reconciling items and cancelled flats', icon: 'check', tone: '#0E8C9B', pages: ['bookscrm', 'checks', 'reg-recon', 'reg-cancellations', 'verify', 'audit'] },
+    { key: 'cpdept', title: 'Channel Partners', sub: 'Every partner firm: brokerage earned, bills, pass back, payments and what is still owed', icon: 'users', tone: '#0E8C9B', direct: 'partners' },
     { key: 'ca', title: 'CA / Tax', sub: 'GST, TDS payable, RERA quarterly, cash flow and compliance', icon: 'chart', tone: '#7A5C99', direct: 'ca' },
     { key: 'purchase', title: 'Purchase', sub: 'Requests, approvals, orders, receipts at site and payment for RMC, steel, cement and more', icon: 'cart', tone: '#117A65', direct: 'purchase' },
     { key: 'drawings', title: 'Drawings', sub: 'Architect, structural and MEP drawings from the Site Plans folder', icon: 'grid', tone: '#2B5C8A', direct: 'drawings' },
@@ -786,8 +788,9 @@
     if (r.bank_status === 'cleared') return `<span class="pill good">in the bank</span><br><span class="small muted">${fmtD(r.bank_on)}${r.bank_ref ? ' · ' + esc(r.bank_ref) : ''}${r.bank_match === 'flat and amount' ? ' · matched on flat and amount' : ''}</span>`;
     if (r.mode !== 'cheque' && r.mode !== 'bank') return '';
     if (r.mode === 'bank') return '<span class="small muted">not on the statement yet</span>';
-    if (r.deposited_on) return `<span class="pill">deposited</span><br><span class="small muted">${fmtD(r.deposited_on)}${r.deposited_by_name ? ' · ' + esc(r.deposited_by_name) : ''}</span>`;
-    if (r.handed_on) return `<span class="pill">with Accounts</span><br><span class="small muted">${fmtD(r.handed_on)}</span>`;
+    if (r.deposited_on) return `<span class="pill">deposited</span><br><span class="small muted">${fmtD(r.deposited_on)}${r.deposit_bank ? ' · ' + esc(r.deposit_bank) : ''}${r.deposited_by_name ? ' · ' + esc(r.deposited_by_name) : ''}</span>`;
+    if (r.acc_received_at) return `<span class="pill">with Accounts</span><br><span class="small muted">received ${fmtD(String(r.acc_received_at).slice(0, 10))}${r.acc_received_by_name ? ' · ' + esc(r.acc_received_by_name) : ''}</span>`;
+    if (r.handed_on) return `<span class="pill warn">handed over</span><br><span class="small muted">${fmtD(r.handed_on)}, not yet confirmed by Accounts</span>`;
     return '<span class="pill warn">with CRM</span>';
   };
   const rStatus = (r) => (r.status === 'approved' && r.approved_note ? `<span class="pill good">approved</span><br><span class="small muted">${esc(r.approved_note)}</span>` : '') || ({ pending: '<span class="pill">waiting for approval</span>', approved: '<span class="pill good">approved</span>', rejected: '<span class="pill grey">rejected</span>', bounced: '<span class="pill bad">bounced</span>', reversed: '<span class="pill bad">reversed</span>' }[r.status] || esc(r.status)) + (r.reverse_reason ? `<br><span class="small muted">${esc(r.reverse_reason)}</span>` : '');
@@ -837,6 +840,7 @@
 
   async function receipts() {
     if (!proj) return noProject();
+    if (/[?&]t=cheques/.test(location.hash)) { store.set('erp_rtab', 'cheques'); history.replaceState(null, '', '#/receipts'); }
     const tab = store.get('erp_rtab') || 'pending';
     const d = await api(`/api/receipts?project=${proj}${tab === 'all' || tab === 'cheques' ? '' : '&status=' + tab}`);
     if (tab === 'cheques') d.rows = d.rows.filter((r) => r.mode === 'cheque' && !r.bank_status && ['pending', 'approved'].includes(r.status));
@@ -845,13 +849,16 @@
     $('#page').innerHTML = `<div class="page-head"><div><h1>Receipts</h1><p class="muted">The CRM enters each cheque or transfer and how it splits. The bank statement check (3:10 pm) finds it in the bank by itself: when the cheque number and amount match, it is approved and counts towards the buyer's balance; otherwise Head Accounts approves it. A returned cheque is marked bounced and the flat's CRM is told.</p></div>
       <div class="actions" style="margin:0">${canDep ? '<button class="ghost" id="bankNow">Look for the cheques in the bank now</button>' : ''}${can('receipt.enter') ? '<button id="new">Enter a receipt</button>' : ''}</div></div>
       <div class="tabs">${Object.keys(labels).map((k) => `<button class="tab ${k === tab ? 'on' : ''}" data-t="${k}">${labels[k]}</button>`).join('')}</div>
+      ${tab === 'cheques' && canDep ? `<div class="panel depbar"><b>Deposit</b> <span class="small muted">Tick the cheques going to the bank together, choose the account, then click Deposited.</span>
+        <div class="row4" style="margin-top:8px"><div><label>Bank account</label><select id="depBank"><option value="">Choose…</option></select></div><div><label>Deposited on</label><input type="date" id="depOn" max="${todayIso()}" value="${todayIso()}"></div>
+        <div style="align-self:end"><label class="check"><input type="checkbox" id="depAll"> Tick all</label></div><div style="align-self:end"><button id="depGo" disabled>Deposited (0)</button></div></div></div>` : ''}
       <div class="panel table-wrap"><input class="search" id="q" placeholder="Search unit, buyer or UTR"><table><tr><th>Date</th><th>Unit</th><th>Buyer</th><th>Bank / instrument</th><th class="num">Amount</th><th>Split</th><th>Cheque</th><th>Status</th><th>Entered by</th><th></th></tr>
-      ${d.rows.map((r) => `<tr data-s="${esc(((r.unit_no || '') + ' ' + (r.buyers || '') + ' ' + (r.instrument_no || '')).toLowerCase())}"><td>${fmtD(r.received_on)}</td><td><a href="#/booking/${r.booking_id}">${esc(r.unit_no || '')}</a></td><td>${esc(r.buyers || '')}</td>
+      ${d.rows.map((r) => `<tr data-s="${esc(((r.unit_no || '') + ' ' + (r.buyers || '') + ' ' + (r.instrument_no || '')).toLowerCase())}"><td>${tab === 'cheques' && canDep && !r.deposited_on ? `<input type="checkbox" class="depck" value="${r.id}" data-amt="${toNum(r.amount)}" aria-label="Deposited"> ` : ''}${fmtD(r.received_on)}</td><td><a href="#/booking/${r.booking_id}">${esc(r.unit_no || '')}</a></td><td>${esc(r.buyers || '')}</td>
         <td>${esc([r.bank, r.instrument_no].filter(Boolean).join(' · ') || r.mode)}</td><td class="num">${inr(r.amount, 2)}</td><td class="small">${Object.entries(r.splits).map(([h, v]) => `${HEAD[h] || h} ${inr(v)}`).join(' · ')}</td>
         <td>${chequeCell(r)}</td><td>${rStatus(r)}</td><td>${esc(r.created_by_name || 'Import / sample')}</td>
         <td class="num" style="white-space:nowrap">${r.status === 'pending' && can('receipt.approve') ? `<button class="small" data-ok="${r.id}">Approve</button> <button class="ghost small" data-no="${r.id}">Reject</button>` : ''}
           ${r.status === 'approved' && can('receipt.approve') ? `<button class="danger small" data-bounce="${r.id}">Bounced</button>` : ''}
-          ${r.mode === 'cheque' && !r.bank_status && ['pending', 'approved'].includes(r.status) ? `${!r.handed_on && !r.deposited_on && can('receipt.enter') ? `<button class="ghost small" data-hand="${r.id}">Given to Accounts</button>` : ''}${!r.deposited_on && canDep ? ` <button class="ghost small" data-dep="${r.id}">Deposited</button>` : ''}` : ''}
+          ${r.mode === 'cheque' && !r.bank_status && ['pending', 'approved'].includes(r.status) ? `${!r.handed_on && !r.deposited_on && can('receipt.enter') ? `<button class="ghost small" data-hand="${r.id}">Given to Accounts</button>` : ''}${!r.acc_received_at && !r.deposited_on && canDep ? ` <button class="ghost small" data-rcv="${r.id}" title="The cheque has reached Accounts">Received</button>` : ''}${!r.deposited_on && canDep ? ` <button class="ghost small" data-dep="${r.id}">Deposited</button>` : ''}` : ''}
           ${['pending', 'approved'].includes(r.status) && !r.opening ? `<button class="ghost small" data-doc="${r.id}" title="${r.receipt_no ? 'Receipt ' + esc(r.receipt_no) + (r.receipt_sent_at ? ', emailed' : '') : 'Give the buyer a payment receipt'}">${r.receipt_no ? 'Receipt ✓' : 'Receipt'}</button>` : ''}
           <a class="btn link small" href="#/${can('accounts.view') && !can('demand.raise') ? 'accteam' : 'team'}/${r.booking_id}" title="Dream Chat with the other team about this flat">Chat</a></td></tr>`).join('') || '<tr><td colspan="10" class="muted">Nothing here.</td></tr>'}</table></div>`;
     document.querySelectorAll('.tab[data-t]').forEach((t) => (t.onclick = () => { store.set('erp_rtab', t.dataset.t); receipts(); }));
@@ -860,6 +867,18 @@
     document.querySelectorAll('[data-ok]').forEach((x) => (x.onclick = () => act({ action: 'approve', id: +x.dataset.ok }, 'Receipt approved.')));
     document.querySelectorAll('[data-no]').forEach((x) => (x.onclick = () => { const r = prompt('Reason for rejecting:'); if (r !== null) act({ action: 'reject', id: +x.dataset.no, reason: r }, 'Receipt rejected.'); }));
     document.querySelectorAll('[data-doc]').forEach((x) => (x.onclick = () => receiptDocDialog(+x.dataset.doc)));
+    document.querySelectorAll('[data-rcv]').forEach((x) => (x.onclick = () => act({ action: 'received', id: +x.dataset.rcv }, 'Marked: the cheque is with Accounts.')));
+    if ($('#depGo')) {
+      api('/api/receipts?banks=1').then((r) => { $('#depBank').innerHTML = '<option value="">Choose…</option>' + r.banks.map((b) => `<option>${esc(b.name)}</option>`).join(''); }).catch(() => {});
+      const upd = () => { const ck = [...document.querySelectorAll('.depck:checked')]; $('#depGo').disabled = !ck.length; $('#depGo').textContent = `Deposited (${ck.length}${ck.length ? ' · ' + inr(ck.reduce((a, c) => a + toNum(c.dataset.amt), 0)) : ''})`; };
+      document.querySelectorAll('.depck').forEach((c) => (c.onchange = upd));
+      $('#depAll').onchange = (e) => { document.querySelectorAll('.depck').forEach((c) => { if (c.closest('tr').style.display !== 'none') c.checked = e.target.checked; }); upd(); };
+      $('#depGo').onclick = async () => {
+        const ids = [...document.querySelectorAll('.depck:checked')].map((c) => +c.value);
+        if (!$('#depBank').value && !confirm('No bank account chosen. Mark them deposited anyway?')) return;
+        try { const r = await api('/api/receipts', { action: 'deposited', ids, on: $('#depOn').value, bank: $('#depBank').value }); toast(`${r.count} cheque(s) marked deposited${r.skipped ? `, ${r.skipped} skipped (already deposited or in the bank)` : ''}. The bank statement check will find them.`); receipts(); } catch (e) { alert(e.message); }
+      };
+    }
     document.querySelectorAll('[data-hand]').forEach((x) => (x.onclick = () => act({ action: 'handed', id: +x.dataset.hand }, 'Marked as given to Accounts today.')));
     document.querySelectorAll('[data-dep]').forEach((x) => (x.onclick = () => { const on = prompt('Deposited on (YYYY-MM-DD):', todayIso()); if (on) act({ action: 'deposited', id: +x.dataset.dep, on }, 'Marked deposited. The bank statement check will find it.'); }));
     if ($('#bankNow')) $('#bankNow').onclick = async () => { try { const o = await api('/api/receipts', { action: 'bankcheck' }); toast(`Found in the bank: ${o.linked} (${o.approved} approved by the bank statement, ${o.waiting} for Head Accounts). Returned: ${o.bounced}.`); receipts(); } catch (e) { alert(e.message); } };

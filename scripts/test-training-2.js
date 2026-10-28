@@ -73,6 +73,22 @@ module.exports = async ({ admin, crm, hcrm, acc, hacc, sig, bks, db, step, asser
       assert.equal((await crm('/api/comms', { action: 'noreply', id: c.id })).ok, true);
       I = await crm('/api/comms?inbox=1&f=waiting'); assert.ok(!I.rows.some((m) => m.id === c.id));
     });
+    await s('cheque desk: Accounts told at once, Received, several deposited together into one bank, 9 am list', async () => {
+      const bk = bks[bks.length - 2];
+      const mk = (no, d) => crm('/api/receipts', { action: 'create', bookingId: bk.id, receivedOn: d, amount: 300000, mode: 'cheque', bank: 'HDFC', instrumentNo: no, splits: { av: 300000 } });
+      const a = await mk('700001', day(0)), b = await mk('700002', day(0)), c = await mk('700003', day(-1));
+      const m = await db.one("select * from team_messages where to_team = 'accounts' and receipt_id = $1", [a.id]);
+      assert.ok(m && /^Cheque to deposit/.test(m.body) && m.needs_action);
+      assert.equal((await acc('/api/receipts?todeposit=1')).n >= 3, true);
+      assert.equal((await crm('/api/receipts', { action: 'received', id: a.id })).status, 403, 'only Accounts confirms it has the cheque');
+      assert.equal((await acc('/api/receipts', { action: 'received', id: a.id })).ok, true);
+      const f = await require('../lib/cheque-match').findings(day(0)); assert.ok(f.some((x) => x.key === 'cheques-to-deposit' && x.count >= 1));
+      const r = await acc('/api/receipts', { action: 'deposited', ids: [a.id, b.id, c.id], on: day(0), bank: 'PRIME HDFC' });
+      assert.equal(r.ok, true, r.error); assert.equal(r.count, 3);
+      const x = await db.one('select deposited_on, deposit_bank, acc_received_at from receipts where id = $1', [b.id]); assert.equal(x.deposit_bank, 'PRIME HDFC'); assert.ok(x.acc_received_at);
+      assert.ok((await db.one('select done_at from team_messages where receipt_id = $1', [a.id])).done_at, 'the alert closes once deposited');
+      assert.equal((await acc('/api/receipts', { action: 'deposited', ids: [a.id], on: day(0) })).count, 0, 'not twice');
+    });
     await s('install as an app: manifest, icons and service worker are served', async () => {
       const BASE = `http://localhost:${process.env.PORT}`;
       for (const p of ['/manifest.webmanifest', '/icon-192.png', '/icon-512.png', '/sw.js']) assert.equal((await fetch(BASE + p)).status, 200, p);
