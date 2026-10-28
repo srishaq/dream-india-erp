@@ -1225,6 +1225,28 @@
     };
     if (unread.length && d.canAct) api('/api/comms', { action: 'read', ids: unread }).catch(() => {});
   }
+  // ---------- a new version of the ERP ----------
+  // The ERP is one page that stays open all day, so a release is not picked up until the page is reloaded. Every few
+  // minutes the page checks whether app.js has changed on the server and, if so, offers to reload.
+  (() => {
+    let first = null, shown = false;
+    const tag = async () => { try { const r = await fetch('/app.js', { method: 'HEAD', cache: 'no-store' }); return r.headers.get('etag') || r.headers.get('last-modified'); } catch { return null; } };
+    const check = async () => {
+      if (shown) return;
+      const t = await tag(); if (!t) return;
+      if (!first) { first = t; return; }
+      if (t !== first) {
+        shown = true;
+        const b = document.createElement('div'); b.className = 'upd no-print';
+        b.innerHTML = '<span>The ERP has been updated.</span><button type="button">Reload now</button>';
+        b.querySelector('button').onclick = () => location.reload();
+        document.body.appendChild(b);
+      }
+    };
+    check(); setInterval(check, 5 * 60 * 1000);
+    document.addEventListener('visibilitychange', () => { if (!document.hidden) check(); });
+  })();
+
   // ---------- Dream Chat: the chat window (CRM ↔ Accounts), on every page ----------
   // A button in the bottom corner; the window opens over the page in use. New messages come in every few seconds
   // (every 30 s while the tab is in the background), with a sound and a pop-up, and a desktop notification when allowed.
