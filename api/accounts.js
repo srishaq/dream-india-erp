@@ -43,7 +43,7 @@ module.exports = route({
       const TF = require('../lib/tally-feed'), q = req.query;
       if (!(await TF.check(req.headers['x-erp-key'] || q.key))) throw fail(401, 'Wrong or missing key.');
       const D = /^\d{4}-\d{2}-\d{2}$/;
-      const list = await TF.rows({ from: D.test(q.from || '') ? q.from : null, to: D.test(q.to || '') ? q.to : null, all: q.all === '1' });
+      const list = TF.mapped(await TF.rows({ from: D.test(q.from || '') ? q.from : null, to: D.test(q.to || '') ? q.to : null, all: q.all === '1' }), (await TF.settings()).ledgerMap);
       await TF.notePull(list.length);
       if (q.format === 'json') return res.json({ company: (await TF.settings()).company, count: list.length, vouchers: TF.json(list) });
       res.setHeader('Content-Type', 'application/xml; charset=utf-8');
@@ -59,7 +59,7 @@ module.exports = route({
     }
     switch (q.view) {
       case 'todo': return res.json({ ...(await acc.todo()), can });
-      case 'tallylink': return res.json({ ...(await require('../lib/tally-feed').status()), can });
+      case 'tallylink': return res.json({ ...(await require('../lib/tally-feed').status()), ledgers: await require('../lib/tally-feed').ledgers(), can });
       case 'capack': {
         const P = require('../lib/ca-pack');
         if (q.download) { const ym = /^\d{4}-\d{2}$/.test(q.download) ? q.download : P.prevMonth(); const p = await P.build(ym);
@@ -154,6 +154,7 @@ module.exports = route({
       if (!has(u, 'accounts.manage') && u.role !== 'admin') throw fail(403, 'Only Head Accounts or the Admin sets up the Tally link.');
       const TF = require('../lib/tally-feed');
       if (b.start != null) { if (b.start && !/^\d{4}-\d{2}-\d{2}$/.test(b.start)) throw fail(400, 'Choose the start date.'); await TF.save({ ...(await TF.settings()), start: b.start || null }); }
+      if (b.ledgerMap && typeof b.ledgerMap === 'object') { const m = {}; for (const [k, v] of Object.entries(b.ledgerMap).slice(0, 2000)) { const t = str(v, 150); if (t && t !== k) m[str(k, 150)] = t; } await TF.save({ ...(await TF.settings()), ledgerMap: m }); }
       if (b.company != null) { const c = str(b.company, 120); if (!c) throw fail(400, 'Type the company name exactly as it is in Tally.'); await TF.save({ ...(await TF.settings()), company: c }); }
       let key = null;
       if (b.newKey) { key = await TF.newKey(u); await audit.record(db.q, { user: u, action: 'tally-key', entity: 'settings', entityId: 'tally_feed', note: 'New Tally link key made; any earlier key stopped working' }); }

@@ -165,7 +165,10 @@ let n = 0; const step = async (name, fn) => { await fn(); n++; console.log('  âœ
     await admin('/api/accounts', { action: 'tally-link', start: '2026-10-26' });
     const j = await feed('&format=json');
     assert.ok(j.count >= 1, JSON.stringify(j)); assert.ok(j.vouchers.every((v) => v.date >= '2026-10-26' && v.action === 'Create'));
-    const x = await feed(); assert.match(x, /<SVCURRENTCOMPANY>Prime Realtors<\/SVCURRENTCOMPANY>/); assert.match(x, /REMOTEID="DIERP-/);
+    const v0 = j.vouchers[0];
+    assert.equal((await admin('/api/accounts', { action: 'tally-link', ledgerMap: { [v0.bankLedger]: 'TALLY BANK NAME' } })).ok, true);
+    const x = await feed(); assert.match(x, /<SVCURRENTCOMPANY>Prime Realtors<\/SVCURRENTCOMPANY>/); assert.match(x, /REMOTEID="DIERP-/); assert.match(x, /<LEDGERNAME>TALLY BANK NAME<\/LEDGERNAME>/);
+    assert.ok((await admin('/api/accounts?view=tallylink')).ledgers.some((l) => l.tally === 'TALLY BANK NAME'));
     const first = j.vouchers[0];
     const ack = await fetch(BASE + '/api/accounts', { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-ERP-Key': k.key }, body: JSON.stringify({ action: 'tally-ack', done: j.vouchers.map((v, i) => ({ id: v.id, result: i === 0 && j.count > 1 ? 'error' : 'ok', note: i === 0 && j.count > 1 ? 'Ledger RMC does not exist' : 'Vch ' + i })) }) }).then((r) => r.json());
     assert.equal(ack.imported + ack.failed, j.count);
