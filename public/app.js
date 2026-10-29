@@ -119,7 +119,7 @@
     { key: 'comms', label: 'Inbox', show: () => can('ledger.view') },
     { key: 'team', label: 'Dream Chat', show: () => anyOf('ledger.view', 'receipt.enter') && !(can('accounts.enter') && !can('demand.raise') && !can('booking.create')) },
     { group: 'CRM tools' },
-    { key: 'dashboard', label: 'Collections dashboard', show: () => can('ledger.view'), href: () => `/dashboard${proj ? '?project=' + proj : ''}` },
+    { key: 'collections', label: 'Collections dashboard', show: () => can('ledger.view') },
     { key: 'demands', label: 'Stages & demands', show: () => anyOf('demand.raise', 'demand.approve', 'stage.record', 'ledger.view') },
     { key: 'letters', label: 'Demand letters (many flats)', show: () => anyOf('demand.raise', 'ledger.view') },
     { key: 'prices', label: 'Price list & cost sheet', show: () => can('inventory.view') },
@@ -226,7 +226,7 @@
     $('#cpw').onclick = () => changePassword(false);
     if ($('#proj')) $('#proj').onchange = (e) => { proj = +e.target.value; store.set('erp_project', proj); shell(); };
     if (/^reg-/.test(page || '') && can('accounts.view')) { try { await accRegister(page.slice(4)); } catch (e) { $('#page').innerHTML = `<div class="err">${esc(e.message)}</div>`; } return; }
-    const fn = { home, mgmt, flats, custdocs, comms, team: teamPage, accteam: teamPage, sdr: sdrPage, cp: cpPage, project: projectHome, crmtodo: () => dailyTodo('crm'), acctodo: () => dailyTodo('accounts'), training, projects, plans, users, audit, units, bookings, demands, receipts, ledgers, letters, followups, verify, prices, partners, balances: accBalances, bankauto: bankAuto, bookscrm: booksCrm, accreports: accReports, checks: accChecks, accsetup: accSetup, import: importPage, booking: bookingPage, statement: statementPage, run: runPage };
+    const fn = { home, mgmt, collections, flats, custdocs, comms, team: teamPage, accteam: teamPage, sdr: sdrPage, cp: cpPage, project: projectHome, crmtodo: () => dailyTodo('crm'), acctodo: () => dailyTodo('accounts'), training, projects, plans, users, audit, units, bookings, demands, receipts, ledgers, letters, followups, verify, prices, partners, balances: accBalances, bankauto: bankAuto, bookscrm: booksCrm, accreports: accReports, checks: accChecks, accsetup: accSetup, import: importPage, booking: bookingPage, statement: statementPage, run: runPage };
     const key = DETAIL[page] && arg ? page : cur.key;
     try { await fn[key](arg ? +arg : undefined); } catch (e) { $('#page').innerHTML = `<div class="err">${esc(e.message)}</div>`; }
   }
@@ -258,7 +258,7 @@
   };
   // Home → a project → its departments (Sales & CRM, Accounts, …) → the working pages of that department.
   const SUB = {
-    dashboard: 'Daily collections, dues, tower status, channel partners', units: 'Every unit, floor by floor, both wings side by side',
+    dashboard: 'Daily collections, dues, tower status, channel partners', collections: 'Today’s and this month’s collections, what is due and coming in, wing by wing', units: 'Every unit, floor by floor, both wings side by side',
     bookings: 'Bookings, applicants, cancellations and transfers', demands: 'Construction stages and the demands raised on them',
     receipts: 'Enter receipts; Head Accounts approves them', ledgers: 'Each buyer’s statement of demands and payments',
     letters: 'Stage demands and reminders, by email or courier', followups: 'Calls, WhatsApps and promises to pay',
@@ -276,12 +276,12 @@
     accreports: 'Reports and the Tally import', checks: 'Daily checks on the registers', bookscrm: 'Tally receipts flat by flat against the CRM',
     ca: 'GST, TDS payable, RERA quarterly and cash flow, for the CA', accsetup: 'Bank accounts, heads, statement folders and imports', audit: 'Who changed what, and when',
   };
-  const PICON = { flats: 'users', 'sc-calls': 'phone', 'sc-dues': 'book', 'sc-appr': 'check', comms: 'mail', team: 'users', accteam: 'users', sdr: 'rupee', custdocs: 'book', site: 'tower', crmtodo: 'check', acctodo: 'check', training: 'book', dashboard: 'chart', units: 'grid', bookings: 'book', demands: 'tower', receipts: 'rupee', ledgers: 'book', letters: 'mail', followups: 'phone', verify: 'check', prices: 'rupee', partners: 'users',
+  const PICON = { collections: 'chart', flats: 'users', 'sc-calls': 'phone', 'sc-dues': 'book', 'sc-appr': 'check', comms: 'mail', team: 'users', accteam: 'users', sdr: 'rupee', custdocs: 'book', site: 'tower', crmtodo: 'check', acctodo: 'check', training: 'book', dashboard: 'chart', units: 'grid', bookings: 'book', demands: 'tower', receipts: 'rupee', ledgers: 'book', letters: 'mail', followups: 'phone', verify: 'check', prices: 'rupee', partners: 'users',
     accdash: 'chart', balances: 'rupee', bankauto: 'check', 'reg-cancellations': 'users', bookscrm: 'check', checks: 'check', audit: 'book', ca: 'chart', accsetup: 'grid' };
   const DEPTS = [
     { key: 'crm', title: 'Sales & CRM', sub: 'Today’s work, every flat and buyer in one place, receipts, collections and the inbox', icon: 'chart', tone: '#2B5C8A', group: 'CRM', more: 'CRM tools',
       sections: [['Every day', ['crmtodo', 'flats', 'receipts', 'comms', 'team']], ['Sales', ['units', 'sc-appr', 'prices', 'partners']],
-        ['Collections', ['dashboard', 'demands', 'letters']], ['Records and checks', ['custdocs', 'verify']]] },
+        ['Collections', ['collections', 'demands', 'letters']], ['Records and checks', ['custdocs', 'verify']]] },
     { key: 'construction', title: 'Construction', sub: 'Site Office: slab cycle, daily progress reports, hindrances, materials and stages', icon: 'hammer', tone: '#B7791F', pages: ['site', 'demands'], later: ['Contractor billing'] },
     { key: 'accounts', title: 'Accounts', sub: 'Bank, receipts, payments, PDC, TDS, SRA rent, GST, SDR and Tally', icon: 'book', tone: '#117A65', group: 'Accounts', skip: ['ca', 'bookscrm', 'checks'] },
     { key: 'audit', title: 'CRM/Accounts Audit', sub: 'Tally against the CRM, checks, reconciling items and cancelled flats', icon: 'check', tone: '#0E8C9B', pages: ['bookscrm', 'checks', 'reg-recon', 'reg-cancellations', 'verify', 'audit'] },
@@ -586,9 +586,13 @@
   // ---------- flats & buyers: the one list of every flat and buyer; each row opens the flat file ----------
   async function flats() {
     if (!proj) return noProject();
-    const [B, F] = await Promise.all([api(`/api/bookings?project=${proj}`), can('ledger.view') ? api(`/api/followups?project=${proj}`).catch(() => ({ rows: [] })) : { rows: [] }]);
+    const [B, F, DB] = await Promise.all([api(`/api/bookings?project=${proj}`), can('ledger.view') ? api(`/api/followups?project=${proj}`).catch(() => ({ rows: [] })) : { rows: [] },
+      can('ledger.view') ? api(`/api/dashboard?project=${proj}`).catch(() => null) : null]);
     const fu = new Map(F.rows.map((r) => [r.booking_id, r]));
-    const rows = B.rows.map((r) => ({ ...r, f: fu.get(r.id) }));
+    // the same lists the Collections figures count (worked out in lib/dashboard.js), by flat
+    const inList = (k) => new Set(((DB && DB.actions && DB.actions[k]) || []).map((x) => String(x.unit).toUpperCase()));
+    const L = { def: inList('defaulters'), tds: inList('tdsPending'), reg: inList('registrationPending') };
+    const rows = B.rows.map((r) => { const u = String(r.unit_no).toUpperCase(), live = r.status === 'active'; return { ...r, f: fu.get(r.id), def: live && L.def.has(u), tdsOnly: live && L.tds.has(u), regPend: live && L.reg.has(u) }; });
     const req = (r) => r.status === 'active' && (r.cancel_requested_at || r.transfer_requested_at);
     const SETS = [
       ['bookings', 'All bookings', () => true, 'Every booking: active, waiting for approval, cancelled and transferred'],
@@ -596,6 +600,9 @@
       ['broken', 'Broken promises', (r) => r.f && r.f.broken, 'They promised to pay by a date that has passed'],
       ['never', 'Never called', (r) => r.f && !r.f.count, 'Buyers with dues nobody has called yet'],
       ['overdue', 'Overdue', (r) => r.status === 'active' && toNum(r.overdue) > 0, 'Every buyer with an overdue amount'],
+      ['defaulters', 'Defaulters', (r) => r.def, 'Buyers marked Defaulter on their follow-up'],
+      ['tds', 'TDS due only', (r) => r.tdsOnly, 'Only the 1% TDS is left to collect'],
+      ['regpending', 'Registration pending', (r) => r.regPend, 'Booked, but the agreement is not registered yet'],
       ['approval', 'Waiting for approval', (r) => r.status === 'pending' || req(r), 'New bookings, cancellations and transfers to approve'],
       ['closed', 'Cancelled / transferred', (r) => ['cancelled', 'rejected', 'transferred'].includes(r.status), 'Kept on record'],
     ];
@@ -607,7 +614,7 @@
     const cur = SETS.find(([k]) => k === f);
     const list = rows.filter(cur[2]).sort((a, b) => (f === 'bookings' || f === 'closed' || f === 'approval' ? a.unit_no.localeCompare(b.unit_no, 'en', { numeric: true }) : toNum(b.overdue) - toNum(a.overdue)));
     const todo = (r) => r.status === 'pending' ? '<span class="pill">needs approval</span>' : r.cancel_requested_at && r.status === 'active' ? '<span class="pill bad">cancel requested</span>' : r.transfer_requested_at && r.status === 'active' ? '<span class="pill warn">transfer requested</span>'
-      : r.status !== 'active' ? `<span class="pill grey">${esc(r.status)}</span>` : r.f && r.f.broken ? '<span class="pill bad">promise broken</span>' : r.f && r.f.due ? '<span class="pill warn">call today</span>' : toNum(r.overdue) > 0 ? '<span class="pill warn">overdue</span>' : '<span class="pill good">on track</span>';
+      : r.status !== 'active' ? `<span class="pill grey">${esc(r.status)}</span>` : r.def ? '<span class="pill bad">defaulter</span>' : r.f && r.f.broken ? '<span class="pill bad">promise broken</span>' : r.f && r.f.due ? '<span class="pill warn">call today</span>' : toNum(r.overdue) > 0 ? '<span class="pill warn">overdue</span>' : '<span class="pill good">on track</span>';
     $('#page').innerHTML = `<div class="page-head"><div><h1>Flats &amp; buyers</h1><p class="muted">Every flat and buyer in one list. Open a flat to see and do everything for it: payments, calls, messages, documents and history.</p></div>
       ${can('booking.create') ? '<div class="actions" style="margin:0"><a class="btn" href="#/units">+ Book a flat</a></div>' : ''}</div>
       <div class="chips">${SETS.map(([k, l, fn, hint]) => { const n = rows.filter(fn).length; return `<button type="button" class="chip ${k === f ? 'on' : ''} ${['call', 'broken'].includes(k) && n ? 'hot' : ''}" data-f="${k}" title="${esc(hint)}">${l} <b>${n}</b></button>`; }).join('')}</div>
@@ -2021,6 +2028,121 @@
     </section>`;
   }
 
+  // ---------- Collections dashboard (inside the ERP; the figures are the ERP's own, from lib/dashboard.js) ----------
+  // Overview: the project's money and sales at a glance. Collections: forecast, day by day, month by month.
+  // Lists of buyers are not here: they are in Flats & buyers (tabs) and the 9 am Today list.
+  const cInr = (n, exact) => { n = +n || 0; const a = Math.abs(n), sg = n < 0 ? '−' : ''; if (exact || a < 1e5) return sg + '₹' + Math.round(a).toLocaleString('en-IN'); if (a >= 1e7) return sg + '₹' + (a / 1e7).toFixed(a >= 1e9 ? 1 : 2) + ' Cr'; return sg + '₹' + (a / 1e5).toFixed(2) + ' L'; };
+  const cCnt = (n) => (+n || 0).toLocaleString('en-IN');
+  const cPct = (a, b) => (b ? Math.round((a / b) * 100) + '%' : '—');
+  const cDay = (d) => new Date(d + 'T00:00:00').toLocaleDateString('en-IN', { weekday: 'short', day: 'numeric', month: 'short' });
+  const cMon = (m) => new Date(m + '-01T00:00:00').toLocaleDateString('en-IN', { month: 'short', year: '2-digit' });
+  const cFig = (label, val, tn = '', note = '', link = '') => `<${link ? `a href="${esc(link)}"` : 'div'} class="mfig ${tn}"><span>${esc(label)}</span><b>${esc(val)}</b>${note ? `<small>${esc(note)}</small>` : ''}</${link ? 'a' : 'div'}>`;
+  // A bar chart drawn as SVG (stacked when there are several series; negative values go below the line)
+  function barSvg(labels, series, { h = 220, count = false } = {}) {
+    const lab = (v) => (count ? String(Math.round(v)) : cInr(v));
+    const n = labels.length; if (!n) return '<p class="muted small">Nothing to show yet.</p>';
+    const W = 900, pl = 64, pr = 8, pt = 10, pb = 26, ih = h - pt - pb, bw = (W - pl - pr) / n;
+    const up = labels.map((_, i) => series.reduce((a, s) => a + Math.max(0, s.data[i] || 0), 0)), dn = labels.map((_, i) => series.reduce((a, s) => a + Math.min(0, s.data[i] || 0), 0));
+    const max = Math.max(1, ...up), min = Math.min(0, ...dn), span = max - min, y = (v) => pt + ((max - v) / span) * ih;
+    const ticks = [max, ...(count && max < 2 ? [] : [max / 2]), 0, ...(min < 0 && y(min) - y(0) > 16 ? [min] : [])];
+    let bars = '';
+    labels.forEach((l, i) => { let pos = 0, neg = 0; const x = pl + i * bw + bw * 0.15, w = bw * 0.7;
+      for (const s of series) { const v = s.data[i] || 0; if (!v) continue;
+        const a = v > 0 ? pos : neg, b = a + v; if (v > 0) pos = b; else neg = b;
+        bars += `<rect x="${x.toFixed(1)}" y="${Math.min(y(a), y(b)).toFixed(1)}" width="${w.toFixed(1)}" height="${Math.max(1, Math.abs(y(a) - y(b))).toFixed(1)}" rx="2" fill="${s.color}"><title>${esc(l)} · ${esc(s.name)}: ${esc(count ? String(v) : cInr(v, true))}</title></rect>`; } });
+    const every = Math.ceil(n / 10);
+    const xl = labels.map((l, i) => (i % every ? '' : `<text x="${(pl + i * bw + bw / 2).toFixed(1)}" y="${h - 8}" text-anchor="middle">${esc(l)}</text>`)).join('');
+    const yl = ticks.map((v) => `<line x1="${pl}" x2="${W - pr}" y1="${y(v).toFixed(1)}" y2="${y(v).toFixed(1)}" stroke="#E6E8E3"/><text x="${pl - 6}" y="${(y(v) + 4).toFixed(1)}" text-anchor="end">${esc(lab(v))}</text>`).join('');
+    const legend = series.length > 1 ? `<div class="cleg">${series.map((s) => `<span><i style="background:${s.color}"></i>${esc(s.name)}</span>`).join('')}</div>` : '';
+    return `${legend}<svg class="csvg" viewBox="0 0 ${W} ${h}" role="img" aria-label="bar chart">${yl}${bars}${xl}</svg>`;
+  }
+  let collDay = null, collRange = '30';
+  async function collections() {
+    if (!proj) return noProject();
+    $('#page').innerHTML = heroHtml('Sales & CRM', 'Collections dashboard', 'Working out the figures…', [`#/project/${proj}/crm`, 'Sales & CRM']);
+    const M = await api(`/api/dashboard?project=${proj}`);
+    const t = M.totals, d = M.daily || [], today = M.meta.today;
+    let view = store.get('erp_coll_view') === 'collections' ? 'collections' : 'overview';
+    const sum = (a, f) => a.reduce((s, x) => s + (+x[f] || 0), 0);
+    const win = (k) => d.filter((x) => (Date.parse(today) - Date.parse(x.date)) / 864e5 < k);
+    const mtd = d.filter((x) => x.date.slice(0, 7) === today.slice(0, 7));
+    const pmD = new Date(Date.parse(today + 'T00:00:00')); pmD.setUTCDate(1); pmD.setUTCMonth(pmD.getUTCMonth() - 1); const pm = pmD.toISOString().slice(0, 7);
+    const pmSame = d.filter((x) => x.date.slice(0, 7) === pm && +x.date.slice(8, 10) <= +today.slice(8, 10));
+    const delta = sum(pmSame, 'net') ? Math.round(((sum(mtd, 'net') - sum(pmSame, 'net')) / sum(pmSame, 'net')) * 100) : null;
+    const rep = M.dailyReport, rrow = (k) => rep && rep.rows ? rep.rows.find((r) => r.label.toLowerCase().startsWith(k)) : null;
+    const tc = rrow('today collection');
+    const tds = M.units.filter((u) => u.tds > 0), tdsDue = sum(tds, 'tds'), tdsPaid = sum(tds, 'tdsPaid');
+    const defl = M.actions.defaulters;
+    const A = M.byWing.A || {}, B = M.byWing.B || {};
+    const wrow = (l, a, b, f = cCnt) => `<tr><td>${l}</td><td class="num">${f(a)}</td><td class="num">${f(b)}</td><td class="num"><b>${f((+a || 0) + (+b || 0))}</b></td></tr>`;
+    const last30 = d.slice(0, 30).reverse();
+    const daily = [
+      tc ? cFig('Today’s collection', cInr(tc.total), 'good', `${fmtD(rep.reportDate)} · A ${cInr(tc.a)} · B ${cInr(tc.b)}`, '#/reg-receipts') : d[0] ? cFig('Latest day', cInr(d[0].net), 'good', `${cDay(d[0].date)} · ${d[0].count} receipts`) : '',
+      ...[['demand sent', 'Demand sent', ''], ['received as on date', 'Received as on date', 'good'], ['balance collection', 'Balance collection', 'warn']].map(([k, l, tn]) => { const x = rrow(k); if (!x) return ''; const p = (x.label.match(/\d+%/) || [])[0]; return cFig(p ? `${l} (${p})` : l, cInr(x.total), tn, `A ${cInr(x.a)} · B ${cInr(x.b)}`); }),
+      cFig('Last 7 days', cInr(sum(win(7), 'net')), 'good', `${sum(win(7), 'count')} receipts`),
+      cFig('Last 30 days', cInr(sum(win(30), 'net')), 'good', `average ${cInr(sum(win(30), 'net') / Math.max(win(30).length, 1))} a day`),
+      cFig('Month to date', cInr(sum(mtd, 'net')), 'good', delta == null ? '' : `${delta >= 0 ? '▲' : '▼'} ${Math.abs(delta)}% against the same days last month`),
+      cFig('Returned this month', cInr(sum(mtd, 'returns')), sum(mtd, 'returns') ? 'bad' : '', `${sum(mtd, 'returnCount')} cheques or transfers`),
+    ].join('');
+    const reg = rrow('allotment'), bal = rrow('balance registration');
+    const project = [
+      cFig('Units sold', `${cCnt(t.booked)} / ${cCnt(t.units)}`, '', `${cCnt(t.available)} available · ${cCnt(t.held)} on hold`, '#/units'),
+      cFig('Registered', cCnt(t.registered), '', `${cPct(t.registered, t.booked)} of sold`),
+      reg ? cFig('Allotment', cCnt(reg.total), '', `A ${cCnt(reg.a)} · B ${cCnt(reg.b)}`) : '',
+      bal ? cFig('Balance registration', cCnt(bal.total), '', `A ${cCnt(bal.a)} · B ${cCnt(bal.b)}`, '#/flats?f=regpending') : cFig('Booked, not registered', cCnt(t.booked - t.registered), '', '', '#/flats?f=regpending'),
+      cFig('Agreement value', cInr(t.agreementValue), '', `${cInr(t.registeredValue)} registered`),
+      cFig('Received (AV)', cInr(t.receivedAV), 'good', `+ ${cInr(t.receivedGST)} GST`),
+      cFig('Balance due (AV)', cInr(t.balanceDue), 'warn', `+ ${cInr(t.gstDue)} GST due`, '#/flats?f=overdue'),
+      cFig('Total TDS due', cInr(tdsDue), 'warn', `1% of AV, ${cCnt(tds.length)} units · ${cInr(tdsDue - tdsPaid)} still to come`, '#/flats?f=tds'),
+      cFig('TDS paid', cInr(tdsPaid), 'good', `${cCnt(tds.filter((u) => u.tdsPaid > 0).length)} units · ${cPct(tdsPaid, tdsDue)} of TDS due`, '#/reg-tds'),
+      cFig('Defaulters', cCnt(defl.length), defl.length ? 'bad' : 'good', `${cInr(defl.reduce((s, x) => s + (+x.balanceDue || 0), 0))} owed`, '#/flats?f=defaulters'),
+    ].join('');
+    // Collections tab
+    const F = M.forecast, mo = M.monthly || [], rg = (M.dates.registrationsByMonth || []).slice(-12);
+    const rangeDays = collRange === 'all' ? d : collRange === 'mtd' ? mtd : win(+collRange);
+    if (!collDay || !rangeDays.some((x) => x.date === collDay)) collDay = rangeDays[0] ? rangeDays[0].date : null;
+    const day = d.find((x) => x.date === collDay);
+    $('#page').innerHTML = `<div class="hero mg-hero"><div class="hero-in"><a class="back" href="#/project/${proj}/crm">← Sales &amp; CRM</a><span class="eyebrow">${esc((projectList.find((p) => p.id === proj) || {}).name || '')} · ${esc(fmtD(today))}</span>
+        <h1>Collections dashboard</h1>
+        <div class="mg-sync"><span class="dot"></span><span>Live from the ERP${M.meta.lastBankDate ? ' · bank entries to ' + esc(fmtD(M.meta.lastBankDate)) : ''}</span><span class="mg-act"><button class="mg-btn" id="clRe">Refresh</button></span></div>
+        <nav class="mg-tabs2" role="tablist">${[['overview', 'Overview'], ['collections', 'Collections']].map(([k, l]) => `<button type="button" role="tab" data-cv="${k}" aria-selected="${k === view}">${l}</button>`).join('')}</nav></div></div>
+      <div class="hm mg">
+        <div data-cvp="overview" ${view === 'overview' ? '' : 'hidden'}>
+          <section class="mpanel" style="margin-top:0"><h2>Daily collections</h2><div class="mfigs in">${daily}</div>
+            <h3 class="csub">Last 30 days</h3>${barSvg(last30.map((x) => cDay(x.date)), [{ name: 'Collected', color: '#117A65', data: last30.map((x) => x.net) }])}</section>
+          <section class="mpanel"><h2>The project</h2><div class="mfigs in">${project}</div></section>
+          <section class="mpanel"><h2>Wing A and Wing B</h2><div class="table-wrap"><table><tr><th></th><th class="num">Wing A</th><th class="num">Wing B</th><th class="num">Total</th></tr>
+            ${wrow('Units', A.units, B.units)}${wrow('Sold', A.booked, B.booked)}${wrow('Registered', A.registered, B.registered)}${wrow('Agreement value', A.agreementValue, B.agreementValue, cInr)}${wrow('Received', A.receivedAV, B.receivedAV, cInr)}${wrow('Balance due', A.balanceDue, B.balanceDue, cInr)}${wrow('SDR received', A.sdrReceived, B.sdrReceived, cInr)}</table></div></section>
+        </div>
+        <div data-cvp="collections" ${view === 'collections' ? '' : 'hidden'}>
+          ${F ? `<section class="mpanel" style="margin-top:0"><h2>What is coming in</h2><div class="mfigs in">
+              ${cFig('Due now', cInr(F.overdue), F.overdue ? 'bad' : 'good', 'past the due date', '#/flats?f=overdue')}${cFig('Falls due in 30 days', cInr(F.dueNext30), 'warn', `${cCnt(F.dueNext30Count)} buyer${F.dueNext30Count === 1 ? '' : 's'}`)}${cFig('Promised in 30 days', cInr(F.promised), 'good', `${cCnt(F.promisedCount)} promises logged on calls`, '#/flats?f=call')}
+              ${F.nextStages.map((x) => cFig(`Next stage · Wing ${x.wing}`, cInr(x.amount + x.gst), '', `${x.stage.replace(/^On (Completion of )?/, '')} · ${x.pct}% of ${cCnt(x.bookings)} bookings, with GST`, '#/demands')).join('')}</div></section>` : ''}
+          <section class="mpanel"><h2>Received so far</h2><div class="mfigs in">
+            ${cFig('Received against agreement value', cPct(t.receivedAV, t.agreementValue), 'good', `${cInr(t.receivedAV)} of ${cInr(t.agreementValue)}`)}${cFig('RERA receipts (net)', cInr(sum(mo, 'net')), 'good', mo.length ? `${cMon(mo[0].month)} to ${cMon(mo[mo.length - 1].month)}` : '')}
+            ${cFig('Returned cheques', cInr(sum(mo, 'returns')), sum(mo, 'returns') ? 'bad' : '')}${cFig('SDR received', cInr(t.sdrReceived), '', `paid ${cInr(t.sdrPaid)}`)}${cFig('GST received', cInr(t.receivedGST), '', `due ${cInr(t.gstDue)}`)}</div></section>
+          <section class="mpanel"><h2>Day by day</h2>
+            <div class="chips" style="margin:0">${[['7', 'Last 7 days'], ['30', 'Last 30 days'], ['mtd', 'This month'], ['all', 'All']].map(([k, l]) => `<button type="button" class="chip ${k === collRange ? 'on' : ''}" data-cr="${k}">${l}</button>`).join('')}</div>
+            ${barSvg(rangeDays.slice(0, 60).reverse().map((x) => cDay(x.date)), [{ name: 'CRM team', color: '#117A65', data: rangeDays.slice(0, 60).reverse().map((x) => x.crm) }, { name: 'Sales team', color: '#7FBFAE', data: rangeDays.slice(0, 60).reverse().map((x) => x.sales) }, { name: 'Returned', color: '#B42318', data: rangeDays.slice(0, 60).reverse().map((x) => -x.returns) }])}
+            <div class="cdays"><div class="cdlist">${rangeDays.map((x) => `<button type="button" data-cd="${x.date}" aria-pressed="${x.date === collDay}"><span>${cDay(x.date)}<small>${x.count} receipts${x.returnCount ? ` · ${x.returnCount} returned` : ''}</small></span><b>${cInr(x.net)}</b></button>`).join('') || '<p class="muted small">No collections in this range.</p>'}</div>
+              <div>${day ? `<div class="mfigs in" style="grid-template-columns:repeat(4,minmax(0,1fr))">${cFig(fmtD(day.date), cInr(day.receipts), 'good', `${day.count} receipts · ${day.units} flats`)}${cFig('CRM team', cInr(day.crm))}${cFig('Sales team', cInr(day.sales))}${cFig('Returned', cInr(day.returns), day.returns ? 'bad' : '')}</div>
+                <div class="table-wrap" style="margin-top:10px"><table><tr><th>Flat</th><th>Buyer</th><th>Team</th><th>Mode</th><th class="num">Amount</th></tr>
+                ${day.items.slice().sort((a, b) => b.amount - a.amount).map((i) => `<tr><td><b>${esc(i.unit || '—')}</b></td><td>${esc(i.customer || '')}</td><td>${esc(i.kind === 'return' ? 'Returned' : i.team || '')}</td><td>${esc(i.mode || '')}</td><td class="num ${i.kind === 'return' ? 'bad-t' : ''}">${cInr(i.amount, true)}</td></tr>`).join('')}</table></div>` : ''}</div></div></section>
+          <section class="mpanel"><h2>Month by month</h2>${barSvg(mo.map((x) => cMon(x.month)), [{ name: 'CRM team', color: '#117A65', data: mo.map((x) => x.crm) }, { name: 'Sales team', color: '#7FBFAE', data: mo.map((x) => x.sales) }, { name: 'Returned', color: '#B42318', data: mo.map((x) => -x.returns) }])}
+            <div class="table-wrap"><table><tr><th>Month</th><th class="num">Receipts</th><th class="num">CRM team</th><th class="num">Sales team</th><th class="num">Returned</th><th class="num">Net</th></tr>
+            ${mo.slice().reverse().map((x) => `<tr><td>${cMon(x.month)}</td><td class="num">${x.count}</td><td class="num">${cInr(x.crm)}</td><td class="num">${cInr(x.sales)}</td><td class="num bad-t">${x.returns ? cInr(x.returns) : ''}</td><td class="num"><b>${cInr(x.net)}</b></td></tr>`).join('')}</table></div></section>
+          <section class="mpanel"><h2>Registrations each month</h2>${barSvg(rg.map((x) => cMon(x.month)), [{ name: 'Flats registered', color: '#2B5C8A', data: rg.map((x) => x.units) }], { count: true })}</section>
+          ${rep && rep.rows && rep.rows.length ? `<section class="mpanel"><h2>Daily report · ${esc(fmtD(rep.reportDate))}</h2><div class="table-wrap"><table><tr><th></th><th class="num">Wing A</th><th class="num">Wing B</th><th class="num">Total</th></tr>
+            ${rep.rows.map((x) => { const money = [x.a, x.b, x.total].some((v) => Math.abs(v) >= 1000), f = (v) => (money ? cInr(v, true) : cCnt(v)); return `<tr><td>${esc(x.label.replace(/:$/, ''))}</td><td class="num">${f(x.a)}</td><td class="num">${f(x.b)}</td><td class="num"><b>${f(x.total)}</b></td></tr>`; }).join('')}</table></div></section>` : ''}
+        </div>
+      </div>`;
+    document.querySelectorAll('[data-cv]').forEach((b) => (b.onclick = () => { view = b.dataset.cv; store.set('erp_coll_view', view);
+      document.querySelectorAll('[data-cv]').forEach((x) => x.setAttribute('aria-selected', x.dataset.cv === view)); document.querySelectorAll('[data-cvp]').forEach((x) => (x.hidden = x.dataset.cvp !== view)); }));
+    document.querySelectorAll('[data-cr]').forEach((b) => (b.onclick = () => { collRange = b.dataset.cr; collDay = null; collections(); }));
+    document.querySelectorAll('[data-cd]').forEach((b) => (b.onclick = () => { collDay = b.dataset.cd; collections(); }));
+    $('#clRe').onclick = () => collections();
+  }
+
   async function mgmt() {
     const pq = proj ? `?project=${proj}` : '';
     $('#page').innerHTML = heroHtml('Management', 'Management dashboard', 'Working out today’s figures…', ['#/home', 'Home']);
@@ -2432,12 +2554,16 @@
   async function verify() {
     if (!proj) return noProject();
     const tab = store.get('erp_vtab') || 'open';
-    const d = await api(`/api/verify?project=${proj}&status=${tab}`);
+    const [d, DB] = await Promise.all([api(`/api/verify?project=${proj}&status=${tab}`), can('ledger.view') ? api(`/api/dashboard?project=${proj}`).catch(() => null) : null]);
     const kinds = [...new Set(d.rows.map((r) => r.kind))];
+    // checks worked out from the live figures (they clear by themselves once the entry is corrected)
+    const live = DB && DB.actions ? [['sdrGaps', 'SDR received and SDR paid do not agree', (x) => `difference ${inr(x.sdrDifference)}`], ['missingDates', 'Key dates missing', (x) => `missing: ${x.missing || ''}`]].map(([k, h, f]) => [h, DB.actions[k] || [], f]) : [];
     const kf = store.get('erp_vkind') || '';
     const rows = d.rows.filter((r) => !kf || r.kind === kf);
     $('#page').innerHTML = `<div class="page-head"><div><h1>Data to verify</h1><p class="muted">Everything the import found that does not add up. Check each against the documents and the bank, correct it in the ERP if needed, then close it with a note of what was done.</p></div></div>
       <div class="panel"><div class="kpis">${kpi(d.counts.open, 'open')}${kpi(d.counts.money, 'involve money', d.counts.money ? 'bad' : '')}${kpi(d.counts.resolved, 'closed')}</div></div>
+      ${live.filter(([, r]) => r.length).map(([h, r, f]) => `<details class="panel"><summary><b>${esc(h)}</b> <span class="pill warn">${r.length}</span> <span class="small muted">from the live figures; clears once the flat is corrected · tap to see</span></summary>
+        <div class="table-wrap" style="margin-top:10px"><table><tr><th>Flat</th><th>Buyer</th><th></th></tr>${r.map((x) => `<tr><td><b>${esc(x.unit)}</b></td><td>${esc(x.applicant || '')}</td><td class="small">${esc(f(x))}</td></tr>`).join('')}</table></div></details>`).join('')}
       <div class="tabs">${[['open', 'Open'], ['resolved', 'Closed']].map(([k, l]) => `<button class="tab ${k === tab ? 'on' : ''}" data-t="${k}">${l}</button>`).join('')}
         <select id="kind" class="proj" style="margin-left:8px"><option value="">All types</option>${kinds.map((k) => `<option value="${esc(k)}" ${k === kf ? 'selected' : ''}>${esc(KIND[k] || k)}</option>`).join('')}</select></div>
       <div class="panel table-wrap"><input class="search" id="q" placeholder="Search unit or text"><table><tr><th>Unit</th><th>Type</th><th>What was found</th><th>${tab === 'open' ? '' : 'Resolution'}</th></tr>
