@@ -217,24 +217,40 @@ const n = (v) => Number(v);
     const h = await crm(`/api/followups?booking=${b1}`); assert.ok(h.rows.some((x) => /no email on file/.test(x.note || '')));
     assert.ok(rcpts.length > before);
   });
-  await step('WhatsApp with the letters: "check your email" after an email, the PDF itself when there is no email (test mobile only)', async () => {
+  await step('WhatsApp through Click Connect: "check your email" after an email, the PDF itself when there is no email (test mobile only); replies and ticks come back', async () => {
     const http = require('http'); const got = [];
-    const wa = http.createServer((req, res) => { let b = ''; req.on('data', (d) => (b += d)); req.on('end', () => { got.push({ url: req.url, body: b }); res.setHeader('Content-Type', 'application/json'); res.end(JSON.stringify(/media$/.test(req.url) ? { id: 'MEDIA1' } : { messages: [{ id: 'wamid.' + got.length }] })); }); }).listen(2527);
-    Object.assign(process.env, { WHATSAPP_TOKEN: 't', WHATSAPP_PHONE_ID: 'P1', WHATSAPP_API: 'http://127.0.0.1:2527' });
+    const wa = http.createServer((req, res) => { let b = ''; req.on('data', (d) => (b += d)); req.on('end', () => { got.push({ url: req.url, body: b }); res.setHeader('Content-Type', 'application/json'); res.end(JSON.stringify({ message: 'Request process successfully', success: true, results: [{ to: '919800000001', transaction_id: 'TX' + got.length, cost: 1 }] })); }); }).listen(2527);
+    Object.assign(process.env, { CCM_API_KEY: 'test-key', CCM_SENDER: '919811100000', CCM_API: 'http://127.0.0.1:2527', ERP_URL: BASE });
     try {
-      assert.equal((await headcrm('/api/letters', { action: 'settings', testMobile: '9800000001', waEmailTemplate: 'demand_letter_emailed', waPdfTemplate: 'demand_letter_pdf' })).ok, true);
+      assert.equal((await headcrm('/api/letters', { action: 'settings', testMobile: '9800000001', waEmailTemplate: 'demand_letter_emailed_abc123', waPdfTemplate: 'demand_letter_pdf_xyz789' })).ok, true);
       const L = require('../lib/letters');
       const p = await crm('/api/letters', { action: 'prepare', projectId: sig.id, bookingIds: [b1, bEmail], letterType: 'Demand Letter' });
       const withEmail = p.letters.find((x) => x.hasEmail), noEmail = p.letters.find((x) => !x.hasEmail);
       const r = await L.whatsappLetters([withEmail.id, noEmail.id], { emailed: new Set([withEmail.id]) });
       assert.equal(r.sent, 2, JSON.stringify(r));
-      const msgs = got.filter((g) => /messages$/.test(g.url)).map((g) => JSON.parse(g.body));
-      assert.ok(msgs.every((m) => m.to === '919800000001')); // the test mobile, never the buyer
-      assert.ok(msgs.some((m) => m.template.name === 'demand_letter_emailed' && !m.template.components.some((c) => c.type === 'header')));
-      assert.ok(msgs.some((m) => m.template.name === 'demand_letter_pdf' && m.template.components[0].parameters[0].document.id === 'MEDIA1'));
-      assert.ok(got.some((g) => /media$/.test(g.url)));
-      const q = await crm(`/api/letters?project=${sig.id}`); assert.ok(!q.courier.some((c) => c.id === noEmail.id)); // sent on WhatsApp: off the courier list
-    } finally { wa.close(); for (const k of ['WHATSAPP_TOKEN', 'WHATSAPP_PHONE_ID', 'WHATSAPP_API']) delete process.env[k]; }
+      const sends = got.filter((g) => g.url.startsWith('/api/v1/whatsapp/single?sval=1&api_key=test-key')).map((g) => JSON.parse(g.body));
+      assert.equal(sends.length, 2);
+      assert.ok(sends.every((m) => m.to === '919800000001' && m.sender === '919811100000')); // the test mobile, never the buyer
+      const em = sends.find((m) => m.template_id === 'demand_letter_emailed_abc123'), pdf = sends.find((m) => m.template_id === 'demand_letter_pdf_xyz789');
+      assert.ok(em && !em.sample.media); assert.equal(em.sample.bodyvar.length, 4);
+      assert.ok(pdf && /\/api\/letters\?wa=letter\./.test(pdf.sample.media));
+      const f = await fetch(pdf.sample.media); assert.equal(f.headers.get('content-type'), 'application/pdf'); // WhatsApp can fetch the PDF without a login
+      assert.equal((await fetch(pdf.sample.media.replace(/.$/, (c) => (c === 'a' ? 'b' : 'a')))).status, 404); // a changed link does not open
+      const q = await crm(`/api/letters?project=${sig.id}`); assert.ok(!q.courier.some((c) => c.id === noEmail.id));
+      // the webhook: a delivery tick for the first send, then the buyer's reply; the wrong key is refused
+      const W = require('../lib/whatsapp');
+      const post = (k, body) => fetch(`${BASE}/api/whatsapp?k=${k}`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+      assert.equal((await post('wrong', {})).status, 401);
+      assert.equal((await post(W.hookKey(), { value: { statuses: [{ id: 'wamid.X', status: 'delivered', recipient_id: '919800000001' }] }, field: 'messages', webhook_type: 'whatsapp_template', transaction_id: 'TX1' })).status, 200);
+      const db = require('../lib/db');
+      assert.equal((await db.one("select delivery from communications where provider_id = 'TX1'")).delivery, 'delivered');
+      const ph = (await db.one("select y.phone from booking_applicants a join buyers y on y.id = a.buyer_id where a.booking_id = $1 order by a.seq limit 1", [b1])).phone;
+      await post(W.hookKey(), { value: { contacts: [{ profile: { name: 'Buyer' }, wa_id: '91' + require('../lib/comms').mobile(ph) }], messages: [{ from: '91' + require('../lib/comms').mobile(ph), id: 'wamid.IN1', timestamp: String(Math.floor(Date.now() / 1000)), text: { body: 'Received, will pay Monday' }, type: 'text' }] }, field: 'messages', webhook_type: 'customer_response', transaction_id: 'wamid.IN1' });
+      const inMsg = await db.one("select booking_id, body from communications where provider_id = 'wamid.IN1'"); assert.equal(inMsg.booking_id, b1); assert.match(inMsg.body, /will pay Monday/);
+      assert.equal((await headcrm('/api/comms', { action: 'wa-webhook' })).status, 403); // only the Admin connects it
+      const hk = await admin('/api/comms', { action: 'wa-webhook' }); assert.equal(hk.ok, true);
+      assert.ok(got.some((g) => g.url.startsWith('/api/v1/webhook') && JSON.parse(g.body || '{}').webhook_url === `${BASE}/api/whatsapp?k=${W.hookKey()}`));
+    } finally { wa.close(); for (const k of ['CCM_API_KEY', 'CCM_SENDER', 'CCM_API', 'ERP_URL']) delete process.env[k]; }
   });
   await step('No email and no WhatsApp: the letter goes on the Print and courier list and on Today', async () => {
     const p = await crm('/api/letters', { action: 'prepare', projectId: sig.id, bookingIds: [b1], letterType: 'Reminder I' });

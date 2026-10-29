@@ -1229,13 +1229,13 @@
       } catch (e) { alert(e.message); }
       btn.disabled = false; btn.textContent = 'Prepare letters for ticked buyers';
     };
-    if ($('#settings')) $('#settings').onclick = () => dialog(`<h2>Letter settings</h2>
+    if ($('#settings')) $('#settings').onclick = () => { dialog(`<h2>Letter settings</h2>
       <div class="row"><div><label>Delay charges (% a year)</label><input name="delayRate" value="${esc(s.delayRate)}"></div><div><label>Leave out buyers owing less than (₹)</label><input name="minDue" value="${esc(s.minDue)}"></div></div>
       <label>Signed for</label><input name="signedFor" value="${esc(s.signedFor)}">
       <label>CC on every email (once live)</label><input name="cc" value="${esc(s.cc)}" placeholder="crm.prime@dreamindiagroup.com">
       <label>Test email address (test version: all letters go here)</label><input name="testEmail" value="${esc(s.testEmail)}">
-      <h3 style="margin:14px 0 4px">WhatsApp with each letter</h3><p class="small muted">Works once the WhatsApp number is connected. WhatsApp only allows a business to message first with a template Meta has approved; type the approved template names here. Each template's text uses {{1}} buyer name, {{2}} flat, {{3}} amount, {{4}} due date.</p>
-      <div class="row"><div><label>"Please check your email" template</label><input name="waEmailTemplate" value="${esc(s.waEmailTemplate || '')}" placeholder="demand_letter_emailed"></div><div><label>Letter PDF template (buyers with no email)</label><input name="waPdfTemplate" value="${esc(s.waPdfTemplate || '')}" placeholder="demand_letter_pdf"></div></div>
+      <h3 style="margin:14px 0 4px">WhatsApp with each letter</h3><p class="small muted">Works once the WhatsApp number is connected through Click Connect. WhatsApp only lets a business message a buyer first with an approved template: choose the approved Click Connect template IDs here. Each template's text uses {{1}} buyer name, {{2}} flat, {{3}} amount, {{4}} due date.</p>
+      <div class="row"><div><label>"Please check your email" template</label><input name="waEmailTemplate" list="waTpl" value="${esc(s.waEmailTemplate || '')}" placeholder="template ID"></div><div><label>Letter PDF template (buyers with no email)</label><input name="waPdfTemplate" list="waTpl" value="${esc(s.waPdfTemplate || '')}" placeholder="template ID"></div></div><datalist id="waTpl"></datalist>
       <label>Test mobile (test version: all WhatsApps go here)</label><input name="testMobile" value="${esc(s.testMobile || '')}" placeholder="98XXXXXXXX">
       <label>Automatic payment reminders</label><select name="autoReminders"><option value="1">On: email 3 days before the due date, and Reminder I 7 days after if unpaid</option><option value="0" ${s.autoReminders === false ? 'selected' : ''}>Off</option></select>
       <div class="row"><div><label>Signatory name (printed under "For …")</label><input name="signatory" value="${esc(s.signatory || '')}" placeholder="leave blank for no name"></div><div><label>Signatory designation</label><input name="signatoryTitle" value="${esc(s.signatoryTitle || '')}" placeholder="Authorised Signatory"></div></div>
@@ -1249,6 +1249,8 @@
       await api('/api/letters', { action: 'settings', delayRate: x.delayRate, minDue: x.minDue, signedFor: x.signedFor, cc: x.cc, testEmail: x.testEmail, autoReminders: x.autoReminders === '1', testMobile: x.testMobile, waEmailTemplate: x.waEmailTemplate, waPdfTemplate: x.waPdfTemplate, signatory: x.signatory, signatoryTitle: x.signatoryTitle, reference: x.reference, banks });
       letters();
     }).classList.add('wide');
+      // the approved WhatsApp templates (Click Connect), as choices for the two template boxes
+      api('/api/comms', { action: 'wa-templates' }).then((r) => { const dl = $('#waTpl'); if (dl) dl.innerHTML = (r.templates || []).filter((t) => /approved/i.test(t.status)).map((t) => `<option value="${esc(t.id)}">${esc(t.name)} · ${t.vars} value${t.vars === 1 ? '' : 's'}</option>`).join(''); }).catch(() => {}); };
   }
   function preparedPanel(list, m) {
     const ids = list.map((l) => l.id), withEmail = list.filter((l) => l.hasEmail).map((l) => l.id);
@@ -1934,7 +1936,7 @@
       : m.error ? `<span class="bad-t">Last check of ${esc(m.mailbox || 'the mailbox')} failed: ${esc(m.error)}</span>` : `Replies are read from ${esc(m.mailbox || 'the mailbox')} every 5 minutes${m.lastRun ? ' · last checked ' + fmtDate(m.lastRun) : ''}.`;
     $('#page').innerHTML = `<div class="page-head"><div><h1>Communication inbox</h1><p class="muted">Buyers' email replies and WhatsApps. Each one is also kept in the buyer's Communication record on their booking. A message the ERP could not match to a flat waits here until you link it.</p></div>
         <div class="actions" style="margin:0">${st.canSync && m.configured ? '<button class="ghost" id="cmSync">Check the mailbox now</button>' : ''}</div></div>
-      <div class="panel"><p class="small">${mailLine}<br>WhatsApp: ${st.whatsapp.configured ? 'connected' : 'not connected yet'}.</p>
+      <div class="panel"><p class="small">${mailLine}<br>WhatsApp: ${st.whatsapp.configured ? 'connected through ' + esc(st.whatsapp.provider) : 'not connected yet'}.${st.whatsapp.ccm && me.perms.includes('users.manage') ? ' <button class="ghost small" id="waHook">Connect the WhatsApp webhook</button>' : ''}</p>
         <div class="kpis"><button type="button" class="kpi kbtn ${d.counts.new ? 'bad' : ''}" data-goto="new" title="Show the messages nobody has read yet"><b>${esc(d.counts.new)}</b><span>not read yet →</span></button><button type="button" class="kpi kbtn ${d.counts.unmatched ? 'bad' : ''}" data-goto="unmatched" title="Show the messages the ERP could not match to a flat"><b>${esc(d.counts.unmatched)}</b><span>to link to a flat →</span></button></div></div>
       ${st.canTeams ? `<details class="panel cm-teams" ${Object.values(st.teams || {}).some((x) => (x || []).length) ? '' : 'open'}><summary><h2 style="display:inline">CRM teams</h2> <span class="small muted">${['A', 'B'].map((w) => `${w} Wing: ${esc(st.crmUsers.filter((x) => (st.teams[w] || []).map(Number).includes(x.id)).map((x) => x.name).join(', ') || 'nobody yet')}`).join(' · ')} · tap to change</span></summary><p class="small muted">Who is told when a buyer replies. Everyone ticked for a wing gets the reply on their own Daily To-Do, the red badge at the top, and an email to their own address (set on Logins). A flat can also be given to one person on its booking page.</p>
         <div class="two">${['A', 'B'].map((w) => `<div><b>${w} Wing</b>${st.crmUsers.map((x) => `<label class="check"><input type="checkbox" data-w="${w}" value="${x.id}" ${(st.teams[w] || []).map(Number).includes(x.id) ? 'checked' : ''}> ${esc(x.name)}</label>`).join('')}</div>`).join('')}</div>
@@ -1944,6 +1946,7 @@
     wireMsgs($('#cml'));
     document.querySelectorAll('.tab[data-t]').forEach((t) => (t.onclick = () => { store.set('erp_cmf', t.dataset.t); comms(); }));
     document.querySelectorAll('[data-goto]').forEach((t) => (t.onclick = () => { store.set('erp_cmf', t.dataset.goto); comms(); }));
+    if ($('#waHook')) $('#waHook').onclick = async (e) => { e.target.disabled = true; try { const r = await api('/api/comms', { action: 'wa-webhook' }); toast('Click Connect will now send WhatsApp replies and delivery ticks to the ERP.', 6000); } catch (x) { alert(x.message); } e.target.disabled = false; };
     if ($('#cmTeams')) $('#cmTeams').onclick = async () => { const teams = { A: [], B: [] }; document.querySelectorAll('[data-w]:checked').forEach((x) => teams[x.dataset.w].push(+x.value)); await api('/api/comms', { action: 'teams', teams }); toast('CRM teams saved.'); };
     if ($('#cmSync')) $('#cmSync').onclick = async (e) => { e.target.disabled = true; e.target.textContent = 'Checking…'; try { const r = await api('/api/comms', { action: 'sync' }); toast(r.ok ? `Checked ${r.looked} new emails: ${r.saved} saved, ${r.inbox} to link.` : r.error || r.reason); } catch (x) { alert(x.message); } comms(); };
     document.querySelectorAll('[data-read]').forEach((x) => (x.onclick = async () => { await api('/api/comms', { action: 'read', ids: [+x.dataset.read] }); comms(); }));

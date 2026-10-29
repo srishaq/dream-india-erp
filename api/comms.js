@@ -35,7 +35,7 @@ module.exports = route({
     if (q.status) {
       const ms = require('../lib/mail-sync'), st = await ms.state();
       return res.json({ mail: { configured: ms.configured(), lastRun: st.lastRun || null, error: st.lastError || null, last: st.lastResult || null, mailbox: process.env.SMTP_USER || null },
-        whatsapp: { configured: require('../lib/whatsapp').configured() }, teams: await require('../lib/comms-notify').teams(), crmUsers: await db.q("select id, name, role from users where not disabled and role in ('crm', 'head_crm', 'management', 'admin') order by name"), canTeams: has(u, 'booking.approve') || has(u, 'users.manage'), canAct: act(u), canSync: has(u, 'users.manage') || has(u, 'booking.approve') });
+        whatsapp: { configured: require('../lib/whatsapp').configured(), provider: require('../lib/whatsapp').provider(), ccm: require('../lib/whatsapp').ccm() }, teams: await require('../lib/comms-notify').teams(), crmUsers: await db.q("select id, name, role from users where not disabled and role in ('crm', 'head_crm', 'management', 'admin') order by name"), canTeams: has(u, 'booking.approve') || has(u, 'users.manage'), canAct: act(u), canSync: has(u, 'users.manage') || has(u, 'booking.approve') });
     }
     if (q.badge) {
       const r = await db.one(`select count(*)::int as n from communications c join bookings b on b.id = c.booking_id join units u on u.id = b.unit_id join buildings bl on bl.id = u.building_id
@@ -97,6 +97,16 @@ module.exports = route({
       await audit.record(db.q, { user: u, action: 'link', entity: 'communication', entityId: c.id, projectId: bk.project_id, after: { unit: bk.unit_no } });
       if (c.direction === 'in') await require('../lib/comms-notify').notify(c.id).catch(() => {});
       return res.json({ ok: true });
+    }
+    if (b.action === 'wa-webhook') {
+      if (!has(u, 'users.manage')) throw fail(403, 'Only the Admin connects WhatsApp.');
+      const r = await require('../lib/whatsapp').connectWebhook();
+      await audit.record(db.q, { user: u, action: 'whatsapp-webhook', entity: 'settings', after: { provider: 'Click Connect' } });
+      return res.json(r);
+    }
+    if (b.action === 'wa-templates') {
+      if (!(has(u, 'users.manage') || has(u, 'demand.approve') || has(u, 'booking.approve'))) throw fail(403, 'Your role does not allow this.');
+      return res.json({ templates: await require('../lib/whatsapp').templates() });
     }
     if (b.action === 'teams') {
       if (!(has(u, 'booking.approve') || has(u, 'users.manage'))) throw fail(403, 'Only Head CRM or the Admin can set the CRM teams.');

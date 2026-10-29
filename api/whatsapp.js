@@ -1,4 +1,5 @@
-// WhatsApp webhook (Meta → ERP). Public: no ERP session; every call must carry Meta's signature (lib/whatsapp.js).
+// WhatsApp webhook (Click Connect or Meta → ERP). Public: no ERP session. A Click Connect call must carry the secret key
+// in its address (?k=…, set by Connect the WhatsApp webhook); a Meta call must carry Meta's signature (lib/whatsapp.js).
 // GET  hub.mode=subscribe&hub.verify_token=…&hub.challenge=…  → Meta checks the address once, when it is set up
 // POST messages and delivery ticks
 const wa = require('../lib/whatsapp');
@@ -16,7 +17,9 @@ module.exports = async (req, res) => {
   let raw = Buffer.alloc(0);
   try { const parts = []; for await (const c of req) parts.push(Buffer.from(c)); raw = Buffer.concat(parts); } catch { /* already read */ }
   if (!raw.length && req.body) raw = Buffer.isBuffer(req.body) ? req.body : Buffer.from(typeof req.body === 'string' ? req.body : JSON.stringify(req.body));
-  if (!wa.signed(req, raw)) { res.statusCode = 401; return res.end('Bad signature.'); }
+  const k = String(q.k || ''), want = wa.ccm() ? wa.hookKey() : '';
+  const keyOk = want && k.length === want.length && require('crypto').timingSafeEqual(Buffer.from(k), Buffer.from(want));
+  if (!keyOk && !wa.signed(req, raw)) { res.statusCode = 401; return res.end('Not allowed.'); }
   try {
     const st = await status(); if (st.pending.length && st.applied.length) await migrate();
     const r = await wa.webhook(JSON.parse(raw.toString('utf8') || '{}'));

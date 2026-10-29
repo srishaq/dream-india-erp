@@ -50,6 +50,14 @@ function sendPdf(res, buf, name, download) {
 
 module.exports = route({
   GET: async (req, res) => {
+    // a letter PDF for WhatsApp to fetch: no login, only a signed link that expires (lib/whatsapp.js fileLink)
+    if ((req.query || {}).wa) {
+      const t = require('../lib/whatsapp').checkLink(req.query.wa);
+      if (!t || t.kind !== 'letter') throw fail(404, 'This link has expired.');
+      const l = await db.one('select l.figures, l.letter_type, u.unit_no from demand_letters l join bookings b on b.id = l.booking_id join units u on u.id = b.unit_id where l.id = $1', [t.id]);
+      if (!l) throw fail(404, 'Letter not found.');
+      return sendPdf(res, buildLetter(l.figures), `${l.unit_no}_${l.letter_type}.pdf`);
+    }
     const u = await auth.guard(req, res); if (!u) return;
     if (!has(u, 'demand.raise') && !has(u, 'ledger.view')) throw fail(403, 'Your role does not allow this.');
     const q = req.query || {};
@@ -85,8 +93,8 @@ module.exports = route({
       if (b.cc != null) v.cc = emails(b.cc).join(', ');
       if (b.testEmail != null) v.testEmail = emails(b.testEmail).slice(0, 1).join('');
       if (b.testMobile != null) { const m = require('../lib/comms').mobile(b.testMobile); if (b.testMobile && !m) throw fail(400, 'Test mobile: a 10-digit Indian mobile number.'); v.testMobile = m || ''; }
-      if (b.waEmailTemplate != null) v.waEmailTemplate = str(b.waEmailTemplate, 100).replace(/[^a-z0-9_]/gi, '').toLowerCase() || null;
-      if (b.waPdfTemplate != null) v.waPdfTemplate = str(b.waPdfTemplate, 100).replace(/[^a-z0-9_]/gi, '').toLowerCase() || null;
+      if (b.waEmailTemplate != null) v.waEmailTemplate = str(b.waEmailTemplate, 100).replace(/[^A-Za-z0-9_-]/g, '') || null;
+      if (b.waPdfTemplate != null) v.waPdfTemplate = str(b.waPdfTemplate, 100).replace(/[^A-Za-z0-9_-]/g, '') || null;
       if (b.autoReminders != null) v.autoReminders = !!b.autoReminders;
       if (b.signatory != null) v.signatory = str(b.signatory, 80) || null;
       if (b.signatoryTitle != null) v.signatoryTitle = str(b.signatoryTitle, 80) || null;
