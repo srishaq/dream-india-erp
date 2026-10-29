@@ -473,3 +473,11 @@ table.flats td:first-child, table.flats td .pill { white-space: nowrap; }
 .mpanel .mg-att a { border-color: #ECEEE9; }
 @media (max-width: 900px) { .mfigs { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
 @media (max-width: 600px) { .mfig { padding: 14px 14px; } .mfig b { font-size: 24px; } .mfig span { font-size: 14px; } .mfig small { font-size: 12.5px; } .mpanel { padding: 14px; } .mg-tabs2 button { font-size: 16px; } .mg-act { margin-left: 0; } }
+.kpi.kbtn { all: unset; box-sizing: border-box; cursor: pointer; display: block; padding: 6px 10px; margin: -6px -10px; border-radius: 10px; }
+.kpi.kbtn:hover { background: var(--brand-tint); }
+.kpi.kbtn.bad b { color: var(--bad); }
+.kpi.kbtn:focus-visible { outline: 2px solid var(--brand); }
+details.cm-teams > summary { cursor: pointer; list-style: none; }
+details.cm-teams > summary::-webkit-details-marker { display: none; }
+details.cm-teams > summary::before { content: '▸ '; color: var(--ink-3); }
+details.cm-teams[open] > summary::before { content: '▾ '; }
