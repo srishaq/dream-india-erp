@@ -986,13 +986,16 @@
     const dl = dialog(`<h2>Payment receipt for the buyer</h2>
       <p class="muted">Opening the receipt gives it its number (DS/2026-27/0001 and so on). A cheque not yet cleared is marked "subject to realisation".</p>
       <div class="actions"><a class="btn" target="_blank" rel="noopener" href="/api/receipts?pdf=${id}">Open the receipt (PDF)</a><button type="button" class="ghost" id="rcEmail">Email it to the buyer</button>
-        <button type="button" class="ghost" disabled title="Switches on once WhatsApp is connected">Send on WhatsApp</button></div>
+        <button type="button" class="ghost" disabled title="Switches on once WhatsApp is connected">Send on WhatsApp (once connected)</button></div>
       <p class="small muted" id="rcMsg"></p>`, async () => {});
     $('[value=save]', dl).remove(); $('[value=cancel]', dl).textContent = 'Close';
     $('#rcEmail', dl).onclick = async (e) => {
       e.target.disabled = true;
-      try { const r = await api('/api/receipts', { action: 'receipt-email', id }); $('#rcMsg', dl).textContent = `Receipt ${r.receiptNo} emailed to ${r.to.join(', ')}${r.test ? ' (test address: the ERP is not live yet)' : ''}.`; }
-      catch (err) { $('#rcMsg', dl).textContent = err.message; e.target.disabled = false; }
+      e.target.textContent = 'Sending…';
+      try { const r = await api('/api/receipts', { action: 'receipt-email', id }); $('#rcMsg', dl).innerHTML = `<b class="good-t">✓ Sent.</b> Receipt ${esc(r.receiptNo)} emailed to ${esc(r.to.join(', '))}${r.test ? ' (test address: the ERP is not live yet)' : ''}.`;
+        // shown as sent; it can be sent again after a moment if the buyer asks
+        e.target.textContent = '✓ Emailed'; setTimeout(() => { e.target.disabled = false; e.target.textContent = 'Email it again'; }, 4000); }
+      catch (err) { $('#rcMsg', dl).textContent = err.message; e.target.disabled = false; e.target.textContent = 'Email it to the buyer'; }
     };
     return dl;
   }
