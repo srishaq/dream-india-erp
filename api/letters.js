@@ -84,6 +84,19 @@ module.exports = route({
     const u = await auth.guard(req, res); if (!u) return;
     const set = await settings();
 
+    // a test WhatsApp with sample values, to the test mobile (or, once live, to the mobile typed here)
+    if (b.action === 'wa-test') {
+      if (!has(u, 'demand.approve') && !has(u, 'accounts.manage') && !has(u, 'users.manage')) throw fail(403, 'Only Head CRM, Head Accounts or Admin can send a test WhatsApp.');
+      const wa = require('../lib/whatsapp');
+      const template = str(b.template, 100).replace(/[^A-Za-z0-9_-]/g, '') || set.waEmailTemplate;
+      if (!template) throw fail(400, 'Choose the template to test.');
+      const phone = live() ? str(b.mobile, 20) || set.testMobile : set.testMobile;
+      if (!phone) throw fail(400, 'Set a test mobile in Letter settings first.');
+      const r = await wa.send({ bookingId: null, phone, template, params: ['Rahul Sharma', 'A-1001', 'Rs. 4,85,000', '05-Nov-2026'], userId: u.id, kind: 'test', status: 'dismissed',
+        document: b.withPdf ? { url: 'https://www.w3.org/WAI/ER/tests/xhtml/testfiles/resources/pdf/dummy.pdf', filename: 'Test_letter.pdf' } : null });
+      await audit.record(db.q, { user: u, action: 'whatsapp-test', entity: 'settings', after: { template, to: r.to } });
+      return res.json({ ok: true, to: r.to, id: r.id });
+    }
     if (b.action === 'settings') {
       if (!has(u, 'demand.approve') && !has(u, 'accounts.manage')) throw fail(403, 'Only Head CRM, Head Accounts or Admin can change letter settings.');
       const v = { ...set };

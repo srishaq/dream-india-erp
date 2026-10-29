@@ -247,6 +247,8 @@ const n = (v) => Number(v);
       const ph = (await db.one("select y.phone from booking_applicants a join buyers y on y.id = a.buyer_id where a.booking_id = $1 order by a.seq limit 1", [b1])).phone;
       await post(W.hookKey(), { value: { contacts: [{ profile: { name: 'Buyer' }, wa_id: '91' + require('../lib/comms').mobile(ph) }], messages: [{ from: '91' + require('../lib/comms').mobile(ph), id: 'wamid.IN1', timestamp: String(Math.floor(Date.now() / 1000)), text: { body: 'Received, will pay Monday' }, type: 'text' }] }, field: 'messages', webhook_type: 'customer_response', transaction_id: 'wamid.IN1' });
       const inMsg = await db.one("select booking_id, body from communications where provider_id = 'wamid.IN1'"); assert.equal(inMsg.booking_id, b1); assert.match(inMsg.body, /will pay Monday/);
+      const tt = await headcrm('/api/letters', { action: 'wa-test', template: 'demand_letter_emailed_abc123' }); assert.equal(tt.to, '+919800000001', JSON.stringify(tt));
+      assert.equal((await crm('/api/letters', { action: 'wa-test', template: 'x' })).status, 403);
       assert.equal((await headcrm('/api/comms', { action: 'wa-webhook' })).status, 403); // only the Admin connects it
       const hk = await admin('/api/comms', { action: 'wa-webhook' }); assert.equal(hk.ok, true);
       assert.ok(got.some((g) => g.url.startsWith('/api/v1/webhook') && JSON.parse(g.body || '{}').webhook_url === `${BASE}/api/whatsapp?k=${W.hookKey()}`));
