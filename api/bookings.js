@@ -18,13 +18,35 @@ const mask = (s, keep = 4) => (s ? '•'.repeat(Math.max(String(s).length - keep
 async function list(projectId) {
   return db.q(
     `select b.id, b.status, b.booking_date, b.agreement_value, b.registration_date, b.cancel_reason, b.cancel_requested_at, b.transfer_requested_at, b.sample,
-            u.unit_no, u.id as unit_id, bl.code as building, c.name as created_by_name, b.created_by, a.name as approved_by_name,
+            u.unit_no, u.id as unit_id, bl.code as building, b.crm_user_id, c.name as created_by_name, b.created_by, a.name as approved_by_name,
             (select string_agg(y.name, ' & ' order by ap.seq) from booking_applicants ap join buyers y on y.id = ap.buyer_id where ap.booking_id = b.id) as buyers,
-            bb.demanded, bb.credit_av, bb.outstanding, bb.overdue
+            bb.demanded, bb.credit_av, bb.outstanding, bb.overdue, ${REG_NEXT}
        from bookings b join units u on u.id = b.unit_id join buildings bl on bl.id = u.building_id
        left join users c on c.id = b.created_by left join users a on a.id = b.approved_by
        left join booking_balances bb on bb.booking_id = b.id
       where u.project_id = $1 order by (b.status = 'pending') desc, (b.cancel_requested_at is null and b.transfer_requested_at is null), u.unit_no`, [projectId]);
+}
+
+// The registration checklist, in order. Challans come from the SDR register (Stamp duty page); "papers ready" is ticked
+// by the CRM; the appointment and the registration date are on the booking.
+const SDR_HAS = (kinds) => `exists (select 1 from sdr_challans s where (s.booking_id = b.id or (s.booking_id is null and s.project_id = u.project_id and upper(s.unit_no) = upper(u.unit_no)))
+  and s.kind in (${kinds}) and s.status not in ('cancelled', 'refund_claimed'))`;
+const REG_COLS = `${SDR_HAS("'stamp_duty', 'both'")} as reg_stamp, ${SDR_HAS("'registration', 'both'")} as reg_fee`;
+const REG_NEXT = `case when b.registration_date is not null then null
+  when not ${SDR_HAS("'stamp_duty', 'both'")} then 'Stamp duty challan'
+  when not ${SDR_HAS("'registration', 'both'")} then 'Registration fee challan'
+  when b.reg_papers_at is null then 'Papers ready'
+  when b.registration_appointment is null then 'Book the appointment'
+  else 'Register on the appointment day' end as reg_next`;
+function regSteps(b, r) {
+  const reg = !!b.registration_date; // registered: every step before it is done (older flats have no challan in the ERP)
+  return [
+    { key: 'stamp', label: 'Stamp duty challan', done: reg || !!r.reg_stamp, how: 'Made on the Stamp duty page (SDR register)' },
+    { key: 'fee', label: 'Registration fee challan', done: reg || !!r.reg_fee, how: 'Made on the Stamp duty page (SDR register)' },
+    { key: 'papers', label: 'Papers ready', done: reg || !!b.reg_papers_at, at: b.reg_papers_at, manual: true, how: 'Agreement draft, ID copies and photos of every buyer' },
+    { key: 'appointment', label: 'Appointment booked', done: reg || !!b.registration_appointment, at: b.registration_appointment, how: 'Set the date under Edit dates' },
+    { key: 'registered', label: 'Registered', done: !!b.registration_date, at: b.registration_date, how: 'Enter the registration date and number' },
+  ];
 }
 
 async function detail(u, id) {
@@ -53,7 +75,9 @@ async function detail(u, id) {
   const history = await db.q(`select a.at, a.action, a.entity, a.note, a.after, x.name as user_name from audit_log a left join users x on x.id = a.user_id
      where (a.entity = 'booking' and a.entity_id = $1::text) or (a.entity = 'receipt' and a.entity_id = any($2::text[])) or (a.entity = 'demand' and a.entity_id = any($3::text[]))
      order by a.at desc, a.id desc limit 150`, [String(b.id), receipts.map((r) => String(r.id)), demands.map((d) => String(d.id))]).catch(() => []);
-  return { booking: b, unit, applicants, demands, receipts, balance, plan, cancellation, earlier, current, transfer, history };
+  const rg = await db.one(`select ${REG_COLS} from bookings b join units u on u.id = b.unit_id where b.id = $1`, [id]).catch(() => ({}));
+  const papersBy = b.reg_papers_by ? (await db.one('select name from users where id = $1', [b.reg_papers_by]))?.name : null;
+  return { booking: b, unit, applicants, demands, receipts, balance, plan, cancellation, earlier, current, transfer, history, regSteps: regSteps(b, rg || {}), regPapersBy: papersBy };
 }
 
 function cleanApplicants(list) {
@@ -226,6 +250,16 @@ module.exports = route({
         await audit.record(t.q, { user: u, action: 'edit', entity: 'booking', entityId: bk.id, projectId: bk.project_id, before, after: { ...after, demandsReworked: redone }, note: reason });
       });
       return res.json({ ok: true, changed, demandsReworked: redone, ...(await detail(u, bk.id)) });
+    }
+
+    if (b.action === 'reg.papers') {
+      if (!has(u, 'booking.create') && !has(u, 'demand.raise')) throw fail(403, 'Your role does not allow this.');
+      const on = !!b.ready;
+      await db.tx(async (t) => {
+        await t.q('update bookings set reg_papers_at = $2, reg_papers_by = $3 where id = $1', [bk.id, on ? new Date() : null, on ? u.id : null]);
+        await log(t, 'reg-papers', { ready: on });
+      });
+      return res.json({ ok: true, ...(await detail(u, bk.id)) });
     }
 
     if (b.action === 'dates') {

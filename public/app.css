@@ -554,3 +554,12 @@ a.cv-card:hover { background: var(--brand-tint); }
 td:first-child, td a[href^="#/booking/"] { white-space: nowrap; }
 td.row-acts { white-space: normal; min-width: 128px; }
 td.row-acts button, td.row-acts .btn { display: flex; width: 100%; justify-content: center; margin: 0 0 4px; }
+
+/* registration checklist on the flat file */
+.regsteps{list-style:none;margin:6px 0 0;padding:0;display:grid;grid-template-columns:repeat(auto-fit,minmax(170px,1fr));gap:10px}
+.regsteps li{display:flex;gap:8px;align-items:flex-start;padding:10px;border:1px solid var(--line,#e3e3ea);border-radius:10px;background:#fff}
+.regsteps li.done{background:var(--brand-tint)}
+.regsteps li.next{border-color:var(--brand);box-shadow:0 0 0 1px var(--brand) inset}
+.rs-dot{flex:0 0 22px;height:22px;border-radius:50%;border:2px solid #b9b9c8;display:inline-flex;align-items:center;justify-content:center;font-size:12px;color:#fff}
+.regsteps li.done .rs-dot{background:var(--brand);border-color:var(--brand)}
+.regsteps li.next .rs-dot{border-color:var(--brand)}

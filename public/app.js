@@ -12,6 +12,11 @@
     let j = {};
     try { j = await r.json(); } catch {}
     if (r.status === 401) { me = null; start(); throw new Error(j.error || 'Please sign in.'); }
+    // an entry in a closed month: Head Accounts gives the reason, and it is kept in the audit log
+    if (r.status === 400 && body && !body.reason && /books are closed up to/.test(j.error || '')) {
+      const why = prompt(j.error + '\n\nReason:');
+      if (why && why.trim()) return api(path, { ...body, reason: why.trim() });
+    }
     if (!r.ok) throw Object.assign(new Error(j.error || 'Something went wrong.'), { data: j });
     return j;
   }
@@ -537,7 +542,7 @@
   const todayIso = () => new Date(Date.now() + 5.5 * 3600e3).toISOString().slice(0, 10);
   const kpi = (v, label, cls = '') => `<div class="kpi ${cls}"><b>${esc(v)}</b><span>${esc(label)}</span></div>`;
   const STATUS = { available: 'Available', blocked: 'Booking pending', booked: 'Booked', registered: 'Registered', held: 'Held', refuge: 'Refuge', rehab: 'Rehab', society: 'Society' };
-  function toast(msg) { const t = document.createElement('div'); t.className = 'toast'; t.textContent = msg; document.body.appendChild(t); setTimeout(() => t.remove(), 4000); }
+  function toast(msg, ms) { const t = document.createElement('div'); t.className = 'toast'; t.textContent = msg; document.body.appendChild(t); setTimeout(() => t.remove(), ms || 4000); }
   const noProject = () => { $('#page').innerHTML = '<p class="muted">Choose a project at the top.</p>'; };
 
   // ---------- units ----------
@@ -631,14 +636,19 @@
     if (f === 'all') f = 'bookings';
     if (!SETS.some(([k]) => k === f)) f = 'bookings';
     const cur = SETS.find(([k]) => k === f);
-    const list = rows.filter(cur[2]).sort((a, b) => (f === 'bookings' || f === 'closed' || f === 'approval' ? a.unit_no.localeCompare(b.unit_no, 'en', { numeric: true }) : toNum(b.overdue) - toNum(a.overdue)));
+    // one person's own list (from their Today task): flats given to them, else their wing's flats
+    const qw = (location.hash.split('?')[1] || '').match(/who=(\d+)/);
+    const T = qw ? await api('/api/comms?status=1').catch(() => null) : null;
+    const whoId = qw ? +qw[1] : null, myWings = whoId && T && T.teams ? Object.keys(T.teams).filter((w) => (T.teams[w] || []).map(Number).includes(whoId)) : [];
+    const mine = (r) => !whoId || (r.crm_user_id ? r.crm_user_id === whoId : myWings.includes(r.building));
+    const list = rows.filter(cur[2]).filter(mine).sort((a, b) => (f === 'bookings' || f === 'closed' || f === 'approval' ? a.unit_no.localeCompare(b.unit_no, 'en', { numeric: true }) : toNum(b.overdue) - toNum(a.overdue)));
     const todo = (r) => r.status === 'pending' ? '<span class="pill">needs approval</span>' : r.cancel_requested_at && r.status === 'active' ? '<span class="pill bad">cancel requested</span>' : r.transfer_requested_at && r.status === 'active' ? '<span class="pill warn">transfer requested</span>'
-      : r.status !== 'active' ? `<span class="pill grey">${esc(r.status)}</span>` : r.def ? '<span class="pill bad">defaulter</span>' : r.f && r.f.broken ? '<span class="pill bad">promise broken</span>' : r.f && r.f.due ? '<span class="pill warn">call today</span>' : toNum(r.overdue) > 0 ? '<span class="pill warn">overdue</span>' : '<span class="pill good">on track</span>';
+      : r.status !== 'active' ? `<span class="pill grey">${esc(r.status)}</span>` : f === 'regpending' && r.reg_next ? `<span class="pill warn">next: ${esc(r.reg_next)}</span>` : r.def ? '<span class="pill bad">defaulter</span>' : r.f && r.f.broken ? '<span class="pill bad">promise broken</span>' : r.f && r.f.due ? '<span class="pill warn">call today</span>' : toNum(r.overdue) > 0 ? '<span class="pill warn">overdue</span>' : '<span class="pill good">on track</span>';
     $('#page').innerHTML = `<div class="page-head"><div><h1>Flats &amp; buyers</h1><p class="muted">Every flat and buyer in one list. Open a flat to see and do everything for it: payments, calls, messages, documents and history.</p></div>
       ${can('booking.create') ? '<div class="actions" style="margin:0"><a class="btn" href="#/units">+ Book a flat</a></div>' : ''}</div>
-      <div class="chips">${SETS.map(([k, l, fn, hint]) => { const n = rows.filter(fn).length; return `<button type="button" class="chip ${k === f ? 'on' : ''} ${['call', 'broken'].includes(k) && n ? 'hot' : ''}" data-f="${k}" title="${esc(hint)}">${l} <b>${n}</b></button>`; }).join('')}</div>
+      <div class="chips">${SETS.map(([k, l, fn, hint]) => { const n = rows.filter(fn).filter(mine).length; return `<button type="button" class="chip ${k === f ? 'on' : ''} ${['call', 'broken'].includes(k) && n ? 'hot' : ''}" data-f="${k}" title="${esc(hint)}">${l} <b>${n}</b></button>`; }).join('')}</div>
       <div class="panel table-wrap"><input class="search" id="q" placeholder="Search a flat number, buyer name or phone" autofocus>
-      <p class="small muted" style="margin:4px 0 10px">${esc(cur[3])} · ${list.length} flat${list.length === 1 ? '' : 's'}</p>
+      <p class="small muted" style="margin:4px 0 10px">${esc(cur[3])} · ${list.length} flat${list.length === 1 ? '' : 's'}${whoId ? ` · <b>${esc(((T && T.crmUsers) || []).find((x) => x.id === whoId)?.name || 'one person')}'s list</b>${myWings.length ? ' (wing ' + myWings.join(', ') + ')' : ''} · <a href="#/flats?f=${f}">show everyone</a>` : ''}</p>
       <table class="flats"><tr><th>Flat</th><th>Buyer</th><th>Status</th><th class="num">Balance due</th><th class="num">Overdue</th><th>Last contact</th><th>Next call</th><th>Contact</th></tr>
       ${list.map((r) => `<tr class="click" data-b="${r.id}" data-s="${esc((r.unit_no + ' ' + (r.buyers || '') + ' ' + (r.f && r.f.mobile || '')).toLowerCase())}">
         <td><b>${esc(r.unit_no)}</b>${r.sample ? ' <span class="pill grey">sample</span>' : ''}</td><td>${esc(r.buyers || '')}</td><td>${todo(r)}</td>
@@ -646,7 +656,7 @@
         <td class="small">${r.f && r.f.count ? `${fmtD(r.f.last_at.slice(0, 10))} · ${esc(r.f.outcome || r.f.kind || '')}` : r.f ? '<span class="muted">never</span>' : ''}</td>
         <td class="small">${r.f && r.f.next_date ? fmtD(r.f.next_date) : ''}${r.f && r.f.promise_date ? `<br><span class="muted">promised ${fmtD(r.f.promise_date)}</span>` : ''}</td>
         <td class="small" style="white-space:nowrap">${r.f && r.f.mobile && r.f.wa ? `<a href="tel:+91${esc(r.f.mobile)}" data-stop>Call</a> · <a href="${esc(r.f.wa)}" target="_blank" rel="noopener" data-stop>WhatsApp</a>` : ''}</td></tr>`).join('') || '<tr><td colspan="8" class="muted">Nothing here.</td></tr>'}</table></div>`;
-    document.querySelectorAll('.chip[data-f]').forEach((x) => (x.onclick = () => { history.replaceState(null, '', x.dataset.f === 'bookings' ? '#/flats' : '#/flats?f=' + x.dataset.f); flats(); }));
+    document.querySelectorAll('.chip[data-f]').forEach((x) => (x.onclick = () => { history.replaceState(null, '', (x.dataset.f === 'bookings' ? '#/flats' : '#/flats?f=' + x.dataset.f) + (whoId ? (x.dataset.f === 'bookings' ? '?' : '&') + 'who=' + whoId : '')); flats(); }));
     document.querySelectorAll('tr[data-b]').forEach((tr) => (tr.onclick = (e) => { if (e.target.closest('[data-stop]')) return; go(`#/booking/${tr.dataset.b}`); }));
     $('#q').oninput = (e) => { const q = e.target.value.toLowerCase().trim(); document.querySelectorAll('tr[data-s]').forEach((tr) => (tr.style.display = tr.dataset.s.includes(q) ? '' : 'none')); };
   }
@@ -775,6 +785,9 @@
       <div class="ff-tabs" role="tablist">${TABS.map(([k, l]) => `<button type="button" role="tab" data-ff="${k}" aria-selected="${k === tab}">${l}<span class="ff-n" id="ffn-${k}"></span></button>`).join('')}</div>
       <section class="ff-pane" data-pane="overview">
         <div class="panel" id="ffNext"><h2>Where this buyer stands</h2><p class="muted small">Loading…</p></div>
+        ${d.regSteps && b.status === 'active' ? (() => { const nx = d.regSteps.find((x) => !x.done); return `<div class="panel"><h2>Registration ${nx ? `<span class="pill warn" style="margin-left:6px">next: ${esc(nx.label)}</span>` : '<span class="pill good" style="margin-left:6px">registered</span>'}</h2>
+          <ol class="regsteps">${d.regSteps.map((x) => `<li class="${x.done ? 'done' : x === nx ? 'next' : ''}"><span class="rs-dot">${x.done ? '✓' : ''}</span><div><b>${esc(x.label)}</b>${x.at && x.key !== 'papers' ? ' · ' + fmtD(String(x.at).slice(0, 10)) : ''}${x.key === 'papers' && x.done && x.at ? `<span class="small muted"> · ticked ${fmtD(String(x.at).slice(0, 10))}${d.regPapersBy ? ' by ' + esc(d.regPapersBy) : ''}</span>` : ''}
+            <div class="small muted">${esc(x.how)}</div>${x.manual && live && anyOf('booking.create', 'demand.raise') && !b.registration_date ? `<button class="ghost small" id="regPapers" data-on="${x.done ? 0 : 1}" style="margin-top:4px">${x.done ? 'Untick' : 'Tick: papers are ready'}</button>` : ''}</div></li>`).join('')}</ol></div>`; })() : ''}
         <div class="two">
           <div class="panel"><h2>Booking</h2><table class="kv">
             <tr><th>Booking date</th><td>${fmtD(b.booking_date)}</td></tr><tr><th>Agreement / registration</th><td>${fmtD(b.agreement_date)} / ${fmtD(b.registration_date)}</td></tr>
@@ -882,6 +895,7 @@
       if ($('#logf2')) $('#logf2').onclick = () => $('#logf').click();
     } else $('#ffNext').hidden = true;
     const act = async (body, msg) => { try { await api('/api/bookings', { id: b.id, ...body }); if (msg) toast(msg); bookingPage(id); } catch (e) { alert(e.message); } };
+    if ($('#regPapers')) $('#regPapers').onclick = async (e) => { try { await api('/api/bookings', { action: 'reg.papers', id: b.id, ready: e.target.dataset.on === '1' }); toast(e.target.dataset.on === '1' ? 'Papers marked ready.' : 'Unticked.'); bookingPage(id); } catch (x) { alert(x.message); } };
     if ($('#editDates')) $('#editDates').onclick = () => dialog(`<h2>Dates &amp; status · ${esc(d.unit.unit_no)}</h2>
       <div class="row"><div><label>Booking form received</label><input type="date" name="bookingFormDate" value="${esc(b.booking_form_date || '')}"></div><div><label>Registration status</label><input name="registrationStatus" list="regst" value="${esc(b.registration_status || '')}"><datalist id="regst"><option>Done</option><option>Registration Lineup</option><option>Pending</option></datalist></div></div>
       <div class="row"><div><label>Registration appointment</label><input type="date" name="registrationAppointment" value="${esc(b.registration_appointment || '')}"></div><div><label>Bank NOC date</label><input type="date" name="bankNocDate" value="${esc(b.bank_noc_date || '')}"></div></div>
@@ -1123,7 +1137,7 @@
       <div class="panel"><div class="kpis">${kpi(d.rows.length, 'buyers')}${kpi(inr(total), 'demand amount')}${kpi(inr(gst), 'GST')}</div></div>
       <div class="panel table-wrap"><table><tr><th>Unit</th><th>Buyer</th><th class="num">%</th><th class="num">Amount</th><th class="num">GST</th></tr>
         ${d.rows.map((x) => `<tr><td><a href="#/booking/${x.booking_id}">${esc(x.unit_no)}</a></td><td>${esc(x.buyers || '')}</td><td class="num">${toNum(x.pct)}%</td><td class="num">${inr(x.amount, 2)}</td><td class="num">${inr(x.gst, 2)}</td></tr>`).join('') || '<tr><td colspan="5" class="muted">No buyers to charge.</td></tr>'}</table></div>`;
-    if ($('#ok')) $('#ok').onclick = async () => { if (!confirm(`Raise ${d.rows.length} demands totalling ${inr(total)} plus GST?`)) return; try { const o = await api('/api/demands', { action: 'run.approve', id: r.id }); toast(`${o.raised} demands raised.`); runPage(id); } catch (e) { alert(e.message); } };
+    if ($('#ok')) $('#ok').onclick = async () => { if (!confirm(`Raise ${d.rows.length} demands totalling ${inr(total)} plus GST?`)) return; try { const o = await api('/api/demands', { action: 'run.approve', id: r.id }); const L = o.letters || {}; toast(`${o.raised} demands raised. ` + (L.error ? 'Letters: ' + L.error : L.notEmailed ? `${L.letters} letters ready on the Demand letters page (${L.notEmailed})` : L.letters ? `${L.emailed} letters emailed${L.waiting ? ', ' + L.waiting + ' more within 5 minutes' : ''}${L.whatsapp ? ', ' + L.whatsapp + ' WhatsApps sent' : ''}${L.noEmail ? `. ${L.noEmail} buyer${L.noEmail > 1 ? 's have' : ' has'} no email: see Print and courier on Today` : ''}${L.errors ? ', ' + L.errors + ' could not be sent' : ''}.` : ''), 8000); runPage(id); } catch (e) { alert(e.message); } };
     if ($('#cancel')) $('#cancel').onclick = async () => { if (!confirm('Cancel this draft run?')) return; try { await api('/api/demands', { action: 'run.cancel', id: r.id }); go('#/demands'); } catch (e) { alert(e.message); } };
   }
 
@@ -1176,6 +1190,11 @@
     $('#page').innerHTML = `<div class="page-head"><div><h1>Demand letters</h1><p class="muted">Letters and reminders in the CRM team's format. Amounts come from the ledger: stages demanded minus (AV + TDS) received, plus GST due.</p></div>
       ${s.canEdit ? '<div class="actions" style="margin:0"><button class="ghost" id="settings">Letter settings</button></div>' : ''}</div>
       ${banner}
+      ${d.courier && d.courier.length ? `<div class="panel" id="courier" style="margin-top:14px"><h3 style="margin:0 0 4px">Print and courier: ${d.courier.length} letter${d.courier.length > 1 ? 's' : ''}</h3>
+        <p class="small muted" style="margin:0 0 8px">These buyers have no email address on file, so the letter could not be emailed. Print them, courier them, and ask for an email address on the next call.</p>
+        <p class="small">${d.courier.map((c) => `<a href="/api/letters?pdf=${c.id}" target="_blank" rel="noopener">${esc(c.unit_no)}</a>`).join(' · ')}</p>
+        <div class="actions" style="margin:0"><a class="btn" href="/api/letters?print=${d.courier.map((c) => c.id).join(',')}" target="_blank" rel="noopener">Print all (one PDF)</a>
+        ${can('demand.raise') ? '<button class="ghost" id="couriered">Mark all as couriered</button>' : ''}</div></div>` : ''}
       <div class="panel" style="margin-top:14px"><div class="row4">
         <div><label>Letter type</label><select id="type">${d.types.map((t) => `<option>${esc(t)}</option>`).join('')}</select></div>
         <div><label>Letter date (reminders)</label><input type="date" id="ldate" value="${todayIso()}" max="${todayIso()}"></div>
@@ -1197,6 +1216,7 @@
       });
     };
     $('#q').oninput = apply; $('#show').onchange = apply;
+    if ($('#couriered')) $('#couriered').onclick = async () => { if (!confirm(`Mark ${d.courier.length} letters as sent by courier?`)) return; try { await api('/api/letters', { action: 'mark', projectId: proj, letterIds: d.courier.map((c) => c.id), via: 'courier' }); toast('Marked as couriered.'); letters(); } catch (e) { alert(e.message); } };
     $('#all').onchange = (e) => visibleRows().forEach((tr) => ($('.pick', tr).checked = e.target.checked));
     document.querySelectorAll('[data-prev]').forEach((a) => (a.onclick = (e) => { e.preventDefault(); window.open(`/api/letters?preview=${a.dataset.prev}&type=${encodeURIComponent($('#type').value)}`, '_blank', 'noopener'); }));
     $('#prepare').onclick = async () => {
@@ -1214,6 +1234,10 @@
       <label>Signed for</label><input name="signedFor" value="${esc(s.signedFor)}">
       <label>CC on every email (once live)</label><input name="cc" value="${esc(s.cc)}" placeholder="crm.prime@dreamindiagroup.com">
       <label>Test email address (test version: all letters go here)</label><input name="testEmail" value="${esc(s.testEmail)}">
+      <h3 style="margin:14px 0 4px">WhatsApp with each letter</h3><p class="small muted">Works once the WhatsApp number is connected. WhatsApp only allows a business to message first with a template Meta has approved; type the approved template names here. Each template's text uses {{1}} buyer name, {{2}} flat, {{3}} amount, {{4}} due date.</p>
+      <div class="row"><div><label>"Please check your email" template</label><input name="waEmailTemplate" value="${esc(s.waEmailTemplate || '')}" placeholder="demand_letter_emailed"></div><div><label>Letter PDF template (buyers with no email)</label><input name="waPdfTemplate" value="${esc(s.waPdfTemplate || '')}" placeholder="demand_letter_pdf"></div></div>
+      <label>Test mobile (test version: all WhatsApps go here)</label><input name="testMobile" value="${esc(s.testMobile || '')}" placeholder="98XXXXXXXX">
+      <label>Automatic payment reminders</label><select name="autoReminders"><option value="1">On: email 3 days before the due date, and Reminder I 7 days after if unpaid</option><option value="0" ${s.autoReminders === false ? 'selected' : ''}>Off</option></select>
       <div class="row"><div><label>Signatory name (printed under "For …")</label><input name="signatory" value="${esc(s.signatory || '')}" placeholder="leave blank for no name"></div><div><label>Signatory designation</label><input name="signatoryTitle" value="${esc(s.signatoryTitle || '')}" placeholder="Authorised Signatory"></div></div>
       <label>Reference line (property)</label><input name="reference" value="${esc(s.reference || '')}" placeholder="C.T.S. Nos. 446C/2, Relief Road, Near Oshiwara Bridge, Jogeshwari (W), Mumbai - 400102">
       <h3 style="margin:14px 0 4px">Bank accounts printed on demand letters and receipts</h3><p class="small muted">Leave empty to keep the accounts the letters print today (YES Bank RERA account for the flat cost, YES Bank GST account).</p>
@@ -1222,7 +1246,7 @@
         <div class="row4"><div><label>Bank</label><input name="b${i}_bank" value="${esc(k.bank || '')}"></div><div><label>Account no.</label><input name="b${i}_accountNo" value="${esc(k.accountNo || '')}"></div><div><label>IFSC</label><input name="b${i}_ifsc" value="${esc(k.ifsc || '')}"></div><div><label>Branch</label><input name="b${i}_branch" value="${esc(k.branch || '')}"></div></div></fieldset>`; }).join('')}`,
     async (x) => {
       const banks = [0, 1, 2].map((i) => ({ particulars: x[`b${i}_particulars`], favouring: x[`b${i}_favouring`], bank: x[`b${i}_bank`], accountNo: x[`b${i}_accountNo`], ifsc: x[`b${i}_ifsc`], branch: x[`b${i}_branch`] }));
-      await api('/api/letters', { action: 'settings', delayRate: x.delayRate, minDue: x.minDue, signedFor: x.signedFor, cc: x.cc, testEmail: x.testEmail, signatory: x.signatory, signatoryTitle: x.signatoryTitle, reference: x.reference, banks });
+      await api('/api/letters', { action: 'settings', delayRate: x.delayRate, minDue: x.minDue, signedFor: x.signedFor, cc: x.cc, testEmail: x.testEmail, autoReminders: x.autoReminders === '1', testMobile: x.testMobile, waEmailTemplate: x.waEmailTemplate, waPdfTemplate: x.waPdfTemplate, signatory: x.signatory, signatoryTitle: x.signatoryTitle, reference: x.reference, banks });
       letters();
     }).classList.add('wide');
   }
@@ -1519,9 +1543,40 @@
         ${row && row.imported ? '<p class="small muted">Came in from the accounts sheet.</p>' : ''}
         <div class="acc-form">${main.map(field).join('')}</div>
         ${bill.length ? `<details ${row && row.needs ? 'open' : ''}><summary><b>Bill details</b>${row && row.needs ? ` <span class="bad-t small">${esc(row.needs)}</span>` : ''}</summary><div class="acc-form">${bill.map(field).join('')}</div></details>` : ''}`,
-      async (x) => { if (!d.can.enter) return; const data = {}; for (const c of cols) if (!c.calc && c.key in x) data[c.key] = x[c.key]; const r = await api('/api/accounts', { action: 'save', reg: key, id: row ? row.id : undefined, data }); toast(row ? 'Saved.' : `Added${r.ref_id ? ' as ' + r.ref_id : ''}.`); accRegister(key, { limit: state.limit }); });
+      async (x) => { if (!d.can.enter) return; const data = {}; for (const c of cols) if (!c.calc && c.key in x) data[c.key] = x[c.key]; const r = await api('/api/accounts', { action: 'save', reg: key, id: row ? row.id : undefined, data, poId: form.poId || undefined }); if (form.poId) toast(r.billPaid ? 'Purchase bill marked Paid.' : 'Saved, but the purchase bill could not be marked Paid: ' + (r.billError || ''), 6000); toast(row ? 'Saved.' : `Added${r.ref_id ? ' as ' + r.ref_id : ''}.`); accRegister(key, { limit: state.limit }); });
       dl.classList.add('wide');
       if (!d.can.enter) $('[value=save]', dl).remove();
+      form.poId = null;
+      if (key === 'payments' && d.can.enter) payHelp(dl, row);
+    };
+    // Payments Out: pay an approved purchase bill (fills the row), and TDS from the head's section and rate
+    const payHelp = async (dl, row) => {
+      const P = await api('/api/accounts?view=bills').catch(() => ({ bills: [], tds: {} }));
+      const F = (k) => dl.querySelector(`[name="${k}"]`);
+      const setV = (k, v) => { const el = F(k); if (!el || v == null || v === '') return; if (el.tagName === 'SELECT' && ![...el.options].some((o) => o.value === String(v))) el.add(new Option(v, v)); el.value = v; };
+      const pctIn = (el) => { const x = toNum(String(el.value).replace('%', '')); return x > 1 ? x / 100 : x; };
+      const work = () => {
+        const T = P.tds[F('head') && F('head').value];
+        if (T) { if (F('tds_section') && !F('tds_section').value) F('tds_section').value = T.sec; if (F('tds_rate') && !F('tds_rate').value && T.rate != null) F('tds_rate').value = (T.rate * 100) + '%'; }
+        const base = toNum(F('taxable_value') && F('taxable_value').value), rate = F('tds_rate') && F('tds_rate').value ? pctIn(F('tds_rate')) : 0;
+        if (base && rate && F('tds_deducted') && !F('tds_deducted').dataset.typed) F('tds_deducted').value = Math.round(base * rate);
+        const tot = toNum(F('total_bill') && F('total_bill').value), ded = toNum(F('tds_deducted') && F('tds_deducted').value);
+        if (tot && F('net_payable') && !F('net_payable').dataset.typed) F('net_payable').value = Math.round((tot - ded) * 100) / 100;
+        if (form.poId && F('net_payable') && toNum(F('net_payable').value) && F('amount')) F('amount').value = toNum(F('net_payable').value); // pay the bill less TDS
+      };
+      ['head', 'taxable_value', 'tds_rate', 'total_bill', 'tds_deducted'].forEach((k) => F(k) && F(k).addEventListener('change', work));
+      ['tds_deducted', 'net_payable'].forEach((k) => F(k) && F(k).addEventListener('input', () => (F(k).dataset.typed = 1)));
+      if (row || !P.bills.length) return;
+      const box = document.createElement('div'); box.className = 'note'; box.style.margin = '0 0 10px';
+      box.innerHTML = `<label style="margin:0 0 4px"><b>Paying an approved purchase bill?</b> (${P.bills.length} approved by Accounts, waiting to be paid)</label><select id="poPick"><option value="">No, an ordinary payment</option>${P.bills.map((b) => `<option value="${esc(b.id)}">${esc(b.vendor || 'Vendor')} · ${esc(b.material || '')}${b.billNo ? ' · bill ' + esc(b.billNo) : ''} · ${inr(b.amount)}</option>`).join('')}</select>
+        <p class="small muted" style="margin:4px 0 0">Choosing one fills the payee, head, amount and bill details. When you save, the order is marked Paid on the Purchase page.</p>`;
+      const h2 = dl.querySelector('h2'); h2.after(box);
+      $('#poPick', dl).onchange = (e) => {
+        const b = P.bills.find((x) => x.id === e.target.value); form.poId = b ? b.id : null; if (!b) return;
+        setV('payee', b.vendor); setV('head', b.head); setV('amount', b.amount); setV('total_bill', b.amount); setV('bill_no', b.billNo); setV('bill_date', b.billDate); setV('bill_ids', b.poNo || b.id);
+        setV('description', `${b.material || 'Purchase'} · ${b.line ? b.line.replace('|', ' ') : ''}`.trim()); setV('remark', 'Against approved purchase bill ' + (b.poNo || b.id));
+        const det = dl.querySelector('details'); if (det) det.open = true; work();
+      };
     };
     if ($('#accNew')) $('#accNew').onclick = () => form(null);
     document.querySelectorAll('tr[data-id]').forEach((tr) => (tr.onclick = () => form(d.rows.find((r) => r.id === +tr.dataset.id))));
@@ -2333,11 +2388,14 @@
         <div class="table-wrap" style="margin-top:12px"><table><tr><th>Bank</th><th>A/c No.</th><th class="num">Opening</th><th class="num">Receipts</th><th class="num">Payments</th><th class="num">Closing</th><th class="num">Balance per Bank</th><th class="num">Difference</th><th class="num">B/F</th></tr>
           ${groups.map((g) => d.rows.filter((r) => r.grp === g).map((r) => row(r)).join('') + row(d.groups.find((x) => x.grp === g), true)).join('')}
           <tr class="tot"><td><b>Grand total</b></td><td></td><td class="num">${inr(d.groups.reduce((a, g) => a + g.opening, 0))}</td><td class="num">${inr(d.groups.reduce((a, g) => a + g.receipts, 0))}</td><td class="num">${inr(d.groups.reduce((a, g) => a + g.payments, 0))}</td><td class="num"><b>${inr(d.groups.reduce((a, g) => a + g.closing, 0))}</b></td><td></td><td></td><td class="num">${inr(d.groups.reduce((a, g) => a + g.bf, 0))}</td></tr></table></div></div>
+      <div class="panel"><h2>Closing balances for ${fmtD(d.date)}</h2>${d.confirmed ? `<p><span class="pill good">confirmed</span> by ${esc(d.confirmed.by || '')}, ${new Date(d.confirmed.at).toLocaleString('en-IN', { day: 'numeric', month: 'short', hour: 'numeric', minute: '2-digit', timeZone: 'Asia/Kolkata' })}${d.confirmed.note ? ' · ' + esc(d.confirmed.note) : ''}</p>` : `<p class="small muted" style="margin:0 0 8px">Receipts and payments for each day are filled in from the bank statements read at 3:10 pm, with the balance each bank shows. Check that Closing agrees with Balance per Bank, then confirm.</p>`}
+        ${d.can.enter ? `<div class="row" style="grid-template-columns:1fr auto;align-items:end"><div><label>Note (needed only if a bank does not agree)</label><input id="cfNote" maxlength="300"></div><button id="cfDay" class="${d.confirmed ? 'ghost' : ''}">${d.confirmed ? 'Confirm again' : 'Confirm the closing balances'}</button></div>` : ''}</div>
       <div class="panel"><div class="page-head" style="margin:0 0 8px"><h2 style="margin:0">Daily entries (latest 60)</h2>${d.can.enter ? '<button id="addEntry">Add a day\'s entry</button>' : ''}</div>
         <div class="table-wrap"><table><tr><th>Date</th><th>Bank</th><th class="num">Receipts</th><th class="num">Payments</th><th>Remarks</th><th>Entered by</th></tr>
         ${d.entries.map((e) => `<tr><td>${fmtD(e.entry_date)}</td><td>${esc(e.bank)}</td><td class="num">${e.receipts == null ? '' : inr(e.receipts)}</td><td class="num">${e.payments == null ? '' : inr(e.payments)}</td><td class="small">${esc(e.remarks || '')}</td><td class="small">${esc(e.entered_by || '')}</td></tr>`).join('')}</table></div>
         <div class="actions"><a class="btn ghost" href="#/reg-daily">All daily entries</a></div></div>`;
     $('#bd').onchange = (e) => { store.set('erp_bal_date', e.target.value); accBalances(e.target.value); };
+    if ($('#cfDay')) $('#cfDay').onclick = async () => { try { await api('/api/accounts', { action: 'confirm-day', date: d.date, note: $('#cfNote').value }); toast('Closing balances confirmed.'); accBalances(d.date); } catch (e) { alert(e.message); } };
     document.querySelectorAll('input.stated').forEach((i) => (i.onchange = async () => { try { await api('/api/accounts', { action: 'stated', bankId: +i.dataset.b, date: d.date, balance: i.value }); accBalances(d.date); } catch (e) { alert(e.message); } }));
     if ($('#addEntry')) $('#addEntry').onclick = async () => {
       const L = (await api('/api/accounts?view=lists')).lists;
@@ -2466,9 +2524,27 @@
 
   async function accChecks() {
     const d = await api(`/api/accounts?view=checks&project=${proj || ''}`);
+    const lastM = (() => { const t = new Date(Date.now() + 5.5 * 3600e3); t.setUTCDate(0); return t.toISOString().slice(0, 7); })();
+    const bad = d.rows.filter((x) => x.result === 'Check').length;
+    const closeBox = `<div class="panel"><h2>Close the month</h2><p class="small muted" style="margin:0 0 8px">${d.closed ? `The books are closed up to <b>${fmtD(d.closed.date)}</b> (by ${esc(d.closed.by || '')}, ${fmtD(String(d.closed.at).slice(0, 10))}). An entry dated on or before that day can be changed only by Head Accounts, with a reason, and it is marked in the audit log.` : 'No month is closed yet. Once a month is closed, entries dated in it can be changed only by Head Accounts, with a reason.'}</p>
+      ${d.can.manage ? `<div class="row" style="grid-template-columns:180px auto auto;align-items:end;justify-content:start"><div><label>Month</label><input type="month" id="clm" value="${lastM}" max="${lastM}"></div><button id="closeM">Close the month</button>${d.closed ? '<button class="ghost" id="reopenM">Reopen to an earlier month</button>' : ''}</div>${bad ? `<p class="small bad-t" style="margin:6px 0 0">${bad} check${bad > 1 ? 's say' : ' says'} Check. Fix ${bad > 1 ? 'them' : 'it'} before closing.</p>` : ''}` : ''}</div>`;
     $('#page').innerHTML = `<div class="page-head"><div><h1>Checks</h1><p class="muted">Month end: every line in the Result column should say OK. If one says Check, fix the entry it points to. "For review" lines are not expected to be zero; they are explained unit by unit on the reports.</p></div></div>
+      ${closeBox}
+      <div class="panel" id="caPack"><h2>Monthly pack for the CA</h2><p class="muted small">Loading…</p></div>
       <div class="panel"><div class="table-wrap"><table><tr><th>#</th><th>Check</th><th class="num">Figure</th><th>Result</th><th>What it means</th></tr>
         ${d.rows.map((x, i) => `<tr><td>${i + 1}</td><td>${esc(x.check)}</td><td class="num">${typeof x.figure === 'number' ? x.figure.toLocaleString('en-IN') : esc(x.figure)}</td><td>${x.result === 'OK' ? '<span class="pill good">OK</span>' : x.result === 'Check' ? '<span class="pill bad">Check</span>' : '<span class="pill grey">For review</span>'}</td><td class="small">${esc(x.means || '')}</td></tr>`).join('')}</table></div></div>`;
+    (async () => {
+      const P = await api('/api/accounts?view=capack').catch(() => null); const box = $('#caPack'); if (!P || !box) return;
+      const S = P.settings, lm = (() => { const t = new Date(Date.now() + 5.5 * 3600e3); t.setUTCDate(0); return t.toISOString().slice(0, 7); })();
+      box.innerHTML = `<h2>Monthly pack for the CA</h2><p class="small muted" style="margin:0 0 8px">On the ${S.day || 5}th of every month the ERP emails the CA one Excel file for the month before: a summary of GST, TDS and RERA collections, and the month's Receipts, Payments Out, TDS entries, PDCs and Daily Bank Balance entries.${P.live ? '' : ' <b>Test version: it goes only to the test email address in Letter settings.</b>'}</p>
+        ${P.last.length ? `<p class="small">Sent: ${P.last.map((x) => `${esc(x.month)} on ${fmtD(String(x.at).slice(0, 10))} to ${esc((x.to || []).join(', '))}${x.test ? ' (test)' : ''}`).join(' · ')}</p>` : '<p class="small muted">Not sent yet.</p>'}
+        ${d.can.manage ? `<div class="row" style="grid-template-columns:1fr 1fr 160px;align-items:end"><div><label>CA's email</label><input id="cpTo" value="${esc(S.to || '')}" placeholder="ca@firm.com"></div><div><label>CC</label><input id="cpCc" value="${esc(S.cc || '')}"></div><div><label>Send by itself</label><select id="cpOn"><option value="1">Yes, on the ${S.day || 5}th</option><option value="0" ${S.on === false ? 'selected' : ''}>No</option></select></div></div>
+        <div class="actions"><button class="ghost" id="cpSave">Save</button><a class="btn ghost" href="/api/accounts?view=capack&download=${lm}">Download ${lm}</a><button id="cpSend">Send ${lm} now</button></div>` : `<div class="actions"><a class="btn ghost" href="/api/accounts?view=capack&download=${lm}">Download ${lm}</a></div>`}`;
+      if ($('#cpSave')) $('#cpSave').onclick = async () => { try { await api('/api/accounts', { action: 'ca-pack', to: $('#cpTo').value, cc: $('#cpCc').value, on: $('#cpOn').value === '1' }); toast('Saved.'); } catch (e) { alert(e.message); } };
+      if ($('#cpSend')) $('#cpSend').onclick = async (e) => { e.target.disabled = true; try { const r = await api('/api/accounts', { action: 'ca-pack', send: true, month: lm }); toast('Sent to ' + r.to.join(', ') + (r.test ? ' (test address)' : '')); accChecks(); } catch (x) { e.target.disabled = false; alert(x.message); } };
+    })();
+    if ($('#closeM')) $('#closeM').onclick = async () => { const m = $('#clm').value; if (bad && !confirm(`${bad} checks still say Check. Close ${m} anyway?`)) return; if (!confirm(`Close the books for ${m}? Entries dated in it can then be changed only by Head Accounts, with a reason.`)) return; try { await api('/api/accounts', { action: 'close-month', month: m }); toast('Month closed.'); accChecks(); } catch (e) { alert(e.message); } };
+    if ($('#reopenM')) $('#reopenM').onclick = async () => { const m = prompt('Reopen the books back to the end of which month? (YYYY-MM, before the one closed now)'); if (!m) return; const why = prompt('Why are the books being reopened?'); if (!why) return; try { await api('/api/accounts', { action: 'close-month', month: m.trim(), reopen: true, reason: why }); toast('Books reopened.'); accChecks(); } catch (e) { alert(e.message); } };
   }
 
   async function accReports() {

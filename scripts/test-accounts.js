@@ -105,6 +105,58 @@ let n = 0; const step = async (name, fn) => { await fn(); n++; console.log('  âœ
     assert.equal((await admin('/api/accounts', { action: 'import', projectId: sig.id })).status, 403);
     delete process.env.ERP_LIVE;
   });
+  await step('Payments Out: TDS section and rate come from the head; TDS worked out on the taxable value', async () => {
+    const r = await admin('/api/accounts', { action: 'save', reg: 'payments', data: { txn_date: '2026-10-26', bank: 'Yes RERA Collection 100% (0700)', amount: '99,900', head: 'RMC', payee: 'RMC Co', taxable_value: '1,00,000', total_bill: '1,00,000' } });
+    assert.equal(r.ok, true, r.error);
+    const l = await admin('/api/accounts?reg=payments&q=' + r.ref_id); const p = l.rows[0];
+    assert.equal(p.tds_section, '194Q'); assert.equal(Number(p.tds_rate), 0.001); assert.equal(Number(p.tds_deducted), 100);
+  });
+  await step('an approved purchase bill is paid from Payments Out and marked Paid', async () => {
+    const kv = require('../lib/portal/kv');
+    await kv.hset('po:orders', 'PO123456', { id: 'PO123456', material: 'RMC', line: 'A wing|5th slab', status: 'accounts_ok', order: { vendor: 'Concrete Ltd', amount: 250000, billNo: 'B-77', billDate: '2026-10-20' }, accounts: { by: 'hacc', at: '2026-10-21T10:00:00Z', payable: 250000 }, history: [] });
+    const B = await admin('/api/accounts?view=bills'); const b = B.bills.find((x) => x.id === 'PO123456');
+    assert.ok(b); assert.equal(b.amount, 250000); assert.equal(b.head, 'RMC'); assert.equal(B.tds.RMC.sec, '194Q');
+    const r = await admin('/api/accounts', { action: 'save', reg: 'payments', poId: 'PO123456', data: { txn_date: '2026-10-27', bank: 'Yes RERA Collection 100% (0700)', amount: '250000', head: 'RMC', payee: 'Concrete Ltd', reference: 'UTR999' } });
+    assert.equal(r.billPaid, true, r.billError);
+    const o = await kv.hget('po:orders', 'PO123456'); assert.equal(o.status, 'paid'); assert.equal(o.payment.ref, 'UTR999'); assert.equal(o.payment.erpPayment, r.ref_id);
+    assert.equal((await admin('/api/accounts?view=bills')).bills.length, 0);
+  });
+  await step('Today: last month\'s TDS to deposit by the 7th, and the closing balances to confirm', async () => {
+    const dt = require('../lib/daily-tasks');
+    await admin('/api/accounts', { action: 'save', reg: 'payments', data: { txn_date: '2026-09-15', bank: 'Yes RERA Collection 100% (0700)', amount: '1000', head: 'RMC', payee: 'X', tds_deducted: '20' } });
+    const r = await dt.run('accounts', { today: '2026-10-03', mail: false });
+    const t = r.found.find((x) => x.key === 'tds-deposit-2026-09'); assert.ok(t, r.found.map((x) => x.key).join()); assert.match(t.title, /by the 7th/);
+    const late = (await dt.run('accounts', { today: '2026-10-09', mail: false })).found.find((x) => x.key === 'tds-deposit-2026-09'); assert.match(late.title, /late/);
+    const c = (await dt.run('accounts', { today: '2026-10-26', mail: false })).found.find((x) => x.key === 'daily-confirm'); assert.ok(c); assert.match(c.title, /25-Oct-2026/);
+  });
+  await step('closing balances: a bank that does not agree needs a note to confirm', async () => {
+    assert.equal((await admin('/api/accounts', { action: 'confirm-day', date: '2026-10-25' })).status, 400); // PRIME HDFC differs by 5
+    assert.equal((await admin('/api/accounts', { action: 'confirm-day', date: '2026-10-25', note: 'Bank charge of Rs 5 to enter' })).ok, true);
+    const b = await admin('/api/accounts?view=balances&date=2026-10-25'); assert.equal(b.confirmed.by, 'Admin');
+    const c = (await require('../lib/daily-tasks').run('accounts', { today: '2026-10-26', mail: false })).found.find((x) => x.key === 'daily-confirm'); assert.equal(c, undefined);
+  });
+  await step('month close: entries in a closed month need Head Accounts and a reason, kept in the audit log', async () => {
+    const s = client(); await s('/api/session', { action: 'login', username: 'acc1', password: 'accounts-password-1' });
+    assert.equal((await s('/api/accounts', { action: 'close-month', month: '2026-09' })).status, 403);
+    assert.equal((await admin('/api/accounts', { action: 'close-month', month: '2026-10' })).status, 400); // not ended yet
+    assert.equal((await admin('/api/accounts', { action: 'close-month', month: '2026-09' })).ok, true);
+    const row = { txn_date: '2026-09-20', bank: 'Yes RERA Collection 100% (0700)', amount: '500', head: 'RMC', payee: 'Y' };
+    assert.equal((await s('/api/accounts', { action: 'save', reg: 'payments', data: row })).status, 403);
+    assert.equal((await admin('/api/accounts', { action: 'save', reg: 'payments', data: row })).status, 400);
+    const ok = await admin('/api/accounts', { action: 'save', reg: 'payments', data: row, reason: 'Bank charge found late' }); assert.equal(ok.ok, true);
+    assert.equal((await s('/api/accounts', { action: 'save', reg: 'payments', data: { ...row, txn_date: '2026-10-02' } })).ok, true); // an open month is as before
+    const a = await admin('/api/audit?limit=50'); assert.ok(a.rows.some((x) => x.action === 'create-closed-month' && /Bank charge found late/.test(x.note || '')));
+    assert.equal((await admin('/api/accounts?view=checks')).closed.date, '2026-09-30');
+  });
+  await step('the CA pack: a summary and the month\'s registers in one Excel file, sent once a month to the test address', async () => {
+    const P = require('../lib/ca-pack');
+    const p = await P.build('2026-10');
+    const wb = require('../lib/xlsx').read(p.file);
+    const names = wb.map((x) => x.name); assert.ok(wb[0].rows.length > 10); assert.ok(names.includes('Summary'), names.join()); assert.ok(names.some((x) => /Payments Out/.test(x)));
+    const dl = await admin('/api/accounts?view=capack&download=2026-10', null, true); assert.equal(dl.status, 200);
+    const r = await P.morning('2026-11-03'); assert.equal(r.skipped, 'not yet');
+    const r2 = await P.morning('2026-11-05'); assert.ok(r2.skipped, 'mail not set up here: skipped with a reason'); // no SMTP in this test
+  });
   console.log(`\nAll ${n} accounts checks passed.`);
   server.close(); require('../lib/db').reset(); process.exit(0);
 })().catch((e) => { console.error('\nFAILED:', e); process.exit(1); });

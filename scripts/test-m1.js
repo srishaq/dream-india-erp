@@ -7,7 +7,7 @@ const server = require('./dev-server');
 const net = require('net');
 const rcpts = [];
 const smtp = net.createServer((sock) => {
-  sock.setEncoding('utf8'); let data = false, buf = '';
+  sock.setEncoding('utf8'); let data = false, buf = '', authStep = 0;
   sock.write('220 test\r\n');
   sock.on('data', (d) => {
     buf += d;
@@ -20,7 +20,7 @@ const smtp = net.createServer((sock) => {
       else if (/^MAIL FROM/i.test(line) || /^RSET/i.test(line)) sock.write('250 ok\r\n');
       else if (/^DATA/i.test(line)) { data = true; sock.write('354 go\r\n'); if (buf.includes('\r\n.\r\n')) { data = false; buf = ''; sock.write('250 ok\r\n'); } return; }
       else if (/^QUIT/i.test(line)) { sock.write('221 bye\r\n'); sock.end(); }
-      else if (line.length && !/^\s/.test(line)) sock.write(rcpts.authStep ? '235 ok\r\n' : ((rcpts.authStep = 1), '334 UGFzc3dvcmQ6\r\n'));
+      else if (line.length && !/^\s/.test(line)) sock.write(authStep ? '235 ok\r\n' : ((authStep = 1), '334 UGFzc3dvcmQ6\r\n'));
     }
   });
 }).listen(2526);
@@ -104,6 +104,7 @@ const n = (v) => Number(v);
     const preview = await crm(`/api/demands?run=${run}`); assert.equal(preview.rows.length, 1); assert.equal(n(preview.rows[0].amount), 971500);
     assert.equal((await crm('/api/demands', { action: 'run.approve', id: run })).status, 403);
     const ok = await headcrm('/api/demands', { action: 'run.approve', id: run }); assert.equal(ok.raised, 1);
+    assert.equal(ok.letters.letters, 1); assert.equal(ok.letters.emailed, 0); assert.match(ok.letters.notEmailed, /test email/); // letter made; no test address yet
     assert.equal((await headcrm('/api/demands', { action: 'run.approve', id: run })).status, 409);
   });
   await step('Ledger: ₹19,43,000 demanded, all overdue once past due date', async () => {
@@ -193,7 +194,74 @@ const n = (v) => Number(v);
     const q = await acc(`/api/followups?project=${sig.id}`);
     const row = q.rows.find((x) => x.booking_id === b1); assert.equal(row.outcome, 'Promised to pay'); assert.equal(row.broken, false); assert.equal(row.due, false);
     assert.match(row.mobile || '•', /•/); // Accounts sees the mobile masked
-    const h = await crm(`/api/followups?booking=${b1}`); assert.equal(h.rows.length, 1);
+    const h = await crm(`/api/followups?booking=${b1}`); assert.equal(h.rows.length, 2); // the call + the first follow-up made when the demand was approved
+    assert.ok(h.rows.some((x) => x.outcome === 'Demand raised' && String(x.next_date).slice(0, 10) === '2026-10-09'));
+  });
+  await step('Payment reminders: 3 days before the due date and 7 days after, once each', async () => {
+    const L = require('../lib/letters');
+    const before = rcpts.length;
+    const r1 = await L.reminders({ day: '2026-10-07' }); assert.equal(r1.before, 1, JSON.stringify(r1));
+    assert.equal((await L.reminders({ day: '2026-10-07' })).before, 0); // never twice
+    const r2 = await L.reminders({ day: '2026-10-16' }); assert.equal(r2.after + r2.noEmail, 1, JSON.stringify(r2)); // A-1001 has no email: it goes on the courier list
+    assert.equal((await L.reminders({ day: '2026-10-17' })).after, 0);
+    assert.ok(rcpts.length >= before + 1); assert.ok(rcpts.slice(before).every((x) => x === 'tester@erp.test')); // test address only
+  });
+  await step('Approving a demand run with email set up sends the letters straight away', async () => {
+    const next = 'On Completion of Plinth';
+    const st = await site('/api/demands', { action: 'stage.complete', buildingId: A.id, stageName: next, completedOn: '2026-10-20', certifiedBy: 'Engineer' });
+    if (!st.ok) return console.log('   (skipped: ' + (st.error || 'no next stage') + ')');
+    const r = await crm('/api/demands', { action: 'run.create', buildingId: A.id, stageName: next, demandDate: '2026-10-21' });
+    const before = rcpts.length;
+    const ok = await headcrm('/api/demands', { action: 'run.approve', id: r.id });
+    assert.equal(ok.letters.letters, ok.raised); assert.equal(ok.letters.emailed + ok.letters.noEmail, ok.raised, JSON.stringify(ok.letters)); assert.ok(ok.letters.emailed >= 1 && ok.letters.noEmail >= 1);
+    const h = await crm(`/api/followups?booking=${b1}`); assert.ok(h.rows.some((x) => /no email on file/.test(x.note || '')));
+    assert.ok(rcpts.length > before);
+  });
+  await step('WhatsApp with the letters: "check your email" after an email, the PDF itself when there is no email (test mobile only)', async () => {
+    const http = require('http'); const got = [];
+    const wa = http.createServer((req, res) => { let b = ''; req.on('data', (d) => (b += d)); req.on('end', () => { got.push({ url: req.url, body: b }); res.setHeader('Content-Type', 'application/json'); res.end(JSON.stringify(/media$/.test(req.url) ? { id: 'MEDIA1' } : { messages: [{ id: 'wamid.' + got.length }] })); }); }).listen(2527);
+    Object.assign(process.env, { WHATSAPP_TOKEN: 't', WHATSAPP_PHONE_ID: 'P1', WHATSAPP_API: 'http://127.0.0.1:2527' });
+    try {
+      assert.equal((await headcrm('/api/letters', { action: 'settings', testMobile: '9800000001', waEmailTemplate: 'demand_letter_emailed', waPdfTemplate: 'demand_letter_pdf' })).ok, true);
+      const L = require('../lib/letters');
+      const p = await crm('/api/letters', { action: 'prepare', projectId: sig.id, bookingIds: [b1, bEmail], letterType: 'Demand Letter' });
+      const withEmail = p.letters.find((x) => x.hasEmail), noEmail = p.letters.find((x) => !x.hasEmail);
+      const r = await L.whatsappLetters([withEmail.id, noEmail.id], { emailed: new Set([withEmail.id]) });
+      assert.equal(r.sent, 2, JSON.stringify(r));
+      const msgs = got.filter((g) => /messages$/.test(g.url)).map((g) => JSON.parse(g.body));
+      assert.ok(msgs.every((m) => m.to === '919800000001')); // the test mobile, never the buyer
+      assert.ok(msgs.some((m) => m.template.name === 'demand_letter_emailed' && !m.template.components.some((c) => c.type === 'header')));
+      assert.ok(msgs.some((m) => m.template.name === 'demand_letter_pdf' && m.template.components[0].parameters[0].document.id === 'MEDIA1'));
+      assert.ok(got.some((g) => /media$/.test(g.url)));
+      const q = await crm(`/api/letters?project=${sig.id}`); assert.ok(!q.courier.some((c) => c.id === noEmail.id)); // sent on WhatsApp: off the courier list
+    } finally { wa.close(); for (const k of ['WHATSAPP_TOKEN', 'WHATSAPP_PHONE_ID', 'WHATSAPP_API']) delete process.env[k]; }
+  });
+  await step('No email and no WhatsApp: the letter goes on the Print and courier list and on Today', async () => {
+    const p = await crm('/api/letters', { action: 'prepare', projectId: sig.id, bookingIds: [b1], letterType: 'Reminder I' });
+    const q = await crm(`/api/letters?project=${sig.id}`); assert.ok(q.courier.some((c) => c.id === p.letters[0].id));
+    const t = (await require('../lib/daily-tasks').run('crm', { mail: false })).found.find((x) => x.key === 'letters-courier'); assert.ok(t); assert.match(t.title, /print and courier: 1/);
+    assert.equal((await crm('/api/letters', { action: 'mark', projectId: sig.id, letterIds: q.courier.map((c) => c.id), via: 'courier' })).ok, true);
+    assert.equal((await crm(`/api/letters?project=${sig.id}`)).courier.length, 0);
+  });
+  await step('Registration checklist: challans, papers ready (ticked by the CRM), appointment, registered; the next step shows on the list', async () => {
+    const d = await crm(`/api/bookings?id=${bEmail}`);
+    assert.deepEqual(d.regSteps.map((x) => x.key), ['stamp', 'fee', 'papers', 'appointment', 'registered']);
+    assert.equal(d.regSteps.find((x) => !x.done).key, 'stamp');
+    let l = (await crm(`/api/bookings?project=${sig.id}`)).rows.find((r) => r.id === bEmail); assert.equal(l.reg_next, 'Stamp duty challan');
+    const db = require('../lib/db');
+    await db.q("insert into sdr_challans (project_id, booking_id, unit_no, kind, amount, status) values ($1, $2, $3, 'both', 100000, 'paid')", [sig.id, bEmail, d.unit.unit_no]);
+    l = (await crm(`/api/bookings?project=${sig.id}`)).rows.find((r) => r.id === bEmail); assert.equal(l.reg_next, 'Papers ready');
+    assert.equal((await acc('/api/bookings', { action: 'reg.papers', id: bEmail, ready: true })).status, 403);
+    const t = await crm('/api/bookings', { action: 'reg.papers', id: bEmail, ready: true }); assert.equal(t.regSteps.find((x) => x.key === 'papers').done, true); assert.equal(t.regPapersBy, 'crm');
+    l = (await crm(`/api/bookings?project=${sig.id}`)).rows.find((r) => r.id === bEmail); assert.equal(l.reg_next, 'Book the appointment');
+  });
+  await step('Each CRM person gets their own call list for their wing on Today', async () => {
+    const st = await headcrm('/api/comms?status=1'); const me = st.crmUsers.find((x) => x.name === 'crm');
+    assert.equal((await headcrm('/api/comms', { action: 'teams', teams: { A: [me.id], B: [] } })).ok, true);
+    const r = await require('../lib/daily-tasks').run('crm', { mail: false });
+    const t = r.found.find((x) => x.key === 'fu-due-' + me.id); assert.ok(t, r.found.map((x) => x.key).join());
+    assert.equal(t.assignedTo, me.id); assert.match(t.link, new RegExp('who=' + me.id));
+    const db = require('../lib/db'); const row = await db.one("select assigned_to from daily_tasks where key = $1 order by id desc limit 1", ['fu-due-' + me.id]); assert.equal(row.assigned_to, me.id);
   });
   await step('Everything is in the audit log', async () => {
     const a = await admin('/api/audit?limit=500');

@@ -24,6 +24,18 @@ async function readSheet() {
   return sheets.fetchRanges(accImport.SHEET_ID, accImport.TABS).catch((e) => { throw fail(400, e.message); });
 }
 
+// Month-end close: once Head Accounts closes a month, a row dated on or before that day can be changed only by
+// Head Accounts or the Admin, with a reason, and the change is marked in the audit log.
+async function closedTo() { return (await db.one("select value from settings where key = 'acc_closed_to'"))?.value || null; }
+async function guardClosed(u, reg, dates, reason) {
+  const c = await closedTo(); if (!c || !c.date) return null;
+  const hit = dates.filter(Boolean).map((d) => String(d instanceof Date ? d.toISOString() : d).slice(0, 10)).some((d) => d <= c.date);
+  if (!hit) return null;
+  if (!has(u, 'accounts.manage') && u.role !== 'admin') throw fail(403, `The books are closed up to ${c.date}. Only Head Accounts can change an entry in a closed month.`);
+  if (!str(reason, 300)) throw fail(400, `The books are closed up to ${c.date}. Say why this entry in a closed month is being changed.`);
+  return c.date;
+}
+
 module.exports = route({
   GET: async (req, res) => {
     const u = await auth.guard(req, res, 'accounts.view'); if (!u) return;
@@ -36,9 +48,16 @@ module.exports = route({
     }
     switch (q.view) {
       case 'todo': return res.json({ ...(await acc.todo()), can });
-      case 'balances': return res.json({ ...(await acc.balances(DATE.test(q.date || '') ? q.date : today())), can });
+      case 'capack': {
+        const P = require('../lib/ca-pack');
+        if (q.download) { const ym = /^\d{4}-\d{2}$/.test(q.download) ? q.download : P.prevMonth(); const p = await P.build(ym);
+          res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'); res.setHeader('Content-Disposition', `attachment; filename="${p.filename}"`); return res.end(p.file); }
+        return res.json({ ...(await P.status()), can });
+      }
+      case 'bills': return res.json({ bills: has(u, 'accounts.enter') ? await acc.approvedBills() : [], tds: await acc.headTds(), can });
+      case 'balances': { const dd = DATE.test(q.date || '') ? q.date : today(); const cf = await db.one("select done_at, info from job_marks where key = $1", ['daily-confirm:' + dd]); return res.json({ ...(await acc.balances(dd)), confirmed: cf ? { at: cf.done_at, ...cf.info } : null, closed: await closedTo(), can }); }
       case 'lists': return res.json({ lists: await acc.lists(), heads: await db.q("select * from acc_heads where book = 'signature' order by side, name"), banks: await db.q("select * from acc_banks where book = 'signature' order by name"), dailyBanks: await db.q("select * from acc_daily_banks where book = 'signature' order by seq, id"), can });
-      case 'checks': return res.json({ rows: await acc.checks(q.project ? needProject(u, intOr(q.project)) : null), can });
+      case 'checks': return res.json({ rows: await acc.checks(q.project ? needProject(u, intOr(q.project)) : null), closed: await closedTo(), can });
       case 'report': return res.json(await acc.report(str(q.name, 20), { projectId: q.project ? needProject(u, intOr(q.project)) : null, fy: intOr(q.fy), head: str(q.head, 80) }));
       case 'tally': {
         const from = DATE.test(q.from || '') ? q.from : today().slice(0, 8) + '01', to = DATE.test(q.to || '') ? q.to : today();
@@ -65,6 +84,18 @@ module.exports = route({
       const reg = REGISTERS[b.reg]; if (!reg) throw fail(400, 'Unknown register.');
       const id = intOr(b.id);
       const data = await acc.cleanRow(b.reg, b.data || {}, { partial: !!id });
+      // Payments Out: the TDS section and rate come from the payment head when not typed; TDS = taxable value × rate.
+      if (b.reg === 'payments' && data.head) {
+        const T = (await acc.headTds())[data.head];
+        if (T) {
+          if (data.tds_section == null || data.tds_section === '') data.tds_section = T.sec;
+          if ((data.tds_rate == null || data.tds_rate === '') && T.rate != null) data.tds_rate = T.rate;
+          if ((data.tds_deducted == null || data.tds_deducted === '') && data.taxable_value != null && data.taxable_value !== '' && data.tds_rate != null) data.tds_deducted = Math.round(Number(data.taxable_value) * Number(data.tds_rate));
+        }
+      }
+      const dk = reg.dateKey;
+      const prev = id && dk ? await db.one(`select ${dk} as d from ${reg.table} where id = $1 and book = $2`, [id, acc.BOOK]) : null;
+      const closedOn = dk ? await guardClosed(u, b.reg, [data[dk], prev && prev.d], b.reason) : null;
       const out = await db.tx(async (t) => {
         if (id) {
           const before = await t.one(`select * from ${reg.table} where id = $1 and book = $2`, [id, acc.BOOK]);
@@ -72,16 +103,21 @@ module.exports = route({
           const cols = Object.keys(data); if (!cols.length) throw fail(400, 'Nothing to change.');
           await t.q(`update ${reg.table} set ${cols.map((c, i) => `${c} = $${i + 2}`).join(', ')}, updated_by = $${cols.length + 2}, updated_at = now() where id = $1`, [id, ...cols.map((c) => data[c]), u.id]);
           const changed = Object.fromEntries(cols.filter((c) => String(before[c] ?? '') !== String(data[c] ?? '')).map((c) => [c, data[c]]));
-          await audit.record(t.q, { user: u, action: 'update', entity: 'acc-' + b.reg, entityId: id, before: Object.fromEntries(Object.keys(changed).map((c) => [c, before[c]])), after: changed });
+          await audit.record(t.q, { user: u, action: closedOn ? 'update-closed-month' : 'update', entity: 'acc-' + b.reg, entityId: id, before: Object.fromEntries(Object.keys(changed).map((c) => [c, before[c]])), after: changed, note: closedOn ? `Books closed to ${closedOn}. Reason: ${str(b.reason, 300)}` : null });
           return { id, ref_id: before.ref_id };
         }
         const ref = await acc.nextRef(t, reg);
         const cols = Object.keys(data).filter((c) => data[c] !== null);
         const row = await t.one(`insert into ${reg.table} (book, created_by${ref ? ', ref_id' : ''}${cols.map((c) => ', ' + c).join('')}) values ($1, $2${ref ? ', $3' : ''}${cols.map((c, i) => `, $${i + (ref ? 4 : 3)}`).join('')}) returning id`,
           [acc.BOOK, u.id, ...(ref ? [ref] : []), ...cols.map((c) => data[c])]);
-        await audit.record(t.q, { user: u, action: 'create', entity: 'acc-' + b.reg, entityId: row.id, after: { ref, ...data } });
+        await audit.record(t.q, { user: u, action: closedOn ? 'create-closed-month' : 'create', entity: 'acc-' + b.reg, entityId: row.id, after: { ref, ...data }, note: closedOn ? `Books closed to ${closedOn}. Reason: ${str(b.reason, 300)}` : null });
         return { id: row.id, ref_id: ref };
       });
+      // paid against an approved purchase bill: the Purchase order is marked Paid with this payment's reference
+      if (b.reg === 'payments' && b.poId && !id) {
+        try { await acc.markBillPaid(str(b.poId, 60), { amount: data.amount, ref: data.reference, date: data[dk], paymentId: out.ref_id, user: u }); out.billPaid = true; }
+        catch (e) { out.billPaid = false; out.billError = e.message; }
+      }
       return res.json({ ok: true, ...out });
     }
     if (b.action === 'delete') {
@@ -89,11 +125,54 @@ module.exports = route({
       const reg = REGISTERS[b.reg]; if (!reg) throw fail(400, 'Unknown register.');
       if (['receipts', 'payments'].includes(b.reg)) throw fail(400, 'Receipts and payments are never deleted. A bounced cheque is marked Bounced; a wrong entry is corrected.');
       const reason = str(b.reason, 300); if (!reason) throw fail(400, 'Say why this row is being removed.');
+      if (reg.dateKey) { const r0 = await db.one(`select ${reg.dateKey} as d from ${reg.table} where id = $1 and book = $2`, [intOr(b.id), acc.BOOK]); if (r0) await guardClosed(u, b.reg, [r0.d], reason); }
       await db.tx(async (t) => {
         const before = await t.one(`delete from ${reg.table} where id = $1 and book = $2 returning *`, [intOr(b.id), acc.BOOK]);
         if (!before) throw fail(404, 'Row not found.');
         await audit.record(t.q, { user: u, action: 'delete', entity: 'acc-' + b.reg, entityId: before.id, before, note: reason });
       });
+      return res.json({ ok: true });
+    }
+    if (b.action === 'close-month') {
+      if (!has(u, 'accounts.manage') && u.role !== 'admin') throw fail(403, 'Only Head Accounts closes the month.');
+      const m = String(b.month || ''); if (!/^\d{4}-\d{2}$/.test(m)) throw fail(400, 'Choose the month.');
+      const end = new Date(Date.UTC(+m.slice(0, 4), +m.slice(5, 7), 0)).toISOString().slice(0, 10);
+      if (end >= today()) throw fail(400, 'A month can be closed only after it has ended.');
+      const before = await closedTo();
+      if (before && before.date >= end && !b.reopen) throw fail(409, `The books are already closed up to ${before.date}.`);
+      const v = b.reopen ? { date: end, by: u.name, at: new Date().toISOString(), reopenedFrom: before && before.date } : { date: end, by: u.name, at: new Date().toISOString() };
+      if (b.reopen) { if (!str(b.reason, 300)) throw fail(400, 'Say why the books are being reopened.'); if (!before || end >= before.date) throw fail(400, 'Reopen to a month before the one closed now.'); }
+      await db.tx(async (t) => {
+        await t.q("insert into settings (key, value) values ('acc_closed_to', $1) on conflict (key) do update set value = excluded.value", [v]);
+        await audit.record(t.q, { user: u, action: b.reopen ? 'reopen-books' : 'close-month', entity: 'settings', entityId: 'acc_closed_to', before, after: v, note: str(b.reason, 300) || null });
+      });
+      return res.json({ ok: true, closed: v });
+    }
+    if (b.action === 'ca-pack') {
+      if (!has(u, 'accounts.manage') && u.role !== 'admin') throw fail(403, 'Only Head Accounts can change or send the CA pack.');
+      const P = require('../lib/ca-pack');
+      if (b.send) {
+        const r = await P.send({ ym: /^\d{4}-\d{2}$/.test(b.month || '') ? b.month : undefined, force: true, user: u });
+        if (r.skipped) throw fail(400, r.skipped);
+        return res.json({ ok: true, ...r });
+      }
+      const cur = await P.settings();
+      const em = (x) => String(x || '').split(/[\/,;\s]+/).filter((e) => /^[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}$/.test(e)).join(', ');
+      const v = { ...cur, to: b.to != null ? em(b.to) : cur.to, cc: b.cc != null ? em(b.cc) : cur.cc, on: b.on != null ? !!b.on : cur.on };
+      await P.saveSettings(v);
+      await audit.record(db.q, { user: u, action: 'update', entity: 'settings', entityId: 'ca_pack', before: cur, after: v });
+      return res.json({ ok: true, settings: v });
+    }
+    if (b.action === 'confirm-day') {
+      need('accounts.enter');
+      if (!DATE.test(b.date || '')) throw fail(400, 'Enter the date.');
+      const bal = await acc.balances(b.date);
+      const off = bal.rows.filter((r) => r.difference != null && Math.abs(r.difference) > 1);
+      const missing = bal.rows.filter((r) => r.perBank == null && (r.receipts || r.payments));
+      if ((off.length || missing.length) && !str(b.note, 300)) throw fail(400, `${off.length ? off.map((r) => r.bank).join(', ') + ' do not agree with the bank' : ''}${off.length && missing.length ? '; ' : ''}${missing.length ? missing.map((r) => r.bank).join(', ') + ' have no bank balance typed' : ''}. Add a note to confirm anyway.`);
+      const info = { by: u.name, userId: u.id, note: str(b.note, 300) || null, closing: bal.groups.reduce((a, g) => a + g.closing, 0) };
+      await db.q("insert into job_marks (key, info) values ($1, $2) on conflict (key) do update set info = excluded.info, done_at = now()", ['daily-confirm:' + b.date, info]);
+      await audit.record(db.q, { user: u, action: 'confirm-day', entity: 'acc-daily', entityId: b.date, after: info });
       return res.json({ ok: true });
     }
     if (b.action === 'stated') {

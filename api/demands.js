@@ -132,18 +132,20 @@ module.exports = route({
       }
       need('demand.approve');
       notOwn(u, run.created_by);
-      let count = 0;
+      let count = 0; const charged = [];
       await db.tx(async (t) => {
         const locked = await t.one("select status from demand_runs where id = $1 for update", [run.id]);
         if (locked.status !== 'draft') throw fail(409, 'This run is no longer a draft.');
         const rows = await t.q(
           `select b.id from bookings b join units u on u.id = b.unit_id where u.building_id = $1 and b.status = 'active'
              and not exists (select 1 from demands d where d.booking_id = b.id and d.stage_name = $2)`, [run.building_id, run.stage_name]);
-        for (const r of rows) if (await raise(t, { bookingId: r.id, stageName: run.stage_name, demandDate: run.demand_date, dueDate: run.due_date, runId: run.id })) count++;
+        for (const r of rows) if (await raise(t, { bookingId: r.id, stageName: run.stage_name, demandDate: run.demand_date, dueDate: run.due_date, runId: run.id })) { count++; charged.push(r.id); }
         await t.q("update demand_runs set status = 'approved', approved_by = $2, approved_at = now() where id = $1", [run.id, u.id]);
         await audit.record(t.q, { user: u, action: 'approve', entity: 'demand-run', entityId: run.id, projectId: run.project_id, after: { demandsRaised: count } });
       });
-      return res.json({ ok: true, raised: count, ...(await overview(run.project_id)) });
+      // The letters go out by themselves, with a first follow-up on the due date. A problem here never undoes the demands.
+      const letters = charged.length ? await require('../lib/letters').afterRun({ run, bookingIds: charged, user: u }).catch((e) => ({ error: e.message })) : null;
+      return res.json({ ok: true, raised: count, letters, ...(await overview(run.project_id)) });
     }
 
     if (b.action === 'settings') {
