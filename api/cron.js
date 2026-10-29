@@ -53,9 +53,12 @@ module.exports = route({
         if (await db.one('select 1 as x from job_marks where key = $1', [key])) return 'connected';
         const c = await wa.connectWebhook();
         await db.q('insert into job_marks (key, info) values ($1, $2) on conflict do nothing', [key, { at: new Date().toISOString() }]);
+        await db.q("delete from job_marks where key = 'ccm-webhook-error'");
         console.log('Click Connect webhook connected');
         return c.ok ? 'connected now' : 'failed';
-      })().catch((e) => { console.error('Click Connect webhook:', e.message); return { error: e.message }; });
+      })().catch(async (e) => { console.error('Click Connect webhook:', e.message);
+        await require('../lib/db').q("insert into job_marks (key, info) values ('ccm-webhook-error', $1) on conflict (key) do update set info = excluded.info, done_at = now()", [{ error: e.message }]).catch(() => {});
+        return { error: e.message }; });
       return res.json(r);
     }
     throw fail(400, 'Unknown job.');
