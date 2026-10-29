@@ -211,7 +211,15 @@ module.exports = route({
         await t.q('update receipts set status = $2, approved_by = $3, approved_at = now(), reverse_reason = $4 where id = $1', [r.id, status, u.id, b.action === 'reject' ? str(b.reason, 300) || null : null]);
         await audit.record(t.q, { user: u, action: b.action, entity: 'receipt', entityId: r.id, projectId: r.project_id, before: { status: r.status }, after: { status }, note: str(b.reason, 300) || null });
       });
-      return res.json({ ok: true });
+      // the buyer gets a WhatsApp thank-you once the payment is approved (payment_received template)
+      let whatsapp = null;
+      if (status === 'approved' && !r.opening) {
+        const L = require('../lib/letters');
+        const k = await db.one(`select u.unit_no, (select string_agg(y.name, ' & ' order by a.seq) from booking_applicants a join buyers y on y.id = a.buyer_id where a.booking_id = b.id) as names
+            from bookings b join units u on u.id = b.unit_id where b.id = $1`, [r.booking_id]).catch(() => null);
+        if (k) whatsapp = await L.waNotice({ bookingId: r.booking_id, kind: 'received', userId: u.id, params: [k.names, L.rs(r.amount), k.unit_no, L.dmy(r.received_on)] }).catch((e) => ({ error: e.message }));
+      }
+      return res.json({ ok: true, whatsapp });
     }
     if (b.action === 'bounce' || b.action === 'reverse') {
       if (r.status !== 'approved') throw fail(409, 'Only an approved receipt can be marked bounced or reversed.');

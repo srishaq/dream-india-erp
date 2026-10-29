@@ -258,6 +258,20 @@ module.exports = route({
       return res.json({ ok: true, changed, demandsReworked: redone, ...(await detail(u, bk.id)) });
     }
 
+    // the registration appointment to the buyer on WhatsApp (registration_appointment template): name, flat, date, time and place
+    if (b.action === 'reg-wa') {
+      if (!has(u, 'booking.create') && !has(u, 'demand.raise')) throw fail(403, 'Your role does not allow this.');
+      if (!bk.registration_appointment) throw fail(400, 'Set the appointment date first (Edit dates).');
+      const when = str(b.when, 120); if (!when) throw fail(400, 'Give the time and place.');
+      const L = require('../lib/letters');
+      const k = await db.one(`select u.unit_no, (select string_agg(y.name, ' & ' order by a.seq) from booking_applicants a join buyers y on y.id = a.buyer_id where a.booking_id = $1) as names
+          from units u where u.id = $2`, [bk.id, bk.unit_id]);
+      const r = await L.waNotice({ bookingId: bk.id, kind: 'reg', userId: u.id, params: [k.names, k.unit_no, L.dmy(bk.registration_appointment), when] });
+      if (r.skipped) throw fail(409, 'Not sent: ' + r.skipped + '.');
+      await audit.record(db.q, { user: u, action: 'reg-whatsapp', entity: 'booking', entityId: bk.id, projectId: bk.project_id, after: { to: r.to, when } });
+      return res.json({ ok: true, to: r.to });
+    }
+
     if (b.action === 'reg.papers') {
       if (!has(u, 'booking.create') && !has(u, 'demand.raise')) throw fail(403, 'Your role does not allow this.');
       const on = !!b.ready;

@@ -92,7 +92,7 @@ module.exports = route({
       if (!template) throw fail(400, 'Choose the template to test.');
       const phone = live() ? str(b.mobile, 20) || set.testMobile : set.testMobile;
       if (!phone) throw fail(400, 'Set a test mobile in Letter settings first.');
-      const r = await wa.send({ bookingId: null, phone, template, params: ['Rahul Sharma', 'A-1001', 'Rs. 4,85,000', '05-Nov-2026'], userId: u.id, kind: 'test', status: 'dismissed',
+      const r = await wa.send({ bookingId: null, phone, template, params: /^payment_/.test(template) ? ['Rahul Sharma', 'Rs. 4,85,000', 'A-1001', '05-Nov-2026'] : /^registration_/.test(template) ? ['Rahul Sharma', 'A-1001', '12-Nov-2026', '11:00 am at the Andheri registrar office'] : ['Rahul Sharma', 'A-1001', 'Rs. 4,85,000', '05-Nov-2026'], userId: u.id, kind: 'test', status: 'dismissed',
         document: b.withPdf ? { url: 'https://www.w3.org/WAI/ER/tests/xhtml/testfiles/resources/pdf/dummy.pdf', filename: 'Test_letter.pdf' } : null });
       await audit.record(db.q, { user: u, action: 'whatsapp-test', entity: 'settings', after: { template, to: r.to } });
       return res.json({ ok: true, to: r.to, id: r.id });
@@ -107,7 +107,7 @@ module.exports = route({
       if (b.testEmail != null) v.testEmail = emails(b.testEmail).slice(0, 1).join('');
       if (b.testMobile != null) { const m = require('../lib/comms').mobile(b.testMobile); if (b.testMobile && !m) throw fail(400, 'Test mobile: a 10-digit Indian mobile number.'); v.testMobile = m || ''; }
       if (b.waEmailTemplate != null) v.waEmailTemplate = str(b.waEmailTemplate, 100).replace(/[^A-Za-z0-9_-]/g, '') || null;
-      if (b.waPdfTemplate != null) v.waPdfTemplate = str(b.waPdfTemplate, 100).replace(/[^A-Za-z0-9_-]/g, '') || null;
+      for (const k of ['waPdfTemplate', 'waReminderTemplate', 'waReceivedTemplate', 'waRegTemplate']) if (b[k] != null) v[k] = str(b[k], 100).replace(/[^A-Za-z0-9_-]/g, '') || null;
       if (b.autoReminders != null) v.autoReminders = !!b.autoReminders;
       if (b.signatory != null) v.signatory = str(b.signatory, 80) || null;
       if (b.signatoryTitle != null) v.signatoryTitle = str(b.signatoryTitle, 80) || null;
