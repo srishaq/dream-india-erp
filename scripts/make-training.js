@@ -214,12 +214,14 @@ async function play(page, steps) {
       else if (op === 'as') { // the same video goes on as another person (e.g. Head CRM approving what the CRM entered)
         const lg = await api('', '/api/session', { action: 'login', username: a, password: PW }); const [name, value] = lg.cookie.split('=');
         await page.context().clearCookies(); await page.context().addCookies([{ name, value, url: BASE }]);
-        await page.goto(BASE + '/#/home'); await page.waitForLoadState('networkidle').catch(() => {}); await page.waitForTimeout(600); await recap();
+        await page.goto(BASE + '/?as=' + a + '#/home'); await page.waitForLoadState('networkidle').catch(() => {}); await page.waitForTimeout(800); await recap(); // a full reload, so the page signs in again
       }
       else if (op === 'mailnow') {
+        await page.evaluate(() => window.__erpMailCheck && window.__erpMailCheck()); await page.waitForTimeout(1500); // the page knows the count first, so the new one pops up
         await db.q("insert into communications (booking_id, channel, direction, from_addr, subject, body, sent_at, status) values ($1, 'email', 'in', 'sample.buyer@example.com', 'When is the next demand due?', 'Dear Sir, please tell me when the next demand is due and the amount. Regards', now(), 'matched')", [IDS.flat]);
         await page.evaluate(() => window.__erpMailCheck && window.__erpMailCheck());
         CUES.push({ t: Date.now() - T0, f: TONE }); await page.waitForTimeout(1600);
+        await page.evaluate(() => { const e = document.getElementById('mailpop'); if (e) clearTimeout(e._t); }); // the box stays while it is explained
       }
       else if (op === 'end') { await page.evaluate(() => { window.__cap(); window.__box(); }); await page.evaluate(([x, y, z]) => window.__title(x, y, z), ['Dream India ERP · Training', a, b || 'Next: open the next video on the Training videos page.']); await speak(page, 'That is the end of this course. You can watch any part again from the Training videos page.', 3200); }
     } catch (e) { console.warn(`    step ${op} ${a || ''}: ${e.message.split('\n')[0]}`); }
@@ -322,8 +324,8 @@ const L = {
   'crm-messages': { user: 'ayesha', steps: [
     ['title', 'Training · Sales & CRM', 'Buyer messages, Dream Chat and documents', 'Every email and WhatsApp about a flat, kept with that flat'],
     ['hash', '#/flats'], ['cap', 'Every email or WhatsApp a buyer sends comes into the ERP within a few minutes, filed with that flat by their email or mobile number.'],
-    ['mailnow'], ['cap', 'You hear this bell, a box shows who wrote, and the red badge at the top counts the unread ones. The CRM person for that wing is told first.'],
-    ['hl', '#mailpop', 1800], ['click', '#mailpop', 2200], ['cap', 'Tap the box to open the flat’s Messages tab, with the whole conversation.'],
+    ['mailnow'], ['hl', '#mailpop', 2400], ['cap', 'You hear this bell, a box shows who wrote, and the red badge at the top counts the unread ones. The CRM person for that wing is told first.'],
+    ['click', '#mailpop', 2200], ['cap', 'Tapping the box opens the flat at its Messages, with the whole conversation.'],
     ['hl', '#ccomm', 2000],
     ['click', '#ffMail'], ['cap', 'To write to the buyer, tap Email the buyer. Choose the purpose, check the message and send. The reply comes back to this flat.'],
     ['wait', 1200], ['key', 'Escape'],
