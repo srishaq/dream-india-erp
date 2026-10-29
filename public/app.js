@@ -2058,7 +2058,7 @@
   }
   // The ERP's own collections page, built around four questions: how much came in, where the money stands,
   // how old the dues are, and what is coming next. A period switch drives the "came in" figures.
-  let collPeriod = 'month';
+  let collPeriod = 'all';
   async function collections() {
     if (!proj) return noProject();
     $('#page').innerHTML = '<p class="muted">Working out the figures…</p>';
@@ -2069,7 +2069,9 @@
     const addD = (s, k) => { const x = dt(s); x.setUTCDate(x.getUTCDate() + k); return iso(x); };
     const fyStart = (s) => { const y = +s.slice(0, 4) - (+s.slice(5, 7) < 4 ? 1 : 0); return `${y}-04-01`; };
     const m0 = today.slice(0, 8) + '01', pm0 = addD(m0, -1).slice(0, 8) + '01';
+    const first = (M.monthly && M.monthly[0] ? M.monthly[0].month + '-01' : (d.length ? d[d.length - 1].date : today));
     const P = {
+      all: { label: 'Whole project', from: first < '2000' ? today : first, to: today, prev: ['9999-01-01', '9999-01-01'], vs: '' },
       month: { label: 'This month', from: m0, to: today, prev: [pm0, addD(pm0, +today.slice(8, 10) - 1)], vs: 'the same days last month' },
       last: { label: 'Last month', from: pm0, to: addD(m0, -1), prev: [addD(pm0, -1).slice(0, 8) + '01', addD(pm0, -1)], vs: 'the month before' },
       d30: { label: 'Last 30 days', from: addD(today, -29), to: today, prev: [addD(today, -59), addD(today, -30)], vs: 'the 30 days before' },
@@ -2080,11 +2082,12 @@
     const cur = inP(p.from, p.to), prev = inP(p.prev[0], p.prev[1]);
     const got = sum(cur, 'net'), was = sum(prev, 'net'), chg = was ? Math.round(((got - was) / was) * 100) : null;
     const ret = sum(cur, 'returns'), retK = sum(cur, 'returnCount');
+    const whole = collPeriod === 'all';
     const AG = M.ageing || { total: 0, buyers: 0, buckets: [] }, F = M.forecast || { dueNext30: 0, promised: 0, nextStages: [] };
     const demanded = sum(M.units.filter((u) => u.booked), 'demanded'), rec = t.receivedAV, notDue = Math.max(0, t.agreementValue - Math.max(demanded, rec)), unpaid = Math.max(0, demanded - rec);
     const card = (label, value, sub, tn = '', link = '') => `<${link ? `a href="${esc(link)}"` : 'div'} class="cv-card ${tn}"><span>${esc(label)}</span><b>${esc(value)}</b>${sub ? `<small>${sub}</small>` : ''}</${link ? 'a' : 'div'}>`;
     // chart: by day for a month or 30 days, by month for the year
-    const byMonth = collPeriod === 'fy';
+    const byMonth = collPeriod === 'fy' || collPeriod === 'all';
     let labels, ser;
     if (byMonth) { const mo = (M.monthly || []).filter((x) => x.month >= p.from.slice(0, 7)); labels = mo.map((x) => cMon(x.month)); ser = [['CRM team', '#117A65', mo.map((x) => x.crm)], ['Sales team', '#7FBFAE', mo.map((x) => x.sales)], ['Returned', '#B42318', mo.map((x) => -x.returns)]]; }
     else { const days = []; for (let k = p.from; k <= p.to; k = addD(k, 1)) days.push(k); const by = Object.fromEntries(cur.map((x) => [x.date, x]));
@@ -2103,12 +2106,13 @@
     $('#page').innerHTML = `<div class="page-head"><div><h1>Collections</h1><p class="muted">${esc((projectList.find((x) => x.id === proj) || {}).name || '')} · live from the ERP${M.meta.lastBankDate ? ', bank entries up to ' + esc(fmtD(M.meta.lastBankDate)) : ''}</p></div>
         <div class="chips" style="margin:0">${Object.entries(P).map(([k, x]) => `<button type="button" class="chip ${k === collPeriod ? 'on' : ''}" data-cp="${k}">${esc(x.label)}</button>`).join('')}</div></div>
       <div class="cv-kpis">
-        ${card(`Collected · ${p.label.toLowerCase()}`, cInr(got), chg == null ? `${cCnt(sum(cur, 'count'))} receipt${sum(cur, 'count') === 1 ? '' : 's'}` : `<b class="${chg >= 0 ? 'good-t' : 'bad-t'}">${chg >= 0 ? '▲' : '▼'} ${Math.abs(chg)}%</b> against ${esc(p.vs)}`, 'good', '#/receipts')}
+        ${whole ? card('Total collected · whole project', cInr(t.receivedAV + t.receivedGST), `${esc(cInr(t.receivedAV))} towards the flats + ${esc(cInr(t.receivedGST))} GST · <b class="good-t">${cPct(t.receivedAV, t.agreementValue)}</b> of the agreement value of ${esc(cInr(t.agreementValue))}`, 'good', '#/receipts')
+          : card(`Collected · ${p.label.toLowerCase()}`, cInr(got), chg == null ? `${cCnt(sum(cur, 'count'))} receipt${sum(cur, 'count') === 1 ? '' : 's'}` : `<b class="${chg >= 0 ? 'good-t' : 'bad-t'}">${chg >= 0 ? '▲' : '▼'} ${Math.abs(chg)}%</b> against ${esc(p.vs)}`, 'good', '#/receipts')}
         ${card('Overdue now', cInr(AG.total), `${cCnt(AG.buyers)} buyer${AG.buyers === 1 ? '' : 's'}${AG.buckets[3] && AG.buckets[3][1] ? ` · <b class="bad-t">${esc(cInr(AG.buckets[3][1]))}</b> over 90 days` : ''}`, AG.total ? 'bad' : 'good', '#/flats?f=overdue')}
         ${card('Coming in · next 30 days', cInr(F.dueNext30 + F.promised), `${esc(cInr(F.dueNext30))} falling due · ${esc(cInr(F.promised))} promised on calls`, 'warn')}
         ${card(`Returned · ${p.label.toLowerCase()}`, cInr(ret), `${cCnt(retK)} cheque${retK === 1 ? '' : 's'} or transfer${retK === 1 ? '' : 's'}`, ret ? 'bad' : '')}
       </div>
-      <div class="panel"><div class="cv-h"><h2>How much came in</h2><span class="muted small">${esc(p.label)}${byMonth ? ', month by month' : ', day by day'}</span></div>${chartHtml}</div>
+      <div class="panel"><div class="cv-h"><h2>How much came in</h2><span class="muted small">${esc(p.label)}${byMonth ? ', month by month' : ', day by day'}${whole && (M.monthly || []).length ? ` · bank receipts since ${esc(cMon(M.monthly[0].month))}` : ''}</span></div>${chartHtml}</div>
       <div class="two">
         <div class="panel"><div class="cv-h"><h2>Where the money stands</h2><span class="muted small">agreement value of flats sold: ${esc(cInr(t.agreementValue))}</span></div>
           <div class="cv-stack">${seg(rec, '#117A65', 'Received')}${seg(unpaid, '#B7791F', 'Demanded, not paid')}${seg(notDue, '#D9DDD6', 'Not demanded yet')}</div>
