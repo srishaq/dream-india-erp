@@ -71,13 +71,18 @@ let n = 0; const step = async (name, fn) => { await fn(); n++; console.log('  âœ
   await step('payment receipt: numbered PDF in order of issue, emailed (test address) with the PDF attached', async () => {
     const c = await crm('/api/receipts', { action: 'create', bookingId: b1.id, receivedOn: day(-1), amount: 105000, mode: 'cheque', bank: 'SBI', instrumentNo: '004512', splits: { av: 100000, gst: 5000 } });
     rid = c.id;
-    const p = await crm(`/api/receipts?pdf=${rid}`, null, true);
-    assert.equal(p.status, 200); assert.match(p.type, /pdf/); assert.ok(p.buf.length > 5000);
+    let p = await crm(`/api/receipts?pdf=${rid}`, null, true);
+    assert.equal(p.status, 200); assert.match(p.type, /pdf/);
+    assert.equal((await db.one('select receipt_no from receipts where id = $1', [rid])).receipt_no, null, 'waiting for approval: provisional, no number used');
+    await db.q("update receipts set status = 'approved', approved_at = now() where id = $1", [rid]); // Head Accounts approves
+    p = await crm(`/api/receipts?pdf=${rid}`, null, true);
+    assert.equal(p.status, 200); assert.ok(p.buf.length > 5000);
     const no = (await db.one('select receipt_no from receipts where id = $1', [rid])).receipt_no;
     assert.match(no, /^DS\/\d{4}-\d{2}\/0001$/);
     await crm(`/api/receipts?pdf=${rid}`, null, true);
     assert.equal((await db.one('select receipt_no from receipts where id = $1', [rid])).receipt_no, no, 'same number again');
     const c2 = await crm('/api/receipts', { action: 'create', bookingId: b1.id, receivedOn: day(-1), amount: 5000, mode: 'bank', instrumentNo: 'UTR1', splits: { av: 5000 } });
+    await db.q("update receipts set status = 'approved', approved_at = now() where id = $1", [c2.id]);
     await crm(`/api/receipts?pdf=${c2.id}`, null, true);
     assert.match((await db.one('select receipt_no from receipts where id = $1', [c2.id])).receipt_no, /0002$/);
     const e = await crm('/api/receipts', { action: 'receipt-email', id: rid });

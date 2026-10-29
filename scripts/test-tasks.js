@@ -112,7 +112,7 @@ const addDays = (d, k) => new Date(Date.parse(d) + k * 864e5).toISOString().slic
   });
   await step('cancellation: the buyer and money stay on record, Accounts gets the refund line, the flat can be booked again', async () => {
     const mg = await mk('mgmt1', 'management'), hc = await mk('headcrm1', 'head_crm');
-    const bkr = await db.one(`select b.id, b.unit_id, u.unit_no, (select coalesce(sum(amount), 0) from receipts r where r.booking_id = b.id and r.status = 'approved') as got
+    const bkr = await db.one(`select b.id, b.unit_id, u.unit_no, (select coalesce(sum(s.amount), 0) from receipts r join receipt_splits s on s.receipt_id = r.id where r.booking_id = b.id and r.status = 'approved' and s.head in ('av', 'gst', 'other')) as got
       from bookings b join units u on u.id = b.unit_id where b.status = 'active' and exists (select 1 from receipts r where r.booking_id = b.id and r.status = 'approved') order by u.unit_no desc limit 1`);
     assert.equal((await crm('/api/bookings', { action: 'cancel-request', id: bkr.id, reason: 'Buyer moving abroad', charges: 'abc' })).status, 400);
     const rq = await crm('/api/bookings', { action: 'cancel-request', id: bkr.id, reason: 'Buyer moving abroad', cancelDate: t, charges: '25,000' });

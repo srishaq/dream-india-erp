@@ -18,14 +18,16 @@ const MODES = ['bank', 'cheque', 'loan', 'tds', 'other'];
 // ---------- the payment receipt given to the buyer ----------
 const HEAD_LABEL = { av: 'Agreement value (flat cost)', gst: 'GST', tds: 'TDS (Section 194-IA)', stamp_duty: 'Stamp duty', registration: 'Registration charges', other: 'Other' };
 const fyOf = (iso) => { const [y, m] = iso.split('-').map(Number); const s = m >= 4 ? y : y - 1; return `${s}-${String((s + 1) % 100).padStart(2, '0')}`; };
-// The receipt number is given once, in order of issue: DS/2026-27/0001 (project initials / financial year / running number).
+// The receipt number is given once, in order of issue, when the receipt is approved: DS/2026-27/0001 (project initials /
+// financial year of the payment / running number). A receipt waiting for approval prints as Provisional, subject to realisation.
 async function issueNo(r) {
   if (r.receipt_no) return r.receipt_no;
   return db.tx(async (t) => {
     await t.q('select pg_advisory_xact_lock(7316020)');
     const cur = await t.one('select receipt_no from receipts where id = $1', [r.id]); if (cur.receipt_no) return cur.receipt_no;
     const p = await t.one('select code, name from projects where id = $1', [r.project_id]);
-    const pre = (p.code === 'SIGNATURE' ? 'DS' : String(p.code || p.name).replace(/[^A-Za-z]/g, '').slice(0, 3).toUpperCase()) + '/' + fyOf(today()) + '/';
+    // the financial year of the payment, not of the day the receipt is printed
+    const pre = (p.code === 'SIGNATURE' ? 'DS' : String(p.code || p.name).replace(/[^A-Za-z]/g, '').slice(0, 3).toUpperCase()) + '/' + fyOf(String(r.received_on instanceof Date ? r.received_on.toISOString() : r.received_on || today()).slice(0, 10)) + '/';
     const last = await t.one("select max(substring(receipt_no from '[0-9]+$')::int) as n from receipts where receipt_no like $1", [pre + '%']);
     const no = pre + String((last.n || 0) + 1).padStart(4, '0');
     await t.q('update receipts set receipt_no = $2, receipt_issued_at = now() where id = $1', [r.id, no]);
@@ -42,7 +44,8 @@ async function receiptFigures(u, id) {
   const ap = await db.q('select y.name, y.address, y.email from booking_applicants a join buyers y on y.id = a.buyer_id where a.booking_id = $1 order by a.seq', [r.booking_id]);
   const splits = await db.q('select head, amount from receipt_splits where receipt_id = $1 and amount > 0', [id]);
   const set = (await db.one("select value from settings where key = 'letters'"))?.value || {};
-  const no = await issueNo(r);
+  // the receipt number is given only once Head Accounts has approved it; until then the receipt is provisional
+  const no = r.status === 'approved' ? await issueNo(r) : 'Provisional';
   const iso = (d) => (d instanceof Date ? d.toISOString() : String(d)).slice(0, 10);
   const { words } = require('../lib/docs');
   const order = ['av', 'gst', 'tds', 'stamp_duty', 'registration', 'other'];
@@ -116,9 +119,11 @@ module.exports = route({
       if (sum !== amount) throw fail(400, `The parts add up to ₹${rupees(sum)}, but the receipt is ₹${rupees(amount)}. They must match.`);
       const mode = MODES.includes(b.mode) ? b.mode : 'bank';
       const instrument = str(b.instrumentNo, 60) || null;
+      // the same UTR / cheque number already entered anywhere in the project (another flat too): ask before saving it again
       if (instrument && !b.allowDuplicate) {
-        const dup = await db.one("select id from receipts where booking_id = $1 and instrument_no = $2 and amount = $3 and status not in ('rejected')", [bk.id, instrument, rupees(amount)]);
-        if (dup) throw Object.assign(fail(409, `Receipt #${dup.id} already has this instrument number and amount for this booking.`), { duplicate: dup.id });
+        const dup = await db.one(`select r.id, r.amount, r.received_on, u.unit_no from receipts r join bookings bb on bb.id = r.booking_id join units u on u.id = bb.unit_id
+            where r.project_id = $1 and upper(regexp_replace(r.instrument_no, '\\s', '', 'g')) = upper(regexp_replace($2, '\\s', '', 'g')) and r.status not in ('rejected') limit 1`, [bk.project_id, instrument]);
+        if (dup) throw Object.assign(fail(409, `UTR / cheque ${instrument} is already entered: ${dup.unit_no}, ₹${Number(dup.amount).toLocaleString('en-IN')}. If it really is one payment split across flats, save it again and confirm.`), { duplicate: dup.id });
       }
       const id = await db.tx(async (t) => {
         const row = await t.one(
@@ -215,6 +220,31 @@ module.exports = route({
       await db.tx(async (t) => {
         await t.q('update receipts set status = $2, reverse_reason = $3 where id = $1', [r.id, status, reason]);
         await audit.record(t.q, { user: u, action: b.action, entity: 'receipt', entityId: r.id, projectId: r.project_id, before: { status: r.status }, after: { status }, note: reason });
+      });
+      return res.json({ ok: true });
+    }
+    // a cheque marked bounced by mistake (or matched to the wrong return): back to approved, with the reason on record
+    if (b.action === 'unbounce') {
+      if (r.status !== 'bounced') throw fail(409, 'This receipt is not marked bounced.');
+      const reason = str(b.reason, 300); if (!reason) throw fail(400, 'Say why the cheque did not bounce.');
+      await db.tx(async (t) => {
+        await t.q("update receipts set status = 'approved', reverse_reason = null, bank_status = case when bank_status = 'bounced' then null else bank_status end where id = $1", [r.id]);
+        await audit.record(t.q, { user: u, action: 'unbounce', entity: 'receipt', entityId: r.id, projectId: r.project_id, before: { status: 'bounced', reason: r.reverse_reason }, after: { status: 'approved' }, note: reason });
+      });
+      return res.json({ ok: true });
+    }
+    // the split of an approved receipt corrected (e.g. part of it was GST): same receipt and number, old and new split kept
+    if (b.action === 'resplit') {
+      if (r.status !== 'approved') throw fail(409, 'Only an approved receipt can be corrected this way.');
+      const reason = str(b.reason, 300); if (!reason) throw fail(400, 'Give the reason for the correction.');
+      const amount = toPaise(r.amount); const splits = {}; let sum = 0;
+      for (const h of HEADS) { const v = b.splits && b.splits[h]; if (v === undefined || v === null || v === '') continue; const p = toPaise(v); if (!(p >= 0)) throw fail(400, `The ${h.replace('_', ' ')} part looks wrong.`); if (p > 0) { splits[h] = p; sum += p; } }
+      if (sum !== amount) throw fail(400, `The parts add up to ₹${rupees(sum)}, but the receipt is ₹${rupees(amount)}. They must match.`);
+      const before = await db.q('select head, amount from receipt_splits where receipt_id = $1', [r.id]);
+      await db.tx(async (t) => {
+        await t.q('delete from receipt_splits where receipt_id = $1', [r.id]);
+        for (const [h, p] of Object.entries(splits)) await t.q('insert into receipt_splits (receipt_id, head, amount) values ($1, $2, $3)', [r.id, h, rupees(p)]);
+        await audit.record(t.q, { user: u, action: 'resplit', entity: 'receipt', entityId: r.id, projectId: r.project_id, before: Object.fromEntries(before.map((x) => [x.head, Number(x.amount)])), after: Object.fromEntries(Object.entries(splits).map(([h, p]) => [h, rupees(p)])), note: reason });
       });
       return res.json({ ok: true });
     }

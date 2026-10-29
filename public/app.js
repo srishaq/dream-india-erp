@@ -1013,7 +1013,10 @@
       let bookingId = booking && booking.id;
       if (!bookingId) { const c = choices.find((c) => c.label === x.pick); if (!c) throw new Error('Choose the booking from the list.'); bookingId = c.id; }
       const splits = Object.fromEntries(Object.keys(HEAD).map((h) => [h, x['s_' + h]]));
-      const made = await api('/api/receipts', { action: 'create', bookingId, receivedOn: x.receivedOn, amount: x.amount, mode: x.mode, bank: x.bank, instrumentNo: x.instrumentNo, accountNo: x.accountNo, note: x.note, splits });
+      const body = { action: 'create', bookingId, receivedOn: x.receivedOn, amount: x.amount, mode: x.mode, bank: x.bank, instrumentNo: x.instrumentNo, accountNo: x.accountNo, note: x.note, splits };
+      let made;
+      try { made = await api('/api/receipts', body); }
+      catch (e) { if (!(e.data && e.data.duplicate) || !confirm(e.message + '\n\nSave it anyway?')) throw e; made = await api('/api/receipts', { ...body, allowDuplicate: true }); }
       toast('Receipt saved. It counts once Head Accounts approves it (or the bank statement matches the cheque).');
       after();
       receiptDocDialog(made.id);
@@ -1063,7 +1066,8 @@
         <td>${esc([r.bank, r.instrument_no].filter(Boolean).join(' · ') || r.mode)}</td><td class="num">${inr(r.amount, 2)}</td><td class="small">${Object.entries(r.splits).map(([h, v]) => `${HEAD[h] || h} ${inr(v)}`).join(' · ')}</td>
         <td>${chequeCell(r)}</td><td>${rStatus(r)}</td><td>${esc(r.created_by_name || 'Import / sample')}</td>
         <td class="num row-acts">${r.status === 'pending' && can('receipt.approve') ? `<button class="small" data-ok="${r.id}">Approve</button> <button class="ghost small" data-no="${r.id}">Reject</button>` : ''}
-          ${r.status === 'approved' && can('receipt.approve') ? `<button class="danger small" data-bounce="${r.id}">Bounced</button>` : ''}
+          ${r.status === 'approved' && can('receipt.approve') ? `<button class="danger small" data-bounce="${r.id}">Bounced</button> <button class="ghost small" data-resplit="${r.id}" title="Correct how the amount is split (AV, GST, TDS…)">Correct split</button>` : ''}
+          ${r.status === 'bounced' && can('receipt.approve') ? `<button class="ghost small" data-unbounce="${r.id}" title="Marked bounced by mistake">Not bounced</button>` : ''}
           ${r.mode === 'cheque' && !r.bank_status && ['pending', 'approved'].includes(r.status) ? `${!r.handed_on && !r.deposited_on && can('receipt.enter') ? `<button class="ghost small" data-hand="${r.id}">Given to Accounts</button>` : ''}${!r.acc_received_at && !r.deposited_on && canDep ? ` <button class="ghost small" data-rcv="${r.id}" title="The cheque has reached Accounts">Received</button>` : ''}${!r.deposited_on && canDep ? ` <button class="ghost small" data-dep="${r.id}">Deposited</button>` : ''}` : ''}
           ${['pending', 'approved'].includes(r.status) && !r.opening ? `<button class="ghost small" data-doc="${r.id}" title="${r.receipt_no ? 'Receipt ' + esc(r.receipt_no) + (r.receipt_sent_at ? ', emailed' : '') : 'Give the buyer a payment receipt'}">${r.receipt_no ? 'Receipt ✓' : 'Receipt'}</button>` : ''}
           <a class="btn link small" href="#/${can('accounts.view') && !can('demand.raise') ? 'accteam' : 'team'}/${r.booking_id}" title="Dream Chat with the other team about this flat">Chat</a></td></tr>`).join('') || '<tr><td colspan="10" class="muted">Nothing here.</td></tr>'}</table></div>`;
@@ -1089,6 +1093,14 @@
     document.querySelectorAll('[data-dep]').forEach((x) => (x.onclick = () => { const on = prompt('Deposited on (YYYY-MM-DD):', todayIso()); if (on) act({ action: 'deposited', id: +x.dataset.dep, on }, 'Marked deposited. The bank statement check will find it.'); }));
     if ($('#bankNow')) $('#bankNow').onclick = async () => { try { const o = await api('/api/receipts', { action: 'bankcheck' }); toast(`Found in the bank: ${o.linked} (${o.approved} approved by the bank statement, ${o.waiting} for Head Accounts). Returned: ${o.bounced}.`); receipts(); } catch (e) { alert(e.message); } };
     document.querySelectorAll('[data-bounce]').forEach((x) => (x.onclick = () => { const r = prompt('Mark as bounced. Reason (e.g. cheque returned, insufficient funds):'); if (r) act({ action: 'bounce', id: +x.dataset.bounce, reason: r }, 'Marked as bounced; the buyer\'s balance is updated.'); }));
+    document.querySelectorAll('[data-unbounce]').forEach((x) => (x.onclick = () => { const r = prompt('Put this receipt back as approved. Why did the cheque not bounce?'); if (r) act({ action: 'unbounce', id: +x.dataset.unbounce, reason: r }, 'Back to approved; the buyer\'s balance is updated.'); }));
+    document.querySelectorAll('[data-resplit]').forEach((x) => (x.onclick = () => {
+      const r = d.rows.find((y) => y.id === +x.dataset.resplit); if (!r) return;
+      dialog(`<h2>Correct the split · ${esc(r.unit_no || '')} · ${inr(r.amount, 2)}</h2><p class="small muted">The receipt and its number stay the same; the old and new split are kept in the audit log.</p>
+        <div class="row3">${Object.keys(HEAD).map((h) => `<div><label>${esc(HEAD[h])}</label><input name="s_${h}" inputmode="decimal" value="${r.splits[h] != null ? toNum(r.splits[h]) : ''}"></div>`).join('')}</div>
+        <label>Reason</label><input name="reason" required maxlength="300" placeholder="e.g. ₹23,810 of it was GST">`,
+      async (y) => { const splits = {}; for (const h of Object.keys(HEAD)) if (y['s_' + h]) splits[h] = y['s_' + h]; await api('/api/receipts', { action: 'resplit', id: r.id, splits, reason: y.reason }); toast('Split corrected.'); receipts(); });
+    }));
     if ($('#new')) $('#new').onclick = async () => {
       const b = await api(`/api/bookings?project=${proj}`);
       const choices = b.rows.filter((r) => r.status === 'active').map((r) => ({ id: r.id, label: `${r.unit_no} · ${r.buyers || ''}` }));
@@ -1565,7 +1577,7 @@
       const P = await api('/api/accounts?view=bills').catch(() => ({ bills: [], tds: {} }));
       const F = (k) => dl.querySelector(`[name="${k}"]`);
       const setV = (k, v) => { const el = F(k); if (!el || v == null || v === '') return; if (el.tagName === 'SELECT' && ![...el.options].some((o) => o.value === String(v))) el.add(new Option(v, v)); el.value = v; };
-      const pctIn = (el) => { const x = toNum(String(el.value).replace('%', '')); return x > 1 ? x / 100 : x; };
+      const pctIn = (el) => toNum(String(el.value).replace('%', '')) / 100;
       const work = () => {
         const T = P.tds[F('head') && F('head').value];
         if (T) { if (F('tds_section') && !F('tds_section').value) F('tds_section').value = T.sec; if (F('tds_rate') && !F('tds_rate').value && T.rate != null) F('tds_rate').value = (T.rate * 100) + '%'; }

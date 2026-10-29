@@ -110,6 +110,11 @@ let n = 0; const step = async (name, fn) => { await fn(); n++; console.log('  âœ
     assert.equal(r.ok, true, r.error);
     const l = await admin('/api/accounts?reg=payments&q=' + r.ref_id); const p = l.rows[0];
     assert.equal(p.tds_section, '194Q'); assert.equal(Number(p.tds_rate), 0.001); assert.equal(Number(p.tds_deducted), 100);
+    // a rate typed as 1% (or 1) is 1%, never 100%; saving the row again keeps it
+    assert.equal((await admin('/api/accounts', { action: 'save', reg: 'payments', id: p.id, data: { tds_rate: '1%' } })).ok, true);
+    assert.equal(Number((await admin('/api/accounts?reg=payments&q=' + r.ref_id)).rows[0].tds_rate), 0.01);
+    assert.equal((await admin('/api/accounts', { action: 'save', reg: 'payments', id: p.id, data: { tds_rate: '0.1' } })).ok, true);
+    assert.equal(Number((await admin('/api/accounts?reg=payments&q=' + r.ref_id)).rows[0].tds_rate), 0.001);
   });
   await step('an approved purchase bill is paid from Payments Out and marked Paid', async () => {
     const kv = require('../lib/portal/kv');

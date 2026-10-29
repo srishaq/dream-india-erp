@@ -43,8 +43,9 @@ module.exports = route({
       const TF = require('../lib/tally-feed'), q = req.query;
       if (!(await TF.check(req.headers['x-erp-key'] || q.key))) throw fail(401, 'Wrong or missing key.');
       const D = /^\d{4}-\d{2}-\d{2}$/;
-      const list = TF.mapped(await TF.rows({ from: D.test(q.from || '') ? q.from : null, to: D.test(q.to || '') ? q.to : null, all: q.all === '1' }), (await TF.settings()).ledgerMap);
-      await TF.notePull(list.length);
+      const raw = await TF.rows({ from: D.test(q.from || '') ? q.from : null, to: D.test(q.to || '') ? q.to : null, all: q.all === '1' });
+      const list = TF.mapped(raw, (await TF.settings()).ledgerMap);
+      await TF.notePull(list.length, raw);
       if (q.format === 'json') return res.json({ company: (await TF.settings()).company, count: list.length, vouchers: TF.json(list) });
       res.setHeader('Content-Type', 'application/xml; charset=utf-8');
       return res.end(TF.xml(list, (await TF.settings()).company));
@@ -206,6 +207,7 @@ module.exports = route({
       need('accounts.enter');
       const bank = await db.one('select * from acc_daily_banks where id = $1', [intOr(b.bankId)]); if (!bank) throw fail(404, 'Bank not found.');
       if (!DATE.test(b.date || '')) throw fail(400, 'Enter the date.');
+      await guardClosed(u, 'daily', [b.date], b.reason);
       const bal = b.balance === '' || b.balance == null ? null : Number(String(b.balance).replace(/[₹,\s]/g, ''));
       await db.tx(async (t) => {
         if (bal == null) await t.q('delete from acc_bank_stated where daily_bank_id = $1 and on_date = $2', [bank.id, b.date]);
@@ -218,7 +220,8 @@ module.exports = route({
       need('accounts.manage');
       const side = b.side === 'receipt' ? 'receipt' : b.side === 'payment' ? 'payment' : null, name = str(b.name, 120);
       if (!side || !name) throw fail(400, 'Choose receipt or payment and give the head a name.');
-      const rate = b.tdsRate === '' || b.tdsRate == null ? null : Number(String(b.tdsRate).replace('%', '')) / (Number(String(b.tdsRate).replace('%', '')) > 1 ? 100 : 1);
+      const rate = b.tdsRate === '' || b.tdsRate == null ? null : Number(String(b.tdsRate).replace(/[%\s]/g, '')) / 100; // typed as a percentage: 1 = 1%
+      if (rate != null && !(rate >= 0 && rate <= 1)) throw fail(400, 'TDS rate: a percentage, e.g. 1 or 0.1.');
       await db.tx(async (t) => {
         await t.q(`insert into acc_heads (book, side, name, section, indirect_line, tds_section, tds_rate, category, note, needs_bill, payee_type, active) values ('signature', $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
                    on conflict (book, side, name) do update set section = excluded.section, indirect_line = excluded.indirect_line, tds_section = excluded.tds_section, tds_rate = excluded.tds_rate,

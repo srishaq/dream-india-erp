@@ -24,9 +24,9 @@ async function list(projectId) {
     `select b.id as booking_id, u.unit_no, b.cp_name, b.source, b.brokerage, b.brokerage_released, b.agreement_value, b.booking_date, b.registration_date, b.rm_name,
             coalesce(bb.credit_av, 0) as received,
             (select string_agg(y.name, ' & ' order by a.seq) from booking_applicants a join buyers y on y.id = a.buyer_id where a.booking_id = b.id) as buyers,
-            coalesce((select sum(amount) from brokerage_entries e where e.booking_id = b.id and e.kind = 'bill'), 0) as billed,
-            coalesce((select sum(amount) from brokerage_entries e where e.booking_id = b.id and e.kind = 'payment'), 0) as paid,
-            (select max(entry_date) from brokerage_entries e where e.booking_id = b.id and e.kind = 'payment') as last_paid
+            coalesce((select sum(amount) from brokerage_entries e where e.booking_id = b.id and e.kind = 'bill' and e.cancelled_at is null), 0) as billed,
+            coalesce((select sum(amount) from brokerage_entries e where e.booking_id = b.id and e.kind = 'payment' and e.cancelled_at is null), 0) as paid,
+            (select max(entry_date) from brokerage_entries e where e.booking_id = b.id and e.kind = 'payment' and e.cancelled_at is null) as last_paid
        from bookings b join units u on u.id = b.unit_id left join booking_balances bb on bb.booking_id = b.id
       where u.project_id = $1 and b.status = 'active' and (b.cp_name is not null or b.brokerage is not null)
       order by lower(coalesce(b.cp_name, '')), u.unit_no`, [projectId]);

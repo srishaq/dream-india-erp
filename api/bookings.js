@@ -148,6 +148,12 @@ module.exports = route({
       need('booking.approve');
       if (bk.status !== 'pending') throw fail(409, 'This booking is not waiting for approval.');
       notOwn(u, bk.created_by);
+      // whoever changed the booking while it waited cannot also approve that change
+      if (b.action === 'approve' && u.role !== 'admin' && await db.one("select 1 as x from audit_log where entity = 'booking' and entity_id = $1 and action = 'edit' and user_id = $2 limit 1", [String(bk.id), u.id]))
+        throw fail(403, 'You changed this booking while it was waiting, so someone else must approve it.');
+      // money already received on it: cancel it instead, so the refund is on record with Accounts
+      if (b.action === 'reject' && await db.one("select 1 as x from receipts where booking_id = $1 and status in ('pending', 'approved') limit 1", [bk.id]))
+        throw fail(409, 'Money has been received on this booking. Approve it and then cancel it, so the refund goes to the Cancelled flats register, or reverse the receipts first.');
       await db.tx(async (t) => {
         if (b.action === 'approve') {
           await t.q("update bookings set status = 'active', approved_by = $2, approved_at = now() where id = $1", [bk.id, u.id]);
@@ -172,7 +178,7 @@ module.exports = route({
     }
 
     if (b.action === 'register') {
-      need('booking.create');
+      need('demand.raise'); // the CRM team, not Sales: this changes what the buyer owes
       if (bk.status !== 'active') throw fail(409, 'Only an approved booking can be registered.');
       const agreementDate = dateOr(b.agreementDate), registrationDate = dateOr(b.registrationDate);
       if (!registrationDate) throw fail(400, 'Enter the registration date.');
@@ -279,7 +285,7 @@ module.exports = route({
     }
 
     if (b.action === 'transfer-request') {
-      need('booking.create');
+      need('demand.raise'); // the CRM team, not Sales: this changes what the buyer owes
       if (bk.status !== 'active') throw fail(409, 'Only an active booking can be transferred.');
       if (bk.cancel_requested_at || bk.transfer_requested_at) throw fail(409, 'A cancellation or transfer is already waiting for approval.');
       const to = await db.one('select id, unit_no, status, project_id from units where id = $1', [intOr(b.toUnitId)]);
@@ -340,7 +346,7 @@ module.exports = route({
     }
 
     if (b.action === 'cancel-request') {
-      need('booking.create');
+      need('demand.raise'); // the CRM team, not Sales: this changes what the buyer owes
       if (bk.status !== 'active') throw fail(409, 'Only an active booking can be cancelled.');
       if (bk.cancel_requested_at || bk.transfer_requested_at) throw fail(409, 'A cancellation or transfer is already waiting for approval.');
       const reason = str(b.reason, 400); if (!reason) throw fail(400, 'Give the reason for cancelling.');
@@ -366,13 +372,18 @@ module.exports = route({
           // the old buyer and their money stay on record: one row in Accounts' Cancelled flats register, linked to this booking
           const x = await t.one(`select u.unit_no, u.typology, u.carpet_sqft, b.booking_date, b.agreement_value, b.cp_name, b.rm_name,
               (select string_agg(y.name, ' & ' order by ap.seq) from booking_applicants ap join buyers y on y.id = ap.buyer_id where ap.booking_id = b.id) as client,
-              (select coalesce(sum(r.amount), 0) from receipts r where r.booking_id = b.id and r.status = 'approved') as received
+              -- money the company holds: agreement value, GST and other charges. TDS went to the government and stamp duty /
+              -- registration were paid for the buyer, so they are shown separately, not in the refund due.
+              (select coalesce(sum(s.amount), 0) from receipts r join receipt_splits s on s.receipt_id = r.id where r.booking_id = b.id and r.status = 'approved' and s.head in ('av', 'gst', 'other')) as received,
+              (select coalesce(sum(s.amount), 0) from receipts r join receipt_splits s on s.receipt_id = r.id where r.booking_id = b.id and r.status = 'approved' and s.head = 'tds') as tds,
+              (select coalesce(sum(s.amount), 0) from receipts r join receipt_splits s on s.receipt_id = r.id where r.booking_id = b.id and r.status = 'approved' and s.head in ('stamp_duty', 'registration')) as sdr
             from bookings b join units u on u.id = b.unit_id where b.id = $1`, [bk.id]);
           const charges = Number(bk.cancel_charges) || 0, received = Number(x.received) || 0;
+          const apart = [Number(x.tds) ? `TDS ₹${Number(x.tds).toLocaleString('en-IN')} (with the government)` : '', Number(x.sdr) ? `stamp duty and registration ₹${Number(x.sdr).toLocaleString('en-IN')}` : ''].filter(Boolean).join('; ');
           await t.q(`insert into acc_cancellations (booking_id, cancel_date, booking_date, unit_no, client, typology, area, cp, closing_manager, final_av, received, deduction, refund_due, refund_status, remark, created_by)
                      values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16) on conflict (booking_id) where booking_id is not null do nothing`,
           [bk.id, bk.cancel_date || today(), x.booking_date, x.unit_no, x.client, x.typology, x.carpet_sqft, x.cp_name, x.rm_name, x.agreement_value, received, charges, Math.max(0, received - charges),
-            received - charges > 0 ? 'Pending' : 'Nothing to refund', `Cancelled in the ERP: ${bk.cancel_reason || ''}`.slice(0, 400), u.id]);
+            received - charges > 0 ? 'Pending' : 'Nothing to refund', `Cancelled in the ERP: ${bk.cancel_reason || ''}${apart ? '. Not in the refund due: ' + apart : ''}`.slice(0, 400), u.id]);
           await log(t, 'cancel', { status: 'cancelled', reason: bk.cancel_reason, received, charges, refundDue: Math.max(0, received - charges) }, 'Buyer and receipts stay on record; written to the Cancelled flats register for the refund');
         } else {
           await t.q('update bookings set cancel_reason = null, cancel_requested_by = null, cancel_requested_at = null where id = $1', [bk.id]);

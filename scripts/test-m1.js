@@ -105,6 +105,12 @@ const n = (v) => Number(v);
     assert.equal((await crm('/api/demands', { action: 'run.approve', id: run })).status, 403);
     const ok = await headcrm('/api/demands', { action: 'run.approve', id: run }); assert.equal(ok.raised, 1);
     assert.equal(ok.letters.letters, 1); assert.equal(ok.letters.emailed, 0); assert.match(ok.letters.notEmailed, /test email/); // letter made; no test address yet
+    // drafted 2 Oct but approved today: the buyer still gets the full days to pay, so the demand is dated today
+    const dm = await require('../lib/db').one("select demand_date, due_date from demands where booking_id = $1 and stage_name = 'On Completion of Excavation'", [b1]);
+    assert.equal(String(dm.demand_date instanceof Date ? dm.demand_date.toISOString() : dm.demand_date).slice(0, 10), new Date(Date.now() + 5.5 * 3600e3).toISOString().slice(0, 10));
+    // then time passes: the rest of this test treats the demand as raised on 2 Oct and due on 9 Oct
+    await require('../lib/db').q("update demands set demand_date = '2026-10-02', due_date = '2026-10-09' where booking_id = $1 and stage_name = 'On Completion of Excavation'", [b1]);
+    await require('../lib/db').q("update follow_ups set next_date = '2026-10-09' where booking_id = $1 and outcome = 'Demand raised'", [b1]);
     assert.equal((await headcrm('/api/demands', { action: 'run.approve', id: run })).status, 409);
   });
   await step('Ledger: ₹19,43,000 demanded, all overdue once past due date', async () => {
@@ -135,6 +141,23 @@ const n = (v) => Number(v);
   await step('A bounced receipt puts the dues back', async () => {
     assert.equal((await headacc('/api/receipts', { action: 'bounce', id: rc, reason: 'Cheque returned' })).ok, true);
     const l = await crm(`/api/ledger?project=${sig.id}`); assert.equal(n(l.rows.find((r) => r.booking_id === b1).outstanding), 1943000);
+  });
+  await step('A bounce marked by mistake can be undone, and an approved split corrected, with the reason on record', async () => {
+    assert.equal((await acc('/api/receipts', { action: 'unbounce', id: rc, reason: 'x' })).status, 403);
+    assert.equal((await headacc('/api/receipts', { action: 'unbounce', id: rc, reason: 'Matched to the wrong return' })).ok, true);
+    let l = await crm(`/api/ledger?project=${sig.id}`); assert.equal(n(l.rows.find((r) => r.booking_id === b1).outstanding), 0);
+    assert.equal((await headacc('/api/receipts', { action: 'resplit', id: rc, splits: { av: '1923570', tds: '19430', gst: '90000' }, reason: 'x' })).status, 400); // must add up
+    assert.equal((await headacc('/api/receipts', { action: 'resplit', id: rc, splits: { av: '1923570', tds: '19430', gst: '97150' }, reason: 'GST part checked' })).ok, true);
+    const a = await admin('/api/audit?limit=50'); assert.ok(a.rows.some((x) => x.action === 'unbounce') && a.rows.some((x) => x.action === 'resplit'));
+    assert.equal((await headacc('/api/receipts', { action: 'bounce', id: rc, reason: 'Cheque returned' })).ok, true); // back as it was for the rest of the test
+  });
+  await step('The same UTR on another flat is caught; Sales cannot register a flat or cancel it', async () => {
+    const r = await acc('/api/receipts', { action: 'create', bookingId: b1, receivedOn: '2026-10-11', amount: '100', instrumentNo: 'utr 1', splits: { av: '100' } });
+    assert.equal(r.status, 409); assert.match(r.error, /already entered/);
+    const sales = client(); const su = await admin('/api/users', { action: 'create', name: 'Sales One', username: 'sales1', role: 'sales', projects: [sig.id] });
+    await sales('/api/session', { action: 'login', username: 'sales1', password: su.tempPassword }); await sales('/api/session', { action: 'password', current: su.tempPassword, next: 'sales1-password-1' });
+    assert.equal((await sales('/api/bookings', { action: 'register', id: b1, registrationDate: '2026-10-12' })).status, 403);
+    assert.equal((await sales('/api/bookings', { action: 'cancel-request', id: b1, reason: 'x' })).status, 403);
   });
   let late;
   await step('A late booking is charged the stages already completed', async () => {
@@ -276,6 +299,8 @@ const n = (v) => Number(v);
   await step('Each CRM person gets their own call list for their wing on Today', async () => {
     const st = await headcrm('/api/comms?status=1'); const me = st.crmUsers.find((x) => x.name === 'crm');
     assert.equal((await headcrm('/api/comms', { action: 'teams', teams: { A: [me.id], B: [] } })).ok, true);
+    await require('../lib/db').q("update demands set due_date = '2026-10-20' where booking_id = $1", [bEmail]); // its demand is now overdue
+    await require('../lib/db').q("update follow_ups set next_date = '2026-10-20' where booking_id = $1", [bEmail]);
     const r = await require('../lib/daily-tasks').run('crm', { mail: false });
     const t = r.found.find((x) => x.key === 'fu-due-' + me.id); assert.ok(t, r.found.map((x) => x.key).join());
     assert.equal(t.assignedTo, me.id); assert.match(t.link, new RegExp('who=' + me.id));

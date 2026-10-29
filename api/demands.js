@@ -139,6 +139,12 @@ module.exports = route({
         const rows = await t.q(
           `select b.id from bookings b join units u on u.id = b.unit_id where u.building_id = $1 and b.status = 'active'
              and not exists (select 1 from demands d where d.booking_id = b.id and d.stage_name = $2)`, [run.building_id, run.stage_name]);
+        // approved after its due date would leave the buyer no time to pay: the demand is dated today instead
+        const iso = (d) => String(d instanceof Date ? d.toISOString() : d).slice(0, 10);
+        if (iso(run.due_date) <= today()) {
+          run.demand_date = today(); run.due_date = addDays(today(), await daysToPay(t));
+          await t.q('update demand_runs set demand_date = $2, due_date = $3 where id = $1', [run.id, run.demand_date, run.due_date]);
+        }
         for (const r of rows) if (await raise(t, { bookingId: r.id, stageName: run.stage_name, demandDate: run.demand_date, dueDate: run.due_date, runId: run.id })) { count++; charged.push(r.id); }
         await t.q("update demand_runs set status = 'approved', approved_by = $2, approved_at = now() where id = $1", [run.id, u.id]);
         await audit.record(t.q, { user: u, action: 'approve', entity: 'demand-run', entityId: run.id, projectId: run.project_id, after: { demandsRaised: count } });
