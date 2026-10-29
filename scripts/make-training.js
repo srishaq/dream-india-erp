@@ -221,7 +221,7 @@ async function play(page, steps) {
         await page.evaluate(() => window.__erpMailCheck && window.__erpMailCheck());
         CUES.push({ t: Date.now() - T0, f: TONE }); await page.waitForTimeout(1600);
       }
-      else if (op === 'end') { await page.evaluate(() => { window.__cap(); window.__box(); }); await page.evaluate(([x, y, z]) => window.__title(x, y, z), ['Dream India ERP · Training', a, b || 'Next: open the next video on the Training videos page.']); await speak(page, 'That is the end of this video. Open the next one on the Training videos page.', 3200); }
+      else if (op === 'end') { await page.evaluate(() => { window.__cap(); window.__box(); }); await page.evaluate(([x, y, z]) => window.__title(x, y, z), ['Dream India ERP · Training', a, b || 'Next: open the next video on the Training videos page.']); await speak(page, 'That is the end of this course. You can watch any part again from the Training videos page.', 3200); }
     } catch (e) { console.warn(`    step ${op} ${a || ''}: ${e.message.split('\n')[0]}`); }
   }
 }
