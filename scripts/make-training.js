@@ -309,7 +309,7 @@ const L = {
     ['hash', '#/demands'], ['cap', 'When the site completes a stage, it is recorded on Stages and demands, with the date and who certified it.'],
     ['click', '#stage'], ['set', 'dialog select[name=buildingId]', 'A Wing'], ['set', 'dialog select[name=stageName]', 'On Completion of Plinth (10%)'], ['fill', 'dialog input[name=completedOn]', () => addDays(ist(), -1)], ['set', 'dialog input[name=certifiedBy]', 'Site engineer'],
     ['click', 'dialog button[value=save]', 1600],
-    ['cap', 'Then prepare the demand run for that wing and stage.'], ['click', '#run'], ['click', 'dialog button[value=save]', 2000],
+    ['cap', 'Then prepare the demand run for that wing and stage.'], ['click', '#run'], ['set', 'dialog select[name=pick]', 'Plinth'], ['click', 'dialog button[value=save]', 2000],
     ['cap', 'The run lists every buyer with the amount and GST. Someone other than the person who prepared it approves it.'], ['hl', '#ok', 2200],
     ['cap', 'When Head CRM approves, everything else happens by itself. Each buyer’s demand letter is made and emailed, a WhatsApp tells them to check their email, and a first follow-up is set for the due date.'],
     ['cap', 'Buyers with no email get the letter PDF on WhatsApp. If WhatsApp cannot reach them either, the letter goes on the Print and courier list.'],
