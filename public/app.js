@@ -1617,7 +1617,7 @@
     const teams = [...new Set(d.modules.map((m) => m.team))];
     const done = d.modules.filter((m) => d.watched[m.id]).length;
     $('#page').innerHTML = `<div class="page-head"><div><h1>Training videos</h1><p class="muted">Short videos of the ERP, made on sample data. Watch the ones for your team; each is ticked when you reach the end. You have watched ${done} of ${d.modules.length}.</p></div></div>
-      ${d.modules.length ? '' : '<div class="panel"><h2>New videos are being recorded</h2><p class="muted">The training videos are being made again for the final version of the ERP: one full course for Sales and CRM and one for Accounts, each also in short parts. They will appear here as soon as they are ready.</p></div>'}
+      ${d.modules.length ? '' : '<div class="panel"><h2>New videos are being recorded</h2><p class="muted">The training videos are being made again for the final version of the ERP: one complete course for Sales and CRM and one for Accounts. They will appear here as soon as they are ready.</p></div>'}
       ${teams.map((t) => `<h2 class="sec">${esc(t)}</h2><div class="tr-grid">${d.modules.filter((m) => m.team === t).map((m) => `<div class="tr">
         <video controls preload="metadata" playsinline data-m="${m.id}" src="/training/${m.id}.mp4" poster="/training/${m.id}.jpg"></video>
         <div class="tr-body"><h3>${esc(m.title)}</h3><p class="small muted" style="margin:0">${esc(m.sub)}</p>

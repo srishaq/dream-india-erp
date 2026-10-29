@@ -124,7 +124,7 @@ const OVERLAY = `(() => {
   window.__ptr = (x, y, press) => { const p = document.getElementById('trptr'); top(p); p.style.left = x - 13 + 'px'; p.style.top = y - 13 + 'px'; if (press) { p.classList.add('press'); setTimeout(() => p.classList.remove('press'), 180); } };
 })();`;
 
-function reading(t) { return Math.max(2600, Math.min(7000, String(t).split(/\s+/).length * 330)); }
+function reading(t) { return Math.max(3200, Math.min(9000, String(t).split(/\s+/).length * 400)); }
 
 // ---------- the voice ----------
 // With PIPER (the piper program) and PIPER_VOICE (a .onnx voice) set, every caption and title is also spoken.
@@ -173,7 +173,7 @@ const V = (x) => (typeof x === 'function' ? x() : x);
 async function speak(page, text, minMs) {
   const c = say(text);
   if (c) CUES.push({ t: Date.now() - T0, f: c.f });
-  await page.waitForTimeout(Math.max(minMs || 0, c ? c.ms + 450 : reading(text)));
+  await page.waitForTimeout(Math.max(minMs || 0, c ? c.ms + 1600 : reading(text) + 1200)); // a calm pause after each line
 }
 
 async function play(page, steps) {
@@ -192,25 +192,30 @@ async function play(page, steps) {
     try {
       if (op === 'title') { await ov(); await page.evaluate(([x, y, z]) => window.__title(x, y, z), [a, b, c]); await speak(page, `${b}. ${c}.`, 3600); await page.evaluate(() => window.__title()); }
       else if (op === 'go') { await page.goto(BASE + a); await page.waitForLoadState('networkidle').catch(() => {}); await page.waitForTimeout(700); await recap(); }
-      else if (op === 'hash') { await page.evaluate((h) => { document.querySelectorAll('dialog[open]').forEach((d) => { d.close(); d.remove(); }); location.hash = h; }, a); await page.waitForTimeout(300); await page.waitForFunction(() => { const p = document.querySelector('#page'); return p && !/^Loading/.test(p.innerText.trim()); }, null, { timeout: 15000 }).catch(() => {}); await page.waitForTimeout(900); await recap(); }
-      else if (op === 'fill') { const { l } = await rect(a); await l.fill(b); await page.waitForTimeout(600); }
-      else if (op === 'set') { const { l } = await rect(a); const tag = await l.evaluate((e) => e.tagName); if (tag === 'SELECT') { const v = await l.evaluate((e, t) => { const o = [...e.options].find((x) => x.text === t) || [...e.options].find((x) => x.text.toLowerCase().includes(String(t).toLowerCase().replace(/\s*\(.*$/, ''))); return o ? o.value : null; }, b); if (v == null) throw new Error('no option ' + b); await l.selectOption(v, { timeout: 4000 }); } else { await l.click(); await l.fill(''); await l.pressSequentially(String(b), { delay: 35 }); } await page.waitForTimeout(450); }
-      else if (op === 'chapter') { await page.evaluate(() => { window.__cap(); window.__box(); }).catch(() => {}); await ov(); await page.evaluate(([x, y]) => window.__title(x, y, ''), [a, b]); await speak(page, b + '.', 2200); await page.evaluate(() => window.__title()); }
+      else if (op === 'hash') { await page.evaluate((h) => { document.querySelectorAll('dialog[open]').forEach((d) => { d.close(); d.remove(); }); location.hash = h; }, a); await page.waitForTimeout(300); await page.waitForFunction(() => { const p = document.querySelector('#page'); return p && !/^Loading/.test(p.innerText.trim()); }, null, { timeout: 15000 }).catch(() => {}); await page.waitForTimeout(1600); await recap(); }
+      else if (op === 'fill') { const { l } = await rect(a); await l.fill(b); await page.waitForTimeout(1000); }
+      else if (op === 'set') { const { l } = await rect(a); const tag = await l.evaluate((e) => e.tagName); if (tag === 'SELECT') { const v = await l.evaluate((e, t) => { const o = [...e.options].find((x) => x.text === t) || [...e.options].find((x) => x.text.toLowerCase().includes(String(t).toLowerCase().replace(/\s*\(.*$/, ''))); return o ? o.value : null; }, b); if (v == null) throw new Error('no option ' + b); await l.selectOption(v, { timeout: 4000 }); } else { await l.click(); await l.fill(''); await l.pressSequentially(String(b), { delay: 70 }); } await page.waitForTimeout(900); }
+      else if (op === 'chapter') { await page.evaluate(() => { window.__cap(); window.__box(); }).catch(() => {}); await ov(); await page.evaluate(([x, y]) => window.__title(x, y, ''), [a, b]); await speak(page, b + '.', 3600); await page.evaluate(() => window.__title()); }
       else if (op === 'pick') { const { l } = await rect(a); await l.selectOption({ index: b || 1 }); await page.waitForTimeout(500); }
       else if (op === 'key') { await page.keyboard.press(a); await page.waitForTimeout(b || 800); }
       else if (op === 'cap') { cap = a; await ov(); await page.evaluate((t) => window.__cap(t), a); await speak(page, a, b); }
-      else if (op === 'hl') { const { r } = await rect(a); await page.evaluate((q) => { window.__box(q); window.__ptr(q.x + Math.min(q.w / 2, 60), q.y + q.h / 2); }, r); await page.waitForTimeout(b || 1800); await page.evaluate(() => window.__box()); }
+      else if (op === 'hl') { const { r } = await rect(a); await page.evaluate((q) => { window.__box(q); window.__ptr(q.x + Math.min(q.w / 2, 60), q.y + q.h / 2); }, r); await page.waitForTimeout(Math.max(b || 0, 2800)); await page.evaluate(() => window.__box()); }
       else if (op === 'click') {
         const { l, r } = await rect(a);
-        await page.evaluate((q) => window.__ptr(q.x + Math.min(q.w / 2, 60), q.y + q.h / 2), r); await page.waitForTimeout(800);
+        await page.evaluate((q) => window.__ptr(q.x + Math.min(q.w / 2, 60), q.y + q.h / 2), r); await page.waitForTimeout(1300);
         await page.evaluate((q) => window.__ptr(q.x + Math.min(q.w / 2, 60), q.y + q.h / 2, true), r);
-        await l.click({ timeout: 8000 }); await page.waitForLoadState('networkidle').catch(() => {}); await page.waitForTimeout(b || 1200); await recap();
+        await l.click({ timeout: 8000 }); await page.waitForLoadState('networkidle').catch(() => {}); await page.waitForTimeout(Math.max(b || 0, 2000)); await recap();
       }
-      else if (op === 'type') { const { l, r } = await rect(a); await page.evaluate((q) => window.__ptr(q.x + 30, q.y + q.h / 2, true), r); await l.click(); await l.pressSequentially(b, { delay: 55 }); await page.waitForTimeout(500); }
+      else if (op === 'type') { const { l, r } = await rect(a); await page.evaluate((q) => window.__ptr(q.x + 30, q.y + q.h / 2, true), r); await l.click(); await l.pressSequentially(b, { delay: 90 }); await page.waitForTimeout(1000); }
       else if (op === 'select') { const { l } = await rect(a); await l.selectOption({ label: b }).catch(() => l.selectOption(b)); await page.waitForTimeout(700); }
-      else if (op === 'scroll') { await page.mouse.wheel(0, a); await page.waitForTimeout(b || 1200); }
+      else if (op === 'scroll') { await page.mouse.wheel(0, a); await page.waitForTimeout(Math.max(b || 0, 2000)); }
       else if (op === 'top') { await page.evaluate(() => window.scrollTo({ top: 0, behavior: 'smooth' })); await page.waitForTimeout(800); }
       else if (op === 'wait') await page.waitForTimeout(a);
+      else if (op === 'as') { // the same video goes on as another person (e.g. Head CRM approving what the CRM entered)
+        const lg = await api('', '/api/session', { action: 'login', username: a, password: PW }); const [name, value] = lg.cookie.split('=');
+        await page.context().clearCookies(); await page.context().addCookies([{ name, value, url: BASE }]);
+        await page.goto(BASE + '/#/home'); await page.waitForLoadState('networkidle').catch(() => {}); await page.waitForTimeout(600); await recap();
+      }
       else if (op === 'mailnow') {
         await db.q("insert into communications (booking_id, channel, direction, from_addr, subject, body, sent_at, status) values ($1, 'email', 'in', 'sample.buyer@example.com', 'When is the next demand due?', 'Dear Sir, please tell me when the next demand is due and the amount. Regards', now(), 'matched')", [IDS.flat]);
         await page.evaluate(() => window.__erpMailCheck && window.__erpMailCheck());
@@ -423,6 +428,25 @@ const L = {
   ] },
 };
 
+// The two courses: each part's steps one after another, as chapters, in one video (who is signed in changes per part).
+function course(title, sub, team, parts, intro) {
+  const steps = [['title', 'Training · ' + team, title, sub], ...(intro || [])];
+  parts.forEach(([id, name], i) => {
+    const P = L[id];
+    steps.push(['as', P.user], ['chapter', 'Part ' + (i + 1), name]);
+    for (const st of P.steps) if (st[0] !== 'title' && st[0] !== 'end') steps.push(st);
+  });
+  steps.push(['end', title, team === 'Sales & CRM' ? 'Start each morning with Today.' : 'Start each morning with Today, and close each month on Checks.']);
+  return { user: parts[0] && L[parts[0][0]].user, steps };
+}
+const AROUND = [['hash', '#/home'], ['cap', 'Open the ERP at erp dot dream india realty dot com and sign in with your own username and password. Your projects are on the home page.'],
+  ['hl', '.tile >> nth=0'], ['click', '.tile >> nth=0'], ['cap', 'Each project has its departments. You see only the ones your login allows. Inside a department, Today always comes first.'],
+  ['hl', '#cpw', 1600], ['cap', 'Change password and Sign out are at the top right. On your phone, add the ERP to your home screen and it opens like an app.']];
+L['crm-full'] = course('The complete CRM course', 'Every part of the CRM, start to finish', 'Sales & CRM',
+  [['crm-flats', 'Flats and the flat file'], ['crm-today', 'Today and follow-up calls'], ['crm-receipts', 'Receipts and cheques'], ['crm-demands', 'Demands, letters and reminders'], ['crm-messages', 'Buyer messages, Dream Chat and documents'], ['crm-booking', 'Booking, approval and cancellation']], AROUND);
+L['acc-full'] = course('The complete Accounts course', 'Every part of Accounts, start to finish', 'Accounts',
+  [['acc-today', 'Today and the 9 am audit'], ['acc-registers', 'Receipts, payments and bills'], ['acc-bank', 'The bank, every day'], ['acc-approvals', 'Approvals, corrections and refunds'], ['acc-month', 'Month end, the CA and Tally']], AROUND);
+
 (async () => {
   const only = process.argv.slice(2);
   await new Promise((r) => setTimeout(r, 800));
@@ -459,14 +483,5 @@ const L = {
     console.log('  saved', mp4, Math.round(fs.statSync(mp4).size / 1024) + ' KB');
   }
   await browser.close();
-  // The complete courses are their part videos joined in order (same voice, no second recording).
-  for (const [full, ids] of [['crm-full', ['crm-flats', 'crm-today', 'crm-receipts', 'crm-demands', 'crm-messages', 'crm-booking']], ['acc-full', ['acc-today', 'acc-registers', 'acc-bank', 'acc-approvals', 'acc-month']]]) {
-    const parts = ids.map((x) => path.join(OUT, x + '.mp4'));
-    if ((only.length && !only.includes(full)) || !parts.every((f) => fs.existsSync(f))) continue;
-    const list = path.join(TMP, full + '.txt'); fs.writeFileSync(list, parts.map((f) => `file '${f}'`).join('\n'));
-    execFileSync('ffmpeg', ['-y', '-loglevel', 'error', '-f', 'concat', '-safe', '0', '-i', list, '-c', 'copy', '-movflags', '+faststart', path.join(OUT, full + '.mp4')]);
-    fs.copyFileSync(path.join(OUT, ids[0] + '.jpg'), path.join(OUT, full + '.jpg'));
-    console.log('  saved', full);
-  }
   process.exit(0);
 })().catch((e) => { console.error(e); process.exit(1); });
