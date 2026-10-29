@@ -214,7 +214,7 @@ async function play(page, steps) {
       else if (op === 'as') { // the same video goes on as another person (e.g. Head CRM approving what the CRM entered)
         const lg = await api('', '/api/session', { action: 'login', username: a, password: PW }); const [name, value] = lg.cookie.split('=');
         await page.context().clearCookies(); await page.context().addCookies([{ name, value, url: BASE }]);
-        await page.goto(BASE + '/#/home'); await page.waitForLoadState('networkidle').catch(() => {}); await page.waitForTimeout(600); await recap();
+        await page.goto(BASE + '/?as=' + a + '#/home'); await page.waitForLoadState('networkidle').catch(() => {}); await page.waitForTimeout(800); await recap(); // a full reload, so the page signs in again
       }
       else if (op === 'mailnow') {
         await db.q("insert into communications (booking_id, channel, direction, from_addr, subject, body, sent_at, status) values ($1, 'email', 'in', 'sample.buyer@example.com', 'When is the next demand due?', 'Dear Sir, please tell me when the next demand is due and the amount. Regards', now(), 'matched')", [IDS.flat]);
