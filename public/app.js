@@ -131,7 +131,8 @@
     { key: 'team', label: 'Dream Chat', show: () => anyOf('ledger.view', 'receipt.enter') && !(can('accounts.enter') && !can('demand.raise') && !can('booking.create')) },
     { group: 'CRM tools' },
     { key: 'collections', label: 'Collections', show: () => can('ledger.view') },
-    { key: 'demands', label: 'Stages & demands', show: () => anyOf('demand.raise', 'demand.approve', 'stage.record', 'ledger.view') },
+    { key: 'demands', label: 'Stages & demands', show: () => anyOf('demand.raise', 'demand.approve', 'ledger.view') },
+    { key: 'stages', label: 'Construction stages', show: () => can('stage.record'), sub: true },
     { key: 'letters', label: 'Demand letters (many flats)', show: () => anyOf('demand.raise', 'ledger.view') },
     { key: 'prices', label: 'Price list & cost sheet', show: () => can('inventory.view') },
     { key: 'partners', label: 'Channel partner ledger', show: () => can('ledger.view') },
@@ -244,7 +245,7 @@
     $('#cpw').onclick = () => changePassword(false);
     if ($('#proj')) $('#proj').onchange = (e) => { proj = +e.target.value; store.set('erp_project', proj); shell(); };
     if (/^reg-/.test(page || '') && can('accounts.view')) { try { await accRegister(page.slice(4)); } catch (e) { $('#page').innerHTML = `<div class="err">${esc(e.message)}</div>`; } return; }
-    const fn = { home, mgmt, ca: caPage, accdash, collections, flats, custdocs, comms, team: teamPage, accteam: teamPage, sdr: sdrPage, cp: cpPage, project: projectHome, crmtodo: () => dailyTodo('crm'), acctodo: () => dailyTodo('accounts'), training, projects, plans, users, audit, units, bookings, demands, receipts, ledgers, letters, followups, verify, prices, partners, balances: accBalances, bankauto: bankAuto, bookscrm: booksCrm, accreports: accReports, checks: accChecks, accsetup: accSetup, import: importPage, booking: bookingPage, statement: statementPage, run: runPage };
+    const fn = { stages: () => demands(true), home, mgmt, ca: caPage, accdash, collections, flats, custdocs, comms, team: teamPage, accteam: teamPage, sdr: sdrPage, cp: cpPage, project: projectHome, crmtodo: () => dailyTodo('crm'), acctodo: () => dailyTodo('accounts'), training, projects, plans, users, audit, units, bookings, demands, receipts, ledgers, letters, followups, verify, prices, partners, balances: accBalances, bankauto: bankAuto, bookscrm: booksCrm, accreports: accReports, checks: accChecks, accsetup: accSetup, import: importPage, booking: bookingPage, statement: statementPage, run: runPage };
     const key = DETAIL[page] && arg ? page : cur.key;
     try { await fn[key](arg ? +arg : undefined); } catch (e) { $('#page').innerHTML = `<div class="err">${esc(e.message)}</div>`; }
   }
@@ -277,7 +278,7 @@
   // Home → a project → its departments (Sales & CRM, Accounts, …) → the working pages of that department.
   const SUB = {
     dashboard: 'Daily collections, dues, tower status, channel partners', collections: 'Today’s and this month’s collections, what is due and coming in, wing by wing', units: 'Every unit, floor by floor, both wings side by side',
-    bookings: 'Bookings, applicants, cancellations and transfers', demands: 'Construction stages and the demands raised on them',
+    bookings: 'Bookings, applicants, cancellations and transfers', demands: 'Construction stages and the demands raised on them', stages: 'Record each construction stage as it is completed, with who certified it',
     receipts: 'Enter receipts; Head Accounts approves them', ledgers: 'Each buyer’s statement of demands and payments',
     letters: 'Stage demands and reminders, by email or courier', followups: 'Calls, WhatsApps and promises to pay',
     comms: 'Buyers\' email replies and WhatsApps, and messages to link to a flat', team: 'Dream Chat: CRM and Accounts, about a flat or a cheque', accteam: 'Dream Chat: CRM and Accounts, about a flat or a cheque', custdocs: 'Signed and scanned papers for every flat and SRA tenant, kept in Google Drive', verify: 'Items from the import still to check and close', prices: 'Rates, floor rise and the cost sheet', partners: 'Each partner firm: brokerage, bills, pass back, payments and balance',
@@ -307,7 +308,7 @@
     { key: 'audit', title: 'CRM/Accounts Audit', sub: 'Tally against the CRM, checks, reconciling items and cancelled flats', icon: 'check', tone: '#0E8C9B', pages: ['bookscrm', 'checks', 'reg-recon', 'reg-cancellations', 'verify', 'audit'] },
     { key: 'cpdept', title: 'Channel Partners', sub: 'Every partner firm: brokerage earned, bills, pass back, payments and what is still owed', icon: 'users', tone: '#0E8C9B', direct: 'partners' },
     { key: 'ca', title: 'CA / Tax', sub: 'GST, TDS payable, RERA quarterly, cash flow and compliance', icon: 'chart', tone: '#7A5C99', direct: 'ca' },
-    { key: 'construction', title: 'Construction', sub: 'Site Office: slab cycle, daily progress reports, hindrances, materials and stages', icon: 'hammer', tone: '#B7791F', pages: ['site', 'demands'], later: ['Contractor billing'] },
+    { key: 'construction', title: 'Construction', sub: 'Site Office: slab cycle, daily progress reports, hindrances, materials and stages', icon: 'hammer', tone: '#B7791F', pages: ['site', 'stages'], later: ['Contractor billing'] },
     { key: 'purchase', title: 'Purchase', sub: 'Requests, approvals, orders, receipts at site and payment for RMC, steel, cement and more', icon: 'cart', tone: '#117A65', direct: 'purchase' },
     { key: 'drawings', title: 'Drawings', sub: 'Architect, structural and MEP drawings from the Site Plans folder', icon: 'grid', tone: '#2B5C8A', direct: 'drawings' },
     { key: 'training', title: 'Training videos', sub: 'Short videos on how to use each part of the ERP', icon: 'book', tone: '#B7791F', direct: 'training' },
@@ -1115,10 +1116,22 @@
   }
 
   // ---------- stages & demands ----------
-  async function demands() {
+  async function demands(siteView) {
     if (!proj) return noProject();
-    const d = await api(`/api/demands?project=${proj}`);
+    const d = await api(`/api/demands?project=${proj}${siteView ? '&site=1' : ''}`);
     const done = (bid, s) => d.done.find((x) => x.building_id === bid && x.stage_name === s);
+    // the site's page: the stages only, nothing about money
+    if (d.site) {
+      $('#page').innerHTML = `<div class="page-head"><div><h1>Construction stages</h1><p class="muted">Record each stage the day it is complete, with who certified it. The CRM team is told and takes it from there.</p></div>
+        <div class="actions" style="margin:0">${can('stage.record') ? '<button id="stage">Record a completed stage</button>' : ''}</div></div>
+        <div class="panel table-wrap"><table><tr><th>Stage</th>${d.buildings.map((b) => `<th>${esc(b.name)}</th>`).join('')}</tr>
+          ${d.stages.map((st) => `<tr><td>${esc(st.name)}</td>${d.buildings.map((b) => { const x = done(b.id, st.name); return `<td>${x ? `<span class="pill good">done ${fmtD(x.completed_on)}</span><div class="small muted">${esc(x.certified_by || '')}${x.recorded_by ? ' · recorded by ' + esc(x.recorded_by) : ''}</div>` : '<span class="muted">—</span>'}</td>`; }).join('')}</tr>`).join('')}</table></div>`;
+      if ($('#stage')) $('#stage').onclick = () => dialog(`<h2>Record a completed stage</h2>
+        <div class="row"><div><label>Building</label><select name="buildingId">${d.buildings.map((b) => `<option value="${b.id}">${esc(b.name)}</option>`).join('')}</select></div><div><label>Stage</label><select name="stageName">${d.stages.map((x) => `<option>${esc(x.name)}</option>`).join('')}</select></div></div>
+        <div class="row"><div><label>Completed on</label><input type="date" name="completedOn" max="${todayIso()}" required></div><div><label>Certified by (architect / engineer)</label><input name="certifiedBy"></div></div>`,
+      async (x) => { await api('/api/demands', { action: 'stage.complete', ...x }); toast('Stage recorded. The CRM team takes it from here.'); demands(true); });
+      return;
+    }
     $('#page').innerHTML = `<div class="page-head"><div><h1>Stages & demands</h1><p class="muted">Site records a stage as complete; CRM prepares the demand run; Head CRM approves it. Buyers pay within ${d.daysToPay} days.</p></div>
       <div class="actions" style="margin:0">${can('stage.record') ? '<button class="ghost" id="stage">Record a completed stage</button>' : ''}${can('demand.raise') ? '<button id="run">Prepare a demand run</button>' : ''}${can('demand.approve') ? '<button class="ghost" id="days">Days to pay</button>' : ''}</div></div>
       <div class="panel table-wrap"><h2>Construction stages</h2><table><tr><th>Stage</th>${d.buildings.map((b) => `<th>${esc(b.name)}</th>`).join('')}</tr>

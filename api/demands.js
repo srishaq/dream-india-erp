@@ -43,6 +43,9 @@ module.exports = route({
   GET: async (req, res) => {
     const u = await auth.guard(req, res); if (!u) return;
     if (!['demand.raise', 'demand.approve', 'stage.record', 'ledger.view'].some((p) => has(u, p))) return res.status(403).json({ error: 'Your role does not allow this.' });
+    // Site staff record stages only: no percentages, demand runs, amounts or payment schedule
+    const money = ['demand.raise', 'demand.approve', 'ledger.view'].some((p) => has(u, p));
+    if (req.query.run && !money) throw fail(403, 'Your role does not allow this.');
     if (req.query.run) {
       const run = await db.one('select r.*, b.code as building from demand_runs r left join buildings b on b.id = r.building_id where r.id = $1', [intOr(req.query.run)]);
       if (!run) throw fail(404, 'Run not found.');
@@ -54,6 +57,7 @@ module.exports = route({
     }
     const pid = needProject(u, intOr(req.query.project));
     const o = await overview(pid);
+    if (!money || req.query.site) return res.json({ buildings: o.buildings, stages: o.stages.map((x) => ({ seq: x.seq, name: x.name })), done: o.done.map(({ raised, ...x }) => x), site: true });
     if (has(u, 'ledger.view')) o.schedule = await require('../lib/dashboard').schedule(pid);
     return res.json(o);
   },

@@ -99,6 +99,8 @@ const n = (v) => Number(v);
     assert.equal((await crm('/api/demands', { action: 'run.create', buildingId: A.id, stageName: 'On Completion of Excavation' })).status, 400); // not done yet
     assert.equal((await crm('/api/demands', { action: 'stage.complete', buildingId: A.id, stageName: 'On Completion of Excavation', completedOn: '2026-10-01' })).status, 403);
     assert.equal((await site('/api/demands', { action: 'stage.complete', buildingId: A.id, stageName: 'On Completion of Excavation', completedOn: '2026-10-01', certifiedBy: 'Engineer' })).ok, true);
+    const sv = await site(`/api/demands?project=${sig.id}`); // site staff see the stages only: no runs, amounts or percentages
+    assert.equal(sv.site, true); assert.equal(sv.runs, undefined); assert.equal(sv.stages[0].pct, undefined); assert.ok(sv.done.length);
     const r = await crm('/api/demands', { action: 'run.create', buildingId: A.id, stageName: 'On Completion of Excavation', demandDate: '2026-10-02' });
     run = r.id;
     const preview = await crm(`/api/demands?run=${run}`); assert.equal(preview.rows.length, 1); assert.equal(n(preview.rows[0].amount), 971500);
