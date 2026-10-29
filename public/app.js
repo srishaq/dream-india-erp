@@ -115,8 +115,6 @@
     { key: 'flats', label: 'Flats & buyers', show: () => anyOf('inventory.view', 'ledger.view') },
     { key: 'units', label: 'Book a flat (inventory)', show: () => can('inventory.view') },
     { key: 'receipts', label: 'Receipts', show: () => anyOf('receipt.enter', 'receipt.approve', 'ledger.view') },
-    { key: 'sc-calls', label: 'Follow-up calls', show: () => can('ledger.view'), href: () => '#/flats?f=call' },
-    { key: 'sc-dues', label: 'Customer ledgers & dues', show: () => can('ledger.view'), href: () => '#/flats?f=overdue' },
     { key: 'sc-appr', label: 'Bookings & approvals', show: () => anyOf('inventory.view', 'ledger.view'), href: () => '#/flats?f=approval' },
     { key: 'comms', label: 'Inbox', show: () => can('ledger.view') },
     { key: 'team', label: 'Dream Chat', show: () => anyOf('ledger.view', 'receipt.enter') && !(can('accounts.enter') && !can('demand.raise') && !can('booking.create')) },
@@ -283,7 +281,7 @@
   const DEPTS = [
     { key: 'crm', title: 'Sales & CRM', sub: 'Today’s work, every flat and buyer in one place, receipts, collections and the inbox', icon: 'chart', tone: '#2B5C8A', group: 'CRM', more: 'CRM tools',
       sections: [['Every day', ['crmtodo', 'flats', 'receipts', 'comms', 'team']], ['Sales', ['units', 'sc-appr', 'prices', 'partners']],
-        ['Collections', ['dashboard', 'sc-calls', 'sc-dues', 'demands', 'letters']], ['Records and checks', ['custdocs', 'verify']]] },
+        ['Collections', ['dashboard', 'demands', 'letters']], ['Records and checks', ['custdocs', 'verify']]] },
     { key: 'construction', title: 'Construction', sub: 'Site Office: slab cycle, daily progress reports, hindrances, materials and stages', icon: 'hammer', tone: '#B7791F', pages: ['site', 'demands'], later: ['Contractor billing'] },
     { key: 'accounts', title: 'Accounts', sub: 'Bank, receipts, payments, PDC, TDS, SRA rent, GST, SDR and Tally', icon: 'book', tone: '#117A65', group: 'Accounts', skip: ['ca', 'bookscrm', 'checks'] },
     { key: 'audit', title: 'CRM/Accounts Audit', sub: 'Tally against the CRM, checks, reconciling items and cancelled flats', icon: 'check', tone: '#0E8C9B', pages: ['bookscrm', 'checks', 'reg-recon', 'reg-cancellations', 'verify', 'audit'] },
