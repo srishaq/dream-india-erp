@@ -570,3 +570,9 @@ td.row-acts button, td.row-acts .btn { display: flex; width: 100%; justify-conte
 .ff-person a.ic:hover{background:var(--brand-tint)}
 .ff-person a.ic-wa{color:#1a9e55}
 .ff-person a.ic-wa:hover{background:#e7f6ee}
+
+/* flat file: every section on one page; the buttons stay at the top and jump to a section */
+.ff-jump { position: sticky; top: 0; z-index: 6; background: var(--bg, #F6F6FA); padding: 8px 0; margin-bottom: 6px; }
+.ff-pane { scroll-margin-top: 76px; }
+.ff-pane + .ff-pane { margin-top: 22px; }
+h2.ff-sec { font-size: 13px; letter-spacing: .1em; text-transform: uppercase; color: var(--muted, #5E6480); margin: 0 0 10px; padding-top: 6px; border-top: 2px solid var(--brand-tint, #ECEBF6); }

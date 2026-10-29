@@ -788,7 +788,7 @@
       <div id="ffVerify"></div>
       ${cancelBox}
       ${primary.length || more.length ? `<div class="ff-actions">${primary.join('')}${more.length ? `<details class="ff-more"><summary class="btn ghost">More ▾</summary><div class="ff-menu">${more.join('')}</div></details>` : ''}</div>` : ''}
-      <div class="ff-tabs" role="tablist">${TABS.map(([k, l]) => `<button type="button" role="tab" data-ff="${k}" aria-selected="${k === tab}">${l}<span class="ff-n" id="ffn-${k}"></span></button>`).join('')}</div>
+      <nav class="ff-tabs ff-jump" aria-label="Jump to">${TABS.map(([k, l]) => `<button type="button" data-ff="${k}" aria-current="${k === tab}" aria-selected="${k === tab}">${l}<span class="ff-n" id="ffn-${k}"></span></button>`).join('')}</nav>
       <section class="ff-pane" data-pane="overview">
         <div class="panel" id="ffNext"><h2>Where this buyer stands</h2><p class="muted small">Loading…</p></div>
         ${d.regSteps && b.status === 'active' ? (() => { const nx = d.regSteps.find((x) => !x.done); return `<div class="panel"><h2>Registration ${nx ? `<span class="pill warn" style="margin-left:6px">next: ${esc(nx.label)}</span>` : '<span class="pill good" style="margin-left:6px">registered</span>'}</h2>
@@ -808,7 +808,7 @@
             ${can('booking.approve') ? '' : '<p class="small muted">To change a buyer\'s details, ask Head CRM (Edit booking).</p>'}</div>
         </div>
       </section>
-      <section class="ff-pane" data-pane="payments" hidden>
+      <section class="ff-pane" data-pane="payments"><h2 class="ff-sec">Payments</h2>
         <div class="panel"><h2>Receipts ${live && can('receipt.enter') ? '<button class="small" id="receipt2" style="float:right">Enter a receipt</button>' : ''}</h2><div class="table-wrap"><table><tr><th>Date</th><th>Bank / instrument</th><th class="num">Amount</th><th>Split</th><th>Status</th><th>Cheque</th><th></th></tr>
           ${d.receipts.map((r) => `<tr><td>${fmtD(r.received_on)}</td><td>${esc([r.bank, r.instrument_no].filter(Boolean).join(' · ') || r.mode)}</td><td class="num">${inr(r.amount, 2)}</td>
             <td class="small">${Object.entries(r.splits).map(([h, v]) => `${HEAD[h] || h} ${inr(v, 2)}`).join(' · ')}</td><td>${rStatus(r)}</td><td class="small">${r.opening ? '' : chequeCell(r)}</td>
@@ -817,24 +817,30 @@
           ${d.plan.map((s) => { const x = demanded.get(s.name); return `<tr class="${x ? '' : 'dim'}"><td class="num">${s.seq}</td><td>${esc(s.name)}</td><td class="num">${toNum(s.pct)}%</td><td class="num">${inr(toNum(b.agreement_value) * toNum(s.pct) / 100)}</td><td>${x ? fmtD(x.demand_date) : 'not yet'}</td><td>${x ? fmtD(x.due_date) : ''}</td></tr>`; }).join('')}</table></div></div>
         ${can('ledger.view') ? `<div class="panel" id="ffLedger"><h2>Ledger <a class="btn ghost small" style="float:right" href="#/statement/${b.id}">Print statement</a></h2><p class="muted small">Loading…</p></div>` : ''}
       </section>
-      <section class="ff-pane" data-pane="calls" hidden><div class="panel" id="ffCalls"><h2>Calls &amp; follow-ups</h2><p class="muted small">${can('ledger.view') ? 'Loading…' : 'Not on your login.'}</p></div></section>
-      <section class="ff-pane" data-pane="messages" hidden>
+      <section class="ff-pane" data-pane="calls"><h2 class="ff-sec">Calls &amp; follow-ups</h2><div class="panel" id="ffCalls"><h2>Calls &amp; follow-ups</h2><p class="muted small">${can('ledger.view') ? 'Loading…' : 'Not on your login.'}</p></div></section>
+      <section class="ff-pane" data-pane="messages"><h2 class="ff-sec">Messages</h2>
         ${can('ledger.view') ? '<div class="panel" id="ccomm"><h2>Communication</h2><p class="muted small">Loading…</p></div>' : ''}
         <div class="panel" id="ffChat"><h2>Dream Chat about this flat</h2><p class="muted small">Loading…</p></div>
       </section>
-      <section class="ff-pane" data-pane="documents" hidden>
+      <section class="ff-pane" data-pane="documents"><h2 class="ff-sec">Documents</h2>
         <div class="panel"><h2>Letters and forms from the ERP</h2><div class="actions" style="margin:0">${docBtns.join('')}</div></div>
         ${can('buyer.kyc') ? '<div class="panel" id="cdocs"><h2>Customer documents</h2><p class="muted small">Loading…</p></div>' : ''}
       </section>
-      <section class="ff-pane" data-pane="history" hidden><div class="panel"><h2>History</h2><p class="small muted">Every change on this booking, its receipts and demands, newest first.</p><div class="table-wrap"><table><tr><th>When</th><th>What</th><th>Note</th><th>By</th></tr>
+      <section class="ff-pane" data-pane="history"><h2 class="ff-sec">History</h2><div class="panel"><h2>History</h2><p class="small muted">Every change on this booking, its receipts and demands, newest first.</p><div class="table-wrap"><table><tr><th>When</th><th>What</th><th>Note</th><th>By</th></tr>
         ${(d.history || []).map((h) => `<tr><td class="small">${fmtDate(h.at)}</td><td>${esc((h.entity === 'booking' ? '' : h.entity === 'receipt' ? 'Receipt: ' : 'Demand: ') + (ACT[h.action] || h.action))}</td><td class="small">${esc(h.note || '')}</td><td class="small">${esc(h.user_name || 'ERP')}</td></tr>`).join('') || '<tr><td colspan="4" class="muted">Nothing recorded yet.</td></tr>'}</table></div></div></section>`;
-    const showTab = (k) => { tab = k;
-      document.querySelectorAll('[data-ff]').forEach((x) => x.setAttribute('aria-selected', x.dataset.ff === k));
-      document.querySelectorAll('.ff-pane').forEach((x) => (x.hidden = x.dataset.pane !== k));
+    // Everything about the flat is on this one page, section under section; the buttons jump to a section.
+    const mark = (k) => document.querySelectorAll('[data-ff]').forEach((x) => { x.setAttribute('aria-selected', x.dataset.ff === k); x.setAttribute('aria-current', x.dataset.ff === k); });
+    const showTab = (k, quiet) => { tab = k; mark(k);
+      const el = document.querySelector(`.ff-pane[data-pane="${k}"]`);
+      if (el && !quiet) el.scrollIntoView({ behavior: k === 'overview' ? 'auto' : 'smooth', block: 'start' });
       history.replaceState(null, '', `#/booking/${b.id}${k === 'overview' ? '' : '?tab=' + k}`); };
     document.querySelectorAll('[data-ff]').forEach((x) => (x.onclick = () => showTab(x.dataset.ff)));
+    if ('IntersectionObserver' in window) {
+      const io = new IntersectionObserver((es) => { for (const e of es) if (e.isIntersecting && location.hash.startsWith('#/booking/' + b.id)) mark(e.target.dataset.pane); }, { rootMargin: '-120px 0px -65% 0px' });
+      document.querySelectorAll('.ff-pane').forEach((x) => io.observe(x));
+    }
     const mm = $('.ff-more'); if (mm) { document.addEventListener('click', (e) => { if (mm.open && !mm.contains(e.target)) mm.open = false; }); mm.querySelectorAll('.ff-menu > *').forEach((x) => x.addEventListener('click', () => (mm.open = false))); }
-    showTab(tab);
+    if (tab !== 'overview') setTimeout(() => showTab(tab), 400); else mark('overview');
     const count = (k, n, hot) => { const el = $('#ffn-' + k); if (el && n) { el.textContent = n; el.classList.toggle('hot', !!hot); } };
     count('payments', d.receipts.length);
     count('history', (d.history || []).length);
