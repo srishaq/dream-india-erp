@@ -222,7 +222,14 @@
     const nav = visible.filter((p, i) => !p.group || (visible[i + 1] && !visible[i + 1].group));
     const curKey = DETAIL[page] || page || 'home';
     const cur = PAGES.find((p) => p.key === curKey && p.show()) || PAGES[0];
-    app.innerHTML = `<div class="shell">
+    const initials = String(me.name || '?').split(/\s+/).filter(Boolean).map((w) => w[0]).slice(0, 2).join('').toUpperCase();
+    app.innerHTML = `<header class="mbar no-print"><a class="mlogo" href="#/home" aria-label="Home">${wordmark}</a><a class="mhome" href="#/home"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 10.5 12 3l9 7.5V20a1 1 0 0 1-1 1h-5v-6H9v6H4a1 1 0 0 1-1-1z"/></svg>Home</a>
+      <button type="button" class="mmenu" id="mMenu" aria-label="Menu" aria-expanded="false"><svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M4 7h16M4 12h16M4 17h16"/></svg></button>
+      <button type="button" class="mav" id="mAv" aria-label="Your account">${esc(initials)}</button></header>
+      <div class="macct no-print" id="mAcct" hidden><b>${esc(me.name)}</b><span class="small muted">${esc(me.roleLabel)}${projectList.length === 1 ? ' · ' + esc(projectList[0]?.name || '') : ''}</span>
+        <button class="ghost" data-m="cpw">Change password</button><button class="ghost" data-m="out">Sign out</button></div>
+      <div class="mback no-print" id="mBack" hidden></div>
+      <div class="shell">
       <nav class="side no-print">
         <a class="logo" href="#/home">${wordmark}<div><b>ERP</b></div></a>
         ${navHtml(nav, cur)}
@@ -236,6 +243,15 @@
         ${hubTabs(cur.key)}<div class="page" id="page"><p class="muted">Loading…</p></div>
       </div></div>`;
     wireNav();
+    // phone: the menu slides in from the left, the account sheet drops from the initials
+    { const side = $('.side'), back = $('#mBack'), acct = $('#mAcct');
+      const close = () => { side.classList.remove('open'); acct.hidden = true; back.hidden = true; $('#mMenu').setAttribute('aria-expanded', 'false'); };
+      $('#mMenu').onclick = () => { const on = !side.classList.contains('open'); close(); if (on) { side.classList.add('open'); back.hidden = false; $('#mMenu').setAttribute('aria-expanded', 'true'); } };
+      $('#mAv').onclick = () => { const on = acct.hidden; close(); if (on) { acct.hidden = false; back.hidden = false; } };
+      back.onclick = close;
+      side.addEventListener('click', (e) => { if (e.target.closest('a[href]')) close(); });
+      acct.querySelectorAll('[data-m]').forEach((b) => (b.onclick = () => { close(); const t = document.getElementById(b.dataset.m); if (t) t.click(); }));
+      window.addEventListener('hashchange', close, { once: true }); }
     document.querySelectorAll('[data-hub]').forEach((b) => (b.onclick = () => go('#/' + b.dataset.hub)));
     chat.mount();
     if (anyOf('accounts.enter', 'receipt.approve')) api('/api/receipts?todeposit=1').then((r) => { if (r.n && $('.top .who:last-child')) $('.top .who:last-child').insertAdjacentHTML('afterbegin', `<a class="mbadge dep" href="#/receipts?t=cheques" title="Cheques the CRM has entered that are not deposited yet">🏦 ${r.n} cheque${r.n === 1 ? '' : 's'} to deposit</a>`); }).catch(() => {});
