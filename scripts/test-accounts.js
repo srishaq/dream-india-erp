@@ -157,6 +157,29 @@ let n = 0; const step = async (name, fn) => { await fn(); n++; console.log('  âœ
     const r = await P.morning('2026-11-03'); assert.equal(r.skipped, 'not yet');
     const r2 = await P.morning('2026-11-05'); assert.ok(r2.skipped, 'mail not set up here: skipped with a reason'); // no SMTP in this test
   });
+  await step('the Tally link: Tally fetches new ERP entries with its key, confirms them, and gets changed ones again as Alter', async () => {
+    const bad = await fetch(BASE + '/api/accounts?tally=feed', { headers: { 'X-ERP-Key': 'nope' } }); assert.equal(bad.status, 401);
+    const k = await admin('/api/accounts', { action: 'tally-link', newKey: true, company: 'Prime Realtors' }); assert.match(k.key, /^tly_/);
+    const feed = async (q = '') => { const r = await fetch(BASE + '/api/accounts?tally=feed' + q, { headers: { 'X-ERP-Key': k.key } }); return q.includes('json') ? r.json() : r.text(); };
+    assert.equal((await feed('&format=json')).count, 0); // no start date: nothing goes
+    await admin('/api/accounts', { action: 'tally-link', start: '2026-10-26' });
+    const j = await feed('&format=json');
+    assert.ok(j.count >= 1, JSON.stringify(j)); assert.ok(j.vouchers.every((v) => v.date >= '2026-10-26' && v.action === 'Create'));
+    const x = await feed(); assert.match(x, /<SVCURRENTCOMPANY>Prime Realtors<\/SVCURRENTCOMPANY>/); assert.match(x, /REMOTEID="DIERP-/);
+    const first = j.vouchers[0];
+    const ack = await fetch(BASE + '/api/accounts', { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-ERP-Key': k.key }, body: JSON.stringify({ action: 'tally-ack', done: j.vouchers.map((v, i) => ({ id: v.id, result: i === 0 && j.count > 1 ? 'error' : 'ok', note: i === 0 && j.count > 1 ? 'Ledger RMC does not exist' : 'Vch ' + i })) }) }).then((r) => r.json());
+    assert.equal(ack.imported + ack.failed, j.count);
+    const left = await feed('&format=json'); assert.equal(left.count, ack.failed); // only the failed one is offered again
+    const st = await admin('/api/accounts?view=tallylink'); assert.equal(st.hasKey, true); assert.ok(st.lastPull);
+    // a confirmed entry that is changed later comes back as Alter
+    const done = j.vouchers.find((v, i) => !(i === 0 && j.count > 1)); const reg = done.type === 'Receipt' ? 'receipts' : 'payments';
+    const row = (await admin(`/api/accounts?reg=${reg}&q=${done.id}`)).rows[0];
+    await new Promise((r) => setTimeout(r, 20));
+    assert.equal((await admin('/api/accounts', { action: 'save', reg, id: row.id, data: { remark: 'changed after Tally' } })).ok, true);
+    const again = await feed('&format=json'); assert.ok(again.vouchers.some((v) => v.id === done.id && v.action === 'Alter'));
+    const s = client(); await s('/api/session', { action: 'login', username: 'acc1', password: 'accounts-password-1' });
+    assert.equal((await s('/api/accounts', { action: 'tally-link', newKey: true })).status, 403);
+  });
   console.log(`\nAll ${n} accounts checks passed.`);
   server.close(); require('../lib/db').reset(); process.exit(0);
 })().catch((e) => { console.error('\nFAILED:', e); process.exit(1); });

@@ -2614,6 +2614,7 @@
   async function accSetup() {
     const [d, imp] = await Promise.all([api('/api/accounts?view=lists'), api('/api/accounts?view=import')]);
     $('#page').innerHTML = `<div class="page-head"><div><h1>Banks, heads &amp; import</h1><p class="muted">Cash flow heads and bank accounts are set up here only (on the sheet: "Do not add heads yourself; ask Mr Syed"). The head map decides the cash flow section, TDS section and rate, and whether a payment needs a bill.</p></div></div>
+      <div class="panel" id="tlink"><h2>Tally link</h2><p class="muted small">Loading…</p></div>
       ${!imp.live ? `<div class="panel"><h2>Import from Tally</h2>
         <p class="muted">Upload the Receipt Register, the Payment Register and the Contra Register exported from Tally to Excel. Every bank line becomes one row in Receipts or Payments Out (flat ledgers such as "B-2401 Name" fill the Unit), the bank accounts are set up from Tally's bank ledgers, and the Daily Bank Balance is worked out from Tally. Everything now in Receipts, Payments Out and the Daily Bank Balance is replaced. Then use Bank Auto Check → "Compare with the bank statements" to see what differs.</p>
         ${imp.lastTally ? `<p class="ok">Last Tally import ${fmtDate(imp.lastTally.created_at)} by ${esc(imp.lastTally.by_name || '')}: ${imp.lastTally.after.receipts} receipts and ${imp.lastTally.after.payments} payments, ${fmtD(imp.lastTally.after.from)} to ${fmtD(imp.lastTally.after.to)}.</p>` : ''}
@@ -2667,6 +2668,21 @@
     };
     if ($('#clr')) $('#clr').onclick = async (e) => { if ($('#clrc').value.trim() !== 'CLEAR') return alert('Type CLEAR in the box first.'); e.target.disabled = true; try { const r = await api('/api/accounts', { action: 'clear', confirm: 'CLEAR' }); toast(`Cleared: ${r.removed.acc_receipts} receipts and ${r.removed.acc_payments} payments removed.`); accSetup(); } catch (x) { alert(x.message); e.target.disabled = false; } };
     if ($('#imp')) $('#imp').onclick = async (e) => { if (!confirm('Import the accounts sheet into the ERP? Rows from the last import are replaced; rows entered in the ERP stay.')) return; e.target.disabled = true; e.target.textContent = 'Importing… (up to a minute)'; try { const r = await api('/api/accounts', { action: 'import', projectId: proj }); toast(`Imported ${r.counts.receipts} receipts and ${r.counts.payments} payments.`); accSetup(); } catch (x) { alert(x.message); e.target.disabled = false; e.target.textContent = 'Import now'; } };
+    // the Tally link: Tally's server fetches new receipts and payments from the ERP with its own key
+    const tlink = async (shownKey) => {
+      const T = await api('/api/accounts?view=tallylink').catch(() => null); const box = $('#tlink'); if (!T || !box) return;
+      const can2 = me.perms.includes('accounts.manage') || me.role === 'admin', sum = (k) => T.receipts[k] + T.payments[k];
+      box.innerHTML = `<h2>Tally link</h2><p class="small muted" style="margin:0 0 8px">Tally's server fetches the receipts and payments entered in the ERP (not those brought in from Tally or the old sheet) and imports them into Tally as vouchers, in the company below. Nothing is sent until the start date is set: set it to the go-live date. Give the Tally company's IT person the key and the one-page note; they set it up on the Tally server.</p>
+        <div class="kpis"><div class="kpi"><b>${sum('waiting')}</b><span>waiting to go to Tally</span></div><div class="kpi"><b>${sum('changed')}</b><span>changed after Tally took them</span></div><div class="kpi"><b>${sum('done')}</b><span>in Tally</span></div><div class="kpi ${sum('errors') ? 'bad' : ''}"><b>${sum('errors')}</b><span>Tally could not import</span></div></div>
+        <p class="small">${T.lastPull ? 'Tally last fetched ' + fmtDate(T.lastPull.at) + ' (' + T.lastPull.vouchers + ' vouchers).' : 'Tally has not fetched anything yet.'} ${T.lastAck ? 'Last confirmed ' + fmtDate(T.lastAck.at) + ': ' + T.lastAck.ok + ' imported' + (T.lastAck.failed ? ', ' + T.lastAck.failed + ' failed' : '') + '.' : ''}</p>
+        ${T.errors.length ? `<p class="small bad-t">${T.errors.map((e) => esc(e.ref_id) + ': ' + esc(String(e.tally_note).replace(/^Tally could not import: /, ''))).join(' · ')}</p>` : ''}
+        ${can2 ? `<div class="row" style="grid-template-columns:1fr 180px auto auto;align-items:end"><div><label>Company name exactly as in Tally</label><input id="tlCo" value="${esc(T.company)}"></div><div><label>Send entries dated from</label><input type="date" id="tlStart" value="${esc(T.start || '')}"></div><button class="ghost" id="tlSave">Save</button><button id="tlKey">${T.hasKey ? 'Make a new key' : 'Make the key'}</button></div>
+          <p class="small muted" style="margin:4px 0 0">${T.hasKey ? 'A key was made by ' + esc(T.keyMadeBy || '') + ' on ' + fmtDate(T.keyMadeAt) + '. Making a new one stops the old one.' : 'No key yet.'}</p>` : ''}
+        ${shownKey ? `<div class="note" style="margin-top:8px"><b>The key (shown only now):</b><br><code style="user-select:all;word-break:break-all">${esc(shownKey)}</code><br><span class="small">Copy it and give it to the Tally IT person directly (not by email to many people). It is not shown again; if it is lost, make a new one.</span></div>` : ''}`;
+      if ($('#tlSave')) $('#tlSave').onclick = async () => { try { await api('/api/accounts', { action: 'tally-link', company: $('#tlCo').value, start: $('#tlStart').value }); toast('Saved.'); tlink(); } catch (e) { alert(e.message); } };
+      if ($('#tlKey')) $('#tlKey').onclick = async () => { if (T.hasKey && !confirm('Make a new key? The old key stops working at once, so Tally must be given the new one.')) return; try { const r = await api('/api/accounts', { action: 'tally-link', newKey: true }); tlink(r.key); } catch (e) { alert(e.message); } };
+    };
+    tlink();
   }
 
   // ---------- import from the CRM sheet ----------

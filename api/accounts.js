@@ -38,6 +38,17 @@ async function guardClosed(u, reg, dates, reason) {
 
 module.exports = route({
   GET: async (req, res) => {
+    // The Tally link (lib/tally-feed.js): Tally's server fetches vouchers with its own key, no ERP login.
+    if ((req.query || {}).tally === 'feed') {
+      const TF = require('../lib/tally-feed'), q = req.query;
+      if (!(await TF.check(req.headers['x-erp-key'] || q.key))) throw fail(401, 'Wrong or missing key.');
+      const D = /^\d{4}-\d{2}-\d{2}$/;
+      const list = await TF.rows({ from: D.test(q.from || '') ? q.from : null, to: D.test(q.to || '') ? q.to : null, all: q.all === '1' });
+      await TF.notePull(list.length);
+      if (q.format === 'json') return res.json({ company: (await TF.settings()).company, count: list.length, vouchers: TF.json(list) });
+      res.setHeader('Content-Type', 'application/xml; charset=utf-8');
+      return res.end(TF.xml(list, (await TF.settings()).company));
+    }
     const u = await auth.guard(req, res, 'accounts.view'); if (!u) return;
     const q = req.query || {};
     const can = { enter: has(u, 'accounts.enter'), manage: has(u, 'accounts.manage') };
@@ -48,6 +59,7 @@ module.exports = route({
     }
     switch (q.view) {
       case 'todo': return res.json({ ...(await acc.todo()), can });
+      case 'tallylink': return res.json({ ...(await require('../lib/tally-feed').status()), can });
       case 'capack': {
         const P = require('../lib/ca-pack');
         if (q.download) { const ym = /^\d{4}-\d{2}$/.test(q.download) ? q.download : P.prevMonth(); const p = await P.build(ym);
@@ -77,6 +89,11 @@ module.exports = route({
     }
   },
   POST: async (req, res, b) => {
+    if (b.action === 'tally-ack') {
+      const TF = require('../lib/tally-feed');
+      if (!(await TF.check(req.headers['x-erp-key'] || b.key))) throw fail(401, 'Wrong or missing key.');
+      return res.json(await TF.ack(b.done));
+    }
     const u = await auth.guard(req, res, 'accounts.view'); if (!u) return;
     const need = (p) => { if (!has(u, p)) throw fail(403, 'Your role does not allow this.'); };
     if (b.action === 'save') {
@@ -132,6 +149,15 @@ module.exports = route({
         await audit.record(t.q, { user: u, action: 'delete', entity: 'acc-' + b.reg, entityId: before.id, before, note: reason });
       });
       return res.json({ ok: true });
+    }
+    if (b.action === 'tally-link') {
+      if (!has(u, 'accounts.manage') && u.role !== 'admin') throw fail(403, 'Only Head Accounts or the Admin sets up the Tally link.');
+      const TF = require('../lib/tally-feed');
+      if (b.start != null) { if (b.start && !/^\d{4}-\d{2}-\d{2}$/.test(b.start)) throw fail(400, 'Choose the start date.'); await TF.save({ ...(await TF.settings()), start: b.start || null }); }
+      if (b.company != null) { const c = str(b.company, 120); if (!c) throw fail(400, 'Type the company name exactly as it is in Tally.'); await TF.save({ ...(await TF.settings()), company: c }); }
+      let key = null;
+      if (b.newKey) { key = await TF.newKey(u); await audit.record(db.q, { user: u, action: 'tally-key', entity: 'settings', entityId: 'tally_feed', note: 'New Tally link key made; any earlier key stopped working' }); }
+      return res.json({ ok: true, key, status: await TF.status() });
     }
     if (b.action === 'close-month') {
       if (!has(u, 'accounts.manage') && u.role !== 'admin') throw fail(403, 'Only Head Accounts closes the month.');
