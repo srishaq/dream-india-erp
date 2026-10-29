@@ -348,11 +348,11 @@
       if (dept.sections) {
         const pg = (k) => PAGES.find((x) => x.key === k && !x.group && x.show());
         const secs = dept.sections.map(([h, keys]) => [h, keys.map(pg).filter(Boolean).map((x) => ({ title: x.label, sub: SUB[x.key] || '', icon: PICON[x.key] || dept.icon, tone: dept.tone, href: hrefOf(x) }))]).filter(([, t]) => t.length);
-        $('#page').innerHTML = heroHtml(p.name, dept.title, dept.sub, [`#/project/${p.id}`, p.name]) + `<div class="hm">${secs.map(([h, t]) => `<section class="hgroup"><h2>${esc(h)}</h2><div class="tiles">${t.map(tile).join('')}</div></section>`).join('') || '<p class="muted">Your login has no pages in this section.</p>'}</div>`;
+        $('#page').innerHTML = heroHtml(p.name, dept.title, dept.sub, [`#/project/${p.id}`, p.name]) + `<div class="hm">${secs.map(([h, t]) => `<section class="hgroup"><h2>${esc(h)}</h2><div class="tiles five">${t.map(tile).join('')}</div></section>`).join('') || '<p class="muted">Your login has no pages in this section.</p>'}</div>`;
         return;
       }
       const extra = dept.more ? pagesOf({ group: dept.more }).map((pg) => ({ title: pg.label, sub: SUB[pg.key] || '', icon: PICON[pg.key] || dept.icon, tone: '#6B7280', href: hrefOf(pg) })) : [];
-      $('#page').innerHTML = heroHtml(p.name, dept.title, dept.sub, [`#/project/${p.id}`, p.name]) + `<div class="hm"><section class="hgroup"><h2>${dept.more ? 'Daily work' : 'Pages'}</h2><div class="tiles">${tiles.map(tile).join('') || '<p class="muted">Your login has no pages in this section.</p>'}</div></section>
+      $('#page').innerHTML = heroHtml(p.name, dept.title, dept.sub, [`#/project/${p.id}`, p.name]) + `<div class="hm"><section class="hgroup"><h2>${dept.more ? 'Daily work' : 'Pages'}</h2><div class="tiles five">${tiles.map(tile).join('') || '<p class="muted">Your login has no pages in this section.</p>'}</div></section>
         ${extra.length ? `<section class="hgroup more"><h2>${esc(dept.more)} <span class="muted small" style="font-weight:400">· set-up and work on many flats at once</span></h2><div class="tiles small">${extra.map(tile).join('')}</div></section>` : ''}</div>`;
       return;
     }

@@ -481,3 +481,15 @@ details.cm-teams > summary { cursor: pointer; list-style: none; }
 details.cm-teams > summary::-webkit-details-marker { display: none; }
 details.cm-teams > summary::before { content: '▸ '; color: var(--ink-3); }
 details.cm-teams[open] > summary::before { content: '▾ '; }
+/* department pages: five smaller tiles a row, so every page fits on one screen */
+.tiles.five { grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 12px; }
+.tiles.five .tile { min-height: 0; padding: 14px; gap: 8px; border-radius: 14px; }
+.tiles.five .tile .ic { width: 38px; height: 38px; border-radius: 10px; }
+.tiles.five .tile .ic svg { width: 20px; height: 20px; }
+.tiles.five .tile h3 { font-size: 15.5px; line-height: 1.25; }
+.tiles.five .tile p { font-size: 12.5px; line-height: 1.4; display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; }
+.tiles.five .tile .open { font-size: 13px; }
+.hm .hgroup { gap: 10px; }
+@media (max-width: 1250px) { .tiles.five { grid-template-columns: repeat(4, minmax(0, 1fr)); } }
+@media (max-width: 1000px) { .tiles.five { grid-template-columns: repeat(3, minmax(0, 1fr)); } }
+@media (max-width: 700px) { .tiles.five { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; } .tiles.five .tile p { display: none; } }
