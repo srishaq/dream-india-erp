@@ -21,6 +21,12 @@
     return j;
   }
   const can = (p) => !!me && me.perms.includes(p);
+  // small contact icons (call, WhatsApp chat, email), drawn inline
+  const IC = {
+    call: '<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 16.9v3a2 2 0 0 1-2.2 2 19.8 19.8 0 0 1-8.6-3.1 19.5 19.5 0 0 1-6-6A19.8 19.8 0 0 1 2.1 4.2 2 2 0 0 1 4.1 2h3a2 2 0 0 1 2 1.7c.1 1 .4 1.9.7 2.8a2 2 0 0 1-.5 2.1L8 9.9a16 16 0 0 0 6 6l1.3-1.3a2 2 0 0 1 2.1-.4c.9.3 1.8.6 2.8.7a2 2 0 0 1 1.7 2z"/></svg>',
+    wa: '<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3.5 20.5l1.3-4A8.5 8.5 0 1 1 8 19.6z"/><path d="M9.2 8.6c.2-.4.5-.5.8-.5h.5c.2 0 .4.1.5.4l.6 1.5c.1.2 0 .5-.1.7l-.5.6c.6 1.1 1.5 2 2.6 2.6l.6-.5c.2-.2.5-.2.7-.1l1.5.6c.3.1.4.3.4.5v.5c0 .3-.1.6-.5.8-.6.4-1.4.5-2.1.3a8 8 0 0 1-5.3-5.3c-.2-.7-.1-1.5.3-2.1z" fill="currentColor" stroke="none"/></svg>',
+    mail: '<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="5" width="18" height="14" rx="2"/><path d="M3 7l9 6 9-6"/></svg>',
+  };
   function showErr(form, e) { let box = $('.err', form); if (!box) { box = document.createElement('div'); box.className = 'err'; form.appendChild(box); } box.textContent = e.message; }
   const logo = '<img src="/icon.svg" alt="">';
   // sign-in, first setup and password cards: the Dream India Realty logo
@@ -748,7 +754,7 @@
     const statusPill = { pending: '<span class="pill">waiting for approval</span>', active: '<span class="pill good">active</span>', cancelled: '<span class="pill bad">cancelled</span>', rejected: '<span class="pill bad">rejected</span>', transferred: '<span class="pill grey">transferred</span>' }[b.status] || '';
     const tel = (p) => String(p || '').replace(/\D/g, '').slice(-10);
     const contact = (a) => { const m = tel(a.phone), ok = /^[6-9]\d{9}$/.test(m);
-      return `<div class="ff-person"><b>${esc(a.name)}</b><span>${ok ? `<a href="tel:+91${m}">📞 ${esc(m)}</a> <a href="https://wa.me/91${m}" target="_blank" rel="noopener">WhatsApp</a>` : a.phone ? esc(a.phone) : '<span class="muted">no mobile</span>'}${a.email ? ` <a href="mailto:${esc(a.email)}">${esc(a.email)}</a>` : ''}</span></div>`; };
+      return `<div class="ff-person"><b>${esc(a.name)}</b><span class="ff-icons">${ok ? `<a class="ic ic-call" href="tel:+91${m}" title="Call ${esc(m)}" aria-label="Call ${esc(m)}">${IC.call}</a><a class="ic ic-wa" href="https://wa.me/91${m}" target="_blank" rel="noopener" title="WhatsApp ${esc(m)}" aria-label="WhatsApp ${esc(m)}">${IC.wa}</a>` : a.phone ? `<span class="small muted">${esc(a.phone)}</span>` : '<span class="small muted">no mobile</span>'}${a.email && a.email !== '(hidden)' ? `<a class="ic ic-mail" href="mailto:${esc(a.email)}" title="Email ${esc(a.email)}" aria-label="Email ${esc(a.email)}">${IC.mail}</a>` : ''}</span></div>`; };
     const TABS = [['overview', 'Overview'], ['payments', 'Payments'], ['calls', 'Calls & follow-ups'], ['messages', 'Messages'], ['documents', 'Documents'], ['history', 'History']];
     const qTab = (location.hash.split('?')[1] || '').match(/tab=(\w+)/);
     let tab = qTab && TABS.some(([k]) => k === qTab[1]) ? qTab[1] : 'overview';
