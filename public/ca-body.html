@@ -1,0 +1,80 @@
+
+  <div class="check" id="warn" hidden></div>
+
+  <section class="band" id="gst">
+    <h2>GST <small>consideration received from customers, with the TDS they deducted</small></h2>
+    <div class="cards" id="cGst"></div>
+    <div class="panel">
+      <div><h2>Month by month</h2><p class="sub" id="gstSub"></p></div>
+      <div class="tbl"><table id="tGst"></table></div>
+    </div>
+  </section>
+
+  <section class="band" id="tdsp">
+    <h2>TDS payable <small>TDS we deduct from vendors, contractors, consultants, CPs, landlords and staff</small></h2>
+    <div class="cards" id="cTdsp"></div>
+    <div class="panel">
+      <div><h2>By TDS section</h2><p class="sub">Payments from Payments Out, grouped by the TDS section set for each cash flow head (Accounts → Banks, heads &amp; import). Expected TDS is an estimate at the standard rate, worked back from the net amount paid. Thresholds (194Q above ₹50 lakh per supplier, 194-I above ₹50,000 a month) are not applied, so the estimate is on the high side.</p></div>
+      <div class="tbl"><table id="tTdsp"></table></div>
+    </div>
+  </section>
+
+  <section class="band" id="rera">
+    <div style="display:flex;flex-wrap:wrap;justify-content:space-between;gap:12px;align-items:flex-end">
+      <div><h2>RERA <small>bookings, collections and balance receivable, for the quarterly report</small></h2></div>
+      <label class="per2">As of <select id="asOf" aria-label="RERA report date"></select></label>
+    </div>
+    <div class="cards" id="cRera"></div>
+    <div class="panel">
+      <div style="display:flex;flex-wrap:wrap;justify-content:space-between;gap:12px;align-items:flex-end">
+        <div><h2>Units</h2><p class="sub" id="reraSub"></p></div>
+        <div class="filters">
+          <input type="search" id="rq" placeholder="Search unit or buyer" aria-label="Search units">
+          <select id="rOk" aria-label="In RERA account"><option value="">All units</option><option value="Yes">In RERA account: Yes</option><option value="No">In RERA account: No</option></select>
+          <button class="btn" id="reraAll" type="button">Open full report</button>
+        </div>
+      </div>
+      <div class="tbl"><table id="tRera"></table></div>
+      <button class="more" id="reraMore" type="button"></button>
+    </div>
+  </section>
+
+  <section class="band" id="cash">
+    <h2>Cash flow statement <small id="cashSub"></small></h2>
+    <div class="two">
+      <div class="panel">
+        <div><h2>Indirect method</h2><p class="sub">Built from the bank entries. No sales are booked as revenue until possession, so the profit line is the indirect expenses, and construction spend is shown as the increase in inventory. Unpaid bills are not included until their bill details are entered on the payment.</p></div>
+        <div class="tbl"><table id="tInd"></table></div>
+      </div>
+      <div class="panel">
+        <div><h2>Direct method</h2><p class="sub">Money in and out by cash flow head. Tap a line for its entries.</p></div>
+        <div class="tbl"><table id="tDir"></table></div>
+      </div>
+    </div>
+  </section>
+
+  <section class="band" id="comp">
+    <h2>Compliance calendar <small>from the Compliance Calendar register</small></h2>
+    <div class="cards" id="cComp"></div>
+    <div class="panel">
+      <div><h2>Open and recent items</h2><p class="sub">Overdue first, then the next due dates. Mark an item Complied in Accounts → Compliance Calendar, with the date and acknowledgement number.</p></div>
+      <div class="tbl"><table id="tComp"></table></div>
+      <button class="more" id="compMore" type="button"></button>
+    </div>
+  </section>
+
+  <section class="band" id="ctds">
+    <h2>TDS deducted by customers <small>section 194-IA; counted as money received from the customer for GST and RERA</small></h2>
+    <div class="cards" id="cCtds"></div>
+  </section>
+
+  <section class="band" id="nonrev">
+    <h2>Non-revenue receipts <small>money in that is not from customers, by category</small></h2>
+    <div class="cards" id="cNon"></div>
+    <div class="panel">
+      <div><h2>By category and head</h2><p class="sub">Each cash flow head's category is set on its head (Accounts → Banks, heads &amp; import). Heads named after a person need a proper head (loan, capital or investment).</p></div>
+      <div class="tbl"><table id="tNon"></table></div>
+    </div>
+  </section>
+
+  <p class="foot">Every number comes from the ERP's accounts (Receipts, Payments Out, TDS Tracker, Compliance Calendar and the bookings), worked out when the page opens. Bounced cheques are left out. How each head is treated is set on the head itself.</p>

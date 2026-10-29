@@ -1,5 +1,6 @@
 // CA / Tax page (the live portal's CA page), from the ERP's accounts. Data: /api/ca.
-(()=>{
+// Runs each time the CA / Tax page is opened inside the ERP (app.js caPage puts the markup in place first).
+window.CAPage=(()=>{
 const $=s=>document.querySelector(s);
 const esc=s=>String(s??'').replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
 const full=v=>(v<0?'−':'')+'₹'+Math.round(Math.abs(v)).toLocaleString('en-IN');
@@ -235,8 +236,11 @@ $('#asOf').onchange=e=>{ASOF=+e.target.value;reraShown=50;renderRera()};
 $('#reraAll').onclick=()=>{const t=Drill.reg('RERA report: all booked units',()=>({sections:[{cols:CU,rows:RERA.slice().sort((a,b)=>a.u.localeCompare(b.u)),sumCol:'Total received'}]}),false);const el=document.createElement('span');el.innerHTML=`<i ${t}></i>`;const i=el.firstChild;document.body.appendChild(i);i.click();i.remove()};
 
 // nav highlight
-const links=[...document.querySelectorAll('nav.tabs a')];
-addEventListener('scroll',()=>{let on=links[0];for(const a of links){const s=$(a.getAttribute('href'));if(s&&s.getBoundingClientRect().top<140)on=a}links.forEach(a=>a.classList.toggle('on',a===on))},{passive:true});
+const links=[...document.querySelectorAll('.ca-nav button')];
+links.forEach(a=>a.onclick=()=>{const s=$(a.dataset.sec);if(s)s.scrollIntoView({behavior:'smooth',block:'start'})});
+if(window.__caScroll)removeEventListener('scroll',window.__caScroll);
+window.__caScroll=()=>{if(!links.length||!document.body.contains(links[0]))return;let on=links[0];for(const a of links){const s=$(a.dataset.sec);if(s&&s.getBoundingClientRect().top<140)on=a}links.forEach(a=>a.classList.toggle('on',a===on))};
+addEventListener('scroll',window.__caScroll,{passive:true});
 
 // numbers come from /api/ca, worked out from the ERP's accounts (CA access only)
 const setLive=(t,warn)=>{const el=$('#live');el.textContent=t;el.style.color=warn?'var(--out)':'var(--in)'};
@@ -258,4 +262,4 @@ async function loadLive(force){
 }
 $('#reload').onclick=()=>loadLive(true);
 loadLive();
-})();
+});

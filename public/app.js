@@ -137,7 +137,7 @@
     { key: 'accteam', label: 'Dream Chat', show: () => can('accounts.view') },
     { key: 'acc-tax', label: 'Tax & compliance', show: () => can('accounts.view'), href: () => '#/reg-tds' },
     { key: 'acc-sra', label: 'SRA tenants', show: () => can('accounts.view'), href: () => '#/reg-tenants' },
-    { key: 'accdash', label: 'Accounts dashboard', show: () => can('accounts.view'), href: () => '/accounts' },
+    { key: 'accdash', label: 'Accounts dashboard', show: () => can('accounts.view') },
     // the pages inside those tiles (reached through the tabs at the top of each)
     { key: 'balances', label: 'Daily Bank Balance', show: () => can('accounts.view'), sub: true },
     { key: 'bankauto', label: 'Bank Auto Check', show: () => can('accounts.view'), sub: true },
@@ -155,7 +155,7 @@
     { key: 'accreports', label: 'Reports & Tally', show: () => can('accounts.view') },
     { key: 'checks', label: 'Checks', show: () => can('accounts.view') },
     { key: 'bookscrm', label: 'Tally vs CRM', show: () => anyOf('accounts.view', 'ledger.view') },
-    { key: 'ca', label: 'CA / Tax', show: () => can('ca.view'), href: () => '/ca' },
+    { key: 'ca', label: 'CA / Tax', show: () => can('ca.view') },
     { key: 'accsetup', label: 'Banks, heads & import', show: () => can('accounts.manage') },
     { group: 'Site & purchase' },
     { key: 'site', label: 'Construction (Site Office)', show: () => sec('site'), href: () => '/site' },
@@ -233,7 +233,7 @@
     $('#cpw').onclick = () => changePassword(false);
     if ($('#proj')) $('#proj').onchange = (e) => { proj = +e.target.value; store.set('erp_project', proj); shell(); };
     if (/^reg-/.test(page || '') && can('accounts.view')) { try { await accRegister(page.slice(4)); } catch (e) { $('#page').innerHTML = `<div class="err">${esc(e.message)}</div>`; } return; }
-    const fn = { home, mgmt, collections, flats, custdocs, comms, team: teamPage, accteam: teamPage, sdr: sdrPage, cp: cpPage, project: projectHome, crmtodo: () => dailyTodo('crm'), acctodo: () => dailyTodo('accounts'), training, projects, plans, users, audit, units, bookings, demands, receipts, ledgers, letters, followups, verify, prices, partners, balances: accBalances, bankauto: bankAuto, bookscrm: booksCrm, accreports: accReports, checks: accChecks, accsetup: accSetup, import: importPage, booking: bookingPage, statement: statementPage, run: runPage };
+    const fn = { home, mgmt, ca: caPage, accdash, collections, flats, custdocs, comms, team: teamPage, accteam: teamPage, sdr: sdrPage, cp: cpPage, project: projectHome, crmtodo: () => dailyTodo('crm'), acctodo: () => dailyTodo('accounts'), training, projects, plans, users, audit, units, bookings, demands, receipts, ledgers, letters, followups, verify, prices, partners, balances: accBalances, bankauto: bankAuto, bookscrm: booksCrm, accreports: accReports, checks: accChecks, accsetup: accSetup, import: importPage, booking: bookingPage, statement: statementPage, run: runPage };
     const key = DETAIL[page] && arg ? page : cur.key;
     try { await fn[key](arg ? +arg : undefined); } catch (e) { $('#page').innerHTML = `<div class="err">${esc(e.message)}</div>`; }
   }
@@ -1042,7 +1042,7 @@
       ${d.rows.map((r) => `<tr data-s="${esc(((r.unit_no || '') + ' ' + (r.buyers || '') + ' ' + (r.instrument_no || '')).toLowerCase())}"><td>${tab === 'cheques' && canDep && !r.deposited_on ? `<input type="checkbox" class="depck" value="${r.id}" data-amt="${toNum(r.amount)}" aria-label="Deposited"> ` : ''}${fmtD(r.received_on)}</td><td><a href="#/booking/${r.booking_id}">${esc(r.unit_no || '')}</a></td><td>${esc(r.buyers || '')}</td>
         <td>${esc([r.bank, r.instrument_no].filter(Boolean).join(' · ') || r.mode)}</td><td class="num">${inr(r.amount, 2)}</td><td class="small">${Object.entries(r.splits).map(([h, v]) => `${HEAD[h] || h} ${inr(v)}`).join(' · ')}</td>
         <td>${chequeCell(r)}</td><td>${rStatus(r)}</td><td>${esc(r.created_by_name || 'Import / sample')}</td>
-        <td class="num" style="white-space:nowrap">${r.status === 'pending' && can('receipt.approve') ? `<button class="small" data-ok="${r.id}">Approve</button> <button class="ghost small" data-no="${r.id}">Reject</button>` : ''}
+        <td class="num row-acts">${r.status === 'pending' && can('receipt.approve') ? `<button class="small" data-ok="${r.id}">Approve</button> <button class="ghost small" data-no="${r.id}">Reject</button>` : ''}
           ${r.status === 'approved' && can('receipt.approve') ? `<button class="danger small" data-bounce="${r.id}">Bounced</button>` : ''}
           ${r.mode === 'cheque' && !r.bank_status && ['pending', 'approved'].includes(r.status) ? `${!r.handed_on && !r.deposited_on && can('receipt.enter') ? `<button class="ghost small" data-hand="${r.id}">Given to Accounts</button>` : ''}${!r.acc_received_at && !r.deposited_on && canDep ? ` <button class="ghost small" data-rcv="${r.id}" title="The cheque has reached Accounts">Received</button>` : ''}${!r.deposited_on && canDep ? ` <button class="ghost small" data-dep="${r.id}">Deposited</button>` : ''}` : ''}
           ${['pending', 'approved'].includes(r.status) && !r.opening ? `<button class="ghost small" data-doc="${r.id}" title="${r.receipt_no ? 'Receipt ' + esc(r.receipt_no) + (r.receipt_sent_at ? ', emailed' : '') : 'Give the buyer a payment receipt'}">${r.receipt_no ? 'Receipt ✓' : 'Receipt'}</button>` : ''}
@@ -2059,7 +2059,7 @@
   // A bar chart drawn as SVG (stacked when there are several series; negative values go below the line)
   function barSvg(labels, series, { h = 220, count = false } = {}) {
     const lab = (v) => (count ? String(Math.round(v)) : cInr(v));
-    const n = labels.length; if (!n) return '<p class="muted small">Nothing to show yet.</p>';
+    const n = labels.length; if (!n || !series.some((x) => x.data.some((v) => +v))) return '<p class="muted small">Nothing to show yet.</p>';
     const W = 900, pl = 64, pr = 8, pt = 10, pb = 26, ih = h - pt - pb, bw = (W - pl - pr) / n;
     const up = labels.map((_, i) => series.reduce((a, s) => a + Math.max(0, s.data[i] || 0), 0)), dn = labels.map((_, i) => series.reduce((a, s) => a + Math.min(0, s.data[i] || 0), 0));
     const max = Math.max(1, ...up), min = Math.min(0, ...dn), span = max - min, y = (v) => pt + ((max - v) / span) * ih;
@@ -2151,6 +2151,81 @@
           <div><span>Promised on calls, 30 days</span><b>${cInr(F.promised)}</b><small>${cCnt(F.promisedCount)} promise${F.promisedCount === 1 ? '' : 's'} · <a href="#/flats?f=call">calls</a></small></div></div></div>
       <div class="panel"><div class="cv-h"><h2>Wing by wing</h2><span class="muted small">${esc(p.label)}</span></div><div class="cv-wings">${wings.map(wingCard).join('')}</div></div>`;
     document.querySelectorAll('[data-cp]').forEach((b) => (b.onclick = () => { collPeriod = b.dataset.cp; collections(); }));
+  }
+
+  // ---------- Accounts dashboard (the ERP's own page; the figures are the accounts model in lib/master-model.js) ----------
+  // Cash in the bank, money in and out, collections by head, payments by head, and what needs attention.
+  let adPeriod = 'm';
+  async function accdash(refresh) {
+    $('#page').innerHTML = '<p class="muted">Working out the figures…</p>';
+    const r = await api('/api/acc-dashboard' + (refresh === true ? '?refresh=1' : ''));
+    const D = r.model || r, C = D.C, PH = D.PH || {}, B = D.banks || [];
+    const PL = { m: D.monthLabel, fy: D.fyLabel, td: 'Till date' };
+    const card = (label, value, sub, tn = '', link = '') => `<${link ? `a href="${esc(link)}"` : 'div'} class="cv-card ${tn}"><span>${esc(label)}</span><b>${esc(value)}</b>${sub ? `<small>${sub}</small>` : ''}</${link ? 'a' : 'div'}>`;
+    // bank groups: the rows above "SIGNATURE - TOTAL", then above "ASPIRE - TOTAL", then the grand total
+    const iS = B.findIndex((b) => /^SIGNATURE\s*-\s*TOTAL$/i.test(b.b)), iA = B.findIndex((b) => /^ASPIRE\s*-\s*TOTAL$/i.test(b.b));
+    const Z = { cl: 0, rc: 0, py: 0 }, G = B.find((b) => /^GRAND TOTAL$/i.test(b.b)) || Z;
+    const groups = [['Dream Signature', iS >= 0 ? B.slice(0, iS) : [], B[iS] || Z], ['Dream Aspire', iA >= 0 ? B.slice(iS + 1, iA) : [], B[iA] || Z]].filter(([, rows, t]) => rows.length || t.cl);
+    // collections for the period: AV, GST, SDR and unclassified from current buyers, plus TDS paid by buyers, less refunds
+    const REF = PH['Flat - Cancelled Refunded'] || { m: 0, fy: 0, td: 0, n: 0 }, TP = (D.tds && D.tds.per) || { m: 0, fy: 0, td: 0, n: 0 };
+    const heads = [['Agreement value', C.AV], ['GST', C.GST], ['SDR (stamp duty and registration)', C.SDR], ['Not split by head yet', C.Unclassified]];
+    const p = adPeriod, inBank = heads.reduce((s, [, x]) => s + (x[p] || 0), 0), net = inBank + (TP[p] || 0) - (REF[p] || 0);
+    const pays = Object.entries(PH).map(([k, x]) => [k, x]).sort((a, b) => (b[1][p] || 0) - (a[1][p] || 0));
+    const paidOut = pays.reduce((s, [, x]) => s + (x[p] || 0), 0);
+    // what needs attention (from the same checks as the 9 am audit)
+    const badChecks = (D.checks || []).filter((c) => c === 'Check').length, openRI = (D.ri || []).filter((x) => x.st === 'Open');
+    const K = D.D || {}, att = [
+      badChecks ? ['bad', `${badChecks} month-end check${badChecks === 1 ? '' : 's'} not OK`, '#/checks'] : null,
+      openRI.length ? ['warn', `${openRI.length} reconciling item${openRI.length === 1 ? '' : 's'} open: ${cInr(openRI.reduce((s, x) => s + (+x.amt || 0), 0))}`, '#/reg-recon'] : null,
+      C.nounit && C.nounit.n ? ['warn', `${C.nounit.n} receipt${C.nounit.n === 1 ? '' : 's'} not linked to a flat yet: ${cInr(C.nounit.td)}`, '#/reg-receipts'] : null,
+      C.bounced && C.bounced.n ? ['warn', `${C.bounced.n} bounced cheque${C.bounced.n === 1 ? '' : 's'} on record: ${cInr(C.bounced.td)}`, '#/reg-receipts'] : null,
+      K['GST shortfall on AV received'] > 1000 ? ['warn', `GST short on agreement value already received: ${cInr(K['GST shortfall on AV received'])}`, '#/accreports'] : null,
+      K['Units registered but SDR short'] ? ['warn', `${K['Units registered but SDR short']} flat${K['Units registered but SDR short'] === 1 ? '' : 's'} registered with stamp duty still short`, '#/sdr'] : null,
+      (D.pdc && D.pdc.rows || []).filter((x) => x.left != null && x.left <= 7 && x.left >= 0).length ? ['warn', `${(D.pdc.rows || []).filter((x) => x.left <= 7 && x.left >= 0).length} PDC due in the next 7 days: ${cInr((D.pdc.rows || []).filter((x) => x.left <= 7 && x.left >= 0).reduce((s, x) => s + x.amt, 0))}`, '#/reg-pdc'] : null,
+    ].filter(Boolean);
+    const flow = D.flow12 || [];
+    const maxPay = Math.max(1, ...pays.slice(0, 10).map(([, x]) => x[p] || 0));
+    $('#page').innerHTML = `<div class="page-head"><div><h1>Accounts dashboard</h1><p class="muted">${esc((projectList.find((x) => x.id === proj) || {}).name || '')} · bank balances as of ${esc(D.asof || '—')}, live from the registers</p></div>
+        <div class="chips" style="margin:0">${Object.entries(PL).map(([k, l]) => `<button type="button" class="chip ${k === adPeriod ? 'on' : ''}" data-ap="${k}">${esc(l)}</button>`).join('')}<button type="button" class="chip" id="adRe" title="Read the registers again">Refresh</button></div></div>
+      <div class="cv-kpis">
+        ${card('Cash in bank · all accounts', cInr(G.cl), `as of ${esc(D.asof || '—')}`, '', '#/balances')}
+        ${card(`Net collections · ${p === 'td' ? 'till date' : PL[p]}`, cInr(net), `${esc(cInr(inBank))} into the bank + ${esc(cInr(TP[p] || 0))} TDS paid by buyers − ${esc(cInr(REF[p] || 0))} refunds`, 'good', '#/reg-receipts')}
+        ${card(`Paid out · ${p === 'td' ? 'till date' : PL[p]}`, cInr(paidOut), `${cCnt(pays.reduce((s, [, x]) => s + (x.n || 0), 0))} payments in all`, 'warn', '#/reg-payments')}
+        ${card('Needs attention', String(att.length), att.length ? 'see the list below' : 'everything checks out', att.length ? 'bad' : 'good', '#/checks')}
+      </div>
+      <div class="panel"><div class="cv-h"><h2>Cash in the bank</h2><a class="small" href="#/balances">Daily Bank Balance →</a></div>
+        <div class="cv-wings">${groups.map(([name, rows, t]) => `<div class="cv-wing"><h3>${esc(name)} <span class="muted small" style="font-weight:400">· ${rows.length} account${rows.length === 1 ? '' : 's'}</span></h3><div class="cv-wrow"><span>Closing balance</span><b>${cInr(t.cl)}</b></div>
+          ${rows.map((b) => `<div class="cv-wrow small"><span>${esc(b.b)}</span><b style="font-weight:600">${cInr(b.cl)}</b></div>`).join('')}</div>`).join('') || '<p class="muted small">No bank balances entered yet.</p>'}</div></div>
+      <div class="panel"><div class="cv-h"><h2>Money in and out</h2><span class="muted small">last 12 months, from the registers</span></div>
+        ${barSvg(flow.map((x) => cMon(x.m)), [{ name: 'Money in', color: '#117A65', data: flow.map((x) => x.in) }, { name: 'Money out', color: '#B42318', data: flow.map((x) => -x.out) }], { h: 240 })}</div>
+      <div class="two">
+        <div class="panel"><div class="cv-h"><h2>Collections by head</h2><span class="muted small">${esc(PL[p])}</span></div>
+          <div class="table-wrap"><table><tr><th>Head</th><th class="num">Receipts</th><th class="num">Amount</th></tr>
+          ${heads.map(([l, x]) => `<tr><td>${esc(l)}</td><td class="num">${cCnt(x.n)}</td><td class="num">${cInr(x[p] || 0)}</td></tr>`).join('')}
+          <tr><td>TDS paid by buyers (counted as received)</td><td class="num">${cCnt(TP.n)}</td><td class="num">${cInr(TP[p] || 0)}</td></tr>
+          <tr><td>Less: refunds on cancelled flats</td><td class="num">${cCnt(REF.n)}</td><td class="num bad-t">−${cInr(REF[p] || 0)}</td></tr>
+          <tr class="tot"><td><b>Net collections</b></td><td></td><td class="num"><b>${cInr(net)}</b></td></tr>
+          <tr class="dim"><td>From earlier buyers of a flat</td><td class="num">${cCnt(C.other.n)}</td><td class="num">${cInr(C.other[p] || 0)}</td></tr></table></div></div>
+        <div class="panel"><div class="cv-h"><h2>Payments by head</h2><a class="small" href="#/reg-payments">Payments Out →</a></div>
+          <div class="cv-age">${pays.slice(0, 10).filter(([, x]) => x[p]).map(([k, x]) => `<a href="#/reg-payments"><span title="${esc(k)}">${esc(k)}</span><div class="cv-bar"><i style="width:${(((x[p] || 0) / maxPay) * 100).toFixed(1)}%;background:#B7791F"></i></div><b>${cInr(x[p])}</b></a>`).join('') || '<p class="muted small">No payments in this period.</p>'}</div>
+          ${pays.length > 10 ? `<p class="small muted" style="margin:8px 0 0">Top 10 of ${pays.length} heads. All of them are in Reports &amp; Tally.</p>` : ''}</div>
+      </div>
+      <div class="panel"><div class="cv-h"><h2>Needs attention</h2><a class="small" href="#/acctodo">Today’s list →</a></div>
+        ${att.length ? `<ul class="mg-att">${att.map(([tn, text, link]) => `<li class="${tn}"><a href="${esc(link)}"><span class="dot"></span><span>${esc(text)}</span><b>→</b></a></li>`).join('')}</ul>` : '<div class="mg-clear">✓ All clear. The registers check out.</div>'}</div>`;
+    document.querySelectorAll('[data-ap]').forEach((b) => (b.onclick = () => { adPeriod = b.dataset.ap; accdash(); }));
+    $('#adRe').onclick = () => accdash(true);
+  }
+
+  // ---------- CA / Tax (inside the ERP; the figures and the click-through lists are page-ca.js, unchanged) ----------
+  const loadScript = (src) => new Promise((ok, no) => { if (document.querySelector(`script[data-src="${src}"]`)) return ok(); const e = document.createElement('script'); e.src = src; e.dataset.src = src; e.onload = ok; e.onerror = () => no(new Error('Could not load ' + src)); document.head.appendChild(e); });
+  async function caPage() {
+    const body = await (await fetch('/ca-body.html', { cache: 'no-store' })).text();
+    const SECS = [['#gst', 'GST'], ['#tdsp', 'TDS payable'], ['#rera', 'RERA'], ['#cash', 'Cash flow'], ['#comp', 'Compliance'], ['#ctds', 'Customer TDS'], ['#nonrev', 'Non-revenue receipts']];
+    $('#page').innerHTML = `<div class="page-head ca-head"><div><h1>CA / Tax</h1><div class="ca-meta"><span class="dot"></span><span id="asof"></span><span id="live">Loading…</span><span id="user" hidden></span></div></div>
+        <div class="actions" style="margin:0;align-items:center"><label class="small" style="margin:0;display:flex;gap:6px;align-items:center">Period <select id="per" aria-label="Period" style="width:auto"></select></label><button class="ghost small" id="reload" type="button" hidden>Refresh</button></div></div>
+      <div class="ca-scope"><nav class="ca-nav" aria-label="Sections">${SECS.map(([id, l], i) => `<button type="button" data-sec="${id}" class="${i ? '' : 'on'}">${l}</button>`).join('')}</nav>${body}</div>`;
+    await loadScript('/drill.js'); await loadScript('/page-ca.js');
+    window.CAPage();
   }
 
   async function mgmt() {

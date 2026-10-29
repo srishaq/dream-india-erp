@@ -2,7 +2,7 @@
   --ink: #1b2430; --ink-2: #4a5566; --ink-3: #7a8494;
   --line: #e3e6eb; --line-2: #d3d8df;
   --bg: #f6f7f9; --panel: #ffffff;
-  --brand: #1f3a5f; --brand-2: #2d5487; --brand-tint: #e9eff7;
+  --brand: #140C59; --brand-2: #2A2275; --brand-tint: #ECEBF6;
   --good: #1d7a4f; --good-tint: #e6f4ec;
   --warn: #9a6200; --warn-tint: #fdf3e1;
   --bad: #b3261e; --bad-tint: #fbe9e7;
@@ -113,7 +113,7 @@ dialog form { padding: 22px 24px; }
 .proj { width: auto; padding: 6px 10px; font-weight: 600; }
 .top .who:first-child { gap: 12px; }
 .tabs { display: flex; gap: 6px; flex-wrap: wrap; margin: 0 0 12px; }
-.tab { background: #fff; color: var(--ink-2); border: 1px solid var(--line-2); font-weight: 600; padding: 7px 12px; }
+.tab { background: #fff; color: var(--brand); border: 1.5px solid var(--brand); font-weight: 700; padding: 7px 14px; border-radius: 999px; }
 .tab:hover { background: var(--brand-tint); }
 .tab.on { background: var(--brand); color: #fff; border-color: var(--brand); }
 .tab .count { font-size: 11.5px; opacity: .8; margin-left: 4px; }
@@ -545,3 +545,12 @@ a.cv-card:hover { background: var(--brand-tint); }
 .hubtabs { margin: 18px 28px -6px; max-width: 1124px; }
 .hubtabs button { flex: 0 1 auto; min-width: 170px; }
 @media (max-width: 720px) { .hubtabs { margin: 14px 16px -6px; } .hubtabs button { min-width: 0; } }
+
+.cv-wrow.small { font-size: 13px; } .cv-wrow.small span { color: var(--ink-2); }
+/* one look everywhere: headings in Dream India navy */
+.page h1, .page-head h1, .panel h2 { color: #140C59; }
+/* tables: short values stay on one line; the action buttons stack instead of running off the edge */
+.pill { white-space: nowrap; }
+td:first-child, td a[href^="#/booking/"] { white-space: nowrap; }
+td.row-acts { white-space: normal; min-width: 128px; }
+td.row-acts button, td.row-acts .btn { display: flex; width: 100%; justify-content: center; margin: 0 0 4px; }
