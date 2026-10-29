@@ -131,21 +131,26 @@
     { key: 'ledgers', label: 'Customer ledgers', show: () => false },
     { key: 'followups', label: 'Follow-ups', show: () => false },
     { group: 'Accounts' },
-    { key: 'acctodo', label: 'Daily To-Do', show: () => can('accounts.view') },
+    { key: 'acctodo', label: 'Today', show: () => can('accounts.view') },
+    { key: 'acc-bank', label: 'Bank', show: () => can('accounts.view'), href: () => '#/balances' },
+    { key: 'acc-money', label: 'Receipts & payments', show: () => can('accounts.view'), href: () => '#/reg-receipts' },
     { key: 'accteam', label: 'Dream Chat', show: () => can('accounts.view') },
+    { key: 'acc-tax', label: 'Tax & compliance', show: () => can('accounts.view'), href: () => '#/reg-tds' },
+    { key: 'acc-sra', label: 'SRA tenants', show: () => can('accounts.view'), href: () => '#/reg-tenants' },
     { key: 'accdash', label: 'Accounts dashboard', show: () => can('accounts.view'), href: () => '/accounts' },
-    { key: 'balances', label: 'Daily Bank Balance', show: () => can('accounts.view') },
-    { key: 'bankauto', label: 'Bank Auto Check', show: () => can('accounts.view') },
-    { key: 'reg-receipts', label: 'Receipts (bank)', show: () => can('accounts.view') },
-    { key: 'reg-payments', label: 'Payments Out', show: () => can('accounts.view') },
-    { key: 'reg-pdc', label: 'PDC', show: () => can('accounts.view') },
-    { key: 'reg-tds', label: 'TDS Tracker', show: () => can('accounts.view') },
-    { key: 'sdr', label: 'SDR challans', show: () => can('accounts.view') },
-    { key: 'reg-recon', label: 'Reconciling Items', show: () => can('accounts.view') },
-    { key: 'reg-compliance', label: 'Compliance Calendar', show: () => can('accounts.view') },
-    { key: 'reg-tenants', label: 'SRA Tenants', show: () => can('accounts.view') },
-    { key: 'reg-rentLinks', label: 'Tenant Rent Links', show: () => can('accounts.view') },
-    { key: 'reg-cancellations', label: 'Cancelled flats', show: () => can('accounts.view') },
+    // the pages inside those tiles (reached through the tabs at the top of each)
+    { key: 'balances', label: 'Daily Bank Balance', show: () => can('accounts.view'), sub: true },
+    { key: 'bankauto', label: 'Bank Auto Check', show: () => can('accounts.view'), sub: true },
+    { key: 'reg-recon', label: 'Reconciling Items', show: () => can('accounts.view'), sub: true },
+    { key: 'reg-receipts', label: 'Receipts (bank)', show: () => can('accounts.view'), sub: true },
+    { key: 'reg-payments', label: 'Payments Out', show: () => can('accounts.view'), sub: true },
+    { key: 'reg-pdc', label: 'PDC', show: () => can('accounts.view'), sub: true },
+    { key: 'reg-tds', label: 'TDS Tracker', show: () => can('accounts.view'), sub: true },
+    { key: 'sdr', label: 'SDR challans', show: () => can('accounts.view'), sub: true },
+    { key: 'reg-compliance', label: 'Compliance Calendar', show: () => can('accounts.view'), sub: true },
+    { key: 'reg-tenants', label: 'SRA Tenants', show: () => can('accounts.view'), sub: true },
+    { key: 'reg-rentLinks', label: 'Tenant Rent Links', show: () => can('accounts.view'), sub: true },
+    { key: 'reg-cancellations', label: 'Cancelled flats & refunds', show: () => can('accounts.view') },
     { key: 'cpacc', label: 'Channel partner ledger', show: () => can('accounts.view') && can('ledger.view'), href: () => '#/partners' },
     { key: 'accreports', label: 'Reports & Tally', show: () => can('accounts.view') },
     { key: 'checks', label: 'Checks', show: () => can('accounts.view') },
@@ -178,7 +183,8 @@
     let out = '', g = null;
     for (const p of nav) {
       if (p.group) { if (g) out += '</div>'; g = p.group; const on = g === open; out += `<button type="button" class="group-btn ${on ? 'open' : ''}" data-g="${esc(g)}" aria-expanded="${on}">${esc(g)}<span class="chev">${on ? '▾' : '▸'}</span></button><div class="grp" data-g="${esc(g)}" ${on ? '' : 'hidden'}>`; continue; }
-      out += `<a href="${p.href ? p.href() : '#/' + p.key}" class="${p === cur ? 'on' : ''}">${esc(p.label)}</a>`;
+      if (p.sub) continue;
+      out += `<a href="${p.href ? p.href() : '#/' + p.key}" class="${p === cur || p.key === hubOf(cur.key) ? 'on' : ''}">${esc(p.label)}</a>`;
     }
     return out + (g ? '</div>' : '');
   }
@@ -215,9 +221,10 @@
             ${installButton()}<button class="ghost small" id="cpw">Change password</button><button class="ghost small" id="out">Sign out</button></div></div>
         ${(() => { const g = groupOf(DETAIL[page] && arg ? DETAIL[page] : cur.key), dest = { CRM: [`#/project/${proj}/crm`, 'Sales & CRM'], 'CRM tools': [`#/project/${proj}/crm`, 'Sales & CRM'], Accounts: [`#/project/${proj}/accounts`, 'Accounts'], 'Site & purchase': [`#/project/${proj}/construction`, 'Construction'], 'Set-up': ['#/home', 'Home'] }[g];
           return dest && proj && !['home', 'project'].includes(page || 'home') ? `<div class="crumb no-print"><a href="${dest[0]}">← ${esc(dest[1])}</a>${dest[0] === '#/home' ? '' : '<a href="#/home">Home</a>'}</div>` : ''; })()}
-        <div class="page" id="page"><p class="muted">Loading…</p></div>
+        ${hubTabs(cur.key)}<div class="page" id="page"><p class="muted">Loading…</p></div>
       </div></div>`;
     wireNav();
+    document.querySelectorAll('[data-hub]').forEach((b) => (b.onclick = () => go('#/' + b.dataset.hub)));
     chat.mount();
     if (anyOf('accounts.enter', 'receipt.approve')) api('/api/receipts?todeposit=1').then((r) => { if (r.n && $('.top .who:last-child')) $('.top .who:last-child').insertAdjacentHTML('afterbegin', `<a class="mbadge dep" href="#/receipts?t=cheques" title="Cheques the CRM has entered that are not deposited yet">🏦 ${r.n} cheque${r.n === 1 ? '' : 's'} to deposit</a>`); }).catch(() => {});
     if (can('ledger.view')) mailWatch.paint();
@@ -266,7 +273,9 @@
     site: 'Slab cycle, daily progress reports, hindrances, materials and floor-wise works', purchase: 'Purchase requests from request to payment', drawings: 'The drawing register from Google Drive', hr: 'Staff records, leave, letters and HR policies',
     crmtodo: 'Today’s calls, approvals, letters and what the 9 am check found', flats: 'Every flat and buyer. Open one to see payments, calls, messages and documents in one place',
     'sc-calls': 'Who to call today, broken promises to pay, and buyers never called', 'sc-dues': 'Every buyer with an overdue amount; open one for the full ledger and statement',
-    'sc-appr': 'New bookings, cancellations and transfers waiting for approval', acctodo: 'What the 9 am Accounts audit found, plus your own tasks',
+    'sc-appr': 'New bookings, cancellations and transfers waiting for approval',
+    'acc-bank': 'Daily bank balance, the 3:10 pm statement check and reconciling items', 'acc-money': 'Receipts into the bank, payments out and post-dated cheques',
+    'acc-tax': 'TDS challans, SDR challans and the compliance calendar', 'acc-sra': 'SRA tenants, their rent and the rent payment links', acctodo: 'What the 9 am Accounts audit found, plus your own tasks',
     training: 'Short videos on how to use each part of the ERP',
     accdash: 'Bank balances, collections, refunds, TDS, PDC, SRA tenants and reconciliation',
     balances: 'Closing balance of every bank account, day by day', bankauto: 'The 3:10 pm check of bank statements against the books',
@@ -276,14 +285,15 @@
     accreports: 'Reports and the Tally import', checks: 'Daily checks on the registers', bookscrm: 'Tally receipts flat by flat against the CRM',
     ca: 'GST, TDS payable, RERA quarterly and cash flow, for the CA', accsetup: 'Bank accounts, heads, statement folders and imports', audit: 'Who changed what, and when',
   };
-  const PICON = { collections: 'chart', flats: 'users', 'sc-calls': 'phone', 'sc-dues': 'book', 'sc-appr': 'check', comms: 'mail', team: 'users', accteam: 'users', sdr: 'rupee', custdocs: 'book', site: 'tower', crmtodo: 'check', acctodo: 'check', training: 'book', dashboard: 'chart', units: 'grid', bookings: 'book', demands: 'tower', receipts: 'rupee', ledgers: 'book', letters: 'mail', followups: 'phone', verify: 'check', prices: 'rupee', partners: 'users',
+  const PICON = { 'acc-bank': 'rupee', 'acc-money': 'book', 'acc-tax': 'check', 'acc-sra': 'users', collections: 'chart', flats: 'users', 'sc-calls': 'phone', 'sc-dues': 'book', 'sc-appr': 'check', comms: 'mail', team: 'users', accteam: 'users', sdr: 'rupee', custdocs: 'book', site: 'tower', crmtodo: 'check', acctodo: 'check', training: 'book', dashboard: 'chart', units: 'grid', bookings: 'book', demands: 'tower', receipts: 'rupee', ledgers: 'book', letters: 'mail', followups: 'phone', verify: 'check', prices: 'rupee', partners: 'users',
     accdash: 'chart', balances: 'rupee', bankauto: 'check', 'reg-cancellations': 'users', bookscrm: 'check', checks: 'check', audit: 'book', ca: 'chart', accsetup: 'grid' };
   const DEPTS = [
     { key: 'crm', title: 'Sales & CRM', sub: 'Today’s work, every flat and buyer in one place, receipts, collections and the inbox', icon: 'chart', tone: '#2B5C8A', group: 'CRM', more: 'CRM tools',
       sections: [['Every day', ['crmtodo', 'flats', 'receipts', 'comms', 'team']], ['Sales', ['units', 'sc-appr', 'prices', 'partners']],
         ['Collections', ['collections', 'demands', 'letters']], ['Records and checks', ['custdocs', 'verify']]] },
     { key: 'construction', title: 'Construction', sub: 'Site Office: slab cycle, daily progress reports, hindrances, materials and stages', icon: 'hammer', tone: '#B7791F', pages: ['site', 'demands'], later: ['Contractor billing'] },
-    { key: 'accounts', title: 'Accounts', sub: 'Bank, receipts, payments, PDC, TDS, SRA rent, GST, SDR and Tally', icon: 'book', tone: '#117A65', group: 'Accounts', skip: ['ca', 'bookscrm', 'checks'] },
+    { key: 'accounts', title: 'Accounts', sub: 'Bank, receipts, payments, PDC, TDS, SRA rent, GST, SDR and Tally', icon: 'book', tone: '#117A65', group: 'Accounts', skip: ['ca', 'bookscrm', 'checks'],
+      sections: [['Every day', ['acctodo', 'acc-bank', 'acc-money', 'accteam']], ['Taxes & compliance', ['acc-tax']], ['Refunds, partners & tenants', ['reg-cancellations', 'cpacc', 'acc-sra']], ['Reports & set-up', ['accdash', 'accreports', 'accsetup']]] },
     { key: 'audit', title: 'CRM/Accounts Audit', sub: 'Tally against the CRM, checks, reconciling items and cancelled flats', icon: 'check', tone: '#0E8C9B', pages: ['bookscrm', 'checks', 'reg-recon', 'reg-cancellations', 'verify', 'audit'] },
     { key: 'cpdept', title: 'Channel Partners', sub: 'Every partner firm: brokerage earned, bills, pass back, payments and what is still owed', icon: 'users', tone: '#0E8C9B', direct: 'partners' },
     { key: 'ca', title: 'CA / Tax', sub: 'GST, TDS payable, RERA quarterly, cash flow and compliance', icon: 'chart', tone: '#7A5C99', direct: 'ca' },
@@ -291,9 +301,18 @@
     { key: 'drawings', title: 'Drawings', sub: 'Architect, structural and MEP drawings from the Site Plans folder', icon: 'grid', tone: '#2B5C8A', direct: 'drawings' },
     { key: 'training', title: 'Training videos', sub: 'Short videos on how to use each part of the ERP', icon: 'book', tone: '#B7791F', direct: 'training' },
   ];
+  const HUBS = {
+    'acc-bank': ['Bank', [['balances', 'Daily Bank Balance'], ['bankauto', 'Bank Auto Check'], ['reg-recon', 'Reconciling Items']]],
+    'acc-money': ['Receipts & payments', [['reg-receipts', 'Receipts (bank)'], ['reg-payments', 'Payments Out'], ['reg-pdc', 'PDC']]],
+    'acc-tax': ['Tax & compliance', [['reg-tds', 'TDS Tracker'], ['sdr', 'SDR challans'], ['reg-compliance', 'Compliance Calendar']]],
+    'acc-sra': ['SRA tenants', [['reg-tenants', 'Tenants'], ['reg-rentLinks', 'Rent links']]],
+  };
+  const hubOf = (key) => Object.keys(HUBS).find((h) => HUBS[h][1].some(([k]) => k === key));
+  const hubTabs = (key) => { const h = hubOf(key); if (!h) return '';
+    return `<nav class="ff-tabs hubtabs no-print" role="tablist" aria-label="${esc(HUBS[h][0])}">${HUBS[h][1].map(([k, l]) => `<button type="button" role="tab" aria-selected="${k === key}" data-hub="${k}">${esc(l)}</button>`).join('')}</nav>`; };
   const pagesOf = (d) => {
     let keys = d.pages;
-    if (d.group) { keys = []; let g = null; for (const p of PAGES) { if (p.group) g = p.group; else if (g === d.group && !(d.skip || []).includes(p.key)) keys.push(p.key); } }
+    if (d.group) { keys = []; let g = null; for (const p of PAGES) { if (p.group) g = p.group; else if (g === d.group && !p.sub && !(d.skip || []).includes(p.key)) keys.push(p.key); } }
     return (keys || []).map((k) => PAGES.find((p) => p.key === k)).filter((p) => p && p.show());
   };
   const hrefOf = (p) => (p.href ? p.href() : '#/' + p.key);

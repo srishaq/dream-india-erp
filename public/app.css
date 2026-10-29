@@ -542,3 +542,6 @@ a.cv-card:hover { background: var(--brand-tint); }
 @media (max-width: 1000px) { .cv-kpis { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
 @media (max-width: 560px) { .cv-kpis { grid-template-columns: 1fr; } .cv-card b { font-size: 24px; } .cv-age a { grid-template-columns: 90px 1fr 80px; } }
 .cv-card small b.bad-t { color: var(--bad); } .cv-card small b.good-t { color: var(--good); }
+.hubtabs { margin: 18px 28px -6px; max-width: 1124px; }
+.hubtabs button { flex: 0 1 auto; min-width: 170px; }
+@media (max-width: 720px) { .hubtabs { margin: 14px 16px -6px; } .hubtabs button { min-width: 0; } }
