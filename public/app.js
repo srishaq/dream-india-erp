@@ -119,7 +119,7 @@
     { key: 'comms', label: 'Inbox', show: () => can('ledger.view') },
     { key: 'team', label: 'Dream Chat', show: () => anyOf('ledger.view', 'receipt.enter') && !(can('accounts.enter') && !can('demand.raise') && !can('booking.create')) },
     { group: 'CRM tools' },
-    { key: 'collections', label: 'Collections dashboard', show: () => can('ledger.view') },
+    { key: 'collections', label: 'Collections', show: () => can('ledger.view') },
     { key: 'demands', label: 'Stages & demands', show: () => anyOf('demand.raise', 'demand.approve', 'stage.record', 'ledger.view') },
     { key: 'letters', label: 'Demand letters (many flats)', show: () => anyOf('demand.raise', 'ledger.view') },
     { key: 'prices', label: 'Price list & cost sheet', show: () => can('inventory.view') },
@@ -363,7 +363,7 @@
       if (!pgs.length) return x.later ? { ...x, soon: true } : null;
       return { ...x, href: `#/project/${p.id}/${x.key}` };
     }).filter(Boolean);
-    $('#page').innerHTML = heroHtml('Project', p.name, projSub(p), ['#/home', 'Home']) + `<div class="hm"><section class="hgroup"><h2>Departments</h2><div class="tiles">${tiles.map(tile).join('')}</div></section></div>`;
+    $('#page').innerHTML = heroHtml('Project', p.name, projSub(p), ['#/home', 'Home']) + `<div class="hm"><section class="hgroup"><h2>Departments</h2><div class="tiles five">${tiles.map(tile).join('')}</div></section></div>`;
   }
 
   async function projects(data) {
@@ -2046,7 +2046,7 @@
     const max = Math.max(1, ...up), min = Math.min(0, ...dn), span = max - min, y = (v) => pt + ((max - v) / span) * ih;
     const ticks = [max, ...(count && max < 2 ? [] : [max / 2]), 0, ...(min < 0 && y(min) - y(0) > 16 ? [min] : [])];
     let bars = '';
-    labels.forEach((l, i) => { let pos = 0, neg = 0; const x = pl + i * bw + bw * 0.15, w = bw * 0.7;
+    labels.forEach((l, i) => { let pos = 0, neg = 0; const w = Math.min(bw * 0.7, 56), x = pl + i * bw + (bw - w) / 2;
       for (const s of series) { const v = s.data[i] || 0; if (!v) continue;
         const a = v > 0 ? pos : neg, b = a + v; if (v > 0) pos = b; else neg = b;
         bars += `<rect x="${x.toFixed(1)}" y="${Math.min(y(a), y(b)).toFixed(1)}" width="${w.toFixed(1)}" height="${Math.max(1, Math.abs(y(a) - y(b))).toFixed(1)}" rx="2" fill="${s.color}"><title>${esc(l)} · ${esc(s.name)}: ${esc(count ? String(v) : cInr(v, true))}</title></rect>`; } });
@@ -2056,91 +2056,78 @@
     const legend = series.length > 1 ? `<div class="cleg">${series.map((s) => `<span><i style="background:${s.color}"></i>${esc(s.name)}</span>`).join('')}</div>` : '';
     return `${legend}<svg class="csvg" viewBox="0 0 ${W} ${h}" role="img" aria-label="bar chart">${yl}${bars}${xl}</svg>`;
   }
-  let collDay = null, collRange = '30';
+  // The ERP's own collections page, built around four questions: how much came in, where the money stands,
+  // how old the dues are, and what is coming next. A period switch drives the "came in" figures.
+  let collPeriod = 'month';
   async function collections() {
     if (!proj) return noProject();
-    $('#page').innerHTML = heroHtml('Sales & CRM', 'Collections dashboard', 'Working out the figures…', [`#/project/${proj}/crm`, 'Sales & CRM']);
+    $('#page').innerHTML = '<p class="muted">Working out the figures…</p>';
     const M = await api(`/api/dashboard?project=${proj}`);
     const t = M.totals, d = M.daily || [], today = M.meta.today;
-    let view = store.get('erp_coll_view') === 'collections' ? 'collections' : 'overview';
-    const sum = (a, f) => a.reduce((s, x) => s + (+x[f] || 0), 0);
-    const win = (k) => d.filter((x) => (Date.parse(today) - Date.parse(x.date)) / 864e5 < k);
-    const mtd = d.filter((x) => x.date.slice(0, 7) === today.slice(0, 7));
-    const pmD = new Date(Date.parse(today + 'T00:00:00')); pmD.setUTCDate(1); pmD.setUTCMonth(pmD.getUTCMonth() - 1); const pm = pmD.toISOString().slice(0, 7);
-    const pmSame = d.filter((x) => x.date.slice(0, 7) === pm && +x.date.slice(8, 10) <= +today.slice(8, 10));
-    const delta = sum(pmSame, 'net') ? Math.round(((sum(mtd, 'net') - sum(pmSame, 'net')) / sum(pmSame, 'net')) * 100) : null;
-    const rep = M.dailyReport, rrow = (k) => rep && rep.rows ? rep.rows.find((r) => r.label.toLowerCase().startsWith(k)) : null;
-    const tc = rrow('today collection');
-    const tds = M.units.filter((u) => u.tds > 0), tdsDue = sum(tds, 'tds'), tdsPaid = sum(tds, 'tdsPaid');
-    const defl = M.actions.defaulters;
-    const A = M.byWing.A || {}, B = M.byWing.B || {};
-    const wrow = (l, a, b, f = cCnt) => `<tr><td>${l}</td><td class="num">${f(a)}</td><td class="num">${f(b)}</td><td class="num"><b>${f((+a || 0) + (+b || 0))}</b></td></tr>`;
-    const last30 = d.slice(0, 30).reverse();
-    const daily = [
-      tc ? cFig('Today’s collection', cInr(tc.total), 'good', `${fmtD(rep.reportDate)} · A ${cInr(tc.a)} · B ${cInr(tc.b)}`, '#/reg-receipts') : d[0] ? cFig('Latest day', cInr(d[0].net), 'good', `${cDay(d[0].date)} · ${d[0].count} receipts`) : '',
-      ...[['demand sent', 'Demand sent', ''], ['received as on date', 'Received as on date', 'good'], ['balance collection', 'Balance collection', 'warn']].map(([k, l, tn]) => { const x = rrow(k); if (!x) return ''; const p = (x.label.match(/\d+%/) || [])[0]; return cFig(p ? `${l} (${p})` : l, cInr(x.total), tn, `A ${cInr(x.a)} · B ${cInr(x.b)}`); }),
-      cFig('Last 7 days', cInr(sum(win(7), 'net')), 'good', `${sum(win(7), 'count')} receipts`),
-      cFig('Last 30 days', cInr(sum(win(30), 'net')), 'good', `average ${cInr(sum(win(30), 'net') / Math.max(win(30).length, 1))} a day`),
-      cFig('Month to date', cInr(sum(mtd, 'net')), 'good', delta == null ? '' : `${delta >= 0 ? '▲' : '▼'} ${Math.abs(delta)}% against the same days last month`),
-      cFig('Returned this month', cInr(sum(mtd, 'returns')), sum(mtd, 'returns') ? 'bad' : '', `${sum(mtd, 'returnCount')} cheques or transfers`),
-    ].join('');
-    const reg = rrow('allotment'), bal = rrow('balance registration');
-    const project = [
-      cFig('Units sold', `${cCnt(t.booked)} / ${cCnt(t.units)}`, '', `${cCnt(t.available)} available · ${cCnt(t.held)} on hold`, '#/units'),
-      cFig('Registered', cCnt(t.registered), '', `${cPct(t.registered, t.booked)} of sold`),
-      reg ? cFig('Allotment', cCnt(reg.total), '', `A ${cCnt(reg.a)} · B ${cCnt(reg.b)}`) : '',
-      bal ? cFig('Balance registration', cCnt(bal.total), '', `A ${cCnt(bal.a)} · B ${cCnt(bal.b)}`, '#/flats?f=regpending') : cFig('Booked, not registered', cCnt(t.booked - t.registered), '', '', '#/flats?f=regpending'),
-      cFig('Agreement value', cInr(t.agreementValue), '', `${cInr(t.registeredValue)} registered`),
-      cFig('Received (AV)', cInr(t.receivedAV), 'good', `+ ${cInr(t.receivedGST)} GST`),
-      cFig('Balance due (AV)', cInr(t.balanceDue), 'warn', `+ ${cInr(t.gstDue)} GST due`, '#/flats?f=overdue'),
-      cFig('Total TDS due', cInr(tdsDue), 'warn', `1% of AV, ${cCnt(tds.length)} units · ${cInr(tdsDue - tdsPaid)} still to come`, '#/flats?f=tds'),
-      cFig('TDS paid', cInr(tdsPaid), 'good', `${cCnt(tds.filter((u) => u.tdsPaid > 0).length)} units · ${cPct(tdsPaid, tdsDue)} of TDS due`, '#/reg-tds'),
-      cFig('Defaulters', cCnt(defl.length), defl.length ? 'bad' : 'good', `${cInr(defl.reduce((s, x) => s + (+x.balanceDue || 0), 0))} owed`, '#/flats?f=defaulters'),
-    ].join('');
-    // Collections tab
-    const F = M.forecast, mo = M.monthly || [], rg = (M.dates.registrationsByMonth || []).slice(-12);
-    const rangeDays = collRange === 'all' ? d : collRange === 'mtd' ? mtd : win(+collRange);
-    if (!collDay || !rangeDays.some((x) => x.date === collDay)) collDay = rangeDays[0] ? rangeDays[0].date : null;
-    const day = d.find((x) => x.date === collDay);
-    $('#page').innerHTML = `<div class="hero mg-hero"><div class="hero-in"><a class="back" href="#/project/${proj}/crm">← Sales &amp; CRM</a><span class="eyebrow">${esc((projectList.find((p) => p.id === proj) || {}).name || '')} · ${esc(fmtD(today))}</span>
-        <h1>Collections dashboard</h1>
-        <div class="mg-sync"><span class="dot"></span><span>Live from the ERP${M.meta.lastBankDate ? ' · bank entries to ' + esc(fmtD(M.meta.lastBankDate)) : ''}</span><span class="mg-act"><button class="mg-btn" id="clRe">Refresh</button></span></div>
-        <nav class="mg-tabs2" role="tablist">${[['overview', 'Overview'], ['collections', 'Collections']].map(([k, l]) => `<button type="button" role="tab" data-cv="${k}" aria-selected="${k === view}">${l}</button>`).join('')}</nav></div></div>
-      <div class="hm mg">
-        <div data-cvp="overview" ${view === 'overview' ? '' : 'hidden'}>
-          <section class="mpanel" style="margin-top:0"><h2>Daily collections</h2><div class="mfigs in">${daily}</div>
-            <h3 class="csub">Last 30 days</h3>${barSvg(last30.map((x) => cDay(x.date)), [{ name: 'Collected', color: '#117A65', data: last30.map((x) => x.net) }])}</section>
-          <section class="mpanel"><h2>The project</h2><div class="mfigs in">${project}</div></section>
-          <section class="mpanel"><h2>Wing A and Wing B</h2><div class="table-wrap"><table><tr><th></th><th class="num">Wing A</th><th class="num">Wing B</th><th class="num">Total</th></tr>
-            ${wrow('Units', A.units, B.units)}${wrow('Sold', A.booked, B.booked)}${wrow('Registered', A.registered, B.registered)}${wrow('Agreement value', A.agreementValue, B.agreementValue, cInr)}${wrow('Received', A.receivedAV, B.receivedAV, cInr)}${wrow('Balance due', A.balanceDue, B.balanceDue, cInr)}${wrow('SDR received', A.sdrReceived, B.sdrReceived, cInr)}</table></div></section>
-        </div>
-        <div data-cvp="collections" ${view === 'collections' ? '' : 'hidden'}>
-          ${F ? `<section class="mpanel" style="margin-top:0"><h2>What is coming in</h2><div class="mfigs in">
-              ${cFig('Due now', cInr(F.overdue), F.overdue ? 'bad' : 'good', 'past the due date', '#/flats?f=overdue')}${cFig('Falls due in 30 days', cInr(F.dueNext30), 'warn', `${cCnt(F.dueNext30Count)} buyer${F.dueNext30Count === 1 ? '' : 's'}`)}${cFig('Promised in 30 days', cInr(F.promised), 'good', `${cCnt(F.promisedCount)} promises logged on calls`, '#/flats?f=call')}
-              ${F.nextStages.map((x) => cFig(`Next stage · Wing ${x.wing}`, cInr(x.amount + x.gst), '', `${x.stage.replace(/^On (Completion of )?/, '')} · ${x.pct}% of ${cCnt(x.bookings)} bookings, with GST`, '#/demands')).join('')}</div></section>` : ''}
-          <section class="mpanel"><h2>Received so far</h2><div class="mfigs in">
-            ${cFig('Received against agreement value', cPct(t.receivedAV, t.agreementValue), 'good', `${cInr(t.receivedAV)} of ${cInr(t.agreementValue)}`)}${cFig('RERA receipts (net)', cInr(sum(mo, 'net')), 'good', mo.length ? `${cMon(mo[0].month)} to ${cMon(mo[mo.length - 1].month)}` : '')}
-            ${cFig('Returned cheques', cInr(sum(mo, 'returns')), sum(mo, 'returns') ? 'bad' : '')}${cFig('SDR received', cInr(t.sdrReceived), '', `paid ${cInr(t.sdrPaid)}`)}${cFig('GST received', cInr(t.receivedGST), '', `due ${cInr(t.gstDue)}`)}</div></section>
-          <section class="mpanel"><h2>Day by day</h2>
-            <div class="chips" style="margin:0">${[['7', 'Last 7 days'], ['30', 'Last 30 days'], ['mtd', 'This month'], ['all', 'All']].map(([k, l]) => `<button type="button" class="chip ${k === collRange ? 'on' : ''}" data-cr="${k}">${l}</button>`).join('')}</div>
-            ${barSvg(rangeDays.slice(0, 60).reverse().map((x) => cDay(x.date)), [{ name: 'CRM team', color: '#117A65', data: rangeDays.slice(0, 60).reverse().map((x) => x.crm) }, { name: 'Sales team', color: '#7FBFAE', data: rangeDays.slice(0, 60).reverse().map((x) => x.sales) }, { name: 'Returned', color: '#B42318', data: rangeDays.slice(0, 60).reverse().map((x) => -x.returns) }])}
-            <div class="cdays"><div class="cdlist">${rangeDays.map((x) => `<button type="button" data-cd="${x.date}" aria-pressed="${x.date === collDay}"><span>${cDay(x.date)}<small>${x.count} receipts${x.returnCount ? ` · ${x.returnCount} returned` : ''}</small></span><b>${cInr(x.net)}</b></button>`).join('') || '<p class="muted small">No collections in this range.</p>'}</div>
-              <div>${day ? `<div class="mfigs in" style="grid-template-columns:repeat(4,minmax(0,1fr))">${cFig(fmtD(day.date), cInr(day.receipts), 'good', `${day.count} receipts · ${day.units} flats`)}${cFig('CRM team', cInr(day.crm))}${cFig('Sales team', cInr(day.sales))}${cFig('Returned', cInr(day.returns), day.returns ? 'bad' : '')}</div>
-                <div class="table-wrap" style="margin-top:10px"><table><tr><th>Flat</th><th>Buyer</th><th>Team</th><th>Mode</th><th class="num">Amount</th></tr>
-                ${day.items.slice().sort((a, b) => b.amount - a.amount).map((i) => `<tr><td><b>${esc(i.unit || '—')}</b></td><td>${esc(i.customer || '')}</td><td>${esc(i.kind === 'return' ? 'Returned' : i.team || '')}</td><td>${esc(i.mode || '')}</td><td class="num ${i.kind === 'return' ? 'bad-t' : ''}">${cInr(i.amount, true)}</td></tr>`).join('')}</table></div>` : ''}</div></div></section>
-          <section class="mpanel"><h2>Month by month</h2>${barSvg(mo.map((x) => cMon(x.month)), [{ name: 'CRM team', color: '#117A65', data: mo.map((x) => x.crm) }, { name: 'Sales team', color: '#7FBFAE', data: mo.map((x) => x.sales) }, { name: 'Returned', color: '#B42318', data: mo.map((x) => -x.returns) }])}
-            <div class="table-wrap"><table><tr><th>Month</th><th class="num">Receipts</th><th class="num">CRM team</th><th class="num">Sales team</th><th class="num">Returned</th><th class="num">Net</th></tr>
-            ${mo.slice().reverse().map((x) => `<tr><td>${cMon(x.month)}</td><td class="num">${x.count}</td><td class="num">${cInr(x.crm)}</td><td class="num">${cInr(x.sales)}</td><td class="num bad-t">${x.returns ? cInr(x.returns) : ''}</td><td class="num"><b>${cInr(x.net)}</b></td></tr>`).join('')}</table></div></section>
-          <section class="mpanel"><h2>Registrations each month</h2>${barSvg(rg.map((x) => cMon(x.month)), [{ name: 'Flats registered', color: '#2B5C8A', data: rg.map((x) => x.units) }], { count: true })}</section>
-          ${rep && rep.rows && rep.rows.length ? `<section class="mpanel"><h2>Daily report · ${esc(fmtD(rep.reportDate))}</h2><div class="table-wrap"><table><tr><th></th><th class="num">Wing A</th><th class="num">Wing B</th><th class="num">Total</th></tr>
-            ${rep.rows.map((x) => { const money = [x.a, x.b, x.total].some((v) => Math.abs(v) >= 1000), f = (v) => (money ? cInr(v, true) : cCnt(v)); return `<tr><td>${esc(x.label.replace(/:$/, ''))}</td><td class="num">${f(x.a)}</td><td class="num">${f(x.b)}</td><td class="num"><b>${f(x.total)}</b></td></tr>`; }).join('')}</table></div></section>` : ''}
-        </div>
-      </div>`;
-    document.querySelectorAll('[data-cv]').forEach((b) => (b.onclick = () => { view = b.dataset.cv; store.set('erp_coll_view', view);
-      document.querySelectorAll('[data-cv]').forEach((x) => x.setAttribute('aria-selected', x.dataset.cv === view)); document.querySelectorAll('[data-cvp]').forEach((x) => (x.hidden = x.dataset.cvp !== view)); }));
-    document.querySelectorAll('[data-cr]').forEach((b) => (b.onclick = () => { collRange = b.dataset.cr; collDay = null; collections(); }));
-    document.querySelectorAll('[data-cd]').forEach((b) => (b.onclick = () => { collDay = b.dataset.cd; collections(); }));
-    $('#clRe').onclick = () => collections();
+    const sum = (a, f) => a.reduce((s, x) => s + (+(typeof f === 'function' ? f(x) : x[f]) || 0), 0);
+    const iso = (x) => x.toISOString().slice(0, 10), dt = (s) => new Date(s + 'T00:00:00Z');
+    const addD = (s, k) => { const x = dt(s); x.setUTCDate(x.getUTCDate() + k); return iso(x); };
+    const fyStart = (s) => { const y = +s.slice(0, 4) - (+s.slice(5, 7) < 4 ? 1 : 0); return `${y}-04-01`; };
+    const m0 = today.slice(0, 8) + '01', pm0 = addD(m0, -1).slice(0, 8) + '01';
+    const P = {
+      month: { label: 'This month', from: m0, to: today, prev: [pm0, addD(pm0, +today.slice(8, 10) - 1)], vs: 'the same days last month' },
+      last: { label: 'Last month', from: pm0, to: addD(m0, -1), prev: [addD(pm0, -1).slice(0, 8) + '01', addD(pm0, -1)], vs: 'the month before' },
+      d30: { label: 'Last 30 days', from: addD(today, -29), to: today, prev: [addD(today, -59), addD(today, -30)], vs: 'the 30 days before' },
+      fy: { label: 'This financial year', from: fyStart(today), to: today, prev: [addD(fyStart(today), -365), addD(today, -365)], vs: 'the same point last year' },
+    };
+    const p = P[collPeriod] || P.month;
+    const inP = (a, b) => d.filter((x) => x.date >= a && x.date <= b);
+    const cur = inP(p.from, p.to), prev = inP(p.prev[0], p.prev[1]);
+    const got = sum(cur, 'net'), was = sum(prev, 'net'), chg = was ? Math.round(((got - was) / was) * 100) : null;
+    const ret = sum(cur, 'returns'), retK = sum(cur, 'returnCount');
+    const AG = M.ageing || { total: 0, buyers: 0, buckets: [] }, F = M.forecast || { dueNext30: 0, promised: 0, nextStages: [] };
+    const demanded = sum(M.units.filter((u) => u.booked), 'demanded'), rec = t.receivedAV, notDue = Math.max(0, t.agreementValue - Math.max(demanded, rec)), unpaid = Math.max(0, demanded - rec);
+    const card = (label, value, sub, tn = '', link = '') => `<${link ? `a href="${esc(link)}"` : 'div'} class="cv-card ${tn}"><span>${esc(label)}</span><b>${esc(value)}</b>${sub ? `<small>${sub}</small>` : ''}</${link ? 'a' : 'div'}>`;
+    // chart: by day for a month or 30 days, by month for the year
+    const byMonth = collPeriod === 'fy';
+    let labels, ser;
+    if (byMonth) { const mo = (M.monthly || []).filter((x) => x.month >= p.from.slice(0, 7)); labels = mo.map((x) => cMon(x.month)); ser = [['CRM team', '#117A65', mo.map((x) => x.crm)], ['Sales team', '#7FBFAE', mo.map((x) => x.sales)], ['Returned', '#B42318', mo.map((x) => -x.returns)]]; }
+    else { const days = []; for (let k = p.from; k <= p.to; k = addD(k, 1)) days.push(k); const by = Object.fromEntries(cur.map((x) => [x.date, x]));
+      labels = days.map((k) => String(+k.slice(8, 10))); ser = [['CRM team', '#117A65', days.map((k) => (by[k] ? by[k].crm : 0))], ['Sales team', '#7FBFAE', days.map((k) => (by[k] ? by[k].sales : 0))], ['Returned', '#B42318', days.map((k) => (by[k] ? -by[k].returns : 0))]]; }
+    const chartHtml = barSvg(labels, ser.map(([name, color, data]) => ({ name, color, data })), { h: 240 });
+    // wing by wing, for the same period
+    const wingOf = (u) => String(u || '').trim().charAt(0).toUpperCase();
+    const wings = Object.keys(M.byWing || {}).sort();
+    const wingCard = (w) => { const W = M.byWing[w] || {}, items = cur.flatMap((x) => x.items || []).filter((i) => wingOf(i.unit) === w);
+      const g = sum(items.filter((i) => i.kind !== 'return'), 'amount') - sum(items.filter((i) => i.kind === 'return'), 'amount');
+      return `<div class="cv-wing"><h3>Wing ${esc(w)}</h3><div class="cv-wrow"><span>${esc(p.label)}</span><b>${cInr(g)}</b></div><div class="cv-wrow"><span>Received of agreement value</span><b>${cPct(W.receivedAV, W.agreementValue)}</b></div>
+        <div class="cv-bar"><i style="width:${W.agreementValue ? Math.min(100, (W.receivedAV / W.agreementValue) * 100).toFixed(1) : 0}%"></i></div>
+        <div class="cv-wrow"><span>Balance due</span><b class="warn-t">${cInr(W.balanceDue)}</b></div><div class="cv-wrow"><span>Flats sold · registered</span><b>${cCnt(W.booked)} · ${cCnt(W.registered)}</b></div></div>`; };
+    const maxAge = Math.max(1, ...AG.buckets.map(([, v]) => v));
+    const seg = (v, c, l) => (v > 0 ? `<i style="width:${((v / Math.max(1, t.agreementValue)) * 100).toFixed(2)}%;background:${c}" title="${esc(l)}: ${esc(cInr(v))}"></i>` : '');
+    $('#page').innerHTML = `<div class="page-head"><div><h1>Collections</h1><p class="muted">${esc((projectList.find((x) => x.id === proj) || {}).name || '')} · live from the ERP${M.meta.lastBankDate ? ', bank entries up to ' + esc(fmtD(M.meta.lastBankDate)) : ''}</p></div>
+        <div class="chips" style="margin:0">${Object.entries(P).map(([k, x]) => `<button type="button" class="chip ${k === collPeriod ? 'on' : ''}" data-cp="${k}">${esc(x.label)}</button>`).join('')}</div></div>
+      <div class="cv-kpis">
+        ${card(`Collected · ${p.label.toLowerCase()}`, cInr(got), chg == null ? `${cCnt(sum(cur, 'count'))} receipt${sum(cur, 'count') === 1 ? '' : 's'}` : `<b class="${chg >= 0 ? 'good-t' : 'bad-t'}">${chg >= 0 ? '▲' : '▼'} ${Math.abs(chg)}%</b> against ${esc(p.vs)}`, 'good', '#/receipts')}
+        ${card('Overdue now', cInr(AG.total), `${cCnt(AG.buyers)} buyer${AG.buyers === 1 ? '' : 's'}${AG.buckets[3] && AG.buckets[3][1] ? ` · <b class="bad-t">${esc(cInr(AG.buckets[3][1]))}</b> over 90 days` : ''}`, AG.total ? 'bad' : 'good', '#/flats?f=overdue')}
+        ${card('Coming in · next 30 days', cInr(F.dueNext30 + F.promised), `${esc(cInr(F.dueNext30))} falling due · ${esc(cInr(F.promised))} promised on calls`, 'warn')}
+        ${card(`Returned · ${p.label.toLowerCase()}`, cInr(ret), `${cCnt(retK)} cheque${retK === 1 ? '' : 's'} or transfer${retK === 1 ? '' : 's'}`, ret ? 'bad' : '')}
+      </div>
+      <div class="panel"><div class="cv-h"><h2>How much came in</h2><span class="muted small">${esc(p.label)}${byMonth ? ', month by month' : ', day by day'}</span></div>${chartHtml}</div>
+      <div class="two">
+        <div class="panel"><div class="cv-h"><h2>Where the money stands</h2><span class="muted small">agreement value of flats sold: ${esc(cInr(t.agreementValue))}</span></div>
+          <div class="cv-stack">${seg(rec, '#117A65', 'Received')}${seg(unpaid, '#B7791F', 'Demanded, not paid')}${seg(notDue, '#D9DDD6', 'Not demanded yet')}</div>
+          <div class="cv-legend">
+            <div><i style="background:#117A65"></i><span>Received</span><b>${cInr(rec)}</b><em>${cPct(rec, t.agreementValue)}</em></div>
+            <div><i style="background:#B7791F"></i><span>Demanded, not paid</span><b>${cInr(unpaid)}</b><em>${cPct(unpaid, t.agreementValue)}</em></div>
+            <div><i style="background:#D9DDD6"></i><span>Not demanded yet</span><b>${cInr(notDue)}</b><em>${cPct(notDue, t.agreementValue)}</em></div>
+          </div>
+          <p class="small muted" style="margin:10px 0 0">Plus GST: ${esc(cInr(t.receivedGST))} received, ${esc(cInr(t.gstDue))} due. TDS: ${esc(cInr(sum(M.units, 'tdsPaid')))} paid by buyers, ${esc(cInr(sum(M.units, 'tdsDue')))} to come.</p></div>
+        <div class="panel"><div class="cv-h"><h2>How old the dues are</h2><a class="small" href="#/flats?f=overdue">See the buyers →</a></div>
+          <div class="cv-age">${AG.buckets.map(([l, v], i) => `<a href="#/flats?f=overdue"><span>${esc(l)}</span><div class="cv-bar"><i style="width:${((v / maxAge) * 100).toFixed(1)}%;background:${['#7FBFAE', '#E3B25E', '#D9822B', '#B42318'][i]}"></i></div><b>${cInr(v)}</b></a>`).join('') || '<p class="muted small">Nothing overdue.</p>'}</div>
+          ${(AG.top || []).length ? `<h3 class="cv-sub">Largest overdue</h3><div class="cv-top">${AG.top.map(([l, v]) => `<div><span>${esc(l)}</span><b>${esc(v)}</b></div>`).join('')}</div>` : ''}</div>
+      </div>
+      <div class="panel"><div class="cv-h"><h2>What is coming next</h2><a class="small" href="#/demands">Stages &amp; demands →</a></div>
+        <div class="cv-next">${F.nextStages.map((x) => `<div><span>Wing ${esc(x.wing)} · next stage</span><b>${esc(x.stage.replace(/^On (Completion of )?/, ''))}</b><small>${x.pct}% of ${cCnt(x.bookings)} bookings · ${esc(cInr(x.amount + x.gst))} with GST</small></div>`).join('')}
+          <div><span>Falling due in 30 days</span><b>${cInr(F.dueNext30)}</b><small>${cCnt(F.dueNext30Count)} buyer${F.dueNext30Count === 1 ? '' : 's'}</small></div>
+          <div><span>Promised on calls, 30 days</span><b>${cInr(F.promised)}</b><small>${cCnt(F.promisedCount)} promise${F.promisedCount === 1 ? '' : 's'} · <a href="#/flats?f=call">calls</a></small></div></div></div>
+      <div class="panel"><div class="cv-h"><h2>Wing by wing</h2><span class="muted small">${esc(p.label)}</span></div><div class="cv-wings">${wings.map(wingCard).join('')}</div></div>`;
+    document.querySelectorAll('[data-cp]').forEach((b) => (b.onclick = () => { collPeriod = b.dataset.cp; collections(); }));
   }
 
   async function mgmt() {
