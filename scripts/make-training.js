@@ -406,7 +406,7 @@ const L = {
     ['title', 'Training · Accounts', 'Approvals, corrections and refunds', 'Head Accounts: CRM receipts, bounced cheques and refunds'],
     ['hash', '#/receipts'], ['cap', 'Receipts the CRM enters wait here for Head Accounts. Cheques found in the bank statement are approved by themselves. Approve the rest once the money is in the bank.'],
     ['hl', 'button[data-ok] >> nth=0', 2000], ['cap', 'The person who entered a receipt can never approve it. The receipt number is given on approval.'],
-    ['hl', 'button[data-resplit] >> nth=0', 2200], ['cap', 'If an approved receipt was split wrongly, for example part of it was GST, tap Correct split. The receipt and its number stay the same, and the change is kept with the reason.'],
+    ['click', '.tab[data-t=approved]', 1800], ['hl', 'button[data-resplit] >> nth=0', 2200], ['cap', 'If an approved receipt was split wrongly, for example part of it was GST, tap Correct split. The receipt and its number stay the same, and the change is kept with the reason.'],
     ['cap', 'If a cheque was marked bounced by mistake, tap Not bounced on it, with the reason. The buyer’s balance is put right at once.'],
     ['hash', '#/reg-cancellations'], ['cap', 'When Management approves a cancellation, the flat appears in Cancelled flats by itself: the buyer, what they paid, the charges and the refund due.'],
     ['click', 'tr[data-id] >> nth=0'], ['cap', 'When you pay the refund, enter the amount paid and set Refund Status to DONE once it is fully paid. The CRM shows the same status.'],
