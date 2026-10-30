@@ -140,6 +140,7 @@ async function seedSite(sig) {
   // contractor: a work order on a payment schedule (% of the contract value by stage, slab by slab), approved; the first
   // RA bill (excavation, foundation, plinth, with the mobilisation advance recovered in full) already paid
   const C = (ck, b) => api(ck, '/api/me?contracts=1', b);
+  await require('../lib/portal/kv').hset('wo:meta', 'mandalSeeded', new Date().toISOString()); // sample data only: not the real Mandal work order
   const STAGES = [['Excavation', 3, 1], ['Foundation completion', 6, 1], ['Plinth completion', 9, 1], ['Completion of 1st slab', 3, 1, 1], ['Completion of 2nd to 5th slab', 6, 4, 2],
     ['Completion of 6th to 10th slab', 12, 5, 6], ['Completion of 11th to 34th slab', 28.8, 24, 11], ['Completion of 35th to 46th slab', 9.6, 12, 35], ['Completion of U.G. tank', 1.6, 1], ['Completion of O.H.T. & lift room', 1, 1],
     ['Block work', 5, 1], ['Internal plaster', 7, 1], ['External plaster', 6, 1], ['Waterproofing', 1, 1], ['Compound wall / PCC / misc. works', 1, 1]];
