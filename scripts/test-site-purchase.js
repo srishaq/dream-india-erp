@@ -215,6 +215,45 @@ const JPEG = 'data:image/jpeg;base64,/9j/4AAQSkZJRgABAQEASABIAAD/2wBDAP/////////
     assert.equal((await C(buyer1)).wos[wo.id].status, 'closed');
   });
 
+  await step('Payment schedule (Mandal): % of contract value by stage and slab, GST, advance in full at plinth, Mivan instalments, final by area statement, retention released', async () => {
+    const C = (c, body, qs = '') => c('/api/me?contracts=1' + qs, body);
+    const r2 = (n) => Math.round(n * 100) / 100;
+    const stages = [['Excavation', 3, 1], ['Foundation completion', 6, 1], ['Plinth completion', 9, 1], ['Completion of 11th to 34th slab', 28.8, 24], ['Everything else', 53.2, 1]];
+    const w = await C(buyer1, { op: 'wo_save', data: { mode: 'schedule', contractor: 'Mandal Infrastructure', area: 982765, sqftRate: 900, gstPct: 18, retentionPct: 5, tdsPct: 2, payDays: 15,
+      advance: 44224425, advanceAtIndex: 2, recoveries: [{ name: 'Mivan formwork', total: 1000000, perBill: 250000 }], areaFactors: [{ name: 'Residential', factor: 100 }, { name: 'Basement', factor: 150 }],
+      items: stages.map(([desc, pct, count]) => ({ desc, pct, count })) } });
+    assert.equal(w.status, 200, w.error);
+    const wo = w.wo, V = 982765 * 900, id = (i) => wo.items[i].id;
+    assert.equal(wo.advanceAt, id(2)); assert.equal(wo.items[3].unit, 'slab'); assert.equal(wo.items[3].rate, r2(V * 28.8 / 100 / 24));
+    assert.equal((await C(buyer1, { op: 'wo_save', data: { mode: 'schedule', contractor: 'X', area: 1, sqftRate: 1, items: [{ desc: 'a', pct: 50 }] } })).status, 400); // must add up to 100%
+    await C(sameer, { op: 'wo_approve', id: wo.id });
+    const bill = async (data) => { const r = await C(buyer1, { op: 'bill_save', data: { woId: wo.id, from: '2026-01-01', to: '2026-01-31', ...data } }); assert.equal(r.status, 200, r.error); await C(buyer1, { op: 'bill_submit', id: r.bill.id, data: {} }); assert.equal((await C(sameer, { op: 'bill_approve', id: r.bill.id, data: {} })).status, 200); return r.bill; };
+    // RA 1: excavation
+    const b1 = await bill({ lines: [{ itemId: id(0), qty: 1 }], recoveries: [{ id: wo.recoveries[0].id, amount: 250000 }] });
+    const g1 = r2(V * 0.03);
+    assert.equal(b1.totals.gross, g1); assert.equal(b1.totals.gst, r2(g1 * 0.18)); assert.equal(b1.totals.retention, r2(g1 * 0.05)); assert.equal(b1.totals.tds, r2(g1 * 0.02)); assert.equal(b1.totals.advance, 0);
+    assert.equal(b1.totals.recovery, 250000); assert.equal(b1.totals.net, r2(g1 + g1 * 0.18 - g1 * 0.05 - g1 * 0.02 - 250000));
+    // RA 2: foundation + plinth + 3 slabs: the advance comes back in full; Mivan suggestion is the next instalment
+    const sg = (await C(buyer1, null, `&suggest=${wo.id}&from=2026-02-01&to=2026-02-28`)).suggestion;
+    assert.equal(sg.recoveries[0].amount, 250000); assert.equal(sg.recoveries[0].left, 750000);
+    const pv = await C(buyer1, { op: 'bill_preview', data: { woId: wo.id, lines: [{ itemId: id(1), qty: 1 }, { itemId: id(2), qty: 1 }, { itemId: id(3), qty: 3 }] } });
+    assert.equal(pv.totals.advance, 44224425); assert.equal(pv.totals.gross, r2(r2(V * 0.06) + r2(V * 0.09) + 3 * wo.items[3].rate));
+    const b2 = await bill({ lines: [{ itemId: id(1), qty: 1 }, { itemId: id(2), qty: 1 }, { itemId: id(3), qty: 3 }], recoveries: [{ id: wo.recoveries[0].id, amount: 900000 }] });
+    assert.equal(b2.totals.advance, 44224425); assert.equal(b2.totals.recovery, 750000); // never more than is left
+    // final: area statement 9,00,000 residential + 60,000 basement at 150% = 9,90,000 sq ft
+    const before = r2(b1.totals.gross + b2.totals.gross);
+    const f = await bill({ final: true, areaRows: [{ name: 'Residential', area: 900000, factor: 100 }, { name: 'Basement', area: 60000, factor: 150 }], extras: [{ name: 'Floor height extra', amount: 100000 }] });
+    assert.equal(f.lines[0].qty, 990000); assert.equal(f.totals.gross, r2(990000 * 900 + 100000 - before)); assert.equal(f.totals.retention, r2(f.totals.gross * 0.05)); assert.equal(f.totals.released, 0);
+    await C(acc, { op: 'bill_paid', id: f.id, data: { amount: f.totals.net, ref: 'UTR9', date: '2026-03-01' } });
+    // retention back in two halves, never more than held
+    const held = r2(b1.totals.retention + b2.totals.retention + f.totals.retention);
+    const rs = (await C(buyer1, null, `&suggest=${wo.id}`)).suggestion.retention; assert.equal(rs.held, held); assert.equal(rs.left, held);
+    const rel1 = await bill({ kind: 'release', releaseAmount: r2(held / 2), releaseNote: 'RCC complete' });
+    assert.match(rel1.no, /RET-1$/); assert.equal(rel1.totals.net, r2(held / 2));
+    const rel2 = await bill({ kind: 'release', releaseAmount: held });
+    assert.equal(rel2.totals.released, r2(held - r2(held / 2)));
+  });
+
   await step('The challan reader\'s answer is cleaned (numbers, dates, lengths); it is off without an API key', async () => {
     const R = require('../lib/challan-read');
     assert.equal(R.configured(), false);
