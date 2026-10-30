@@ -55,6 +55,8 @@ function render() {
 const STD_STAGES = [['Excavation', 3, 1], ['Foundation completion', 6, 1], ['Plinth completion', 9, 1], ['Completion of 1st slab', 3, 1, 1], ['Completion of 2nd to 5th slab', 6, 4, 2],
   ['Completion of 6th to 10th slab', 12, 5, 6], ['Completion of 11th to 34th slab', 28.8, 24, 11], ['Completion of 35th to 46th slab', 9.6, 12, 35], ['Completion of U.G. tank', 1.6, 1], ['Completion of O.H.T. & lift room', 1, 1],
   ['Block work', 5, 1], ['Internal plaster', 7, 1], ['External plaster', 6, 1], ['Waterproofing', 1, 1], ['Compound wall / PCC / misc. works', 1, 1]];
+// The rehab building (34 slabs) is billed the same way; the 35th–46th slab stage (9.6%) is paid when the rehab building is completed.
+const STD_STAGES_REHAB = STD_STAGES.map((x) => (x[0] === 'Completion of 35th to 46th slab' ? ['Completion of the rehab building', 9.6, 1] : x));
 const STD_FACTORS = [['Out to out beam face area', 100], ['Shops, offices, lobbies, stairs, lifts, ramp, residential, canopy, balcony, flower bed', 100], ['Basement floors', 150], ['Basement floors 4.20 m and above height', 200], ['Area above U.G. tanks in basement', 75],
   ['Double height structure', 150], ['Stilt area (parking on ground floor)', 70], ['Podium area (parking on podium floors)', 80], ['Ramp void cover slab', 200], ['Floor height 4.20 m and above', 120], ['Service slabs in duct wider than 600 mm', 100],
   ['Voids in ducts', 0], ['Refuge area', 80], ['Parking tower void', 25], ['Swimming pool', 200], ['Open terrace', 0], ['OHT & LMR', 0], ['U.G. tank', 0], ['Chajja up to 1200 mm', 0], ['Chajja above 1200 mm', 100]];
@@ -77,7 +79,7 @@ function woForm(w) {
       <label class="field">How is the contractor paid?<select name="mode"><option value="schedule" ${mode === 'schedule' ? 'selected' : ''}>% of contract value, by stage</option><option value="items" ${mode === 'items' ? 'selected' : ''}>Item rates × quantity</option></select></label></div>
     <div class="box" id="schedBox"><h4>Contract value and payment schedule</h4><div class="form">
       <label class="field">Construction area, sq ft (approx.)<input name="area" inputmode="decimal" value="${w && w.area ? w.area : ''}" placeholder="e.g. 982765"></label><label class="field">Rate ₹ per sq ft<input name="sqftRate" inputmode="decimal" value="${w && w.sqftRate ? w.sqftRate : ''}" placeholder="e.g. 900"></label><label class="field">Contract value<input id="cval" disabled></label></div>
-      <div class="items" id="wstages">${(w && w.mode === 'schedule' ? w.items : []).map(stage).join('')}</div><button type="button" class="addrow" id="addStage">+ Add stage</button> <button type="button" class="addrow" id="stdStages">Use the standard RCC schedule (15 stages)</button>
+      <div class="items" id="wstages">${(w && w.mode === 'schedule' ? w.items : []).map(stage).join('')}</div><button type="button" class="addrow" id="addStage">+ Add stage</button> <button type="button" class="addrow" id="stdStages">Use the standard RCC schedule (sale building, 46 slabs)</button> <button type="button" class="addrow" id="stdRehab">Rehab building (34 slabs)</button>
       <p class="note" style="margin:0" id="stTot"></p><p class="note" style="margin:0">A slab group (e.g. 11th to 34th slab, 24 slabs) is claimed slab by slab. Give the building and its first slab number, and each bill suggests the slabs site marked cast.</p></div>
     <div class="box" id="itemsBox"><h4>Items</h4><div class="items" id="witems">${(w && w.mode !== 'schedule' ? w.items : [{}]).map(item).join('')}</div><button type="button" class="addrow" id="addItem">+ Add item</button>
       <p class="note" style="margin:0">"Count from slabs" makes each RA bill suggest the slabs cast since the last bill × the sq ft per slab. The final measurement bill settles the difference at the end.</p></div>
@@ -112,7 +114,9 @@ function woForm(w) {
   $('#sheet [name=advanceAt]').onchange = () => ($('#advPctF').hidden = !!$('#sheet [name=advanceAt]').value);
   $('#addItem').onclick = () => $('#witems').insertAdjacentHTML('beforeend', item());
   $('#addStage').onclick = () => { $('#wstages').insertAdjacentHTML('beforeend', stage()); sync(); advSel(); };
-  $('#stdStages').onclick = () => { const tw = t[0] ? t[0][0] : ''; $('#wstages').innerHTML = STD_STAGES.map(([desc, pct, count, from]) => stage({ desc, pct, count, slabFrom: from, link: from && tw ? { tower: tw } : null })).join(''); sync(); advSel(); const sel = $('#sheet [name=advanceAt]'); const pl = [...sel.options].find((o) => /plinth/i.test(o.textContent)); if (pl) { sel.value = pl.value; $('#advPctF').hidden = true; } };
+  const fill = (list, re, plinth) => { const tw = (t.find(([, x]) => re.test(x.name)) || t[0] || [''])[0]; $('#wstages').innerHTML = list.map(([desc, pct, count, from]) => stage({ desc, pct, count, slabFrom: from, link: from && tw ? { tower: tw } : null })).join(''); sync(); advSel(); const sel = $('#sheet [name=advanceAt]'); const pl = [...sel.options].find((o) => /plinth/i.test(o.textContent)); if (pl && plinth) { sel.value = pl.value; $('#advPctF').hidden = true; } };
+  $('#stdStages').onclick = () => fill(STD_STAGES, /sale/i, true);
+  $('#stdRehab').onclick = () => fill(STD_STAGES_REHAB, /rehab/i, false);
   $('#addRec').onclick = () => $('#wrec').insertAdjacentHTML('beforeend', recRow());
   const sr = $('#stdRec'); if (sr) sr.onclick = () => { $('#wrec').insertAdjacentHTML('beforeend', recRow({ name: 'Mivan formwork' }) + recRow({ name: 'Safety masks / screens' })); sr.remove(); };
   $('#addFac').onclick = () => $('#wfac').insertAdjacentHTML('beforeend', facRow());
