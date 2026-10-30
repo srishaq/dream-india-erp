@@ -32,7 +32,8 @@ const fake = http.createServer(async (req, res) => {
   if (!tok || !q.get('appsecret_proof')) return J({ error: { message: 'token missing' } }, 400);
   const series = (val) => { const out = []; for (let d = q.get('since'); d < q.get('until'); d = new Date(Date.parse(d) + 864e5).toISOString().slice(0, 10)) out.push({ value: val, end_time: new Date(Date.parse(d) + 864e5).toISOString().slice(0, 10) + 'T07:00:00+0000' }); return out; };
   if (g === '/me') return J({ id: 'u1', name: 'Rafi' });
-  if (g === '/me/accounts') return J({ data: [{ id: 'p1', name: 'Dream India Realty', link: 'https://www.facebook.com/dreamindiarealty', access_token: 'PAGE', instagram_business_account: { id: 'ig1', username: 'dreamindiarealty' } }] });
+  if (g === '/me/accounts' && global.noIg && /instagram_business_account/.test(q.get('fields'))) return J({ error: { message: '(#100) Tried accessing nonexisting field (instagram_business_account)', code: 100 } }, 400);
+  if (g === '/me/accounts') return J({ data: [{ id: 'p1', name: 'Dream India Realty', link: 'https://www.facebook.com/dreamindiarealty', access_token: 'PAGE', ...(global.noIg ? {} : { instagram_business_account: { id: 'ig1', username: 'dreamindiarealty' } }) }] });
   if (g === '/me/adaccounts') return J({ data: [{ id: 'act_9', name: 'Dream India Ads', currency: 'INR', account_status: 1 }] });
   if (g === '/p1') return J({ followers_count: 1500 });
   if (g === '/p1/insights') { const m = q.get('metric'); if (m === 'page_media_view') return J({ error: { message: 'metric not available', code: 100 } }, 400); return J({ data: [{ name: m, values: series({ page_impressions: 300, page_impressions_unique: 200, page_post_engagements: 20, page_daily_follows_unique: 2, page_follows: 1500 }[m] || 0) }] }); }
@@ -183,11 +184,24 @@ let n = 0; const step = async (name, fn) => { await fn(); n++; console.log('  âœ
     assert.equal((await rupali('/api/marketing?img=instagram:../etc')).status, 404);
   });
 
+  await step('Connecting without the Instagram permissions still connects the page and ads; a failed try is shown in Set-up', async () => {
+    global.noIg = true;
+    const st = new URL((await rupali('/api/marketing?connect=meta')).location).searchParams.get('state');
+    const back = await rupali(`/oauth/meta?code=good&state=${encodeURIComponent(st)}`);
+    assert.match(decodeURIComponent(back.location), /Connected: 1 Facebook page\(s\), 0 Instagram, 1 ad account/);
+    global.noIg = false;
+    const st2 = new URL((await rupali('/api/marketing?connect=meta')).location).searchParams.get('state');
+    const bad = await rupali(`/oauth/meta?code=wrong&state=${encodeURIComponent(st2)}`);
+    assert.match(decodeURIComponent(bad.location), /bad code/);
+    const g = await rupali('/api/marketing?scope=company');
+    assert.equal(g.social.meta.connected, true); assert.match(g.social.meta.lastFail.message, /bad code/);
+  });
+
   await step('Disconnecting keeps the figures already pulled; each part remembers its 12-month pull', async () => {
     const c = (await db.one("select value from settings where key = 'social'")).value;
     assert.equal((await M(rupali, 'disconnect', { net: 'meta' })).ok, true);
     const g = await rupali('/api/marketing?scope=company'); assert.equal(g.social.meta.connected, false); assert.equal(g.channels.find((x) => x.network === 'instagram').followers, 2040);
-    assert.ok(c.youtube.backfilled.youtube && c.meta.backfilled.ads);
+    assert.ok(c.youtube.backfilled.youtube); assert.equal(c.meta.backfilled, null); // a new connection pulls its 12 months again
   });
 
   await step('The design library says when no Drive folder is linked, and keeps a pasted folder link as its ID', async () => {
