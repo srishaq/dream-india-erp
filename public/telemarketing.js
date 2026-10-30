@@ -39,7 +39,7 @@
 
   function tabs() {
     const all = [
-      ['overview', 'Overview', can('tm.view') || can('tm.manage')], ['partners', 'Partners', can('tm.view') || can('tm.manage')],
+      ['overview', 'Overview', can('tm.view') || can('tm.manage')], ['reports', 'Reports', can('tm.view') || can('tm.manage') || can('mgmt.view')], ['partners', 'Partners', can('tm.view') || can('tm.manage')],
       ['launches', 'Projects', can('tm.view') || can('tm.manage')], ['sheets', 'Call sheets', true], ['lookup', 'Customer lookup', can('tm.view') || can('tm.manage')],
       ['callers', 'Telecallers', can('tm.view') || can('tm.manage')], ['import', 'Import earlier numbers', can('tm.manage')], ['settings', 'Settings', can('tm.manage')],
     ].filter((t) => t[2]);
@@ -59,7 +59,7 @@
       <div id="tmBody"><p class="muted">Loading…</p></div></div>`;
     $$('[data-t]').forEach((b) => (b.onclick = () => { tab = b.dataset.t; render(C); }));
     if ($('#tmCopy')) $('#tmCopy').onclick = () => { navigator.clipboard.writeText(PORTAL).then(() => C.toast('Link copied.')); };
-    try { await ({ overview, partners, launches, sheets, lookup, callers, import: importTab, settings })[tab](); }
+    try { await ({ overview, reports, partners, launches, sheets, lookup, callers, import: importTab, settings })[tab](); }
     catch (e) { $('#tmBody').innerHTML = `<div class="err">${esc(e.message)}</div>`; }
   }
   const body = (h) => { $('#tmBody').innerHTML = h; };
@@ -262,6 +262,17 @@
     async (x) => { await C.api('/api/tm', { action: 'caller-save', id: c?.id, ...x, active: x.active === 'on' }); callers(); });
     if ($('#tmAddC')) $('#tmAddC').onclick = () => form(null);
     $$('[data-ec]').forEach((b) => (b.onclick = () => form(d.rows.find((x) => x.id === +b.dataset.ec))));
+  }
+
+  // ---------- Reports: the full report of a project, every figure opens to its rows (public/tcperf.js) ----------
+  let rproj = null;
+  async function reports() {
+    const pr = (await C.api('/api/tm?projects=1')).rows;
+    if (!pr.some((p) => String(p.id) === String(rproj))) rproj = (pr.find((p) => p.history) || pr[0] || {}).id;
+    if (!rproj) return body('<div class="panel"><p class="muted">No projects yet.</p></div>');
+    body(`<div class="tm-tools"><label class="small muted">Project</label><select id="tmRP">${projOpts(pr, rproj)}</select></div><div id="tmRep"></div>`);
+    $('#tmRP').onchange = (e) => { rproj = e.target.value; reports(); };
+    await window.TcPerf.render({ api: C.api, can }, { host: $('#tmRep'), project: rproj });
   }
 
   // ---------- Import earlier numbers ----------

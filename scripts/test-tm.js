@@ -159,6 +159,35 @@ const firm = (i, extra = {}) => ({ username: 'partner' + i, password: 'secret12'
     assert.equal((await C('/api/cp-portal', { action: 'login', username: 'partner1', password: 'newpass123' })).status, 429);
   });
 
+  await step('Reports: a launch reports from its entered calls; a finished campaign\'s sheet is loaded and every figure opens to its rows; buyers matched', async () => {
+    const live = await admin(`/api/tm?results=${launch}`);
+    assert.equal(live.status, 200, live.error); assert.equal(live.source, 'calls'); assert.ok(live.report.kpis[0].rows >= 1);
+    assert.equal((await crm(`/api/tm?results=${launch}`)).status, 403);
+    const buyer = await db.one("select y.name, right(regexp_replace(y.phone, '\\D', '', 'g'), 10) as p, b.booking_date from buyers y join booking_applicants a on a.buyer_id = y.id join bookings b on b.id = a.booking_id where b.status = 'active' and y.phone is not null order by b.booking_date limit 1");
+    const before = new Date(Date.parse(buyer.booking_date) - 20 * 864e5).toISOString().slice(0, 10);
+    const rows = [
+      { day: before, caller: 'Asha', cp_firm: 'Bricks Bazaar', sm: 'Haider', client: buyer.name, mobile: buyer.p, config: '2 BHK', status: 'Hot', remark: 'Visit Sunday' },
+      { day: before, caller: 'Asha', cp_firm: 'SK Realtors', client: 'Ravi', mobile: '98XXXXXX12', config: '1 BHK', status: 'Warm', remark: '.' },
+      { day: 46000, caller: 'Bilal', cp_firm: 'SK Realtors', client: 'Meena', mobile: '+91 98200 11111', config: '1 BHK', status: 'cold', remark: 'busy' },
+      { day: '12/05/2025', caller: 'Bilal', cp_firm: 'Bricks Bazaar', client: 'Meena', mobile: '9820011111', config: '1 BHK', status: 'Warm', remark: 'call later' },
+    ];
+    assert.equal((await admin('/api/tm', { action: 'rows-load', projectId: hist, rows: rows.slice(0, 2), first: true })).total, 2);
+    assert.equal((await admin('/api/tm', { action: 'rows-load', projectId: hist, rows: rows.slice(2), first: false, offset: 2 })).total, 4);
+    const r = await admin(`/api/tm?results=${hist}`);
+    assert.equal(r.source, 'sheet'); assert.equal(r.loaded, 4);
+    const k = r.report.kpis[0];
+    assert.equal(k.rows, 4); assert.equal(k.unique_people, 3); assert.equal(k.unique_full, 2); assert.equal(k.masked_rows, 1); assert.equal(k.callers, 2); assert.equal(k.phones_multi_cp, 1); assert.equal(k.caller_days, 3); assert.equal(k.cost, 3000);
+    assert.equal(r.report.bk_kpis[0].before, 1); assert.equal(r.report.bk_kpis[0].cp_diff + r.report.bk_kpis[0].cp_same <= 1, true);
+    const d = await admin(`/api/tm?drill=buyers&project=${hist}`); assert.equal(d.total, 1); assert.equal(d.rows[0].days, 20);
+    assert.equal((await admin(`/api/tm?drill=leads&project=${hist}&q=meena`)).total, 2);
+    assert.equal((await admin(`/api/tm?drill=caller&val=Asha&project=${hist}`)).total, 2);
+    assert.equal((await admin(`/api/tm?drill=repeat&project=${hist}`)).total, 1);
+    for (const key of ['people', 'messageable', 'masked', 'junk', 'callers', 'callerdays', 'perday', 'cost', 'cps', 'sms', 'buyers_all', 'buyers_after', 'buyers_none', 'buyers_name', 'buyers_diffcp'])
+      assert.equal((await admin(`/api/tm?drill=${key}&project=${hist}`)).status, 200, key);
+    assert.equal((await admin(`/api/tm?drill=month&val=2025-12&project=${hist}`)).total, 1); // 46000 = 9 Dec 2025
+    assert.ok((await admin(`/api/tm?drill=leads&project=${hist}&page=-1`)).all.length === 4);
+  });
+
   await step('Settings saved within limits; a staff page for Partner & Telemarketing loads', async () => {
     const s = await admin('/api/tm', { action: 'settings-save', settings: { ownershipDays: 1000, historyPolicy: 'accept', autoApprove: true, maxAttempts: 4, gapDays: 3 } });
     assert.equal(s.settings.ownershipDays, 365); assert.equal(s.settings.autoApprove, true);

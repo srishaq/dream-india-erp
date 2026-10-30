@@ -30,10 +30,19 @@ async function sheetRows(where, params) {
 module.exports = route({
   GET: async (req, res) => {
     const Q = req.query || {};
-    // Dream Signature's pre-launch telecalling, completed: the final figures (fixed; from the telecalling sheet and the bookings)
-    if (Q.dsResults) {
-      if (!(await who(req, res, ['tm.view', 'tm.manage', 'mgmt.view']))) return;
-      return res.json(require('../lib/data/ds-telecalling.json'));
+    // Reports: the full report of one project (from its loaded telecalling sheet, or from the calls entered in the ERP),
+    // and the rows behind any figure (?drill=<figure>&val=…&project=…&q=…&page=…; page=-1 gives every row for a download)
+    if (Q.results || Q.drill) {
+      const u = await who(req, res, ['tm.view', 'tm.manage', 'mgmt.view']); if (!u) return;
+      const R = require('../lib/tm-results');
+      const pid = intOr(Q.results || Q.project);
+      const p = await db.one('select id, name, location, status, history, project_id from tm_projects where id = $1', [pid]);
+      if (!p) throw fail(404, 'Choose the project.');
+      if (Q.drill) return res.json(await R.drill(pid, String(Q.drill), str(Q.val, 200), { q: str(Q.q, 80), page: intOr(Q.page, 0), fullNumbers: has(u, 'tm.manage') || has(u, 'mgmt.view') }));
+      const sm = await R.summary(pid);
+      // Dream Signature's analysis as it was finalised (areas from remarks, re-use tiers): shown until its sheet is loaded
+      const fixed = p.history && /signature/i.test(p.name) ? require('../lib/data/ds-telecalling.json') : null;
+      return res.json({ project: p, loaded: await R.loaded(pid), report: sm.empty ? null : sm, source: sm.source, fixed, rate: R.DEFAULT_RATE, canLoad: has(u, 'tm.manage') });
     }
     if (Q.sheets || Q.sheet) {
       if (!(await who(req, res, ENTRY))) return;
@@ -144,6 +153,12 @@ module.exports = route({
     if (a === 'import') {
       const r = await TM.importHistory({ projectId: intOr(b.projectId), rows: b.rows });
       await audit.record(db.q, { user: u, action: 'tm-import', entity: 'tm-project', entityId: intOr(b.projectId), after: r, note: str(b.fileName, 120) || null });
+      return res.json(r);
+    }
+    // A finished campaign's whole telecalling sheet, in parts of 5,000 rows (the first part replaces what was there)
+    if (a === 'rows-load') {
+      const r = await require('../lib/tm-results').loadRows({ projectId: intOr(b.projectId), rows: b.rows, first: !!b.first, offset: intOr(b.offset, 0) });
+      if (b.first) await audit.record(db.q, { user: u, action: 'tm-sheet-load', entity: 'tm-project', entityId: intOr(b.projectId), after: { first: r.loaded }, note: str(b.fileName, 120) || null });
       return res.json(r);
     }
     // An import that went in with the wrong columns: take out the earlier numbers of this project that were never put on a sheet.
