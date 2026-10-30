@@ -121,6 +121,7 @@
     { key: 'home', label: 'Home', show: () => true },
     { key: 'mgmt', label: 'Management dashboard', show: () => can('mgmt.view') },
     { key: 'marketing', label: 'Marketing & social media', show: () => can('marketing.view') },
+    { key: 'telemarketing', label: 'Partner & Telemarketing', show: () => anyOf('tm.view', 'tm.manage', 'tm.entry') },
     { key: 'training', label: 'Training videos', show: () => true },
     { group: 'CRM' },
     { key: 'crmtodo', label: 'Today', show: () => anyOf('demand.raise', 'booking.create', 'booking.approve', 'ledger.view') },
@@ -263,7 +264,7 @@
     $('#cpw').onclick = () => changePassword(false);
     if ($('#proj')) $('#proj').onchange = (e) => { proj = +e.target.value; store.set('erp_project', proj); shell(); };
     if (/^reg-/.test(page || '') && can('accounts.view')) { try { await accRegister(page.slice(4)); } catch (e) { $('#page').innerHTML = `<div class="err">${esc(e.message)}</div>`; } return; }
-    const fn = { stages: () => demands(true), home, mgmt, marketing: () => window.Marketing.render({ api, dialog, toast, me }, store.get('erp_mkt_scope') || null), ca: caPage, accdash, collections, flats, custdocs, comms, team: teamPage, accteam: teamPage, sdr: sdrPage, cp: cpPage, project: projectHome, crmtodo: () => dailyTodo('crm'), acctodo: () => dailyTodo('accounts'), training, projects, plans, users, audit, units, bookings, demands, receipts, ledgers, letters, followups, verify, prices, partners, balances: accBalances, bankauto: bankAuto, bookscrm: booksCrm, accreports: accReports, checks: accChecks, accsetup: accSetup, import: importPage, booking: bookingPage, statement: statementPage, run: runPage };
+    const fn = { stages: () => demands(true), home, mgmt, marketing: () => window.Marketing.render({ api, dialog, toast, me }, store.get('erp_mkt_scope') || null), telemarketing: () => window.Telemarketing.render({ api, dialog, toast, me }), ca: caPage, accdash, collections, flats, custdocs, comms, team: teamPage, accteam: teamPage, sdr: sdrPage, cp: cpPage, project: projectHome, crmtodo: () => dailyTodo('crm'), acctodo: () => dailyTodo('accounts'), training, projects, plans, users, audit, units, bookings, demands, receipts, ledgers, letters, followups, verify, prices, partners, balances: accBalances, bankauto: bankAuto, bookscrm: booksCrm, accreports: accReports, checks: accChecks, accsetup: accSetup, import: importPage, booking: bookingPage, statement: statementPage, run: runPage };
     const key = DETAIL[page] && arg ? page : cur.key;
     try { await fn[key](arg ? +arg : undefined); } catch (e) { $('#page').innerHTML = `<div class="err">${esc(e.message)}</div>`; }
   }
@@ -285,6 +286,7 @@
     hammer: `<svg ${HP}><path d="M15 12 6 21l-3-3 9-9M14 4l6 6-3 3-6-6z"/></svg>`,
     cart: `<svg ${HP}><circle cx="9" cy="20" r="1.4"/><circle cx="18" cy="20" r="1.4"/><path d="M2 3h3l2.4 12.2a1.5 1.5 0 0 0 1.5 1.2h9.2a1.5 1.5 0 0 0 1.5-1.2L21 7H6"/></svg>`,
     megaphone: `<svg ${HP}><path d="M3 11v2a1 1 0 0 0 1 1h2l5 4V6L6 10H4a1 1 0 0 0-1 1Z"/><path d="M15 8.5a5 5 0 0 1 0 7M18 6a8.5 8.5 0 0 1 0 12"/></svg>`,
+    handshake: `<svg ${HP}><path d="m11 17 2 2a1 1 0 1 0 3-3"/><path d="m14 14 2.5 2.5a1 1 0 1 0 3-3l-3.9-3.9a2 2 0 0 0-2.8 0l-.9.9a1 1 0 1 1-3-3l2.8-2.8a3 3 0 0 1 3.7-.4l.5.3a2 2 0 0 0 1.4.3L21 4M3 4l1.6.3a2 2 0 0 1 1.4.9L9 9"/><path d="M3 4v8l6 6a1 1 0 1 0 3-3"/><path d="M21 4v8l-1.5 1.5"/></svg>`,
     users: `<svg ${HP}><circle cx="9" cy="8" r="3.5"/><path d="M2.5 20a6.5 6.5 0 0 1 13 0M16 4.5a3.5 3.5 0 0 1 0 7M18.5 20a6.5 6.5 0 0 0-2.5-5"/></svg>`,
   };
   const TONES = ['#140C59', '#0E8C9B', '#2B5C8A', '#7A5C99', '#117A65', '#B7791F'];
@@ -365,19 +367,21 @@
     const act = d.projects.filter((p) => p.active);
     const projTiles = act.map((p, i) => ({ title: p.name, sub: projSub(p), icon: i % 2 ? 'building' : 'tower', tone: TONES[i % TONES.length], proj: p.id, href: `#/project/${p.id}` }));
     if (!act.some((p) => /aspire/i.test(p.name))) projTiles.push({ title: 'Dream Aspire', sub: 'Lokhandwala, Andheri West · commercial · not in the ERP yet', icon: 'building', tone: '#0E8C9B', soon: true });
-    const tools = [
-      { title: 'New Project Feasibility', sub: 'SRA Feasibility Desk · analyse Reg. 33(10) sites and keep the register', icon: 'chart', tone: '#2B5C8A', href: 'https://claude.ai/artifact/EnCX84ZBXUSRTzQ52qf4D6', ext: true },
+    const mgmtTiles = [
+      can('mgmt.view') && { title: 'Management', sub: 'Cash, collections, dues, site, purchase, approvals, compliance and taxes on one screen', icon: 'chart', tone: '#140C59', href: '#/mgmt' },
+      can('marketing.view') && { title: 'Marketing & social media', sub: 'Every channel, the content calendar, leads, campaigns and the design library', icon: 'megaphone', tone: '#C2185B', href: '#/marketing' },
+      anyOf('tm.view', 'tm.manage', 'tm.entry') && { title: 'Partner & Telemarketing', sub: 'Channel partner sign-ups and client uploads, call sheets, telecaller results and costs', icon: 'handshake', tone: '#0E8C9B', href: '#/telemarketing' },
       sec('hr') ? { title: 'HR & Admin', sub: 'Staff records, leave, letters and HR policies', icon: 'users', tone: '#7A5C99', href: '/hr' } : { title: 'HR & Admin', sub: 'Staff records, leave, letters and HR policies', icon: 'users', tone: '#7A5C99', soon: true },
-    ];
+      { title: 'Project feasibility', sub: 'SRA Feasibility Desk · analyse Reg. 33(10) sites and keep the register', icon: 'grid', tone: '#2B5C8A', href: 'https://claude.ai/artifact/EnCX84ZBXUSRTzQ52qf4D6', ext: true },
+    ].filter(Boolean);
     const sample = can('users.manage') && cur && (!total(cur.units) || cur.sample) ? `<div class="panel"><h2>Sample data for testing</h2>
       <p class="muted">Loads Dream Signature A and B Wing (floors 10 to 45, 8 units a floor) with made-up "Sample Buyer" bookings, demands up to the stages the real project has reached, and receipts. It never touches real data and can be removed in one click.</p>
       <div class="actions">${total(cur.units) ? '<button class="danger" id="clearSample">Remove sample data</button>' : '<button id="loadSample">Load sample data</button>'}</div></div>` : '';
     $('#page').innerHTML = heroHtml(now.toLocaleDateString('en-IN', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric', timeZone: 'Asia/Kolkata' }),
         `${h < 12 ? 'Good morning' : h < 17 ? 'Good afternoon' : 'Good evening'}${first ? ', ' + first : ''}`, 'Your projects and tools in one place. Tap a tile to open it.') + `
       <div class="hm">
-        ${can('mgmt.view') || can('marketing.view') ? `<section class="hgroup"><h2>Management</h2><div class="tiles">${can('mgmt.view') ? tile({ title: 'Management dashboard', sub: 'Cash, collections, dues, site, purchase, approvals, compliance and taxes on one screen', icon: 'chart', tone: '#140C59', href: '#/mgmt' }) : ''}${can('marketing.view') ? tile({ title: 'Marketing & social media', sub: 'Instagram, Facebook, YouTube and every channel, the content calendar, leads, campaigns and the design library, company-wide and by project', icon: 'megaphone', tone: '#C2185B', href: '#/marketing' }) : ''}</div></section>` : ''}
-        <section class="hgroup"><h2>Projects</h2><div class="tiles">${projTiles.map(tile).join('') || '<p class="muted">No projects yet.</p>'}</div></section>
-        <section class="hgroup"><h2>Tools</h2><div class="tiles">${tools.map(tile).join('')}</div></section>
+        <section class="hgroup"><h2>Management</h2><div class="tiles five">${mgmtTiles.map(tile).join('')}</div></section>
+        <section class="hgroup"><h2>Projects</h2><div class="tiles five">${projTiles.map(tile).join('') || '<p class="muted">No projects yet.</p>'}</div></section>
         <p class="hnote">Tiles marked ↗ open in a new tab.</p>
         ${sample}
       </div>`;
