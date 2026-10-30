@@ -526,8 +526,8 @@
       <div class="row"><div><label>Name</label><input name="name" value="${esc(u?.name)}" required></div>
       <div><label>Username</label><input name="username" value="${esc(u?.username)}" ${u ? 'disabled' : 'required'} placeholder="e.g. firstname.lastname"></div></div>
       <div class="row"><div><label>Role</label><select name="role">${d.roles.map((r) => `<option value="${r.key}" ${u?.role === r.key ? 'selected' : ''}>${esc(r.label)}</option>`).join('')}</select></div>
-      <div><label>Mobile (for OTP later)</label><input name="phone" value="${esc(u?.phone)}"></div></div>
-      <label>Own email (where this person is told about buyers' replies)</label><input name="email" type="email" value="${esc(u?.email)}" maxlength="120" placeholder="e.g. ayesha@dreamindiagroup.com">
+      <div><label>Mobile (WhatsApp approvals and alerts; OTP later)</label><input name="phone" value="${esc(u?.phone)}"></div></div>
+      <label>Own email (approval links, daily summaries, buyers' replies)</label><input name="email" type="email" value="${esc(u?.email)}" maxlength="120" placeholder="e.g. ayesha@dreamindiagroup.com">
       <label>Designation (shown under the name in emails to buyers)</label><input name="designation" value="${esc(u?.designation)}" maxlength="80" placeholder="e.g. Senior Executive – Customer Relations">
       <label>Projects</label>
       <label class="check"><input type="checkbox" name="allProjects" ${u?.all_projects ? 'checked' : ''}> All projects, including future ones</label>
