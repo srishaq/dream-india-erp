@@ -1,6 +1,6 @@
 // Site Today page and purchase approvals: site asks for material, Management approves by the one-tap link or a WhatsApp
 // reply, Purchase orders, site receives with a photo of the challan (also logged as a site delivery), money stays
-// hidden from site logins, a request waiting 24 hours goes up to the Admin, and the 10 am summary.
+// hidden from site logins, a request waiting 24 hours gets a reminder to Management only (not the Admin), and the 10 am summary.
 // DATABASE_URL=postgres://... (EMPTY database) node scripts/test-site-purchase.js
 const assert = require('assert/strict');
 process.env.PORT = process.env.PORT || '3997';
@@ -145,14 +145,14 @@ const JPEG = 'data:image/jpeg;base64,/9j/4AAQSkZJRgABAQEASABIAAD/2wBDAP/////////
     assert.equal((await siteeng('/api/site', { op: 'add', col: 'hindrances', data: { description: 'x', photo: 'data:text/html;base64,PGI+' } })).status, 400);
   });
 
-  await step('A request waiting more than 24 hours goes up to the Admin once, with a reminder to Management', async () => {
+  await step('A request waiting more than 24 hours gets one reminder to Management, and nothing to the Admin', async () => {
     const g = await P(siteeng), line = g.budget.lines.find((l) => l.rmc > 0).key;
     const pr = (await P(siteeng, { op: 'request', data: { material: 'RMC', items: [{ spec: 'M25', qty: 12 }], line, wing: g.wings[line.split('|')[0]][0] } })).doc;
     const o = await kv.hget('po:orders', pr.id); o.requestedAt = new Date(Date.now() - 25 * 3600e3).toISOString(); await kv.hset('po:orders', pr.id, o);
     const before = mails.length;
     const r = await sa.runApprovals();
     assert.equal(r.escalated, 1);
-    assert.equal(mails.length, before + 2); // the Admin, and the reminder to Management
+    assert.equal(mails.length, before + 1); // the reminder to Management only
     assert.ok((await kv.hget('po:orders', pr.id)).escalatedAt);
     assert.equal((await sa.runApprovals()).escalated, 0);
   });
