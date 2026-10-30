@@ -266,7 +266,13 @@
 
   // ---------- Import earlier numbers ----------
   const b64 = (file) => new Promise((ok, no) => { const r = new FileReader(); r.onload = () => ok(String(r.result).split(',')[1] || ''); r.onerror = () => no(new Error('Could not read the file.')); r.readAsDataURL(file); });
-  const guess = (h, re) => h.findIndex((x) => re.test(String(x)));
+  // the client's column first (e.g. "Client Name", not "Caller Name" or "CP Contact No"); partner, caller and manager columns last
+  const guess = (h, re) => {
+    const ok = h.map((x, i) => [String(x), i]).filter(([x]) => re.test(x));
+    const rank = ([x]) => (/client|customer|lead|prospect/i.test(x) ? 0 : /\bcp\b|partner|caller|sourcing|manager|firm|broker/i.test(x) ? 2 : 1);
+    ok.sort((a, b) => rank(a) - rank(b) || a[1] - b[1]);
+    return ok.length && rank(ok[0]) < 2 ? ok[0][1] : -1; // only a partner / caller column: leave it for a person to choose
+  };
   async function importTab() {
     const pr = await C.api('/api/tm?projects=1');
     body(`<div class="panel"><h2>Import numbers we already called</h2>
