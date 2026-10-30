@@ -120,6 +120,7 @@
   const PAGES = [
     { key: 'home', label: 'Home', show: () => true },
     { key: 'mgmt', label: 'Management dashboard', show: () => can('mgmt.view') },
+    { key: 'marketing', label: 'Marketing & social media', show: () => can('marketing.view') },
     { key: 'training', label: 'Training videos', show: () => true },
     { group: 'CRM' },
     { key: 'crmtodo', label: 'Today', show: () => anyOf('demand.raise', 'booking.create', 'booking.approve', 'ledger.view') },
@@ -262,7 +263,7 @@
     $('#cpw').onclick = () => changePassword(false);
     if ($('#proj')) $('#proj').onchange = (e) => { proj = +e.target.value; store.set('erp_project', proj); shell(); };
     if (/^reg-/.test(page || '') && can('accounts.view')) { try { await accRegister(page.slice(4)); } catch (e) { $('#page').innerHTML = `<div class="err">${esc(e.message)}</div>`; } return; }
-    const fn = { stages: () => demands(true), home, mgmt, ca: caPage, accdash, collections, flats, custdocs, comms, team: teamPage, accteam: teamPage, sdr: sdrPage, cp: cpPage, project: projectHome, crmtodo: () => dailyTodo('crm'), acctodo: () => dailyTodo('accounts'), training, projects, plans, users, audit, units, bookings, demands, receipts, ledgers, letters, followups, verify, prices, partners, balances: accBalances, bankauto: bankAuto, bookscrm: booksCrm, accreports: accReports, checks: accChecks, accsetup: accSetup, import: importPage, booking: bookingPage, statement: statementPage, run: runPage };
+    const fn = { stages: () => demands(true), home, mgmt, marketing: () => window.Marketing.render({ api, dialog, toast, me }, store.get('erp_mkt_scope') || null), ca: caPage, accdash, collections, flats, custdocs, comms, team: teamPage, accteam: teamPage, sdr: sdrPage, cp: cpPage, project: projectHome, crmtodo: () => dailyTodo('crm'), acctodo: () => dailyTodo('accounts'), training, projects, plans, users, audit, units, bookings, demands, receipts, ledgers, letters, followups, verify, prices, partners, balances: accBalances, bankauto: bankAuto, bookscrm: booksCrm, accreports: accReports, checks: accChecks, accsetup: accSetup, import: importPage, booking: bookingPage, statement: statementPage, run: runPage };
     const key = DETAIL[page] && arg ? page : cur.key;
     try { await fn[key](arg ? +arg : undefined); } catch (e) { $('#page').innerHTML = `<div class="err">${esc(e.message)}</div>`; }
   }
@@ -283,6 +284,7 @@
     book: `<svg ${HP}><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20V3H6.5A2.5 2.5 0 0 0 4 5.5z"/><path d="M4 19.5V21h16"/></svg>`,
     hammer: `<svg ${HP}><path d="M15 12 6 21l-3-3 9-9M14 4l6 6-3 3-6-6z"/></svg>`,
     cart: `<svg ${HP}><circle cx="9" cy="20" r="1.4"/><circle cx="18" cy="20" r="1.4"/><path d="M2 3h3l2.4 12.2a1.5 1.5 0 0 0 1.5 1.2h9.2a1.5 1.5 0 0 0 1.5-1.2L21 7H6"/></svg>`,
+    megaphone: `<svg ${HP}><path d="M3 11v2a1 1 0 0 0 1 1h2l5 4V6L6 10H4a1 1 0 0 0-1 1Z"/><path d="M15 8.5a5 5 0 0 1 0 7M18 6a8.5 8.5 0 0 1 0 12"/></svg>`,
     users: `<svg ${HP}><circle cx="9" cy="8" r="3.5"/><path d="M2.5 20a6.5 6.5 0 0 1 13 0M16 4.5a3.5 3.5 0 0 1 0 7M18.5 20a6.5 6.5 0 0 0-2.5-5"/></svg>`,
   };
   const TONES = ['#140C59', '#0E8C9B', '#2B5C8A', '#7A5C99', '#117A65', '#B7791F'];
@@ -373,7 +375,7 @@
     $('#page').innerHTML = heroHtml(now.toLocaleDateString('en-IN', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric', timeZone: 'Asia/Kolkata' }),
         `${h < 12 ? 'Good morning' : h < 17 ? 'Good afternoon' : 'Good evening'}${first ? ', ' + first : ''}`, 'Your projects and tools in one place. Tap a tile to open it.') + `
       <div class="hm">
-        ${can('mgmt.view') ? `<section class="hgroup"><h2>Management</h2><div class="tiles">${tile({ title: 'Management dashboard', sub: 'Cash, collections, dues, site, purchase, approvals, compliance and taxes on one screen', icon: 'chart', tone: '#140C59', href: '#/mgmt' })}</div></section>` : ''}
+        ${can('mgmt.view') || can('marketing.view') ? `<section class="hgroup"><h2>Management</h2><div class="tiles">${can('mgmt.view') ? tile({ title: 'Management dashboard', sub: 'Cash, collections, dues, site, purchase, approvals, compliance and taxes on one screen', icon: 'chart', tone: '#140C59', href: '#/mgmt' }) : ''}${can('marketing.view') ? tile({ title: 'Marketing & social media', sub: 'Instagram, Facebook, YouTube and every channel, the content calendar, leads, campaigns and the design library, company-wide and by project', icon: 'megaphone', tone: '#C2185B', href: '#/marketing' }) : ''}</div></section>` : ''}
         <section class="hgroup"><h2>Projects</h2><div class="tiles">${projTiles.map(tile).join('') || '<p class="muted">No projects yet.</p>'}</div></section>
         <section class="hgroup"><h2>Tools</h2><div class="tiles">${tools.map(tile).join('')}</div></section>
         <p class="hnote">Tiles marked ↗ open in a new tab.</p>

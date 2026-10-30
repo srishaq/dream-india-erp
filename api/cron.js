@@ -36,6 +36,7 @@ module.exports = route({
       out.reminders = await require('../lib/letters').reminders().catch((e) => ({ error: e.message }));
       out.caPack = await require('../lib/ca-pack').morning().catch((e) => ({ error: e.message }));
       out.cheques = await require('../lib/cheque-match').run({ trigger: 'morning' }).catch((e) => ({ error: e.message }));
+      out.metricool = await require('../lib/metricool').sync({}).catch((e) => ({ error: e.message })); // last night's social media figures
       for (const dept of ['accounts', 'crm']) {
         if (!secret && await dt.ranToday(dept)) { out[dept] = 'already ran'; continue; }
         const r = await dt.run(dept, { trigger: 'schedule' });
