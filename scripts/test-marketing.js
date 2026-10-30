@@ -1,20 +1,56 @@
 // Marketing & social media: who sees it, posts and approval, leads (typed, duplicate, from the website link, matched to a
-// booking), campaigns, tasks, figures typed in and pulled from Metricool (a fake Metricool on a local port).
+// booking), campaigns, tasks, figures typed in, and Facebook / Instagram / Meta Ads / YouTube connected directly (stand-ins
+// on a local port).
 // DATABASE_URL=postgres://... node scripts/test-marketing.js   (an empty database)
 const assert = require('assert/strict');
 const http = require('http');
 process.env.PORT = process.env.PORT || '3995';
 const calls = [];
-const fake = http.createServer((req, res) => {
-  calls.push(req.url); res.setHeader('Content-Type', 'application/json');
-  if (req.headers['x-mc-auth'] !== 'tok') { res.statusCode = 401; return res.end('{"message":"bad token"}'); }
-  if (req.url.startsWith('/api/admin/simpleProfiles')) return res.end(JSON.stringify([{ id: 7118271, label: 'Dream India Group', instagram: 'dreamindiarealty', facebook: 'Dream India Realty' }]));
-  const u = new URL(req.url, 'http://x'), m = u.searchParams.get('metric');
-  const day = (k) => new Date(Date.now() - k * 864e5).toISOString().slice(0, 10) + 'T00:00:00';
-  const val = { followers: 2000, fbFollowers: 500, views: 1000, pageMediaView: 300 }[m] ?? 7;
-  return res.end(JSON.stringify({ data: [{ metric: m, values: [0, 1, 2].map((k) => ({ dateTime: day(k), value: val + k })) }] }));
+// A stand-in for Facebook / Instagram / Meta Ads (/graph), Google sign-in (/gtoken) and YouTube (/yt, /yta).
+const iso = (k) => new Date(Date.now() - k * 864e5).toISOString().slice(0, 10);
+const mon = (k) => { const t = new Date(); return new Date(Date.UTC(t.getUTCFullYear(), t.getUTCMonth() - k, 1)).toISOString().slice(0, 10); };
+const fake = http.createServer(async (req, res) => {
+  let body = ''; for await (const c of req) body += c;
+  calls.push(req.url); const u = new URL(req.url, 'http://x'), q = u.searchParams, P = u.pathname;
+  const J = (o, st = 200) => { res.statusCode = st; res.setHeader('Content-Type', 'application/json'); res.end(JSON.stringify(o)); };
+  if (P === '/pic.jpg') { res.setHeader('Content-Type', 'image/jpeg'); return res.end(Buffer.from([0xff, 0xd8, 0xff, 0xd9])); }
+  if (P === '/gtoken') { const f = new URLSearchParams(body); return J(f.get('grant_type') === 'authorization_code' ? { access_token: 'YT', refresh_token: 'R1', expires_in: 3600 } : { access_token: 'YT2', expires_in: 3600 }); }
+  if (P.startsWith('/yt/')) {
+    if (req.headers.authorization !== 'Bearer YT' && req.headers.authorization !== 'Bearer YT2') return J({ error: { message: 'no' } }, 401);
+    if (P === '/yt/channels') return J({ items: [{ id: 'UC1', snippet: { title: 'Dream India Realty', customUrl: '@dreamindiarealty' }, statistics: { subscriberCount: '800' }, contentDetails: { relatedPlaylists: { uploads: 'UU1' } } }] });
+    if (P === '/yt/playlistItems') return J({ items: [{ contentDetails: { videoId: 'v1', videoPublishedAt: iso(3) + 'T10:00:00Z' } }] });
+    if (P === '/yt/videos') return J({ items: [{ id: 'v1', snippet: { title: 'Sample flat walkthrough', publishedAt: iso(3) + 'T10:00:00Z', thumbnails: { medium: { url: 'http://127.0.0.1:2539/pic.jpg' } } }, statistics: { viewCount: '1200', likeCount: '30', commentCount: '3' }, contentDetails: { duration: 'PT45S' } }] });
+  }
+  if (P === '/yta/reports') {
+    const h = ['views', 'estimatedMinutesWatched', 'subscribersGained', 'subscribersLost', 'likes', 'comments', 'shares'];
+    if (q.get('dimensions') === 'day') return J({ columnHeaders: [{ name: 'day' }, ...h.map((name) => ({ name }))], rows: [2, 1, 0].map((k) => [iso(k), 100, 300, 5, 1, 10, 2, 1]) });
+    return J({ columnHeaders: [{ name: 'month' }, ...h.map((name) => ({ name }))], rows: [2, 1, 0].map((k) => [mon(k).slice(0, 7), 3000, 9000, 40, 4, 200, 20, 10]) });
+  }
+  if (!P.startsWith('/graph')) return J({ error: { message: 'unknown' } }, 404);
+  const g = P.slice(6), tok = q.get('access_token');
+  if (g === '/oauth/access_token') return J(q.get('fb_exchange_token') ? { access_token: 'LONG', expires_in: 5184000 } : q.get('code') === 'good' ? { access_token: 'SHORT' } : { error: { message: 'bad code' } }, q.get('fb_exchange_token') || q.get('code') === 'good' ? 200 : 400);
+  if (!tok || !q.get('appsecret_proof')) return J({ error: { message: 'token missing' } }, 400);
+  const series = (val) => { const out = []; for (let d = q.get('since'); d < q.get('until'); d = new Date(Date.parse(d) + 864e5).toISOString().slice(0, 10)) out.push({ value: val, end_time: new Date(Date.parse(d) + 864e5).toISOString().slice(0, 10) + 'T07:00:00+0000' }); return out; };
+  if (g === '/me') return J({ id: 'u1', name: 'Rafi' });
+  if (g === '/me/accounts') return J({ data: [{ id: 'p1', name: 'Dream India Realty', link: 'https://www.facebook.com/dreamindiarealty', access_token: 'PAGE', instagram_business_account: { id: 'ig1', username: 'dreamindiarealty' } }] });
+  if (g === '/me/adaccounts') return J({ data: [{ id: 'act_9', name: 'Dream India Ads', currency: 'INR', account_status: 1 }] });
+  if (g === '/p1') return J({ followers_count: 1500 });
+  if (g === '/p1/insights') { const m = q.get('metric'); if (m === 'page_media_view') return J({ error: { message: 'metric not available', code: 100 } }, 400); return J({ data: [{ name: m, values: series({ page_impressions: 300, page_impressions_unique: 200, page_post_engagements: 20, page_daily_follows_unique: 2, page_follows: 1500 }[m] || 0) }] }); }
+  if (g === '/p1/posts') return J({ data: [{ id: 'p1_1', message: 'Diwali greetings from Dream Signature', created_time: iso(10) + 'T09:00:00+0000', permalink_url: 'https://facebook.com/p1_1', full_picture: 'http://127.0.0.1:2539/pic.jpg', reactions: { summary: { total_count: 5 } }, comments: { summary: { total_count: 2 } }, shares: { count: 1 } }] });
+  if (g === '/ig1') return J({ followers_count: 2040, media_count: 300, username: 'dreamindiarealty' });
+  if (g === '/ig1/insights') { if (q.get('metric') === 'follower_count') return J({ data: [{ name: 'follower_count', values: series(3) }] }); return J({ data: q.get('metric').split(',').map((name) => ({ name, total_value: { value: { views: 1000, reach: 400, total_interactions: 60 }[name] ?? 5 } })) }); }
+  if (g === '/ig1/media') return J({ data: [{ id: 'm1', caption: 'Rooftop pool reel', media_type: 'VIDEO', media_product_type: 'REELS', permalink: 'https://instagram.com/p/m1', thumbnail_url: 'http://127.0.0.1:2539/pic.jpg', timestamp: iso(5) + 'T12:00:00+0000', like_count: 50, comments_count: 4 }] });
+  if (g === '/m1/insights') return J({ data: [{ name: 'views', values: [{ value: 900 }] }, { name: 'reach', values: [{ value: 700 }] }, { name: 'saved', values: [{ value: 6 }] }, { name: 'shares', values: [{ value: 3 }] }] });
+  if (g === '/act_9/campaigns') return J({ data: [{ id: 'c1', name: 'Dream Signature 2BHK leads', effective_status: 'ACTIVE', objective: 'OUTCOME_LEADS', start_time: mon(2) + 'T00:00:00+0530' }] });
+  if (g === '/act_9/insights') {
+    if (q.get('time_increment') === 'monthly') return J({ data: [2, 1, 0].map((k) => ({ campaign_id: 'c1', campaign_name: 'Dream Signature 2BHK leads', spend: '10000.50', impressions: '50000', reach: '20000', clicks: '800', actions: [{ action_type: 'lead', value: '40' }, { action_type: 'onsite_conversion.messaging_conversation_started_7d', value: '12' }], date_start: mon(k) })) });
+    return J({ data: [{ campaign_id: 'c1', reach: '45000' }] });
+  }
+  if (g === '/p1/leadgen_forms') return J({ data: [{ id: 'f1', name: 'Signature enquiry' }] });
+  if (g === '/f1/leads') return J({ data: [{ id: 'L1', created_time: iso(2) + 'T08:00:00+0000', campaign_id: 'c1', ad_name: '2BHK ad', field_data: [{ name: 'full_name', values: ['Asha Patil'] }, { name: 'phone_number', values: ['+919876500001'] }, { name: 'which_flat?', values: ['2BHK'] }] }, { id: 'L2', created_time: iso(1) + 'T08:00:00+0000', campaign_id: 'c1', field_data: [{ name: 'full_name', values: ['Rahul'] }, { name: 'phone_number', values: ['9820000001'] }] }] });
+  return J({ error: { message: 'unknown ' + g } }, 404);
 }).listen(2539);
-Object.assign(process.env, { METRICOOL_API: 'http://127.0.0.1:2539/api', METRICOOL_TOKEN: 'tok' });
+Object.assign(process.env, { META_GRAPH: 'http://127.0.0.1:2539/graph', META_DIALOG: 'http://127.0.0.1:2539/dialog', META_APP_ID: 'app1', META_APP_SECRET: 'appsecret', YT_API: 'http://127.0.0.1:2539/yt', YTA_API: 'http://127.0.0.1:2539/yta', GOOGLE_OAUTH_TOKEN_URL: 'http://127.0.0.1:2539/gtoken', GOOGLE_OAUTH_AUTH_URL: 'http://127.0.0.1:2539/gauth', GOOGLE_OAUTH_CLIENT_ID: 'gid', GOOGLE_OAUTH_CLIENT_SECRET: 'gsecret' });
 require('./dev-server');
 const db = require('../lib/db');
 const auth = require('../lib/auth');
@@ -22,9 +58,9 @@ const BASE = `http://localhost:${process.env.PORT}`;
 function client() {
   let cookie = '';
   return async (p, body, noOrigin) => {
-    const r = await fetch(BASE + p, { method: body ? 'POST' : 'GET', headers: { ...(body ? { 'Content-Type': 'application/json', ...(noOrigin ? {} : { Origin: BASE }) } : {}), ...(cookie ? { Cookie: cookie } : {}) }, body: body ? JSON.stringify(body) : undefined });
+    const r = await fetch(BASE + p, { redirect: 'manual', method: body ? 'POST' : 'GET', headers: { ...(body ? { 'Content-Type': 'application/json', ...(noOrigin ? {} : { Origin: BASE }) } : {}), ...(cookie ? { Cookie: cookie } : {}) }, body: body ? JSON.stringify(body) : undefined });
     const set = r.headers.get('set-cookie'); if (set) cookie = set.split(';')[0];
-    let j = {}; try { j = await r.json(); } catch {} return { status: r.status, ...j };
+    let j = {}; try { j = await r.json(); } catch {} return { status: r.status, location: r.headers.get('location'), ...j };
   };
 }
 let n = 0; const step = async (name, fn) => { await fn(); n++; console.log('  âœ“', name); };
@@ -93,16 +129,65 @@ let n = 0; const step = async (name, fn) => { await fn(); n++; console.log('  âœ
     const yt = (await rupali('/api/marketing?scope=company')).channels.find((c) => c.network === 'youtube'); assert.equal(yt.followers, 120); assert.equal(yt.views, 5000);
   });
 
-  await step('Metricool: every figure of the connected networks pulled into the daily figures, again without doubling', async () => {
-    const r = await M(rupali, 'sync');
-    assert.equal(r.ok, true, JSON.stringify(r)); assert.deepEqual(r.networks.sort(), ['facebook', 'instagram']); assert.equal(r.errors.length, 0);
-    assert.ok(calls.some((c) => c.includes('/v2/analytics/timelines') && c.includes('metric=followers') && c.includes('network=instagram') && c.includes('blogId=7118271')));
-    const ig = await db.one("select metrics from mkt_stats where network = 'instagram' order by day desc limit 1");
-    assert.equal(ig.metrics.followers, 2000); assert.equal(ig.metrics.views, 1000);
-    await M(rupali, 'sync');
-    assert.equal((await db.one("select count(*)::int as n from mkt_stats where network = 'instagram'")).n, 3);
-    const g = await rupali('/api/marketing?scope=company'); assert.equal(g.channels.find((c) => c.network === 'instagram').followers, 2000);
-    assert.ok(g.metricool.lastSync);
+  await step('Facebook, Instagram and Meta Ads connect with one sign-in; the tokens are kept sealed; channels appear', async () => {
+    assert.equal((await crm('/api/marketing?connect=meta')).status, 403);
+    const go = await rupali('/api/marketing?connect=meta');
+    assert.equal(go.status, 302); const to = new URL(go.location); assert.equal(to.origin + to.pathname, 'http://127.0.0.1:2539/dialog');
+    assert.match(to.searchParams.get('scope'), /ads_read/); assert.match(to.searchParams.get('scope'), /leads_retrieval/); assert.equal(to.searchParams.get('redirect_uri'), BASE + '/oauth/meta');
+    const bad = await rupali(`/oauth/meta?code=good&state=wrong`); assert.match(decodeURIComponent(bad.location), /expired/);
+    const go2 = await rupali('/api/marketing?connect=meta'), st = new URL(go2.location).searchParams.get('state');
+    const back = await rupali(`/oauth/meta?code=good&state=${encodeURIComponent(st)}`);
+    assert.equal(back.status, 302); assert.match(decodeURIComponent(back.location), /Connected: 1 Facebook page\(s\), 1 Instagram, 1 ad account/);
+    const raw = JSON.stringify((await db.one("select value from settings where key = 'social'")).value); assert.ok(!raw.includes('LONG') && !raw.includes('PAGE'), 'tokens are sealed');
+    const g = await rupali('/api/marketing?scope=company');
+    assert.equal(g.social.meta.connected, true); assert.equal(g.social.meta.pages[0].instagram, 'dreamindiarealty');
+    assert.ok(['facebook', 'instagram'].every((n) => g.channels.some((c) => c.network === n)));
+  });
+
+  await step('YouTube connects through the Google sign-in the ERP already has', async () => {
+    const go = await rupali('/api/marketing?connect=youtube'); const to = new URL(go.location);
+    assert.match(to.searchParams.get('scope'), /yt-analytics.readonly/); assert.equal(to.searchParams.get('redirect_uri'), BASE + '/oauth/google');
+    const back = await rupali(`/oauth/google?code=x&state=${encodeURIComponent(to.searchParams.get('state'))}`);
+    assert.match(decodeURIComponent(back.location), /YouTube connected: Dream India Realty/);
+    assert.ok((await rupali('/api/marketing?scope=company')).channels.some((c) => c.network === 'youtube' && /^dreamindiarealty$/i.test(c.handle) && c.url));
+  });
+
+  await step('The 12-month pull, part by part: page, Instagram, ad campaigns month by month, lead-form leads, YouTube', async () => {
+    for (const part of ['facebook', 'instagram', 'ads', 'leads', 'youtube']) { const r = await M(rupali, 'sync', { part, full: true }); assert.equal(r.ok, true); assert.deepEqual(r.errors, [], part + ': ' + JSON.stringify(r.errors)); }
+    assert.ok(calls.some((c) => c.includes('/p1/insights') && c.includes('page_impressions')), 'falls back from page_media_view');
+    const g = await rupali('/api/marketing?scope=company');
+    const ig = g.channels.find((c) => c.network === 'instagram'), fb = g.channels.find((c) => c.network === 'facebook'), yt = g.channels.find((c) => c.network === 'youtube');
+    assert.equal(ig.followers, 2040); assert.ok(ig.views >= 1000); assert.equal(fb.followers, 1500); assert.ok(fb.views > 0); assert.equal(yt.followers, 800); assert.ok(yt.views >= 300);
+    assert.ok(g.top.some((m) => m.ext_id === 'm1' && +m.views === 900 && m.has_thumb));
+    const camp = await db.one("select * from mkt_campaigns where ext_id = 'meta:c1'");
+    assert.equal(camp.project_id, sig.id); assert.equal(+camp.spent, 30001.5); assert.equal(camp.ad_leads, 120); assert.equal(camp.messages, 36); assert.equal(+camp.reach, 45000);
+    assert.equal((await db.one('select count(*)::int as n from mkt_campaign_months where campaign_id = $1', [camp.id])).n, 3);
+    const asha = await db.one("select * from mkt_leads where phone = '9876500001'"); assert.equal(asha.source, 'meta_ads'); assert.equal(asha.campaign_id, camp.id); assert.match(asha.note, /which flat\?: 2BHK/);
+    assert.match((await db.one("select note from mkt_leads where phone = '9820000001' and name = 'Rahul'")).note, /Came again from Meta lead form/);
+    // again: nothing doubles
+    await M(rupali, 'sync', { part: 'ads' }); await M(rupali, 'sync', { part: 'leads' });
+    assert.equal((await db.one("select count(*)::int as n from mkt_campaigns where ext_id = 'meta:c1'")).n, 1);
+    assert.equal((await db.one("select count(*)::int as n from mkt_leads where phone = '9876500001'")).n, 1);
+    assert.equal(((await db.one("select note from mkt_leads where phone = '9820000001' and name = 'Rahul'")).note.match(/Came again from Meta/g) || []).length, 1);
+  });
+
+  await step('The 12-month report: months, organic figures per network, campaigns with spend and per-lead cost; pictures through our own address', async () => {
+    const r = await rupali('/api/marketing?report=company');
+    assert.equal(r.months.length, 12);
+    assert.ok(r.organic.some((x) => x.network === 'youtube' && +x.metrics.views === 3000));
+    assert.ok(r.organic.some((x) => x.network === 'instagram' && x.metrics.views > 0));
+    const c = r.campaigns.find((x) => x.name === 'Dream Signature 2BHK leads'); assert.equal(+c.spend, 30001.5); assert.equal(+c.ad_leads, 120); assert.equal(c.crm_leads, 1);
+    assert.equal(r.adMonths.length, 3);
+    const p = await fetch(BASE + '/api/marketing?img=instagram:m1', { headers: { Cookie: (await (async () => { const x = await fetch(BASE + '/api/session', { method: 'POST', headers: { 'Content-Type': 'application/json', Origin: BASE }, body: JSON.stringify({ action: 'login', username: 'rupali', password: 'pass-word-123' }) }); return x.headers.get('set-cookie').split(';')[0]; })()) } });
+    assert.equal(p.status, 200); assert.equal(p.headers.get('content-type'), 'image/jpeg');
+    assert.equal((await rupali('/api/marketing?img=instagram:../etc')).status, 404);
+  });
+
+  await step('Disconnecting keeps the figures already pulled; each part remembers its 12-month pull', async () => {
+    const c = (await db.one("select value from settings where key = 'social'")).value;
+    assert.equal((await M(rupali, 'disconnect', { net: 'meta' })).ok, true);
+    const g = await rupali('/api/marketing?scope=company'); assert.equal(g.social.meta.connected, false); assert.equal(g.channels.find((x) => x.network === 'instagram').followers, 2040);
+    assert.ok(c.youtube.backfilled.youtube && c.meta.backfilled.ads);
   });
 
   await step('The design library says when no Drive folder is linked, and keeps a pasted folder link as its ID', async () => {

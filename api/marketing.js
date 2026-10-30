@@ -1,9 +1,12 @@
 // Marketing & social media, company-wide or by project.
-// GET  ?scope=company|<projectId> → channels (figures from Metricool), posts, campaigns, leads, tasks, settings
+// GET  ?scope=company|<projectId> → channels (figures from Instagram, Facebook, YouTube directly), posts, campaigns, leads, tasks, settings
+//      ?report=<scope> → the 12-month report: every network month by month, every ad campaign with spend and leads, top posts
+//      ?connect=meta|youtube → off to Facebook / Google to connect;  /oauth/meta (and /oauth/google for YouTube) → the way back
+//      ?img=<network>:<postId> → a post's picture (pictures stay on our own address)
 //      ?library=company|<projectId> → the design library from that project's Google Drive folder
 //      ?thumb=<driveFileId> → a file's preview picture
 // POST {action}: post.save | post.status | post.delete | campaign.save | campaign.delete | lead.save | lead.delete |
-//      task.save | task.done | task.delete | stats.save (typed figures) | settings | sync (Metricool now)
+//      task.save | task.done | task.delete | stats.save (typed figures) | settings | sync (pull now) | disconnect
 // POST ?lead=<key> (from the website form, Meta lead ads through a connector, a portal…): a new lead, no login.
 // Rupali (role Marketing) works here; Management sees everything and approves posts sent for review.
 const crypto = require('crypto');
@@ -54,7 +57,7 @@ async function channelFigures(network) {
   return out;
 }
 
-async function overview(u, scope) {
+async function overview(u, scope, req) {
   const set = await settings();
   const projectId = pid(scope);
   const inScope = (col = 'project_id') => (projectId ? `${col} = ${+projectId}` : 'true');
@@ -75,13 +78,45 @@ async function overview(u, scope) {
   const tasks = await db.q(`select t.*, a.name as assigned_name from mkt_tasks t left join users a on a.id = t.assigned_to where ${inScope('t.project_id')} and (t.done_at is null or t.done_at > now() - interval '14 days') order by t.done_at nulls first, t.due nulls last, t.id`);
   const projects = await db.q('select id, name, code from projects where active order by id');
   const team = await db.q("select id, name, role from users where not disabled and role in ('marketing', 'admin', 'management', 'sales', 'crm', 'head_crm') order by name");
-  const sync = await db.one("select done_at, info from job_marks where key = 'metricool-sync'");
-  return { scope: projectId || 'company', projects, team, channels, posts, campaigns, leads, tasks,
+  const social = await require('../lib/social').status();
+  const top = await db.q(`select network, ext_id, account, posted_at, kind, caption, permalink, thumb is not null as has_thumb, likes, comments, shares, saves, views, reach,
+       coalesce(likes, 0) + coalesce(comments, 0) + coalesce(shares, 0) + coalesce(saves, 0) as engagement
+     from mkt_media where posted_at > now() - interval '30 days' order by coalesce(likes, 0) + coalesce(comments, 0) + coalesce(shares, 0) + coalesce(saves, 0) desc, views desc nulls last limit 8`);
+  return { top, scope: projectId || 'company', projects, team, channels, posts, campaigns, leads, tasks,
     settings: { channels: set.channels, drive: set.drive, needApproval: !!set.needApproval, share: (() => { try { return require('../lib/sheets').serviceEmail(); } catch { return null; } })(), leadUrl: canEdit(u) ? `/api/marketing?lead=${set.leadKey}` : null },
-    metricool: { configured: require('../lib/metricool').configured(), lastSync: sync ? { at: sync.done_at, ...sync.info } : null },
+    social: { ...social, metaRedirect: canEdit(u) ? require('../lib/social').metaRedirect(req) : null },
     can: { edit: canEdit(u), approve: canApprove(u), admin: u.role === 'admin' }, lists: { networks: NETWORKS, sources: SOURCES, kinds: KINDS, statuses: STATUSES, leadStatuses: LEAD_ST } };
 }
 
+// The 12-month report: organic figures per network by month, ad campaigns (month by month and in total), leads by
+// source by month, and the best posts.
+async function report(scope) {
+  const projectId = pid(scope);
+  const months = []; { const t = new Date(Date.now() + 5.5 * 3600e3); for (let i = 11; i >= 0; i--) months.push(new Date(Date.UTC(t.getUTCFullYear(), t.getUTCMonth() - i, 1)).toISOString().slice(0, 10)); }
+  const from = months[0];
+  const organic = await db.q("select network, to_char(month, 'YYYY-MM-DD') as month, metrics from mkt_stats_month where month >= $1 order by network, month", [from]);
+  const where = projectId ? `and c.project_id = ${+projectId}` : '';
+  const camps = await db.q(`select c.id, c.name, c.project_id, c.channel, c.source, c.objective, c.ext_status, c.status, c.account, c.start_on, c.end_on, c.budget,
+       coalesce(sum(m.spend), case when c.source = 'manual' then c.spent end, 0) as spend, coalesce(sum(m.impressions), c.impressions, 0) as impressions, coalesce(c.reach, sum(m.reach), 0) as reach,
+       coalesce(sum(m.clicks), c.clicks, 0) as clicks, coalesce(sum(m.leads), c.ad_leads, 0) as ad_leads, coalesce(sum(m.messages), c.messages, 0) as messages, coalesce(sum(m.video_views), 0) as video_views,
+       (select count(*)::int from mkt_leads l where l.campaign_id = c.id) as crm_leads,
+       (select count(*)::int from mkt_leads l where l.campaign_id = c.id and l.status in ('visit', 'booked')) as visits,
+       (select count(*)::int from mkt_leads l where l.campaign_id = c.id and l.status = 'booked') as booked
+     from mkt_campaigns c left join mkt_campaign_months m on m.campaign_id = c.id and m.month >= $1
+     where (c.source = 'manual' and (c.end_on is null or c.end_on >= $1) or m.campaign_id is not null) ${where}
+     group by c.id order by spend desc nulls last`, [from]);
+  const adMonths = await db.q(`select to_char(m.month, 'YYYY-MM-DD') as month, sum(m.spend) as spend, sum(m.impressions) as impressions, sum(m.reach) as reach, sum(m.clicks) as clicks, sum(m.leads) as leads, sum(m.messages) as messages, sum(m.video_views) as video_views
+     from mkt_campaign_months m join mkt_campaigns c on c.id = m.campaign_id where m.month >= $1 ${where} group by m.month order by m.month`, [from]);
+  const leadMonths = await db.q(`select to_char(date_trunc('month', created_at + interval '330 minutes'), 'YYYY-MM-DD') as month, source, count(*)::int as n,
+       count(*) filter (where status in ('visit', 'booked'))::int as visits, count(*) filter (where status = 'booked')::int as booked
+     from mkt_leads where created_at >= $1 ${projectId ? `and project_id = ${+projectId}` : ''} group by 1, 2 order by 1`, [from]);
+  const top = await db.q(`select network, ext_id, account, posted_at, kind, caption, permalink, thumb is not null as has_thumb, likes, comments, shares, saves, views, reach,
+       coalesce(likes, 0) + coalesce(comments, 0) + coalesce(shares, 0) + coalesce(saves, 0) as engagement
+     from mkt_media where posted_at >= $1 order by coalesce(likes, 0) + coalesce(comments, 0) + coalesce(shares, 0) + coalesce(saves, 0) desc, views desc nulls last limit 24`, [from]);
+  const media = await db.q(`select network, to_char(date_trunc('month', posted_at + interval '330 minutes'), 'YYYY-MM-DD') as month, kind, count(*)::int as n, sum(views) as views, sum(coalesce(likes, 0) + coalesce(comments, 0) + coalesce(shares, 0) + coalesce(saves, 0)) as engagement
+     from mkt_media where posted_at >= $1 group by 1, 2, 3 order by 2`, [from]);
+  return { months, organic, campaigns: camps, adMonths, leadMonths, top, media };
+}
 // A lead from outside (website form, Meta lead ads via a connector, a property portal): checked by the key in the link.
 async function leadHook(req, res) {
   res.setHeader('Cache-Control', 'no-store');
@@ -109,6 +144,32 @@ const handler = route({
     const u = await auth.guard(req, res); if (!u) return;
     if (!canView(u)) throw fail(403, 'Your login does not open Marketing.');
     const q = req.query || {};
+    const social = require('../lib/social');
+    if (q.connect) {
+      if (!canEdit(u)) throw fail(403, 'Only the marketing team connects the channels.');
+      res.statusCode = 302; res.setHeader('Location', q.connect === 'youtube' ? await social.ytAuthUrl(req, u.id) : await social.metaAuthUrl(req, u.id)); return res.end();
+    }
+    if (q.oauth === 'meta') {
+      if (!canEdit(u)) throw fail(403, 'Only the marketing team connects the channels.');
+      let back;
+      try { const r = await social.metaCallback(req, u.id); await audit.record(db.q, { user: u, action: 'connect', entity: 'meta', after: r }); back = `/?social=${encodeURIComponent(`Connected: ${r.pages} Facebook page(s), ${r.instagram} Instagram, ${r.ads} ad account(s). Pulling the last 12 months…`)}#/marketing`; }
+      catch (e) { back = '/?social=' + encodeURIComponent(e.message) + '#/marketing'; }
+      res.statusCode = 302; res.setHeader('Location', back); return res.end();
+    }
+    if (q.img) {
+      const m = String(q.img).match(/^(instagram|facebook|youtube):([A-Za-z0-9_.-]{1,80})$/);
+      const row = m ? await db.one('select thumb from mkt_media where network = $1 and ext_id = $2', [m[1], m[2]]) : null;
+      const okHost = (t) => { try { const h = new URL(t); return (h.protocol === 'https:' && /(^|\.)(fbcdn\.net|cdninstagram\.com|facebook\.com|ytimg\.com|ggpht\.com|googleusercontent\.com)$/.test(h.hostname)) || (!process.env.VERCEL && h.hostname === '127.0.0.1'); } catch { return false; } };
+      if (!row || !row.thumb || !okHost(row.thumb)) return res.status(404).json({ error: 'No picture.' }); // only the networks' own picture servers
+      const r = await fetch(row.thumb, { redirect: 'error' }).catch(() => null);
+      const type = r && r.headers.get('content-type');
+      if (!r || !r.ok || !/^image\//.test(type || '')) return res.status(404).json({ error: 'No picture.' });
+      const buf = Buffer.from(await r.arrayBuffer());
+      if (buf.length > 4e6) return res.status(404).json({ error: 'Too big.' });
+      res.setHeader('Content-Type', type); res.setHeader('Cache-Control', 'private, max-age=86400');
+      return res.end(buf);
+    }
+    if (q.report != null) return res.json(await report(q.report));
     if (q.thumb) {
       const t = /^[A-Za-z0-9_-]{10,80}$/.test(q.thumb) ? await require('../lib/drive').thumbnail(q.thumb).catch(() => null) : null;
       if (!t) return res.status(404).json({ error: 'No preview.' });
@@ -122,7 +183,7 @@ const handler = route({
       try { return res.json({ folder, files: await require('../lib/drive').library(folder) }); }
       catch (e) { return res.json({ folder, files: [], error: e.message, share: require('../lib/sheets').serviceEmail() }); }
     }
-    return res.json(await overview(u, q.scope));
+    return res.json(await overview(u, q.scope, req));
   },
   POST: async (req, res, b) => {
     const u = await auth.guard(req, res); if (!u) return;
@@ -201,7 +262,7 @@ const handler = route({
     if (a === 'task.done') { editOnly(); await db.q(d.undo ? 'update mkt_tasks set done_at = null, done_by = null where id = $1' : 'update mkt_tasks set done_at = now(), done_by = $2 where id = $1', d.undo ? [intOr(d.id)] : [intOr(d.id), u.id]); return res.json({ ok: true }); }
     if (a === 'task.delete') { editOnly(); await db.q('delete from mkt_tasks where id = $1', [intOr(d.id)]); return res.json({ ok: true }); }
 
-    // figures typed in by hand for a network Metricool does not cover (or before it is connected): one day's numbers
+    // figures typed in by hand for a network not connected (LinkedIn, Google Business Profile): one day's numbers
     if (a === 'stats.save') {
       editOnly();
       if (!NETWORKS.includes(d.network) || !DATE.test(d.day || '')) throw fail(400, 'Choose the network and the date.');
@@ -219,7 +280,8 @@ const handler = route({
       await saveSettings(v); await log('update', 'settings', 'marketing', { channels: v.channels.length, drive: Object.keys(v.drive) });
       return res.json({ ok: true });
     }
-    if (a === 'sync') { editOnly(); return res.json({ ok: true, ...(await require('../lib/metricool').sync({})) }); }
+    if (a === 'sync') { editOnly(); return res.json({ ok: true, ...(await require('../lib/social').sync({ full: !!d.full, only: require('../lib/social').PARTS.includes(d.part) ? d.part : null })) }); }
+    if (a === 'disconnect') { editOnly(); if (!['meta', 'youtube'].includes(d.net)) throw fail(400, 'Which one?'); await require('../lib/social').disconnect(d.net); await log('disconnect', 'social', d.net); return res.json({ ok: true }); }
     throw fail(400, 'Unknown action.');
   },
 });

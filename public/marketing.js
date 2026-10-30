@@ -1,4 +1,5 @@
-// Marketing & social media (company-wide or by project): channels and their figures (from Metricool each night),
+// Marketing & social media (company-wide or by project): channels and their figures (straight from Instagram, Facebook,
+// Meta Ads and YouTube each night), the 12-month report,
 // the content calendar with Canva links, leads by source, campaigns and spend, the design library from Google Drive,
 // the marketing team's tasks, and set-up. Mounted by app.js: window.Marketing.render(ctx, scope, tab).
 (function () {
@@ -56,6 +57,16 @@
   .mk .mk-empty{padding:26px;text-align:center;color:var(--mut);background:var(--soft);border-radius:14px}
   .mk table.mk-t{width:100%;border-collapse:collapse;font-size:14px}.mk table.mk-t th{text-align:left;font-size:12px;color:var(--mut);font-weight:700;padding:8px;border-bottom:1px solid var(--line)}.mk table.mk-t td{padding:9px 8px;border-bottom:1px solid var(--line);vertical-align:middle}
   .mk .mk-actions{display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin:0 0 12px}
+  .mk .mk-grid2h{display:grid;grid-template-columns:1fr 1fr;gap:14px}@media(max-width:700px){.mk .mk-grid2h{grid-template-columns:1fr}.mk .mk-posts{grid-template-columns:1fr 1fr!important}}
+  .mk .mk-posts{display:grid;grid-template-columns:repeat(auto-fill,minmax(160px,1fr));gap:12px}.mk .mk-post{display:block;border:1px solid var(--line);border-radius:14px;overflow:hidden;text-decoration:none;color:var(--ink);background:#fff}
+  .mk .mk-post .th{aspect-ratio:1;background:var(--soft);position:relative;overflow:hidden}.mk .mk-post .th img{width:100%;height:100%;object-fit:cover;display:block}
+  .mk .mk-post .net{position:absolute;left:8px;top:8px;border-radius:8px;padding:4px;display:flex}.mk .mk-post .kd{position:absolute;right:8px;top:8px;background:#000a;color:#fff;border-radius:6px;font-size:11px;font-weight:700;padding:2px 6px;text-transform:capitalize}
+  .mk .mk-post .cap{padding:8px 10px 2px;font-size:12px;line-height:1.35;height:34px;overflow:hidden}.mk .mk-post .st{display:flex;gap:10px;padding:4px 10px;font-size:12px;font-weight:700;color:var(--ink);flex-wrap:wrap}.mk .mk-post .dt{padding:0 10px 8px;font-size:11px;color:var(--mut)}
+  .mk-pull{position:fixed;right:20px;bottom:96px;z-index:60;background:#fff;border:1px solid #EAECF0;border-radius:14px;box-shadow:0 12px 32px #10182833;padding:14px 16px;width:300px;display:flex;flex-direction:column;gap:6px;font-size:14px}.mk-pull span{color:#667085;font-size:13px}
+  .mk-pull .mk-bar{height:8px;background:#F2F4F7;border-radius:99px;overflow:hidden}.mk-pull .mk-bar i{display:block;height:100%;background:linear-gradient(90deg,#7A5AF8,#E1306C)}
+  .mk .mk-chart{width:100%;overflow:visible}.mk .mk-chart text{font-size:11px;fill:#667085}.mk .mk-chart .v{fill:#10114e;font-weight:700}
+  .mk .mk-legend{display:flex;gap:14px;flex-wrap:wrap;font-size:12px;color:var(--mut);margin:0 0 6px}.mk .mk-legend i{display:inline-block;width:10px;height:10px;border-radius:3px;margin-right:5px;vertical-align:-1px}
+  .mk .mk-scroll{overflow-x:auto}.mk table.mk-t th[data-sort]{cursor:pointer;white-space:nowrap}.mk table.mk-t td.n,.mk table.mk-t th.n{text-align:right;white-space:nowrap}.mk .mk-tip{position:fixed;pointer-events:none;background:#10114e;color:#fff;font-size:12px;padding:6px 8px;border-radius:8px;z-index:70;white-space:nowrap}
   .mk-dl .mk-ch{display:flex;gap:8px;flex-wrap:wrap}.mk-dl .mk-ch label{display:flex;gap:6px;align-items:center;border:1px solid #EAECF0;border-radius:999px;padding:5px 10px;font-weight:500;margin:0}.mk-dl .mk-ch input{width:auto;margin:0}
   `;
   const $ = (s, r = document) => r.querySelector(s), $$ = (s, r = document) => [...r.querySelectorAll(s)];
@@ -76,7 +87,7 @@
     return `<svg viewBox="0 0 ${w} ${h}" width="100%" height="${h}" preserveAspectRatio="none"><polyline points="0,${h} ${pts} ${w},${h}" fill="${color}22" stroke="none"/><polyline points="${pts}" fill="none" stroke="${color}" stroke-width="2" stroke-linejoin="round"/></svg>`;
   };
 
-  async function load() { D = await C.api('/api/marketing?scope=' + encodeURIComponent(S.scope)); }
+  async function load() { D = await C.api('/api/marketing?scope=' + encodeURIComponent(S.scope)); S.rep = null; }
   async function render(ctx, scope, tab) {
     C = ctx;
     if (!$('#mk-css')) { const st = document.createElement('style'); st.id = 'mk-css'; st.textContent = css; document.head.appendChild(st); }
@@ -84,18 +95,39 @@
     $('#page').innerHTML = '<div class="mk"><p class="muted">Loading…</p></div>';
     await load();
     paint();
+    const msg = new URLSearchParams(location.search).get('social');
+    if (msg) {
+      history.replaceState(null, '', location.pathname + location.hash);
+      if (/^(Connected|YouTube connected)/.test(msg)) { S.tab = 'setup'; paint(); await pullAll(/^YouTube/.test(msg) ? ['youtube'] : ['facebook', 'instagram', 'ads', 'leads'], true, msg); }
+      else alert(msg);
+    }
+  }
+  // Pull part by part (each part in its own call), showing how far it has got.
+  const PART = { facebook: 'Facebook', instagram: 'Instagram', ads: 'Meta Ads campaigns', leads: 'Meta lead forms', youtube: 'YouTube' };
+  async function pullAll(parts, full, intro) {
+    const box = document.createElement('div'); box.className = 'mk-pull';
+    document.body.appendChild(box);
+    const errs = [];
+    for (let i = 0; i < parts.length; i++) {
+      box.innerHTML = `<b>${esc(intro || 'Pulling the figures')}</b><span>${PART[parts[i]]}… (${i + 1} of ${parts.length})</span><div class="mk-bar"><i style="width:${Math.round((i / parts.length) * 100)}%"></i></div>`;
+      try { const r = await C.api('/api/marketing', { action: 'sync', data: { part: parts[i], full } }); if (r.errors && r.errors.length) errs.push(...r.errors); }
+      catch (e) { errs.push(`${PART[parts[i]]}: ${e.message}`); }
+    }
+    box.remove();
+    await load(); paint();
+    if (errs.length) alert('Some figures could not be pulled:\n\n' + errs.join('\n')); else C.toast('All figures are in.');
   }
   function paint() {
-    const sync = D.metricool.lastSync;
-    const tabs = [['overview', 'Overview'], ['calendar', 'Content calendar'], ['leads', 'Leads'], ['campaigns', 'Campaigns & spend'], ['library', 'Design library'], ['tasks', 'Tasks'], ['setup', 'Set-up']];
+    const SO = D.social, sync = SO.lastSync, on = [SO.meta.connected && SO.meta.pages.some((p) => p.instagram) && 'Instagram', SO.meta.connected && 'Facebook', SO.meta.connected && SO.meta.ads.length && 'Meta Ads', SO.youtube.connected && 'YouTube'].filter(Boolean);
+    const tabs = [['overview', 'Overview'], ['report', '12-month report'], ['calendar', 'Content calendar'], ['leads', 'Leads'], ['campaigns', 'Campaigns & spend'], ['library', 'Design library'], ['tasks', 'Tasks'], ['setup', 'Set-up']];
     $('#page').innerHTML = `<div class="mk"><div class="mk-hero"><span class="mk-eyebrow">Company-wide · by project</span><h1>Marketing & Social Media</h1><p>Every channel, post, lead and campaign in one place.</p>
-      <div class="mk-sync">${D.metricool.configured ? (sync ? `Figures from Metricool · ${when(sync.at)}` : 'Metricool connected, first pull tonight') : 'Metricool not connected yet'}</div>
+      <div class="mk-sync">${on.length ? `Live from ${on.join(', ')}${sync ? ' · ' + when(sync.at) : ''}` : 'Channels not connected yet (Set-up)'}${SO.meta.error || SO.youtube.error ? '<br><b style="color:#FECDCA">A channel needs connecting again (Set-up)</b>' : ''}</div>
       <div class="mk-scope">${[['company', 'Company'], ...D.projects.map((p) => [String(p.id), p.name])].map(([k, l]) => `<button data-scope="${k}" aria-pressed="${String(S.scope) === k}">${esc(l)}</button>`).join('')}</div></div>
       <div class="mk-tabs" role="tablist">${tabs.map(([k, l]) => `<button role="tab" data-tab="${k}" aria-selected="${S.tab === k}">${l}</button>`).join('')}</div>
       <div id="mkBody"></div></div>`;
     $$('#page [data-scope]').forEach((b) => (b.onclick = async () => { S.scope = b.dataset.scope; S.lib = null; await load(); paint(); }));
     $$('#page [data-tab]').forEach((b) => (b.onclick = () => { S.tab = b.dataset.tab; paint(); }));
-    ({ overview, calendar, leads, campaigns, library, tasks, setup }[S.tab] || overview)();
+    ({ overview, report, calendar, leads, campaigns, library, tasks, setup }[S.tab] || overview)();
   }
   const body = (h) => ($('#mkBody').innerHTML = h);
 
@@ -103,7 +135,7 @@
   function overview() {
     const ch = D.channels, sum = (k) => ch.reduce((a, c) => a + (+c[k] || 0), 0);
     const d30 = Date.now() - 30 * 864e5, recent = D.leads.filter((l) => Date.parse(l.created_at) > d30), prevL = D.leads.filter((l) => Date.parse(l.created_at) <= d30 && Date.parse(l.created_at) > d30 - 30 * 864e5);
-    const spent = D.campaigns.reduce((a, c) => a + (+c.spent || 0), 0), allLeads = D.leads.length;
+    const spent = D.campaigns.reduce((a, c) => a + (+c.spent || 0), 0), allLeads = D.leads.length, campLeads = D.campaigns.reduce((a, c) => a + Math.max(+c.ad_leads || 0, c.leads || 0), 0);
     const fol = sum('followers'), folB = ch.reduce((a, c) => a + (+c.followersBefore || +c.followers || 0), 0);
     const up = D.posts.filter((p) => p.publish_at && Date.parse(p.publish_at) > Date.now() - 864e5 && p.status !== 'published').slice(0, 6);
     const bySrc = {}; for (const l of D.leads) bySrc[l.source] = (bySrc[l.source] || 0) + 1;
@@ -115,8 +147,9 @@
         <div class="mk-kpi"><span>Reach, last 30 days</span><b>${nf(sum('reach'))}</b>${delta(sum('reach'), sum('reachBefore'))}</div>
         <div class="mk-kpi"><span>Content published, 30 days</span><b>${nf(sum('posts'))}</b>${delta(sum('posts'), sum('postsBefore'))}</div>
         <div class="mk-kpi"><span>Leads, last 30 days</span><b>${nf(recent.length)}</b>${delta(recent.length, prevL.length)}</div>
-        <div class="mk-kpi"><span>Cost per lead (campaigns)</span><b>${allLeads && spent ? inr(spent / allLeads) : '–'}</b><span>${inr(spent)} spent</span></div></div>
+        <div class="mk-kpi"><span>Cost per lead (campaigns)</span><b>${(campLeads || allLeads) && spent ? inr(spent / (campLeads || allLeads)) : '–'}</b><span>${inr(spent)} spent</span></div></div>
       <div class="mk-chans">${ch.map(chanCard).join('') || `<div class="mk-empty">No channels yet. Add Instagram, Facebook, YouTube and the website under Set-up.</div>`}</div>
+      ${D.top.length ? `<div class="mk-card"><h3>Best posts, last 30 days</h3><div class="mk-posts">${D.top.map(postTile).join('')}</div></div>` : ''}
       <div class="mk-grid2"><div class="mk-card"><h3>Coming up</h3>${up.map(postRow).join('') || '<p class="muted small" style="margin:0">Nothing planned for the next days. Plan posts in the Content calendar.</p>'}</div>
         <div class="mk-card"><h3>Leads: from enquiry to booking</h3><div class="mk-funnel"><div><b>${allLeads}</b><span>Leads</span></div><div><b>${f('contacted')}</b><span>Contacted</span></div><div><b>${f('visit')}</b><span>Site visit</span></div><div><b>${f('booked')}</b><span>Booked</span></div></div>
           <h3 style="margin-top:16px">Where leads come from</h3>${srcs.map(([s, n]) => `<div style="margin:0 0 8px"><div style="display:flex;justify-content:space-between;font-size:13px"><span>${esc(SRC[s] || s)}</span><b>${n}</b></div><div class="mk-bar"><i style="width:${Math.round((n / mx) * 100)}%"></i></div></div>`).join('') || '<p class="muted small" style="margin:0">No leads yet.</p>'}</div></div>`);
@@ -127,11 +160,102 @@
     return `<div class="mk-chan"><div class="ctop" style="background:${N.g}">${ic(c.network, '', '#fff')}<div><b>${N.n}</b><small>${esc(c.handle ? '@' + c.handle.replace(/^@/, '') : c.url || '')}${c.projectId ? ' · ' + esc(projName(c.projectId)) : ''}</small></div></div>
       ${has ? `<div class="fig"><div><b>${nf(c.followers)}</b><span>${c.network === 'youtube' ? 'subscribers' : 'followers'} ${c.followersBefore != null ? delta(c.followers, c.followersBefore) : ''}</span></div><div><b>${nf(c.views || c.reach)}</b><span>${c.views ? 'views' : 'reach'}, 30 days ${delta(c.views || c.reach, c.viewsBefore || c.reachBefore)}</span></div>
         <div><b>${nf(c.posts)}</b><span>posts &amp; reels</span></div><div><b>${nf(c.interactions)}</b><span>interactions</span></div></div><div class="spark">${spark(c.spark, N.c)}</div>`
-        : `<div class="fig"><div style="grid-column:1/-1"><span>${D.metricool.configured ? 'Connect this channel in Metricool; figures come in the next night.' : 'Figures come in once Metricool is connected (Set-up).'}</span></div></div>`}
+        : `<div class="fig"><div style="grid-column:1/-1"><span>${['instagram', 'facebook', 'youtube'].includes(c.network) ? 'Connect this channel under Set-up; its figures come in straight away.' : 'Type this channel\'s figures under Set-up.'}</span></div></div>`}
       <div class="foot"><span>${c.updated ? 'Updated ' + day(c.updated) : 'No figures yet'}</span>${c.url ? `<a href="${esc(c.url)}" target="_blank" rel="noopener">Open ↗</a>` : ''}</div></div>`;
+  }
+  function postTile(m) {
+    const N = NET[m.network] || NET.website;
+    return `<a class="mk-post" href="${esc(m.permalink || '#')}" target="_blank" rel="noopener"><div class="th">${m.has_thumb ? `<img loading="lazy" alt="" src="/api/marketing?img=${encodeURIComponent(m.network + ':' + m.ext_id)}" onerror="this.remove()">` : ''}<span class="net" style="background:${N.c}">${ic(m.network, 'mk-ic', '#fff')}</span>${m.kind && m.kind !== 'post' ? `<span class="kd">${esc(m.kind)}</span>` : ''}</div>
+      <div class="cap">${esc(String(m.caption || '').slice(0, 90)) || '<span class="muted">No caption</span>'}</div>
+      <div class="st">${m.views != null ? `<span title="Views">▶ ${nf(+m.views)}</span>` : ''}<span title="Likes">♥ ${nf(+m.likes || 0)}</span><span title="Comments">💬 ${nf(+m.comments || 0)}</span>${m.shares ? `<span title="Shares">↗ ${nf(+m.shares)}</span>` : ''}</div><div class="dt">${day(m.posted_at)}</div></a>`;
   }
   const chanDots = (p) => (p.channels || []).map((n) => `<span title="${esc((NET[n] || {}).n || n)}" style="color:${(NET[n] || NET.website).c}">${ic(n)}</span>`).join('');
   const postRow = (p) => `<div class="mk-row" data-post="${p.id}" style="cursor:pointer"><span class="mk-dot" style="background:${ST[p.status][1]}"></span><div style="flex:1;min-width:0"><b style="font-size:14px">${esc(p.title)}</b><div class="small muted">${when(p.publish_at)} · ${KIND[p.kind] || p.kind}${S.scope === 'company' && p.project_id ? ' · ' + esc(projName(p.project_id)) : ''}</div></div><div style="display:flex;gap:4px">${chanDots(p)}</div><span class="mk-pill" style="color:${ST[p.status][1]}">${ST[p.status][0]}</span></div>`;
+
+  // ---------- charts ----------
+  const MON = (m) => new Date(m + 'T00:00:00').toLocaleDateString('en-IN', { month: 'short' });
+  const MONY = (m) => new Date(m + 'T00:00:00').toLocaleDateString('en-IN', { month: 'short', year: '2-digit' });
+  // bars: one series, or several side by side (series = [{ name, color, values }]); never two scales on one chart
+  function bars(months, series, fmt = nf) {
+    const W = 640, H = 190, L = 6, B = 22, T = 18, n = months.length, k = series.length;
+    const mx = Math.max(1, ...series.flatMap((x) => x.values.map((v) => +v || 0)));
+    const slot = (W - L) / n, gw = Math.min(slot - 8, k * 22), bw = (gw - (k - 1) * 2) / k, y = (v) => H - B - ((+v || 0) / mx) * (H - B - T);
+    let g = `<line x1="0" x2="${W}" y1="${H - B}" y2="${H - B}" stroke="#EAECF0"/>`;
+    months.forEach((m, i) => {
+      const x0 = L + i * slot + (slot - gw) / 2;
+      series.forEach((sr, j) => {
+        const v = +sr.values[i] || 0, x = x0 + j * (bw + 2), top = y(v), h = H - B - top;
+        if (h > 0) g += `<path d="M${x},${H - B}V${top + Math.min(4, h)}q0,-4 4,-4h${Math.max(0, bw - 8)}q4,0 4,4V${H - B}Z" fill="${sr.color}" data-tip="${esc(`${MONY(m)} · ${sr.name}: ${fmt(v)}`)}"/>`;
+        g += `<rect x="${x}" y="${T}" width="${bw}" height="${H - B - T}" fill="transparent" data-tip="${esc(`${MONY(m)} · ${sr.name}: ${fmt(v)}`)}"/>`;
+      });
+      g += `<text x="${L + i * slot + slot / 2}" y="${H - 6}" text-anchor="middle">${MON(m)}</text>`;
+    });
+    if (k === 1) { const vals = series[0].values.map((v) => +v || 0), im = vals.indexOf(Math.max(...vals)); if (vals[im]) g += `<text class="v" x="${L + im * slot + slot / 2}" y="${y(vals[im]) - 5}" text-anchor="middle">${fmt(vals[im])}</text>`; }
+    const leg = k > 1 ? `<div class="mk-legend">${series.map((x) => `<span><i style="background:${x.color}"></i>${esc(x.name)}</span>`).join('')}</div>` : '';
+    return `${leg}<svg class="mk-chart" viewBox="0 0 ${W} ${H}" width="100%" role="img">${g}</svg>`;
+  }
+  function tips(root) {
+    let tip = null;
+    root.addEventListener('mousemove', (e) => { const t = e.target.closest && e.target.closest('[data-tip]'); if (!t) { if (tip) tip.style.display = 'none'; return; } if (!tip) { tip = document.createElement('div'); tip.className = 'mk-tip'; root.appendChild(tip); } tip.textContent = t.dataset.tip; tip.style.display = 'block'; tip.style.left = Math.min(innerWidth - 200, e.clientX + 12) + 'px'; tip.style.top = e.clientY - 34 + 'px'; });
+    root.addEventListener('mouseleave', () => { if (tip) tip.style.display = 'none'; });
+  }
+  function csv(name, rows) {
+    const q = (v) => { const t = v == null ? '' : String(v); return /[",\n]/.test(t) ? '"' + t.replace(/"/g, '""') + '"' : t; };
+    const blob = new Blob(['\ufeff' + rows.map((r) => r.map(q).join(',')).join('\n')], { type: 'text/csv' });
+    const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = name; document.body.appendChild(a); a.click(); setTimeout(() => { URL.revokeObjectURL(a.href); a.remove(); }, 500);
+  }
+
+  // ---------- the 12-month report ----------
+  const SER = { instagram: ['Instagram', '#E1306C'], facebook: ['Facebook', '#1877F2'], youtube: ['YouTube', '#E8A200'] };
+  async function report() {
+    body('<p class="muted">Putting the 12-month report together…</p>');
+    if (!S.rep) S.rep = await C.api('/api/marketing?report=' + encodeURIComponent(S.scope));
+    const R = S.rep, M = R.months, org = {};
+    for (const r of R.organic) (org[r.network] = org[r.network] || {})[r.month] = r.metrics;
+    const am = Object.fromEntries(R.adMonths.map((r) => [r.month, r]));
+    const lm = {}; for (const r of R.leadMonths) { const x = (lm[r.month] = lm[r.month] || { n: 0, visits: 0, booked: 0 }); x.n += r.n; x.visits += r.visits; x.booked += r.booked; }
+    const nets = Object.keys(SER).filter((n) => org[n]);
+    const camps = R.campaigns, sum = (a, k) => a.reduce((t, x) => t + (+x[k] || 0), 0);
+    const spend = sum(camps, 'spend'), adSpend = sum(camps.filter((c) => c.source === 'meta'), 'spend'), adLeads = sum(camps, 'ad_leads'), imp = sum(camps, 'impressions'), clk = sum(camps, 'clicks'), chats = sum(camps, 'messages');
+    const orgViews = nets.reduce((t, n) => t + M.reduce((a, m) => a + (+(org[n][m] || {}).views || 0), 0), 0);
+    const fNow = nets.reduce((t, n) => { const last = [...M].reverse().find((m) => org[n][m] && org[n][m].followers != null); return t + (last ? +org[n][last].followers : 0); }, 0);
+    const fThen = nets.reduce((t, n) => { const f = M.find((m) => org[n][m] && org[n][m].followers != null); return t + (f ? +org[n][f].followers : 0); }, 0);
+    const crm = R.leadMonths.reduce((t, r) => t + r.n, 0), visits = R.leadMonths.reduce((t, r) => t + r.visits, 0), booked = R.leadMonths.reduce((t, r) => t + r.booked, 0);
+    const empty = !nets.length && !camps.length && !crm;
+    const sortK = S.repSort || 'spend', dir = S.repDir || -1;
+    const cs = [...camps].sort((a, b) => { const av = a[sortK], bv = b[sortK]; return (typeof av === 'string' || typeof bv === 'string' ? String(av || '').localeCompare(String(bv || '')) : (+av || 0) - (+bv || 0)) * dir; });
+    const cpl = (c) => (+c.ad_leads ? +c.spend / +c.ad_leads : null), ctr = (c) => (+c.impressions ? (+c.clicks / +c.impressions) * 100 : null);
+    const COLS = [['name', 'Campaign'], ['project_id', 'For'], ['ext_status', 'Status'], ['spend', 'Spend', 'n'], ['impressions', 'Seen', 'n'], ['reach', 'People reached', 'n'], ['clicks', 'Clicks', 'n'], ['ctr', 'CTR', 'n'], ['ad_leads', 'Leads', 'n'], ['cpl', 'Per lead', 'n'], ['messages', 'Chats', 'n'], ['crm_leads', 'In our Leads', 'n'], ['visits', 'Site visits', 'n'], ['booked', 'Booked', 'n']];
+    const val = (c, k) => (k === 'cpl' ? cpl(c) : k === 'ctr' ? ctr(c) : c[k]);
+    const show = (c, k) => { const v = val(c, k); if (k === 'name') return `<b>${esc(c.name)}</b>${c.account ? `<div class="small muted">${esc(c.account)}</div>` : c.source === 'manual' ? '<div class="small muted">Typed in</div>' : ''}`; if (k === 'project_id') return esc(projName(c.project_id)); if (k === 'ext_status') return esc(c.ext_status ? String(c.ext_status).replace(/_/g, ' ').toLowerCase() : c.status); if (k === 'spend' || k === 'cpl') return v == null ? '–' : inr(v); if (k === 'ctr') return v == null ? '–' : v.toFixed(2) + '%'; return nf(+v || 0); };
+    const months = M.map((m) => ({ m, sp: +(am[m] || {}).spend || 0, ld: +(am[m] || {}).leads || 0, imp: +(am[m] || {}).impressions || 0, clk: +(am[m] || {}).clicks || 0, chats: +(am[m] || {}).messages || 0, crm: (lm[m] || {}).n || 0, visits: (lm[m] || {}).visits || 0, booked: (lm[m] || {}).booked || 0 }));
+    const netCols = nets.flatMap((n) => [[n, 'views', `${SER[n][0]} views`], [n, 'followers', `${SER[n][0]} ${n === 'youtube' ? 'subscribers' : 'followers'}`], [n, 'posts', `${SER[n][0]} posts`]]);
+    const srcT = {}; for (const r of R.leadMonths) { const x = (srcT[r.source] = srcT[r.source] || { n: 0, visits: 0, booked: 0 }); x.n += r.n; x.visits += r.visits; x.booked += r.booked; }
+    body(`<div class="mk-actions"><b style="font-size:15px">${MONY(M[0])} – ${MONY(M[M.length - 1])}</b><span class="muted small">${S.scope === 'company' ? 'Company-wide' : esc(projName(+S.scope))} · social figures are company-wide</span><span style="flex:1"></span>
+        <button class="ghost small" id="csvM">Download month by month (CSV)</button><button class="ghost small" id="csvC">Download campaigns (CSV)</button>${D.can.edit && (D.social.meta.connected || D.social.youtube.connected) ? '<button class="ghost small" id="repull">Pull 12 months again</button>' : ''}</div>
+      ${empty ? `<div class="mk-empty">Nothing yet. Connect Instagram, Facebook, Meta Ads and YouTube under Set-up: the last 12 months come in at once.</div>` : `
+      <div class="mk-kpis">
+        <div class="mk-kpi"><span>Ad spend</span><b>${inr(spend)}</b><span>${camps.length} campaign${camps.length === 1 ? '' : 's'}</span></div>
+        <div class="mk-kpi"><span>Leads from ads</span><b>${nf(adLeads)}</b><span>${adLeads && adSpend ? inr(adSpend / adLeads) + ' per lead' : ''}</span></div>
+        <div class="mk-kpi"><span>WhatsApp / Messenger chats</span><b>${nf(chats)}</b><span>${chats && adSpend ? inr(adSpend / chats) + ' per chat' : 'from ads'}</span></div>
+        <div class="mk-kpi"><span>Ads seen</span><b>${nf(imp)}</b><span>${nf(clk)} clicks${imp ? ' · ' + ((clk / imp) * 100).toFixed(2) + '% CTR' : ''}</span></div>
+        <div class="mk-kpi"><span>Organic views, all channels</span><b>${nf(orgViews)}</b><span>posts, reels and videos</span></div>
+        <div class="mk-kpi"><span>Followers, all channels</span><b>${nf(fNow)}</b>${delta(fNow, fThen)} <span>in 12 months</span></div>
+        <div class="mk-kpi"><span>Leads in our list</span><b>${nf(crm)}</b><span>${nf(visits)} site visits · ${nf(booked)} booked</span></div></div>
+      <div class="mk-grid2h"><div class="mk-card"><h3>Ad spend by month</h3>${bars(M, [{ name: 'Ad spend', color: '#7A5AF8', values: months.map((x) => x.sp) }], inr)}</div>
+        <div class="mk-card"><h3>Leads from ads by month</h3>${bars(M, [{ name: 'Leads', color: '#E1306C', values: months.map((x) => x.ld) }])}</div></div>
+      ${nets.length ? `<div class="mk-card"><h3>Organic views by month</h3>${bars(M, nets.map((n) => ({ name: SER[n][0], color: SER[n][1], values: M.map((m) => +(org[n][m] || {}).views || 0) })))}</div>` : ''}
+      <div class="mk-card"><h3>Month by month</h3><div class="mk-scroll"><table class="mk-t"><thead><tr><th>Month</th><th class="n">Ad spend</th><th class="n">Ad leads</th><th class="n">Per lead</th><th class="n">Ads seen</th><th class="n">Clicks</th><th class="n">Chats</th>${netCols.map((c) => `<th class="n">${c[2]}</th>`).join('')}<th class="n">Leads in list</th><th class="n">Site visits</th><th class="n">Booked</th></tr></thead>
+        <tbody>${months.map((x) => `<tr><td><b>${MONY(x.m)}</b></td><td class="n">${inr(x.sp)}</td><td class="n">${nf(x.ld)}</td><td class="n">${x.ld ? inr(x.sp / x.ld) : '–'}</td><td class="n">${nf(x.imp)}</td><td class="n">${nf(x.clk)}</td><td class="n">${nf(x.chats)}</td>${netCols.map(([n, k]) => `<td class="n">${(org[n][x.m] || {})[k] != null ? nf(+org[n][x.m][k]) : '–'}</td>`).join('')}<td class="n">${nf(x.crm)}</td><td class="n">${nf(x.visits)}</td><td class="n">${nf(x.booked)}</td></tr>`).join('')}</tbody></table></div></div>
+      <div class="mk-card"><h3>Every campaign</h3>${cs.length ? `<div class="mk-scroll"><table class="mk-t"><thead><tr>${COLS.map(([k, l, c]) => `<th data-sort="${k}" class="${c || ''}">${l}${sortK === k ? (dir < 0 ? ' ▾' : ' ▴') : ''}</th>`).join('')}</tr></thead><tbody>${cs.map((c) => `<tr>${COLS.map(([k, , cl]) => `<td class="${cl || ''}">${show(c, k)}</td>`).join('')}</tr>`).join('')}</tbody></table></div>` : '<p class="muted small" style="margin:0">No campaigns in these months.</p>'}</div>
+      <div class="mk-grid2"><div class="mk-card"><h3>Best posts of the year</h3>${R.top.length ? `<div class="mk-posts">${R.top.map(postTile).join('')}</div>` : '<p class="muted small" style="margin:0">Posts come in when the channels are connected.</p>'}</div>
+        <div class="mk-card"><h3>Leads by source</h3>${Object.keys(srcT).length ? `<table class="mk-t"><thead><tr><th>Source</th><th class="n">Leads</th><th class="n">Site visits</th><th class="n">Booked</th></tr></thead><tbody>${Object.entries(srcT).sort((a, b) => b[1].n - a[1].n).map(([k, x]) => `<tr><td>${esc(SRC[k] || k)}</td><td class="n">${x.n}</td><td class="n">${x.visits}</td><td class="n">${x.booked}</td></tr>`).join('')}</tbody></table>` : '<p class="muted small" style="margin:0">No leads in these months.</p>'}</div></div>`}`);
+    tips($('#mkBody'));
+    $$('#mkBody [data-sort]').forEach((th) => (th.onclick = () => { if (S.repSort === th.dataset.sort) S.repDir = -(S.repDir || -1); else { S.repSort = th.dataset.sort; S.repDir = -1; } report(); }));
+    if ($('#csvC')) $('#csvC').onclick = () => csv('campaigns-12-months.csv', [COLS.map((c) => c[1]), ...cs.map((c) => COLS.map(([k]) => (k === 'project_id' ? projName(c.project_id) : k === 'cpl' ? (cpl(c) == null ? '' : Math.round(cpl(c))) : k === 'ctr' ? (ctr(c) == null ? '' : ctr(c).toFixed(2)) : val(c, k))))]);
+    if ($('#csvM')) $('#csvM').onclick = () => csv('marketing-month-by-month.csv', [['Month', 'Ad spend', 'Ad leads', 'Ads seen', 'Clicks', 'Chats', ...netCols.map((c) => c[2]), 'Leads in list', 'Site visits', 'Booked'], ...months.map((x) => [x.m.slice(0, 7), Math.round(x.sp), x.ld, x.imp, x.clk, x.chats, ...netCols.map(([n, k]) => (org[n][x.m] || {})[k] ?? ''), x.crm, x.visits, x.booked])]);
+    if ($('#repull')) $('#repull').onclick = () => pullAll([...(D.social.meta.connected ? ['facebook', 'instagram', 'ads', 'leads'] : []), ...(D.social.youtube.connected ? ['youtube'] : [])], true, 'Pulling 12 months again');
+  }
 
   // ---------- calendar ----------
   function calendar() {
@@ -216,11 +340,12 @@
 
   // ---------- campaigns ----------
   function campaigns() {
-    body(`<div class="mk-actions">${D.can.edit ? '<button id="newCamp">+ New campaign</button>' : ''}<span class="muted small">Leads are counted from the Leads tab when a lead is tagged with the campaign; bookings when a lead's number books a flat.</span></div>
-      <div class="mk-camp">${D.campaigns.map((c) => { const sp = +c.spent || 0, bud = +c.budget || 0, N = NET[c.channel] || null;
-        return `<div class="mk-card" style="margin:0"><div style="display:flex;justify-content:space-between;gap:8px;align-items:flex-start"><div><h3 style="margin:0">${esc(c.name)}</h3><div class="small muted">${N ? N.n + ' · ' : ''}${c.start_on ? day(c.start_on) : ''}${c.end_on ? ' – ' + day(c.end_on) : ''} · ${esc(projName(c.project_id))}</div></div><span class="mk-pill">${c.status === 'done' ? 'Finished' : c.status === 'planned' ? 'Planned' : 'Running'}</span></div>
+    body(`<div class="mk-actions">${D.can.edit ? '<button id="newCamp">+ New campaign</button>' : ''}<span class="muted small">Meta Ads campaigns come in by themselves with spend and leads (the 12-month report has them month by month). Add others (print, portals, events) by hand.</span></div>
+      <div class="mk-camp">${D.campaigns.map((c) => { const sp = +c.spent || 0, bud = +c.budget || 0, N = NET[c.channel] || (c.source === 'meta' ? { n: 'Meta Ads' } : null), ld = Math.max(+c.ad_leads || 0, c.leads || 0);
+        return `<div class="mk-card" style="margin:0"><div style="display:flex;justify-content:space-between;gap:8px;align-items:flex-start"><div><h3 style="margin:0">${esc(c.name)}</h3><div class="small muted">${c.source === 'meta' ? '<span class="mk-pill" style="background:#EEF4FF;color:#1877F2">From Meta Ads</span> ' : ''}${N ? N.n + ' · ' : ''}${c.start_on ? day(c.start_on) : ''}${c.end_on ? ' – ' + day(c.end_on) : ''} · ${esc(projName(c.project_id))}</div></div><span class="mk-pill">${c.status === 'done' ? 'Finished' : c.status === 'planned' ? 'Planned' : 'Running'}</span></div>
           <div style="margin:12px 0 6px;display:flex;justify-content:space-between;font-size:13px"><span>Spent ${inr(sp)}</span><span class="muted">of ${inr(bud)}</span></div><div class="mk-bar"><i style="width:${bud ? Math.min(100, Math.round((sp / bud) * 100)) : 0}%"></i></div>
-          <div class="mk-funnel" style="margin-top:12px"><div><b>${c.leads}</b><span>Leads</span></div><div><b>${c.leads && sp ? inr(sp / c.leads) : '–'}</b><span>Per lead</span></div><div><b>${c.visits ?? c.visit_leads ?? 0}</b><span>Site visits</span></div><div><b>${c.booked}</b><span>Booked</span></div></div>
+          ${c.source === 'meta' ? `<div class="small muted" style="margin-top:6px">${nf(+c.impressions || 0)} seen · ${nf(+c.clicks || 0)} clicks${c.messages ? ' · ' + nf(+c.messages) + ' chats' : ''}${c.objective ? ' · ' + esc(String(c.objective).replace(/^OUTCOME_/, '').toLowerCase()) : ''}</div>` : ''}
+          <div class="mk-funnel" style="margin-top:12px"><div><b>${ld}</b><span>Leads</span></div><div><b>${ld && sp ? inr(sp / ld) : '–'}</b><span>Per lead</span></div><div><b>${c.visits ?? c.visit_leads ?? 0}</b><span>Site visits</span></div><div><b>${c.booked}</b><span>Booked</span></div></div>
           ${D.can.edit ? `<div class="mk-actions" style="margin:10px 0 0"><button class="ghost small" data-camp="${c.id}">Change</button></div>` : ''}</div>`; }).join('') || '<div class="mk-empty">No campaigns yet. Add each ad or drive with its budget and what was spent, and tag its leads.</div>'}</div>`);
     if ($('#newCamp')) $('#newCamp').onclick = () => campForm(null);
     $$('#mkBody [data-camp]').forEach((b) => (b.onclick = () => campForm(D.campaigns.find((c) => c.id === +b.dataset.camp))));
@@ -270,23 +395,38 @@
 
   // ---------- set-up ----------
   function setup() {
-    const s = D.settings, M = D.metricool;
+    const s = D.settings, SO = D.social;
     const chRow = (c = {}) => `<div class="row chrow" style="grid-template-columns:150px 1fr 1.4fr 170px auto;align-items:end"><div><label>Channel</label><select data-c="network">${Object.entries(NET).map(([k, v]) => `<option value="${k}" ${c.network === k ? 'selected' : ''}>${v.n}</option>`).join('')}</select></div><div><label>Handle</label><input data-c="handle" value="${esc(c.handle)}" placeholder="dreamindiarealty"></div><div><label>Link</label><input data-c="url" value="${esc(c.url)}" placeholder="https://…"></div><div><label>For</label><select data-c="projectId"><option value="">Company</option>${D.projects.map((p) => `<option value="${p.id}" ${c.projectId === p.id ? 'selected' : ''}>${esc(p.name)}</option>`).join('')}</select></div><button type="button" class="ghost small" data-rmch style="margin-bottom:8px">×</button></div>`;
-    body(`<div class="mk-card"><h3>Social media figures: Metricool</h3>
-        <p class="small" style="margin:0 0 8px">${M.configured ? `Connected. Every night the ERP pulls followers, views, reach, posts and interactions for every channel connected in Metricool.${M.lastSync ? ` Last pull ${when(M.lastSync.at)}: ${esc((M.lastSync.networks || []).join(', ') || 'no channels')}${M.lastSync.error ? ` <b style="color:#B42318">${esc(M.lastSync.error)}</b>` : M.lastSync.errors && M.lastSync.errors.length ? ` <span class="muted">(${M.lastSync.errors.length} figures not available)</span>` : ''}.` : ''}` : 'Not connected yet. In Metricool, connect Facebook, YouTube, LinkedIn and Google Business Profile to the "Dream India Group" brand (Instagram is already there), then copy the API token (Metricool → Account settings → API; it needs Metricool\'s Advanced plan) and add it in Vercel as METRICOOL_TOKEN.'}</p>
-        ${M.configured && D.can.edit ? '<button class="ghost" id="syncNow">Pull the figures now</button>' : ''}</div>
+    const exp = SO.meta.expires ? Math.round((Date.parse(SO.meta.expires) - Date.now()) / 864e5) : null;
+    body(`<div class="mk-card"><h3>Connected channels</h3>
+        <div class="mk-row"><span style="display:flex;gap:4px"><span style="color:#1877F2">${ic('facebook')}</span><span style="color:#E1306C">${ic('instagram')}</span></span><div style="flex:1;min-width:0"><b>Facebook, Instagram and Meta Ads</b>
+          <div class="small muted">${SO.meta.connected ? `Connected by ${esc(SO.meta.name || '')} on ${day(SO.meta.at)}: ${SO.meta.pages.map((p) => esc(p.name) + (p.instagram ? ' + @' + esc(p.instagram) : '')).join(', ') || 'no page'}${SO.meta.ads.length ? ' · ads: ' + SO.meta.ads.map((a) => esc(a.name)).join(', ') : ' · no ad account'}${exp != null ? ` · <span style="${exp < 10 ? 'color:#B42318;font-weight:700' : ''}">connect again within ${Math.max(0, exp)} days</span>` : ''}` : SO.meta.configured ? 'Not connected. Press Connect and sign in with the Facebook login that manages the Dream India page, Instagram and ad account; tick all of them.' : 'Needs the Meta app first (see "How to set it up" below).'}${SO.meta.error ? `<br><b style="color:#B42318">${esc(SO.meta.error)}</b>` : ''}</div></div>
+          ${D.can.edit && SO.meta.configured ? `<a class="btn ${SO.meta.connected ? 'ghost' : ''} small" href="/api/marketing?connect=meta">${SO.meta.connected ? 'Connect again' : 'Connect with Facebook'}</a>` : ''}${D.can.edit && SO.meta.connected ? '<button class="ghost small" data-disc="meta">Disconnect</button>' : ''}</div>
+        <div class="mk-row"><span style="color:#FF0000">${ic('youtube')}</span><div style="flex:1;min-width:0"><b>YouTube</b><div class="small muted">${SO.youtube.connected ? `Connected: ${esc(SO.youtube.title)}${SO.youtube.handle ? ' (@' + esc(SO.youtube.handle) + ')' : ''} on ${day(SO.youtube.at)}` : SO.youtube.configured ? 'Not connected. Press Connect and sign in with the Google account that owns the Dream India channel.' : 'Needs the ERP\'s Google sign-in (already used for Customer documents).'}${SO.youtube.error ? `<br><b style="color:#B42318">${esc(SO.youtube.error)}</b>` : ''}</div></div>
+          ${D.can.edit && SO.youtube.configured ? `<a class="btn ${SO.youtube.connected ? 'ghost' : ''} small" href="/api/marketing?connect=youtube">${SO.youtube.connected ? 'Connect again' : 'Connect YouTube'}</a>` : ''}${D.can.edit && SO.youtube.connected ? '<button class="ghost small" data-disc="youtube">Disconnect</button>' : ''}</div>
+        <div class="mk-row"><span style="color:#0A66C2">${ic('linkedin')}</span><div style="flex:1"><b>LinkedIn, Google Business Profile, portals</b><div class="small muted">Their figures are typed in below for now. LinkedIn and Google give this data only to approved apps; it can be added once approved.</div></div></div>
+        ${SO.lastSync ? `<p class="small muted" style="margin:10px 0 0">Last pull ${when(SO.lastSync.at)}${SO.lastSync.errors && SO.lastSync.errors.length ? ` · <span style="color:#B42318">${esc(SO.lastSync.errors.join(' · '))}</span>` : ''}${SO.lastSync.missing && SO.lastSync.missing.length ? ` · not available: ${esc(SO.lastSync.missing.join(', '))}` : ''}</p>` : ''}
+        ${D.can.edit && (SO.meta.connected || SO.youtube.connected) ? '<div class="mk-actions" style="margin:10px 0 0"><button class="ghost" id="syncNow">Pull the figures now</button><span class="small muted">Every morning the ERP pulls yesterday\'s figures by itself.</span></div>' : ''}
+        ${!SO.meta.configured ? `<details style="margin-top:12px"><summary><b>How to set it up (once, about 15 minutes)</b></summary><ol class="small" style="margin:8px 0 0;padding-left:18px;line-height:1.6">
+          <li>On developers.facebook.com, sign in with the Facebook login that is admin of the Dream India page and ad account. Create an app ("Other" → "Business"), named "Dream India ERP", linked to the Dream India business.</li>
+          <li>Add the products Facebook Login, Instagram (Graph API) and Marketing API. Under Facebook Login → Settings, add this redirect address: <code style="user-select:all">${esc(SO.metaRedirect || location.origin + '/oauth/meta')}</code></li>
+          <li>Under App settings → Basic, copy the App ID and App secret. In Vercel (dream-india-erp → Settings → Environment Variables) add them yourself as <b>META_APP_ID</b> and <b>META_APP_SECRET</b>, then redeploy. Do not send them to anyone.</li>
+          <li>The Instagram account must be a Business account linked to the Facebook page (Instagram app → Settings → Account type).</li>
+          <li>Come back here and press <b>Connect with Facebook</b>. The app can stay in development mode: it only reads Dream India's own page, Instagram and ads.</li></ol></details>` : ''}
+        ${SO.youtube.configured && !SO.youtube.connected ? `<details style="margin-top:8px"><summary><b>Before connecting YouTube</b></summary><ol class="small" style="margin:8px 0 0;padding-left:18px;line-height:1.6"><li>In Google Cloud (the project of the ERP's Google sign-in) → APIs &amp; Services → Library, turn on <b>YouTube Data API v3</b> and <b>YouTube Analytics API</b>.</li><li>In OAuth consent screen, set the app to <b>In production</b> (in "Testing", Google signs the ERP out every 7 days). Google may show "not verified": press Advanced → continue.</li></ol></details>` : ''}</div>
       <div class="mk-card"><h3>Channels</h3><div id="chs">${(s.channels || []).map(chRow).join('')}</div>${D.can.edit ? '<button type="button" class="ghost small" id="addCh">+ Add a channel</button>' : ''}</div>
       <div class="mk-card"><h3>Design library: Google Drive folders</h3><p class="small muted" style="margin:0 0 8px">One folder per project (sub-folders like Brochures, Floor plans, Elevations, Renders, Amenities are fine). Share each folder with <b>${esc(s.share || "the ERP's Google account")}</b> as Viewer, then paste its link here.</p>
         ${[['company', 'Company (logos, corporate profile)'], ...D.projects.map((p) => [String(p.id), p.name])].map(([k, l]) => `<label>${esc(l)}<input data-drive="${k}" value="${s.drive[k] ? 'https://drive.google.com/drive/folders/' + esc(s.drive[k]) : ''}" placeholder="Paste the Drive folder link"></label>`).join('')}</div>
       <div class="mk-card"><h3>Approvals</h3><label class="check"><input type="checkbox" id="needAp" ${s.needApproval ? 'checked' : ''}> Posts need Management's approval before they are scheduled or published</label></div>
       ${s.leadUrl ? `<div class="mk-card"><h3>Leads coming in by themselves</h3><p class="small" style="margin:0 0 8px">Give this link to the website developer for the enquiry form, and use it in a Meta lead-ads or portal connector (Zapier, Make). Each enquiry (name, phone, email, source, project, message) arrives in Leads; a number already received in the last 30 days is not added twice.</p><code style="user-select:all;word-break:break-all;display:block;background:#F7F7FB;padding:8px;border-radius:8px">${esc(location.origin + s.leadUrl)}</code></div>` : ''}
-      <div class="mk-card"><h3>Type figures by hand</h3><p class="small muted" style="margin:0 0 8px">For a channel Metricool does not cover. One date's figures; leave a box empty if you do not have it.</p>
+      <div class="mk-card"><h3>Type figures by hand</h3><p class="small muted" style="margin:0 0 8px">For LinkedIn, Google Business Profile or any channel not connected. One date's figures; leave a box empty if you do not have it.</p>
         <div class="row" style="grid-template-columns:repeat(4,1fr)"><div><label>Channel</label><select id="sn">${Object.entries(NET).map(([k, v]) => `<option value="${k}">${v.n}</option>`).join('')}</select></div><div><label>Date</label><input type="date" id="sd" value="${iso(new Date())}"></div><div><label>Followers</label><input id="sf" inputmode="numeric"></div><div><label>Views</label><input id="sv" inputmode="numeric"></div></div>
         <div class="row" style="grid-template-columns:repeat(4,1fr)"><div><label>Reach</label><input id="sr" inputmode="numeric"></div><div><label>Posts</label><input id="sp" inputmode="numeric"></div><div><label>Interactions</label><input id="si" inputmode="numeric"></div><div style="display:flex;align-items:end"><button class="ghost" id="saveSt">Save figures</button></div></div></div>
       ${D.can.edit ? '<div class="actions"><button id="saveSet">Save set-up</button></div>' : ''}`);
     if ($('#addCh')) $('#addCh').onclick = () => $('#chs').insertAdjacentHTML('beforeend', chRow({ network: 'facebook' }));
     $('#mkBody').addEventListener('click', (e) => { if (e.target.closest('[data-rmch]')) e.target.closest('.chrow').remove(); });
-    if ($('#syncNow')) $('#syncNow').onclick = async (e) => { e.target.disabled = true; e.target.textContent = 'Pulling…'; try { const r = await C.api('/api/marketing', { action: 'sync' }); C.toast(r.error ? 'Metricool: ' + r.error : `Pulled ${r.rows || 0} days of figures.`); await load(); paint(); } catch (x) { alert(x.message); e.target.disabled = false; } };
+    if ($('#syncNow')) $('#syncNow').onclick = () => pullAll([...(SO.meta.connected ? ['facebook', 'instagram', 'ads', 'leads'] : []), ...(SO.youtube.connected ? ['youtube'] : [])], false);
+    $$('#mkBody [data-disc]').forEach((b) => (b.onclick = async () => { if (!confirm('Disconnect? The figures already pulled stay; nothing new comes in.')) return; await C.api('/api/marketing', { action: 'disconnect', data: { net: b.dataset.disc } }); await load(); paint(); }));
     $('#saveSt').onclick = async () => { await C.api('/api/marketing', { action: 'stats.save', data: { network: $('#sn').value, day: $('#sd').value, followers: $('#sf').value, views: $('#sv').value, reach: $('#sr').value, posts: $('#sp').value, interactions: $('#si').value } }); C.toast('Figures saved.'); await load(); };
     if ($('#saveSet')) $('#saveSet').onclick = async () => {
       const drive = {}; $$('#mkBody [data-drive]').forEach((i) => { if (i.value.trim()) drive[i.dataset.drive] = i.value.trim(); });

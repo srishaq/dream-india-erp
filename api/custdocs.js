@@ -56,6 +56,14 @@ module.exports = route({
       if (!has(u, 'users.manage')) throw fail(403, 'Only the Admin can connect Google Drive.');
       res.statusCode = 302; res.setHeader('Location', await gd.authUrl(req, u.id)); return res.end();
     }
+    if (q.oauth === 'callback' && String(q.state || '').startsWith('yt.')) { // the same Google sign-in, for YouTube on the Marketing page
+      if (!has(u, 'marketing.edit') && u.role !== 'admin') throw fail(403, 'Only the marketing team connects YouTube.');
+      let back;
+      const social = require('../lib/social');
+      try { const r = await social.ytCallback(req, u.id); await audit.record(db.q, { user: u, action: 'connect', entity: 'youtube', after: r }); back = `/?social=${encodeURIComponent(`YouTube connected: ${r.channel}. Pulling the last 12 months…`)}#/marketing`; }
+      catch (e) { back = '/?social=' + encodeURIComponent(e.message) + '#/marketing'; }
+      res.statusCode = 302; res.setHeader('Location', back); return res.end();
+    }
     if (q.oauth === 'callback') {
       if (!has(u, 'users.manage')) throw fail(403, 'Only the Admin can connect Google Drive.');
       let back = '/?drive=connected#/custdocs';
