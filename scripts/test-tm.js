@@ -55,6 +55,12 @@ const firm = (i, extra = {}) => ({ username: 'partner' + i, password: 'secret12'
     hist = (await db.one('select id from tm_projects where history')).id;
     const im = await admin('/api/tm', { action: 'import', projectId: hist, rows: [{ mobile: '9111100001', name: 'Old lead', remark: 'Interested 2BHK' }, { mobile: '9111100001' }, { mobile: '123' }] });
     assert.deepEqual(im, { status: 200, added: 1, invalid: 1, alreadyThere: 1 });
+    // a wrong import can be taken out and done again
+    await admin('/api/tm', { action: 'import', projectId: hist, rows: [{ mobile: '9111100002' }, { mobile: '9111100003' }] });
+    const cl = await admin('/api/tm', { action: 'import-clear', projectId: hist });
+    assert.equal(cl.removed, 3); assert.equal(cl.left, 0);
+    assert.equal((await crm('/api/tm', { action: 'import-clear', projectId: hist })).status, 403);
+    assert.equal((await admin('/api/tm', { action: 'import', projectId: hist, rows: [{ mobile: '9111100001', name: 'Old lead', remark: 'Interested 2BHK' }] })).added, 1);
     const p = await admin('/api/tm?partners=1');
     assert.equal(p.rows.length, 1); assert.equal(p.rows[0].portal_status, 'pending');
     assert.equal((await crm('/api/tm?partners=1')).status, 403);

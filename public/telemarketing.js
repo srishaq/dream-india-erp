@@ -278,7 +278,15 @@
     body(`<div class="panel"><h2>Import numbers we already called</h2>
       <p class="muted">Numbers from earlier telecalling (for example the Dream Signature sheets). They are kept with their remarks; partners uploading the same number are told it is already in the Dream India database, and the numbers can be put on call sheets again.</p>
       <div class="row"><div><label>Put them under</label><select id="tmIP">${projOpts(pr.rows.filter((p) => p.history), '')}${projOpts(pr.rows.filter((p) => !p.history), '')}</select></div><div><label>File (.xlsx or .csv)</label><input type="file" id="tmIF" accept=".xlsx,.csv,.txt"></div></div>
-      <div id="tmIM"></div></div>`);
+      <div id="tmIM"></div>
+      <p class="small muted" style="margin-top:14px">Imported with the wrong columns? <a href="#" id="tmIClear">Remove the earlier numbers of the chosen project</a> (only numbers not yet put on a call sheet), then import again.</p></div>`);
+    $('#tmIClear').onclick = async (e) => {
+      e.preventDefault();
+      const sel = $('#tmIP'), name = sel.options[sel.selectedIndex].text;
+      if (!confirm(`Remove the earlier numbers imported under "${name}" that have not been put on a call sheet? You can import the file again after this.`)) return;
+      try { const r = await C.api('/api/tm', { action: 'import-clear', projectId: +sel.value }); alert(`Removed ${nf(r.removed)} numbers. ${nf(r.left)} earlier numbers are left under this project.`); }
+      catch (x) { alert(x.message); }
+    };
     $('#tmIF').onchange = async (e) => {
       const f = e.target.files[0]; if (!f) return;
       $('#tmIM').innerHTML = '<p class="muted">Reading…</p>';

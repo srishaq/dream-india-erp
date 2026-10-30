@@ -141,6 +141,17 @@ module.exports = route({
       await audit.record(db.q, { user: u, action: 'tm-import', entity: 'tm-project', entityId: intOr(b.projectId), after: r, note: str(b.fileName, 120) || null });
       return res.json(r);
     }
+    // An import that went in with the wrong columns: take out the earlier numbers of this project that were never put on a sheet.
+    if (a === 'import-clear') {
+      const pid = intOr(b.projectId);
+      const p = await db.one('select id, name from tm_projects where id = $1', [pid]);
+      if (!p) throw fail(400, 'Choose the project.');
+      const r = await db.q(`delete from tm_leads l where l.tm_project_id = $1 and l.source = 'history' and l.status = 'history' and l.sheet_id is null and l.attempts = 0
+          and not exists (select 1 from tm_outcomes c where c.lead_id = l.id) returning l.id`, [pid]);
+      const left = await db.one("select count(*)::int as n from tm_leads where tm_project_id = $1 and source = 'history'", [pid]);
+      await audit.record(db.q, { user: u, action: 'tm-import-clear', entity: 'tm-project', entityId: pid, after: { removed: r.length, left: left.n } });
+      return res.json({ removed: r.length, left: left.n });
+    }
     if (a === 'settings-save') {
       const cur = await TM.settings(), s = b.settings || {};
       const next = {
