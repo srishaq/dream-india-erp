@@ -30,6 +30,11 @@ async function sheetRows(where, params) {
 module.exports = route({
   GET: async (req, res) => {
     const Q = req.query || {};
+    // Dream Signature's pre-launch telecalling, completed: the final figures (fixed; from the telecalling sheet and the bookings)
+    if (Q.dsResults) {
+      if (!(await who(req, res, ['tm.view', 'tm.manage', 'mgmt.view']))) return;
+      return res.json(require('../lib/data/ds-telecalling.json'));
+    }
     if (Q.sheets || Q.sheet) {
       if (!(await who(req, res, ENTRY))) return;
       if (Q.sheet) {
