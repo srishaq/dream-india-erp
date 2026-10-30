@@ -71,6 +71,10 @@
       "schedule": "30 3 * * *"
     },
     {
+      "path": "/api/cron?job=summary",
+      "schedule": "30 4 * * *"
+    },
+    {
       "path": "/api/cron?job=bank",
       "schedule": "40 9 * * *"
     },

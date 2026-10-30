@@ -26,6 +26,14 @@ Blueprint: booking-to-collection, contractor billing, project costing, RERA trac
 
 The person who enters something can never approve it.
 
+## Construction and purchase (site Today page)
+- Site Engineers open Construction on the **Today** page: four big buttons (Request material, Material came in, Daily report, Report a problem), deliveries expected and their own requests.
+- **Request material** raises a purchase request against the floor's BOQ line (balance shown in quantities only).
+- **Material came in** picks the purchase order, takes a photo of the challan (read automatically when `ANTHROPIC_API_KEY` is set in Vercel), confirms the quantities, and also logs the delivery in the site materials register.
+- Site logins never see rates, bill amounts or payments.
+- Every new request goes to Management by email with a one-tap approval link (`/approve`, valid 3 days, for that person only), and on WhatsApp once Click Connect is connected and the approval template is set (Management dashboard → 10 am message). Replying `APPROVE PR-0012` or `REJECT PR-0012 reason` on WhatsApp from the approver's own mobile (Manage users → phone) also works. A request waiting 24 hours goes to the Admin.
+- **10 am summary** (cron `job=summary`, 04:30 UTC) to Admin and Management: what needs attention, over-budget requests, cash needed in the next 14 days.
+
 ## Technology
 - No outside packages. `lib/pg.js` is a small PostgreSQL client (TLS, SCRAM-SHA-256, parameterised queries).
 - Database: Postgres (Neon, added from Vercel → Storage). Its address arrives as `DATABASE_URL`.

@@ -415,6 +415,7 @@ function vIssues(){
       <div class="row1"><span class="cat">${esc(h.category)}</span>${h.status==="resolved"?`<span class="pill cast">Resolved ${fmt(h.resolvedOn)}</span>`:`<span class="pill late">Open</span>`}</div>
       <div class="meta">${esc(tname(h.tower))}${h.slab?" · "+esc(slabName(h.tower,h.slab)):""} · from ${fmt(h.from)}${h.daysLost?` · ${plural(+h.daysLost,"day")} lost`:""}</div>
       ${h.description?`<p>${esc(h.description)}</p>`:""}
+      ${h.photo?`<a class="hphoto" href="/api/site?photo=${encodeURIComponent(h.photo)}" target="_blank" rel="noopener"><img src="/api/site?photo=${encodeURIComponent(h.photo)}" alt="Photo of the problem" loading="lazy"></a>`:""}
       ${(h.status!=="resolved"&&canW())||S.canEdit?`<div style="display:flex;gap:8px">${h.status!=="resolved"&&canW()?`<button class="btn small" data-resolve="${esc(h.id)}">Mark resolved</button>`:""}${S.canEdit?`<button class="btn small ghost" data-delh="${esc(h.id)}" style="color:var(--late)">Delete</button>`:""}</div>`:""}</li>`).join("")||`<li class="empty">No hindrances logged.</li>`;
   const lost=S.hind.reduce((a,h)=>a+(+h.daysLost||0),0);
   return `<div class="two">
@@ -562,25 +563,32 @@ function todayItems(){
 function vToday(cs){
   const T=todayIso(),d=getDpr(T),w=canW();
   const tick=icon("check");
+  if(!PO.data&&!PO.busy&&!PO.off)poLoad().catch(()=>{});
+  const pc=PO.data&&PO.data.can||{};
   const blds=cs.filter(c=>c.cur).map(c=>{const cur=c.cur,i=stageIdx(cur.p);
     const chips=STAGES.map((st,j)=>{const cls=j<i?"past":j===i?"now":"";
       return `<button type="button" class="chip2 ${cls}" ${w&&j>i?`data-qstage="${cur.id}:${st.k}"`:"disabled"}>${j<i?tick:""}${esc(({reinforcement:"Steel fixing",mep:"MEP sleeves",cast:"Cast"})[st.k]||st.n)}</button>`}).join("");
     return `<div class="bld" style="--wc:${tcol(c.t.key)}"><div class="bh"><b>${esc(c.t.name)} · ${esc(cur.name)}</b><span>Now: ${esc(stageName(cur.p))}</span></div><div class="chips">${chips}</div></div>`}).join("");
   const done=todayItems();
-  return `<section class="st-hello"><h1 id="stHello">Hello</h1><p>${wd(T)} ${fmt(T)} · ${d?"Daily report done. Keep updating as work moves.":"Three things to fill in today."}</p></section>
-  <ol class="steps">
-    <li class="step ${d?"done":""}"><span class="num">${d?tick:"1"}</span><div><h2>Daily report</h2><div class="sub">${d?`Sent · ${d.total||0} workers · ${(d.work||[]).length} work items`:"Workers on site, work done, any problem"}</div></div>
-      ${w?`<div class="body"><button class="bigbtn ${d?"soft":""}" data-qdpr="1">${icon("dpr")}${d?"Change today's report":"Fill today's report"}</button></div>`:""}</li>
-    <li class="step"><span class="num">2</span><div><h2>Slab work</h2><div class="sub">Tap the stage each slab has reached today.</div></div>
-      <div class="body">${blds||`<p class="muted" style="margin:0">All slabs are cast.</p>`}</div></li>
-    <li class="step"><span class="num">3</span><div><h2>Material and problems</h2><div class="sub">Log it when it happens.</div></div>
-      ${w?`<div class="body bigrow">
-        <button class="bigbtn soft" data-newmat="in">${icon("materials")}Material came in</button>
-        <button class="bigbtn soft" data-newmat="used">${icon("box")}Material used</button>
-        <button class="bigbtn warn" data-newh="1">${icon("issues")}Report a problem</button></div>`:""}</li>
-  </ol>
+  const exp=poExpected(),mine=poMine();
+  const tile=(attr,ic,title,sub,cls="")=>`<button type="button" class="four-b ${cls}" ${attr}><span class="ic">${icon(ic)}</span><b>${title}</b><small>${sub}</small></button>`;
+  const four=w?`<section class="four">
+      ${pc.request?tile('data-preq="1"',"box","Request material","Steel, RMC, cement, anything"):""}
+      ${tile('data-prec="1"',"materials","Material came in",exp.length?`${exp.length} deliver${exp.length===1?"y":"ies"} expected`:"Photo of the challan")}
+      ${tile('data-qdpr="1"',"dpr",d?"Daily report ✓":"Daily report",d?`Sent · ${d.total||0} workers`:"Workers and work done today",d?"ok":"")}
+      ${tile('data-newh="1"',"issues","Report a problem","With a photo","warn")}
+    </section>`:"";
+  const expPanel=exp.length?`<section class="panel"><div class="panel-head"><h3>Deliveries expected</h3></div><ul class="dlist">${exp.map(o=>`<li><button type="button" data-prcv="${esc(o.id)}"><span><b>${esc(o.material)} ${esc(o.spec)}</b><small>${esc(o.no)} · ${fmtQty(o.order.qty)} ${esc(o.unit)} from ${esc(o.order.vendor||"vendor")} · ordered ${fmtS((o.order.at||"").slice(0,10))}</small></span><em>It came</em></button></li>`).join("")}</ul></section>`:"";
+  const ST={pending_approval:["wait","Waiting for Management"],requested:["go","Approved, Purchase to order"],ordered:["go","Ordered"],rejected:["no","Rejected"],cancelled:["no","Cancelled"]};
+  const minePanel=mine.length?`<section class="panel"><div class="panel-head"><h3>Your requests</h3></div><ul class="dlist mine">${mine.map(o=>{const st=ST[o.status]||["go",o.status];return `<li><div><span><b>${esc(o.material)} ${esc(o.spec)}</b><small>${esc(o.no)} · ${fmtQty(o.qty)} ${esc(o.unit)} for ${esc(o.building)} ${esc(o.floor)}</small>${o.status==="rejected"&&o.approval&&o.approval.note?`<small class="why">Reason: ${esc(o.approval.note)}</small>`:""}</span><i class="tag ${st[0]}">${st[1]}</i></div></li>`}).join("")}</ul></section>`:"";
+  return `<section class="st-hello"><h1 id="stHello">Hello</h1><p>${wd(T)} ${fmt(T)} · ${d?"Daily report done. Keep updating as work moves.":"Tap what you need. The daily report is due by 6 pm."}</p></section>
+  ${four}
+  ${expPanel}
+  <section class="panel"><div class="panel-head"><h3>Slab work</h3></div><p class="muted" style="margin:0 0 10px">Tap the stage each slab has reached today.</p>${blds||`<p class="muted" style="margin:0">All slabs are cast.</p>`}</section>
+  ${minePanel}
   <section class="panel"><div class="panel-head"><h3>Done today</h3></div>
     ${done.length?`<ul class="tlist">${done.map(x=>`<li>${tick}<span>${x}</span></li>`).join("")}</ul>`:`<p class="muted" style="margin:0">Nothing entered yet today.</p>`}</section>
+  ${w?`<p class="st-foot"><a href="#" data-newmat="used">Log material used</a></p>`:""}
   ${S.canEdit?`<p class="st-foot">This is the page Site Engineers and the Site Team see when they open Construction.</p>`:`<p class="st-foot"><a href="#" data-showall="1">Open the full dashboard</a></p>`}`;
 }
 async function renderTodayName(){
@@ -588,6 +596,147 @@ async function renderTodayName(){
   let n="";try{const ps=await S.user.profiles([S.me]);n=(ps[S.me]&&ps[S.me].name)||"";}catch(e){}
   const h=new Date().getHours(),g=h<12?"Good morning":h<17?"Good afternoon":"Good evening";
   if($("#stHello")===el)el.textContent=n?`${g}, ${n.split(/\s+/)[0]}`:g;
+}
+
+/* ---- Purchase on the Today page: ask for material, receive a delivery against its order (no rates or amounts here) ---- */
+const PO={data:null,at:0,busy:null,off:false};
+async function poApi(method,payload,qs=""){
+  let r;try{r=await fetch("/api/me?purchase=1"+qs,{method,credentials:"same-origin",headers:{"Content-Type":"application/json"},body:payload?JSON.stringify(payload):undefined});}
+  catch(e){throw {code:"unavailable",message:"No connection"};}
+  const j=await r.json().catch(()=>({}));
+  if(r.status===403&&method==="GET"){PO.off=true;throw {code:"denied",message:j.error||"No purchase access"};}
+  if(!r.ok)throw {code:r.status>=500?"unavailable":"failed",message:j.error||"HTTP "+r.status};
+  return j;
+}
+function poLoad(force){
+  if(!force&&PO.data&&Date.now()-PO.at<45000)return Promise.resolve(PO.data);
+  if(PO.busy)return PO.busy;
+  PO.busy=poApi("GET").then(d=>{PO.data=d;PO.at=Date.now();PO.busy=null;if(S.view==="today")render();return d;},e=>{PO.busy=null;throw e;});
+  return PO.busy;
+}
+setInterval(()=>{if(!document.hidden&&S.view==="today"&&!PO.off)poLoad(true).catch(()=>{});},45000);
+const poItems=o=>Array.isArray(o.items)&&o.items.length?o.items:[{spec:o.spec,qty:o.qty}];
+const poOrders=()=>Object.values((PO.data&&PO.data.orders)||{}).filter(Boolean);
+const poExpected=()=>poOrders().filter(o=>o.status==="ordered").sort((a,b)=>String(a.order&&a.order.at).localeCompare(String(b.order&&b.order.at)));
+const poMine=()=>poOrders().filter(o=>o.requestedBy===S.me&&["pending_approval","requested","rejected"].includes(o.status)&&Date.now()-Date.parse(o.updatedAt||o.requestedAt)<14*DAY).sort((a,b)=>String(b.requestedAt).localeCompare(String(a.requestedAt))).slice(0,6);
+// Quantity left on a floor's BOQ line, counted as the server counts it (received, else ordered, else requested).
+function poBalance(line,mat){
+  const f=mat==="RMC"?"rmc":mat==="Steel"?"steel":mat==="Cement"?"cement":null;
+  const l=((PO.data&&PO.data.budget.lines)||[]).find(x=>x.key===line);
+  if(!f||!l||l[f]==null)return null;
+  const q=o=>["rejected","cancelled"].includes(o.status)?0:o.receipt?+o.receipt.qty||0:o.order?+o.order.qty||0:+o.qty||0;
+  const used=((l.opening&&+l.opening[f])||0)+poOrders().filter(o=>o.line===line&&o.material===mat).reduce((a,o)=>a+q(o),0);
+  return {budget:+l[f],left:+l[f]-used};
+}
+// A phone photo made small enough to send over site mobile data (about 200–400 KB).
+function shrinkPhoto(file,max=1600,quality=.72){
+  // read as a data: address (the page's security policy allows data: images, not blob:)
+  return new Promise((ok,bad)=>{const fr=new FileReader();
+    fr.onerror=()=>bad(new Error("That photo could not be opened. Take it again."));
+    fr.onload=()=>{const img=new Image();
+      img.onload=()=>{const k=Math.min(1,max/Math.max(img.width,img.height)),c=document.createElement("canvas");c.width=Math.round(img.width*k);c.height=Math.round(img.height*k);
+        c.getContext("2d").drawImage(img,0,0,c.width,c.height);ok(c.toDataURL("image/jpeg",quality));};
+      img.onerror=()=>bad(new Error("That photo could not be opened. Take it again."));img.src=fr.result;};
+    fr.readAsDataURL(file);});
+}
+
+function openRequest(){
+  const D=PO.data;if(!D){toast("Loading purchase details… try again in a moment.");poLoad().catch(()=>{});return;}
+  const mats=Object.keys(D.materials);
+  const byB={};for(const l of D.budget.lines)(byB[l.building]=byB[l.building]||[]).push(l);
+  const lineOpts=Object.entries(byB).map(([b,ls])=>`<optgroup label="${esc(b)}">${ls.map(l=>`<option value="${esc(l.key)}">${esc(l.floor)}</option>`).join("")}</optgroup>`).join("");
+  sheet(`<div><div class="eyebrow">Purchase request</div><h2>Request material</h2><p class="hint" style="margin:4px 0 0">Goes to Management for approval, then Purchase orders it.</p></div>
+    <div class="field"><span class="lbl">Material</span><div class="seg big wrap" id="r-mat">${mats.map((m,i)=>`<button type="button" data-m="${esc(m)}" aria-pressed="${i===1||mats.length===1}">${esc(m)}</button>`).join("")}</div></div>
+    <div id="r-items"></div>
+    <div class="grid2"><div class="field"><label for="r-line">For which floor</label><select id="r-line">${lineOpts}</select></div>
+      <div class="field"><label for="r-wing">Wing</label><select id="r-wing"></select></div></div>
+    <p class="hint" id="r-bal" style="margin:0"></p>
+    <div class="grid2"><div class="field"><label for="r-el">Where exactly (optional)</label><input id="r-el" maxlength="120" placeholder="e.g. columns, slab, lift wall"></div>
+      <div class="field"><label for="r-need">Needed by</label><input type="date" id="r-need" min="${todayIso()}"></div></div>
+    <div class="field"><label for="r-note">Note (optional)</label><input id="r-note" maxlength="300"></div>
+    <div class="err" id="r-err" role="alert"></div>
+    <div class="actions"><button type="button" class="btn" data-close>Cancel</button><button class="btn primary" id="r-save">Send for approval</button></div>`);
+  const cur=()=>($("#r-mat [aria-pressed=true]")||{}).dataset?.m||mats[0];
+  const drawItems=()=>{const m=cur(),M=D.materials[m];
+    $("#r-items").innerHTML=M.specs?`<div class="field"><span class="lbl">${m==="RMC"?"Grade":m==="Steel"?"Bar size":m==="Cement"?"Cement type":"Type of work"}: enter the quantity for each one you need (${esc(M.unit)})</span><div class="specgrid">${M.specs.map(sp=>`<label><span>${esc(sp)}</span><input type="number" min="0" step="any" inputmode="decimal" data-spec="${esc(sp)}" placeholder="0"></label>`).join("")}</div></div>${M.units?`<div class="field"><label for="r-unit">Unit</label><select id="r-unit">${M.units.map(u=>`<option>${esc(u)}</option>`).join("")}</select></div>`:""}`
+      :`<div class="grid2"><div class="field"><label for="r-desc">What is needed</label><input id="r-desc" maxlength="80" placeholder="e.g. Shuttering plywood 12 mm"></div><div class="field"><label for="r-qty">Quantity</label><input id="r-qty" type="number" min="0" step="any" inputmode="decimal"></div></div><div class="field"><label for="r-unit">Unit</label><select id="r-unit">${(M.units||[M.unit]).map(u=>`<option>${esc(u)}</option>`).join("")}</select></div>`;
+    showBal();};
+  const drawWing=()=>{const l=D.budget.lines.find(x=>x.key===$("#r-line").value);const ws=(D.wings[l?l.building:""]||["—"]);$("#r-wing").innerHTML=ws.map(x=>`<option>${esc(x)}</option>`).join("");showBal();};
+  const showBal=()=>{const b=poBalance($("#r-line").value,cur()),u=D.materials[cur()].unit;$("#r-bal").textContent=b?`BOQ balance on this floor: ${fmtQty(Math.max(0,b.left))} ${u} of ${fmtQty(b.budget)} ${u}${b.left<=0?". This floor's budget is used up; Management will see that.":"."}`:"";};
+  $$("#r-mat [data-m]").forEach(b=>b.onclick=()=>{$$("#r-mat [data-m]").forEach(x=>x.setAttribute("aria-pressed",x===b));drawItems();});
+  $("#r-line").onchange=drawWing;
+  drawItems();drawWing();
+  $("#sheetForm").onsubmit=async e=>{
+    e.preventDefault();const err=$("#r-err");err.textContent="";
+    const m=cur(),M=D.materials[m];let items;
+    if(M.specs){items=$$("#r-items [data-spec]").map(i=>({spec:i.dataset.spec,qty:parseFloat(i.value)})).filter(x=>x.qty>0);if(!items.length){err.textContent="Enter the quantity for at least one size or grade.";return;}}
+    else{const sp=$("#r-desc").value.trim(),q=parseFloat($("#r-qty").value);if(!sp){err.textContent="Write what is needed.";return;}if(!(q>0)){err.textContent="Enter the quantity.";return;}items=[{spec:sp,qty:q}];}
+    const data={material:m,items,spec:items[0].spec,qty:items[0].qty,unit:$("#r-unit")?$("#r-unit").value:M.unit,line:$("#r-line").value,wing:$("#r-wing").value,element:$("#r-el").value.trim(),neededBy:$("#r-need").value,note:$("#r-note").value.trim()};
+    const btn=$("#r-save");btn.disabled=true;btn.textContent="Sending…";
+    try{const r=await poApi("POST",{op:"request",data});closeOverlay();toast(`${r.doc.no} sent to Management for approval${r.doc.budgetAtRequest&&r.doc.budgetAtRequest.over?" (over the floor budget)":""}`);poLoad(true).catch(()=>{});}
+    catch(e2){btn.disabled=false;btn.textContent="Send for approval";err.textContent=e2.code==="unavailable"?"No connection. Your entries are still here; try again when the signal is back.":e2.message;}
+  };
+}
+
+// "Material came in": pick the delivery from the orders Purchase placed; anything else is logged the old way.
+function openArrived(){
+  if(!PO.data&&!PO.off){poLoad().then(openArrived,()=>openMaterial("in"));return;}
+  const exp=poExpected();
+  if(!exp.length)return openMaterial("in");
+  sheet(`<div><div class="eyebrow">Materials</div><h2>Which delivery came in?</h2></div>
+    <ul class="dlist">${exp.map(o=>`<li><button type="button" data-prcv="${esc(o.id)}"><span><b>${esc(o.material)} ${esc(o.spec)}</b><small>${esc(o.no)} · ${fmtQty(o.order.qty)} ${esc(o.unit)} from ${esc(o.order.vendor||"vendor")}</small></span><em>This one</em></button></li>`).join("")}
+      <li><button type="button" data-newmat="in"><span><b>Something else</b><small>Not on a purchase order (log it with its challan)</small></span><em>Log</em></button></li></ul>
+    <div class="actions"><button type="button" class="btn" data-close>Cancel</button></div>`);
+}
+
+function openReceive(id){
+  const o=poOrders().find(x=>x.id===id);if(!o||o.status!=="ordered"){toast("That delivery is no longer waiting. Refreshing…");poLoad(true).catch(()=>{});return;}
+  const its=poItems(o),ord=sp=>(((o.order.items||[]).find(x=>x.spec===sp))||{}).qty??(its.length===1?o.order.qty:0);
+  const canRead=!!(PO.data.can&&PO.data.can.readChallan);
+  let photo="",read=null;
+  sheet(`<div><div class="eyebrow">${esc(o.no)} · from ${esc(o.order.vendor||"vendor")}</div><h2>${esc(o.material)} received</h2><p class="hint" style="margin:4px 0 0">${canRead?"Take a photo of the challan. The ERP reads it and fills the form; check each figure before saving.":"Take a photo of the challan, then fill in what came."}</p></div>
+    <div class="field"><label class="photobtn" for="c-ph">${icon("materials")}<span id="c-phl">Take photo of challan</span></label><input id="c-ph" type="file" accept="image/*" capture="environment" hidden><img id="c-img" class="phprev" alt="Challan photo" hidden><p class="hint" id="c-read" style="margin:0"></p></div>
+    <div class="grid2"><div class="field"><label for="c-no">Challan no.</label><input id="c-no" maxlength="120" autocomplete="off"></div>
+      <div class="field"><label for="c-date">Date received</label><input type="date" id="c-date" max="${todayIso()}" value="${todayIso()}"></div></div>
+    <div class="field"><span class="lbl">Quantity received (${esc(o.unit)})</span><div class="specgrid">${its.map(it=>`<label><span>${esc(it.spec)}<small>ordered ${fmtQty(ord(it.spec))}</small></span><input type="number" min="0" step="any" inputmode="decimal" data-rspec="${esc(it.spec)}" value="${ord(it.spec)}"></label>`).join("")}</div></div>
+    <div class="grid2"><div class="field"><label for="c-veh">Vehicle no. (optional)</label><input id="c-veh" maxlength="30" autocomplete="off"></div>
+      <div class="field"><label for="c-note">Note (optional)</label><input id="c-note" maxlength="300" placeholder="e.g. 2 bundles short"></div></div>
+    <div class="err" id="c-err" role="alert"></div>
+    <div class="actions"><button type="button" class="btn" data-close>Cancel</button><button class="btn primary" id="c-save">Save receipt</button></div>`,false);
+  const msg=$("#c-read");
+  $("#c-ph").onchange=async e=>{const f=e.target.files&&e.target.files[0];if(!f)return;msg.textContent="";
+    try{photo=await shrinkPhoto(f);}catch(x){msg.textContent=x.message;return;}
+    $("#c-img").src=photo;$("#c-img").hidden=false;$("#c-phl").textContent="Take the photo again";
+    if(!canRead)return;
+    msg.textContent="Reading the challan…";
+    try{const r=await poApi("POST",{op:"read_challan",data:{photo}});read=r.read;fillFromRead(read);}
+    catch(x){msg.textContent=(x.message||"Could not read it")+" Fill it in by hand.";}};
+  function fillFromRead(r){
+    const got=[];
+    if(r.challan){$("#c-no").value=r.challan;got.push("challan no.");}
+    if(r.date&&r.date<=todayIso()){$("#c-date").value=r.date;got.push("date");}
+    if(r.vehicle){$("#c-veh").value=r.vehicle;got.push("vehicle");}
+    const kg=u=>/^kg|kilo/i.test(u||""),toUnit=(q,u)=>o.unit==="MT"&&kg(u)?q/1000:q;
+    const inputs=$$("[data-rspec]");
+    if(r.items.length&&inputs.length===1&&r.items.length===1){inputs[0].value=+toUnit(r.items[0].qty,r.items[0].unit).toFixed(3);got.push("quantity");}
+    else for(const inp of inputs){const num=(inp.dataset.rspec.match(/\d+/)||[])[0];const hit=num&&r.items.find(i=>new RegExp(`\\b${num}\\b`).test(i.description));if(hit){inp.value=+toUnit(hit.qty,hit.unit).toFixed(3);got.push(inp.dataset.rspec);}}
+    const vend=r.vendor&&o.order.vendor&&!r.vendor.toLowerCase().includes(o.order.vendor.toLowerCase().split(/\s+/)[0])?` The challan says "${r.vendor}", not ${o.order.vendor}: check it is the right delivery.`:"";
+    msg.textContent=(got.length?`Filled from the photo: ${got.join(", ")}. Check each figure before saving.`:"Couldn't pick out the figures. Fill them in by hand.")+vend+(r.unclear?` Unclear: ${r.unclear}.`:"");
+  }
+  $("#sheetForm").onsubmit=async e=>{
+    e.preventDefault();const err=$("#c-err");err.textContent="";
+    if(!photo){err.textContent="Take a photo of the challan first.";return;}
+    const challan=$("#c-no").value.trim(),date=$("#c-date").value;
+    if(!challan){err.textContent="Enter the challan number.";return;}
+    if(!date||date>todayIso()){err.textContent="Pick the date it came (not in the future).";return;}
+    const items=$$("[data-rspec]").map(i=>({spec:i.dataset.rspec,qty:parseFloat(i.value)}));
+    if(items.some(x=>!(x.qty>=0))){err.textContent="Enter the quantity received for each line (0 if none came).";return;}
+    if(!items.some(x=>x.qty>0)){err.textContent="Enter the quantity that came.";return;}
+    const btn=$("#c-save");btn.disabled=true;btn.textContent="Saving…";
+    try{await poApi("POST",{op:"receive",id:o.id,data:{items,qty:items[0].qty,challan,date,note:$("#c-note").value.trim(),vehicle:$("#c-veh").value.trim(),photo,read:read?{challan:read.challan,vehicle:read.vehicle}:null}});
+      closeOverlay();toast(`${o.no} received. Accounts can now check the bill.`);poLoad(true).catch(()=>{});if(window.siteRefresh)window.siteRefresh();}
+    catch(e2){btn.disabled=false;btn.textContent="Save receipt";err.textContent=e2.code==="unavailable"?"No connection. Your entries and photo are still here; try again when the signal is back.":e2.message;}
+  };
 }
 
 /* ---- quick DPR (Today page) ---- */
@@ -844,9 +993,12 @@ function openHindrance(){
       <div class="field"><label for="h-from">From</label><input type="date" id="h-from" max="${todayIso()}" value="${todayIso()}"></div>
       <div class="field"><label for="h-days">Days lost (estimate)</label><input type="number" id="h-days" min="0" max="365" inputmode="numeric" value="0"></div></div>
     <div class="field"><label for="h-desc">What happened</label><textarea id="h-desc" maxlength="600" placeholder="e.g. RMC plant shut, pour moved from Tue to Thu"></textarea></div>
+    <div class="field"><label class="photobtn" for="h-ph">${icon("issues")}<span id="h-phl">Add a photo (optional)</span></label><input id="h-ph" type="file" accept="image/*" capture="environment" hidden><img id="h-img" class="phprev" alt="Photo" hidden></div>
     <div class="err" id="h-err" role="alert"></div>
     <div class="actions"><button type="button" class="btn" data-close>Cancel</button><button class="btn primary" id="h-save">Log hindrance</button></div>`);
   $("#h-tower").onchange=e=>{$("#h-slab").innerHTML=opts(e.target.value);};
+  let hphoto="";
+  $("#h-ph").onchange=async e=>{const f=e.target.files&&e.target.files[0];if(!f)return;try{hphoto=await shrinkPhoto(f,1280,.68);$("#h-img").src=hphoto;$("#h-img").hidden=false;$("#h-phl").textContent="Take the photo again";}catch(x){$("#h-err").textContent=x.message;}};
   $("#sheetForm").onsubmit=async e=>{
     e.preventDefault();const err=$("#h-err");err.textContent="";
     const desc=$("#h-desc").value.trim(),from=$("#h-from").value;
@@ -854,6 +1006,7 @@ function openHindrance(){
     if(!desc){err.textContent="Add a short description so management knows what happened.";return;}
     const now=new Date().toISOString();
     const doc={tower:$("#h-tower").value,slab:$("#h-slab").value,category:$("#h-cat").value,from,daysLost:Math.max(0,parseInt($("#h-days").value,10)||0),description:desc,status:"open",createdBy:S.me,createdAt:now,updatedAt:now};
+    if(hphoto)doc.photo=hphoto;
     const btn=$("#h-save");btn.disabled=true;btn.textContent="Saving…";
     try{await S.db.collection("hindrances").add(doc);closeOverlay();toast("Hindrance logged");}
     catch(e2){if(denied(e2))return;btn.disabled=false;btn.textContent="Log hindrance";err.textContent=saveErr(e2);}
@@ -928,9 +1081,12 @@ async function flushWorks(k){
 
 /* ================= events ================= */
 document.addEventListener("click",e=>{
-  const t=e.target.closest("[data-edit],[data-tab],[data-wtab],[data-filter],[data-newh],[data-resolve],[data-dpr],[data-day],[data-deldpr],[data-delh],[data-newmat],[data-voidmat],[data-cell],[data-matf],[data-matk],[data-rp],[data-rpcopy],[data-rpcsv],[data-qdpr],[data-qstage],[data-showall]");if(!t)return;
+  const t=e.target.closest("[data-edit],[data-tab],[data-wtab],[data-filter],[data-newh],[data-resolve],[data-dpr],[data-day],[data-deldpr],[data-delh],[data-newmat],[data-voidmat],[data-cell],[data-matf],[data-matk],[data-rp],[data-rpcopy],[data-rpcsv],[data-qdpr],[data-qstage],[data-showall],[data-preq],[data-prec],[data-prcv]");if(!t)return;
   const ds=t.dataset;
-  if(ds.qdpr)openQuickDpr();
+  if(ds.preq)openRequest();
+  else if(ds.prec)openArrived();
+  else if(ds.prcv)openReceive(ds.prcv);
+  else if(ds.qdpr)openQuickDpr();
   else if(ds.qstage){const [id,st]=ds.qstage.split(":");openQuickStage(id,st);}
   else if(ds.showall){e.preventDefault();SHOW_ALL=true;try{localStorage.setItem("dsSiteFull","1");}catch(x){}location.hash="overview";render();}
   else if(ds.edit)openSlab(ds.edit);
@@ -943,7 +1099,7 @@ document.addEventListener("click",e=>{
   else if(ds.day){S.dprDate=ds.day;if(!getDpr(ds.day))loadDpr(ds.day);render();renderDprBy();}
   else if(ds.deldpr)confirmDelete(`Delete the DPR for ${fmt(ds.deldpr)}?`,"The report is removed for everyone and can't be recovered.",async()=>{await S.db.doc("dpr/"+ds.deldpr).delete();delete S.dprExtra[ds.deldpr];toast("DPR deleted");});
   else if(ds.delh){const h=S.hind.find(x=>x.id===ds.delh);confirmDelete("Delete this hindrance?",`${h?h.category:"This entry"} is removed from the register and reports for everyone.`,async()=>{await S.db.doc("hindrances/"+ds.delh).delete();toast("Hindrance deleted");});}
-  else if(ds.newmat)openMaterial(ds.newmat);
+  else if(ds.newmat){e.preventDefault();openMaterial(ds.newmat);}
   else if(ds.matf){S.matFilter=ds.matf;render();}
   else if(ds.matk){S.matKind=ds.matk;render();}
   else if(ds.rp){S.rep={...(S.rep||{}),p:ds.rp};render();}

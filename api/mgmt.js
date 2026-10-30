@@ -18,6 +18,11 @@ module.exports = route({
   POST: async (req, res, b) => {
     const u = await auth.guard(req, res); if (!u) return;
     if (!has(u, 'mgmt.view')) throw fail(403, 'The Management dashboard is for Admin and Management logins.');
+    const sa = require('../lib/staff-alerts');
+    // the 10 am message: see it, change its WhatsApp templates or switch it off, send it now
+    if (b.action === 'summary') return res.json({ ok: true, settings: await sa.settings(), summary: await sa.buildSummary(), to: (await sa.bosses()).map((p) => ({ name: p.name, email: p.email || '', phone: p.phone || '' })), approvers: (await sa.approvers()).map((p) => ({ name: p.name, email: p.email || '', phone: p.phone || '' })), live: process.env.ERP_LIVE === '1' });
+    if (b.action === 'summary-settings') { if (u.role !== 'admin') throw fail(403, 'Only the Admin can change this.'); return res.json({ ok: true, settings: await sa.saveSettings(b.settings || {}) }); }
+    if (b.action === 'summary-send') return res.json({ ok: true, result: await sa.sendSummary({ trigger: 'manual', force: true }) });
     if (b.action !== 'alerts') throw fail(400, 'Unknown action.');
     return res.json({ ok: true, limits: await mgmt.saveAlertLimits(b.limits || {}) });
   },

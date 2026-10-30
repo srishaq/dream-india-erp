@@ -2371,7 +2371,7 @@
       : '<div class="mg-clear">✓ All clear. Nothing needs your attention today.</div>';
     $('#page').innerHTML = `<div class="hero mg-hero"><div class="hero-in"><a class="back" href="#/home">← Home</a><span class="eyebrow">${esc(d.project ? d.project.name : '')} · ${esc(fmtD(d.today))}</span>
         <h1>Management dashboard</h1>
-        <div class="mg-sync"><span class="dot"></span><span>Figures as of ${at} today, live from the ERP</span><span class="mg-act"><button class="mg-btn" id="mgLim" title="When an item comes on the attention list">Alert limits</button><button class="mg-btn" id="mgRe">Refresh</button></span></div>
+        <div class="mg-sync"><span class="dot"></span><span>Figures as of ${at} today, live from the ERP</span><span class="mg-act"><button class="mg-btn" id="mgSum" title="The daily message to Admin and Management">10 am message</button><button class="mg-btn" id="mgLim" title="When an item comes on the attention list">Alert limits</button><button class="mg-btn" id="mgRe">Refresh</button></span></div>
         <nav class="mg-tabs2" role="tablist">${[['today', 'Today'], ['full', 'Full report']].map(([k, l]) => `<button type="button" role="tab" data-mv="${k}" aria-selected="${k === view}">${l}</button>`).join('')}</nav></div></div>
       <div class="hm mg">
         <div data-mvp="today" ${view === 'today' ? '' : 'hidden'}>
@@ -2387,6 +2387,23 @@
       document.querySelectorAll('[data-mv]').forEach((x) => x.setAttribute('aria-selected', x.dataset.mv === view));
       document.querySelectorAll('[data-mvp]').forEach((x) => (x.hidden = x.dataset.mvp !== view)); }));
     $('#mgRe').onclick = () => mgmt();
+    $('#mgSum').onclick = async () => {
+      const r = await api('/api/mgmt', { action: 'summary' }), S = r.settings, admin = me.role === 'admin';
+      const who = (l) => l.map((p) => `${esc(p.name)} <span class="muted">(${p.email ? esc(p.email) : 'no email'}${p.phone ? ' · ' + esc(p.phone) : ''})</span>`).join('<br>') || '<span class="muted">nobody</span>';
+      const dl = dialog(`<h2>10 am message</h2>
+        <p class="muted small">Every day at 10 am to Admin and Management by email, and on WhatsApp once Click Connect is connected and the template below is set.${r.live ? '' : ' <b>Test version:</b> it goes only to the test email and test mobile in Letter settings.'}</p>
+        <p class="small"><b>Goes to</b><br>${who(r.to)}</p>
+        <p class="small"><b>Purchase approvals go to</b> (one-tap link by email, WhatsApp template below)<br>${who(r.approvers)}</p>
+        <label>Today's message</label><pre style="white-space:pre-wrap;background:#F7F8F5;border:1px solid #DDE1DB;border-radius:8px;padding:12px;font:13px/1.45 inherit;max-height:320px;overflow:auto">${esc(r.summary.text)}</pre>
+        ${admin ? `<div class="row"><div><label>WhatsApp template for the 10 am message (Click Connect ID, 5 values)</label><input name="summaryTemplate" value="${esc(S.summaryTemplate)}" placeholder="e.g. daily_summary_ab12"></div>
+          <div><label>WhatsApp template for purchase approvals (Click Connect ID, 6 values)</label><input name="approvalTemplate" value="${esc(S.approvalTemplate)}" placeholder="e.g. purchase_approval_cd34"></div></div>
+          <label style="display:flex;gap:8px;align-items:center"><input type="checkbox" name="summaryOff" ${S.summaryOff ? 'checked' : ''} style="width:auto"> Switch the 10 am message off</label>` : ''}
+        <p><button type="button" class="ghost" id="sumSend">Send it now</button></p>`,
+      async (x) => { if (admin) await api('/api/mgmt', { action: 'summary-settings', settings: { summaryTemplate: x.summaryTemplate, approvalTemplate: x.approvalTemplate, summaryOff: x.summaryOff === 'on' } }); toast('Saved.'); });
+      if (!admin) $('[value=save]', dl).hidden = true;
+      $('#sumSend', dl).onclick = async (e) => { e.target.disabled = true; try { const s2 = (await api('/api/mgmt', { action: 'summary-send' })).result;
+        toast(s2.email && s2.email.sent ? `Sent to ${s2.email.to.join(', ')}.` : `Not emailed: ${(s2.email && s2.email.reason) || 'unknown'}`); } catch (er) { toast(er.message); } e.target.disabled = false; };
+    };
     $('#mgLim').onclick = () => { const L = D.limits;
       const f = (k, label, unit) => `<div><label>${label}</label><input name="${k}" inputmode="decimal" value="${esc(L[k] ?? '')}"><span class="small muted">${unit}</span></div>`;
       dialog(`<h2>Alert limits</h2><p class="muted small">An item comes on "Needs your attention" only when it crosses these limits.</p>

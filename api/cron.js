@@ -3,7 +3,9 @@
 //   /api/cron?job=morning 03:30 UTC = 9:00 am IST  payment reminders to buyers, the CA's monthly pack (from the 5th), the Accounts audit
 //                                                  and the CRM list → Daily To-Do (Accounts audit emailed)
 //   /api/cron?job=pdc   03:50 UTC = 9:20 am IST  PDC reminder emails
-//   /api/cron?job=mail  every 5 minutes           buyers' email replies into their Communication record; automatic demand letters still to email
+//   /api/cron?job=summary 04:30 UTC = 10:00 am IST the 10 am summary to Admin and Management (lib/staff-alerts.js)
+//   /api/cron?job=mail  every 5 minutes           buyers' email replies into their Communication record; automatic demand letters still to email;
+//                                                  purchase requests to Management for approval, and those waiting 24 hours up to the Admin
 // Vercel sends "Authorization: Bearer <CRON_SECRET>" when CRON_SECRET is set; then nothing else may run these.
 // Without CRON_SECRET a job runs only in its own hour (IST) and only once that day, so a stray call does nothing.
 const ba = require('../lib/bank-auto');
@@ -19,7 +21,7 @@ module.exports = route({
     const job = (req.query || {}).job;
     const secret = process.env.CRON_SECRET;
     if (secret) { if (req.headers.authorization !== `Bearer ${secret}`) throw fail(401, 'Not allowed.'); }
-    else if (job !== 'mail' && !(job === 'bank' && istHour() === 15) && !((job === 'pdc' || job === 'morning') && istHour() === 9)) throw fail(403, 'Not the time for this job.');
+    else if (job !== 'mail' && !(job === 'bank' && istHour() === 15) && !((job === 'pdc' || job === 'morning') && istHour() === 9) && !(job === 'summary' && istHour() === 10)) throw fail(403, 'Not the time for this job.');
     const st = await status();
     if (st.pending.length && st.applied.length) await migrate(); // a new release deployed overnight: its tables first
     if (job === 'bank') {
@@ -39,6 +41,7 @@ module.exports = route({
       }
       return res.json({ ok: true, ...out });
     }
+    if (job === 'summary') return res.json({ ok: true, ...(await require('../lib/staff-alerts').sendSummary({ trigger: 'schedule' })) });
     if (job === 'pdc') {
       const r = await pdc.send({});
       return res.json({ ok: true, due: r.due.length, sent: r.sent.length, reason: r.reason || null });
@@ -46,6 +49,7 @@ module.exports = route({
     if (job === 'mail') {
       const r = await require('../lib/mail-sync').sync({ trigger: 'schedule' });
       r.autoLetters = await require('../lib/letters').sendPendingAuto().catch((e) => ({ error: e.message }));
+      r.approvals = await require('../lib/staff-alerts').runApprovals().catch((e) => ({ error: e.message }));
       // Click Connect: once the key is in Vercel, point its webhook at the ERP by itself (once; again if the key changes)
       r.whatsappHook = await (async () => {
         const wa = require('../lib/whatsapp'); if (!wa.ccm()) return null;

@@ -94,6 +94,8 @@
       return name === 'db' ? db : name === 'user' ? user : name === 'downloads' ? downloads : null;
     },
   };
+  // the Today page calls this after a purchase receipt, which the server also writes into the materials log
+  window.siteRefresh = () => refresh().catch(() => {});
   setInterval(() => { if (!document.hidden && Store.data) refresh().catch(() => {}); }, 45000);
   document.addEventListener('visibilitychange', () => { if (!document.hidden && Store.data) refresh().catch(() => {}); });
 })();
