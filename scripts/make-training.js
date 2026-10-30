@@ -137,15 +137,21 @@ async function seedSite(sig) {
   const rmc = (await P(ravi, { op: 'request', data: { material: 'RMC', items: [{ spec: 'M40', qty: 190 }], line, wing: 'A wing', element: '5th slab and beams', neededBy: addDays(t, 2) } })).j.doc;
   IDS.rmc = rmc.id; IDS.steel = steel.id; IDS.cement = cem.id;
   IDS.approveUrl = '/approve?t=' + encodeURIComponent(await require('../lib/staff-alerts').token(rmc.id, 'sameer'));
-  // contractor: an approved work order for A-Wing, slab items counted from the slabs cast; one RA bill paid earlier
+  // contractor: a work order on a payment schedule (% of the contract value by stage, slab by slab), approved; the first
+  // RA bill (excavation, foundation, plinth, with the mobilisation advance recovered in full) already paid
   const C = (ck, b) => api(ck, '/api/me?contracts=1', b);
-  const wo = (await C(sameer, { op: 'wo_save', data: { contractor: 'Sample Builders Pvt Ltd', company: 'Prime Realtors', scope: 'RCC structure, A-Wing, labour only (RMC and steel by us)', retentionPct: 5, tdsPct: 1, advance: 1000000, advanceRecoveryPct: 10, towers: ['a'],
-    wastage: { rmcPct: 2, steelPct: 3, rmcRate: 7758, steelRate: 61000 },
-    items: [{ desc: 'RCC slab, beams and columns: labour incl. shuttering', unit: 'sqm', rate: 520, qty: 42000, link: { tower: 'a' }, perSlab: 850 }, { desc: 'Blockwork 200 mm: labour', unit: 'sqm', rate: 95, qty: 30000 }, { desc: 'Internal plaster: labour', unit: 'sqm', rate: 70, qty: 60000 }] } })).j.wo;
-  const b1 = (await C(farhan, { op: 'bill_save', data: { woId: wo.id, from: addDays(t, -75), to: addDays(t, -31), billNo: 'SB/RA-01', lines: [{ itemId: wo.items[0].id, qty: 1700 }] } })).j.bill;
+  const STAGES = [['Excavation', 3, 1], ['Foundation completion', 6, 1], ['Plinth completion', 9, 1], ['Completion of 1st slab', 3, 1, 1], ['Completion of 2nd to 5th slab', 6, 4, 2],
+    ['Completion of 6th to 10th slab', 12, 5, 6], ['Completion of 11th to 34th slab', 28.8, 24, 11], ['Completion of 35th to 46th slab', 9.6, 12, 35], ['Completion of U.G. tank', 1.6, 1], ['Completion of O.H.T. & lift room', 1, 1],
+    ['Block work', 5, 1], ['Internal plaster', 7, 1], ['External plaster', 6, 1], ['Waterproofing', 1, 1], ['Compound wall / PCC / misc. works', 1, 1]];
+  const wo = (await C(sameer, { op: 'wo_save', data: { mode: 'schedule', contractor: 'Sample Infrastructure Pvt Ltd', company: 'Prime Realtors', scope: 'RCC structure, A-Wing (RMC and steel by us)', area: 320000, sqftRate: 1650,
+    gstPct: 18, retentionPct: 5, tdsPct: 2, advance: 5000000, advanceAtIndex: 2, towers: ['a'],
+    recoveries: [{ name: 'Mivan formwork', total: 9000000, perBill: 750000 }, { name: 'Safety screens', total: 1800000, perBill: 150000 }],
+    norms: { steelKgPerSqft: 4.5, cementBagsPerSqft: 0.4 }, wastage: { steelPct: 3, rmcPct: 3 },
+    items: STAGES.map(([desc, pct, count, from]) => ({ desc, pct, count, slabFrom: from, link: from ? { tower: 'a' } : null })) } })).j.wo;
+  const b1 = (await C(farhan, { op: 'bill_save', data: { woId: wo.id, from: addDays(t, -75), to: addDays(t, -40), billNo: 'SI/RA-01', lines: wo.items.slice(0, 3).map((it) => ({ itemId: it.id, qty: 1 })) } })).j.bill;
   await C(farhan, { op: 'bill_submit', id: b1.id, data: {} });
   await C(sameer, { op: 'bill_approve', id: b1.id, data: {} });
-  await C(headacc, { op: 'bill_paid', id: b1.id, data: { amount: b1.totals.net, ref: 'UTR SAMPLE 1101', date: addDays(t, -25) } });
+  await C(headacc, { op: 'bill_paid', id: b1.id, data: { amount: b1.totals.net, ref: 'UTR SAMPLE 1101', date: addDays(t, -35) } });
 }
 
 // ---------- the player ----------
@@ -531,7 +537,7 @@ L['pur-approve'] = { user: 'sameer', steps: [
   ['go', () => IDS.approveUrl], ['cap', 'When the site asks for material, Sameer gets an email with a button. It opens this page, on the phone, without signing in.'],
   ['hl', '.budget', 2400], ['cap', 'It shows what is asked for, for which floor, the approximate value, and whether it is within that floor’s BOQ budget.'],
   ['click', '#yes', 2200], ['cap', 'One tap approves it. To reject, tap Reject and write the reason: the site sees it.'],
-  ['go', '/purchase'], ['cap', 'Everything is also on the Purchase page, where Management can approve from the list. A request waiting more than a day goes up to Rafi Sir.'],
+  ['go', '/purchase'], ['cap', 'Everything is also on the Purchase page, where Management can approve from the list. If a request is still waiting after a day, Sameer gets a reminder.'],
 ] };
 L['pur-order'] = { user: 'farhan', steps: [
   ['go', '/purchase'], ['cap', 'The purchase team opens Purchase. Waiting for me lists the approved requests to order.'],
@@ -546,13 +552,17 @@ L['pur-accounts'] = { user: 'headacc', steps: [
   ['click', '#sheet [data-op="accounts_ok"]', 2200], ['cap', 'Approve it for payment. It then shows in Payments Out, so the payment fills in by itself, and the request is marked Paid.'],
 ] };
 L['pur-contract'] = { user: 'farhan', steps: [
-  ['go', '/contracts'], ['cap', 'Contractor bills are on their own page: tap Contractor bills on the Purchase page. Each contractor has a work order with the item rates.'],
-  ['click', '[data-tab="wos"]', 1600], ['hl', '.wo >> nth=0', 2600], ['cap', 'The work order has the items and rates, retention, TDS, the advance and how fast it is recovered, and the wastage allowed on our RMC and steel.'],
-  ['click', '[data-tab="bills"]', 1000], ['click', '#newBill', 2600], ['cap', 'For a new RA bill, the slab work done since the last bill is filled in from the slabs site marked cast.'],
-  ['hl', '#sheet .ltbl', 2600], ['cap', 'It shows previous, this bill and cumulative for each item. Anything beyond the work order quantity is marked in red.'],
-  ['hl', '#sheet [name=materialRecovery]', 2400], ['cap', 'Recovery for RMC and steel used beyond the design quantity plus the allowance is suggested from the site’s records.'],
-  ['type', '#sheet [name=billNo]', 'SB/RA-02'], ['hl', '#tot', 2800], ['cap', 'Retention, TDS and advance recovery are worked out, and the net payable is at the bottom. Save and submit it to Management.'],
-  ['click', '#subBill', 2400],
+  ['go', '/contracts'], ['cap', 'Contractor bills are on their own page: tap Contractor bills on the Purchase page. Each contractor has a work order.'],
+  ['click', '[data-tab="wos"]', 1600], ['hl', '.wo >> nth=0', 2600], ['cap', 'Our RCC contractor is paid a percentage of the contract value at each stage: excavation, foundation, plinth, then slab by slab, then masonry and plaster.'],
+  ['click', '.wo >> nth=0 >> [data-editwo]', 2200], ['hl', '#schedBox', 2800], ['cap', 'The work order holds the construction area, the rate per square foot, and every stage with its percentage.'],
+  ['scroll', 900, 1600], ['cap', 'It also holds GST, retention, TDS, the mobilisation advance recovered on the plinth bill, and costs we pay first, like Mivan formwork and safety screens, recovered in instalments.'],
+  ['scroll', 700, 1400], ['cap', 'For the steel and cement we supply, the norms per square foot and the allowed wastage are set here, so any excess is recovered at our cost.'],
+  ['key', 'Escape', 800], ['click', '[data-tab="bills"]', 1000],
+  ['click', '#newBill', 2800], ['cap', 'For a new RA bill, the slabs site marked cast since the last bill are filled in. Check them against the site in-charge’s certificate.'],
+  ['hl', '#sheet .ltbl', 2800], ['cap', 'Each stage shows its value, what was claimed before, and this bill. A stage is claimed as a percentage, and a slab group slab by slab.'],
+  ['type', '#sheet [name=billNo]', 'SI/RA-02'], ['hl', '#tot', 3000], ['cap', 'GST is added, and retention, TDS, the Mivan and safety screen instalments and any material recovery are taken off. The net payable is at the bottom.'],
+  ['click', '#subBill', 2400], ['cap', 'Save and submit it to Management.'],
+  ['click', '[data-tab="wos"]', 1400], ['hl', '.wo >> nth=0 >> .acts', 2800], ['cap', 'At the end, the final measurement bill takes the actual area from the area statement and settles the difference. Retention comes back through release bills.'],
 ] };
 L['pur-contract-approve'] = { user: 'sameer', steps: [
   ['go', '/contracts'], ['click', 'tr[data-bill] >> nth=0'], ['cap', 'Sameer opens the bill, checks the quantities and deductions, and approves the net amount. The person who entered a bill can never approve it.'],
