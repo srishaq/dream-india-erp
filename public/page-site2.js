@@ -212,12 +212,18 @@ function vOverview(cs){
     <div class="kpi" style="--tone:var(--t2);--tint:#EEE8F4"><span class="ic">${icon("steel")}</span><span class="eyebrow">Steel on site</span><span class="v">${fmtQty(mst.steel.inAll-mst.steel.usedAll)}<small> MT</small></span><span class="s">${fmtQty(mst.steel.usedAll)} MT used to date</span></div>
     <div class="kpi" style="--tone:var(--t3);--tint:#DFF3F5"><span class="ic">${icon("mixer")}</span><span class="eyebrow">RMC poured</span><span class="v">${fmtQty(mst.rmc.usedAll)}<small> m³</small></span><span class="s">${fmtQty(mst.rmc.inAll)} m³ received to date</span></div>
   </section>`;
+  if(!PO.data&&!PO.busy&&!PO.off)poLoad().catch(()=>{});
+  const pcan=(PO.data&&PO.data.can)||{},exp=poExpected(),cdue=cubesDue();
   const quick=canW()?`<section class="quick">
     <button class="qa main" data-dpr="today"><span class="ic">${icon("dpr")}</span><span class="qt"><b>${dt?"Edit today's DPR":"Submit today's DPR"}</b><span class="qs">Labour, work done and issues</span></span></button>
-    <button class="qa" data-newmat="in" style="--tone:var(--t2);--tint:#EEE8F4"><span class="ic">${icon("materials")}</span><span class="qt"><b>Steel / RMC received</b><span class="qs">Log a delivery with challan</span></span></button>
+    ${pcan.request?`<button class="qa" data-preq="1" style="--tone:var(--t1);--tint:#E3ECF5"><span class="ic">${icon("box")}</span><span class="qt"><b>Request material</b><span class="qs">Goes to Sameer for approval</span></span></button>`:""}
+    <button class="qa" data-prec="1" style="--tone:var(--t2);--tint:#EEE8F4"><span class="ic">${icon("materials")}</span><span class="qt"><b>Material came in</b><span class="qs">${exp.length?`${exp.length} deliver${exp.length===1?"y":"ies"} expected · photo of challan`:"Photo of the challan"}</span></span></button>
+    <button class="qa" data-newpour="1" style="--tone:var(--t3);--tint:#DFF3F5"><span class="ic">${icon("mixer")}</span><span class="qt"><b>Record a pour</b><span class="qs">${cdue.length?`${cdue.length} cube test${cdue.length===1?"":"s"} due`:"Grade, m³ and cube samples"}</span></span></button>
+    <button class="qa" data-newh="1" style="--tone:var(--late);--tint:var(--late-soft)"><span class="ic">${icon("issues")}</span><span class="qt"><b>Log hindrance</b><span class="qs">With a photo</span></span></button>
     <button class="qa" data-newmat="used" style="--tone:var(--t3);--tint:#DFF3F5"><span class="ic">${icon("box")}</span><span class="qt"><b>Material used</b><span class="qs">Steel issued, RMC poured</span></span></button>
-    <button class="qa" data-newh="1" style="--tone:var(--late);--tint:var(--late-soft)"><span class="ic">${icon("issues")}</span><span class="qt"><b>Log hindrance</b><span class="qs">Anything holding up work</span></span></button>
-  </section>`:"";
+  </section>
+  ${cdue.length?`<section class="panel"><div class="panel-head"><h3>Cube tests due</h3></div><ul class="dlist">${cdue.map(({p,k,c})=>`<li><button type="button" data-cube="${esc(p.id)}:${k}"><span><b>${k==="d7"?"7-day":"28-day"} test · ${esc(p.grade)}</b><small>${esc(slabLabel(p.tower,p.slab))} · poured ${fmtS(p.date)} · ${c.late?"was due "+fmtS(c.due):"due today"}</small></span><em>Enter result</em></button></li>`).join("")}</ul></section>`:""}
+  ${exp.length?`<section class="panel"><div class="panel-head"><h3>Deliveries expected</h3></div><ul class="dlist">${exp.map(o=>`<li><button type="button" data-prcv="${esc(o.id)}"><span><b>${esc(o.material)} ${esc(o.spec)}</b><small>${esc(o.no)} · ${fmtQty(o.order.qty)} ${esc(o.unit)} from ${esc(o.order.vendor||"vendor")}</small></span><em>It came</em></button></li>`).join("")}</ul></section>`:""}`:"";
   const cards=cs.map(c=>{
     const cur=c.cur, oh=openH.filter(h=>h.tower===c.t.key).length, col=tcol(c.t.key);
     const work=dt?(dt.work||[]).filter(w=>w.tag===c.t.key||(w.tag==="sale"&&c.t.building==="Sale Tower")):[];
@@ -613,7 +619,7 @@ async function poApi(method,payload,qs=""){
 function poLoad(force){
   if(!force&&PO.data&&Date.now()-PO.at<45000)return Promise.resolve(PO.data);
   if(PO.busy)return PO.busy;
-  PO.busy=poApi("GET").then(d=>{PO.data=d;PO.at=Date.now();PO.busy=null;if(S.view==="today")render();return d;},e=>{PO.busy=null;throw e;});
+  PO.busy=poApi("GET").then(d=>{PO.data=d;PO.at=Date.now();PO.busy=null;if(S.view==="today"||S.view==="overview")render();return d;},e=>{PO.busy=null;throw e;});
   return PO.busy;
 }
 setInterval(()=>{if(!document.hidden&&S.view==="today"&&!PO.off)poLoad(true).catch(()=>{});},45000);
