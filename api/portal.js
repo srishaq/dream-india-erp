@@ -12,6 +12,7 @@ module.exports = async (req, res) => {
   if (q.drawings === '1') return require('../lib/portal/drawings-api')(req, res);
   if (q.hr === '1') return require('../lib/portal/hr-api')(req, res);
   if (q.purchase === '1') return require('../lib/portal/purchase-api')(req, res);
+  if (q.contracts === '1') return require('../lib/portal/contracts-api')(req, res);
   if (q.copy === '1') return require('../lib/portal/copy')(req, res);
   noStore(res);
   const u = await auth.session(req).catch(() => null);

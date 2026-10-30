@@ -7,7 +7,7 @@ const ACTS=[{k:"block",n:"Blockwork"},{k:"elec",n:"Electrical conduits"},{k:"plu
 const MATS=[{k:"rmc",n:"RMC",u:"m³"},{k:"steel",n:"Reinforcement steel",u:"MT"},{k:"cement",n:"Cement",u:"bags"},{k:"blocks",n:"AAC blocks",u:"nos"},{k:"sand",n:"Sand",u:"brass"},{k:"agg",n:"Aggregate",u:"brass"},{k:"other",n:"Other",u:""}];
 const DEFAULT_TRADES=["Carpenter","Steel fixer","Helper / labour","Mason","Welder","Excavator operator"];
 const WEATHER=["Clear","Light rain","Heavy rain — work stopped"];
-const VIEWS=[["overview","Overview"],["reports","Reports"],["dpr","Daily reports"],["slabs","Slab cycle"],["works","Floor-wise works"],["materials","Materials"],["issues","Hindrances"],["today","Staff view"]];
+const VIEWS=[["overview","Overview"],["reports","Reports"],["dpr","Daily reports"],["slabs","Slab cycle"],["works","Floor-wise works"],["materials","Materials"],["pours","Pours & cubes"],["issues","Hindrances"],["today","Staff view"]];
 // Site Engineers and the Site Team (can update, not the Site Head) start on the simple Today page
 // and see only that tab, unless they choose to open the full dashboard on this phone.
 let SHOW_ALL=false;try{SHOW_ALL=localStorage.getItem("dsSiteFull")==="1";}catch(e){}
@@ -34,7 +34,7 @@ const uid=()=>Math.random().toString(36).slice(2,10)+Date.now().toString(36).sli
 const fmtQty=n=>(Math.round(n*100)/100).toLocaleString("en-IN");
 
 /* ================= state ================= */
-const S={towers:[],progress:{},hind:[],dpr:{},dprExtra:{},mats:{},works:{},worksPending:{},worksTimer:{},
+const S={pours:{},towers:[],progress:{},hind:[],dpr:{},dprExtra:{},mats:{},works:{},worksPending:{},worksTimer:{},
   canWrite:null,canEdit:false,me:null,user:null,db:null,
   view:"overview",tab:null,filter:"all",dprDate:null,worksTab:null,
   loaded:{t:false,p:false}};
@@ -175,7 +175,7 @@ function render(){
   $("#nav").innerHTML=navViews().map(([k,l])=>`<a href="#${k}" data-view="${k}" ${S.view===k?'aria-current="page"':""}>${icon(k)}${l}</a>`).join("");
   $("#dprBtn").innerHTML=`${icon("dpr")}${getDpr(todayIso())?"Today's DPR":"Submit DPR"}`;
   $("#dprBtn").hidden=!canW()||simple;
-  const fn={today:vToday,overview:vOverview,reports:vReports,dpr:vDpr,slabs:vSlabs,works:vWorks,materials:vMaterials,issues:vIssues}[S.view]||vOverview;
+  const fn={today:vToday,overview:vOverview,reports:vReports,dpr:vDpr,slabs:vSlabs,works:vWorks,materials:vMaterials,pours:vPours,issues:vIssues}[S.view]||vOverview;
   app.innerHTML=`<div class="view">${fn(cs)}</div>`;
   if(S.view==="issues"||S.view==="overview")renderFeed();
   if(simple)renderTodayName();
@@ -195,6 +195,7 @@ const IC={
   check:'<path d="M20 6 9 17l-5-5"/>',
   reports:'<path d="M4 20V11M10 20V5M16 20v-6M2 20h20"/>'
 };
+IC.pours=IC.mixer;IC.cube='<path d="M12 2 3 7v10l9 5 9-5V7l-9-5z"/><path d="M3 7l9 5 9-5M12 12v10"/>';
 const icon=k=>`<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${IC[k]||""}</svg>`;
 function ring(done,total,col){const r=26,C=2*Math.PI*r,p=total?done/total:0;
   return `<svg class="ring" width="68" height="68" viewBox="0 0 68 68" aria-hidden="true"><circle cx="34" cy="34" r="${r}" fill="none" stroke="#EEF0EC" stroke-width="8"/>${p>0?`<circle cx="34" cy="34" r="${r}" fill="none" stroke="${col}" stroke-width="8" stroke-linecap="round" stroke-dasharray="${Math.max(C*p,1).toFixed(1)} ${C.toFixed(1)}" transform="rotate(-90 34 34)"/>`:""}<text x="34" y="39" text-anchor="middle" font-size="15" font-weight="800" fill="#140C59">${Math.round(p*100)}%</text></svg>`;}
@@ -583,6 +584,7 @@ function vToday(cs){
   const minePanel=mine.length?`<section class="panel"><div class="panel-head"><h3>Your requests</h3></div><ul class="dlist mine">${mine.map(o=>{const st=ST[o.status]||["go",o.status];return `<li><div><span><b>${esc(o.material)} ${esc(o.spec)}</b><small>${esc(o.no)} · ${fmtQty(o.qty)} ${esc(o.unit)} for ${esc(o.building)} ${esc(o.floor)}</small>${o.status==="rejected"&&o.approval&&o.approval.note?`<small class="why">Reason: ${esc(o.approval.note)}</small>`:""}</span><i class="tag ${st[0]}">${st[1]}</i></div></li>`}).join("")}</ul></section>`:"";
   return `<section class="st-hello"><h1 id="stHello">Hello</h1><p>${wd(T)} ${fmt(T)} · ${d?"Daily report done. Keep updating as work moves.":"Tap what you need. The daily report is due by 6 pm."}</p></section>
   ${four}
+  ${(()=>{const cd=cubesDue();return cd.length?`<section class="panel"><div class="panel-head"><h3>Cube tests due</h3></div><ul class="dlist">${cd.map(({p,k,c})=>`<li><button type="button" data-cube="${esc(p.id)}:${k}"><span><b>${k==="d7"?"7-day":"28-day"} test · ${esc(p.grade)}</b><small>${esc(slabLabel(p.tower,p.slab))} · poured ${fmtS(p.date)} · ${c.late?"was due "+fmtS(c.due):"due today"}</small></span><em>Enter result</em></button></li>`).join("")}</ul></section>`:"";})()}
   ${expPanel}
   <section class="panel"><div class="panel-head"><h3>Slab work</h3></div><p class="muted" style="margin:0 0 10px">Tap the stage each slab has reached today.</p>${blds||`<p class="muted" style="margin:0">All slabs are cast.</p>`}</section>
   ${minePanel}
@@ -748,12 +750,13 @@ function openQuickDpr(){
   sheet(`<div><div class="eyebrow">${wd(date)} ${fmt(date)}</div><h2>Today's report</h2></div>
     <div class="field"><span class="lbl">Weather</span><div class="seg big" id="q-w">${WEATHER.map((x,i)=>`<button type="button" data-w="${esc(x)}" aria-pressed="${i===0}">${esc(x.replace(" — work stopped",""))}</button>`).join("")}</div></div>
     <div class="field"><label for="q-n">How many workers are on site?</label><input id="q-n" class="bignum" type="number" min="0" inputmode="numeric" placeholder="0"></div>
-    <div class="field"><label for="q-work">What work was done today?</label><textarea id="q-work" rows="4" placeholder="One item per line, e.g.&#10;Raft shuttering&#10;Column steel binding"></textarea></div>
+    <div class="field"><label for="q-work">What work was done today?</label><textarea id="q-work" rows="4" placeholder="One item per line, e.g.&#10;Raft shuttering&#10;Column steel binding"></textarea>${micRow("q-work")}</div>
     <div class="field"><label for="q-tag">Where?</label><select id="q-tag">${tags.map(([k,n])=>`<option value="${k}" ${k==="site"?"selected":""}>${esc(n)}</option>`).join("")}</select></div>
     <div class="field"><label for="q-iss">Any problem today? (optional)</label><textarea id="q-iss" rows="2" placeholder="e.g. RMC came 3 hours late"></textarea></div>
     <div class="err" id="q-err" role="alert"></div>
     <div class="actions"><button type="button" class="btn ghost" id="q-full">Detailed form</button><button type="button" class="btn" data-close>Cancel</button><button class="btn primary" id="q-save">Send report</button></div>`);
   $$("#q-w [data-w]").forEach(b=>b.onclick=()=>$$("#q-w [data-w]").forEach(x=>x.setAttribute("aria-pressed",x===b)));
+  wireMic("q-work");
   $("#q-full").onclick=()=>{closeOverlay();openDpr(date);};
   $("#sheetForm").onsubmit=async e=>{
     e.preventDefault();const err=$("#q-err");err.textContent="";
@@ -778,7 +781,7 @@ function openQuickStage(id,stage){
   sheet(`<div><div class="eyebrow">${esc(t.name)} · ${esc(s.name)}</div><h2>${cast?"Slab cast":esc(STAGES[si].n)}</h2></div>
     ${started?"":`<div class="field"><label for="qs-start">When did work on this slab start?</label><input type="date" id="qs-start" max="${T}" value="${esc(s.planStart&&s.planStart<T?s.planStart:T)}"><span class="hint">Planned start ${fmt(s.planStart)}</span></div>`}
     <div class="field"><label for="qs-date">${cast?"Date the slab was cast":"Date this stage was reached"}</label><input type="date" id="qs-date" max="${T}" value="${T}"></div>
-    ${cast?`<p class="hint" style="margin:0">Log the RMC and steel for this pour with Material used.</p>`:""}
+    ${cast?`<p class="hint" style="margin:0">Next you can record the pour: grade, quantity and cube samples.</p>${payStage(t,s)?`<p class="hint" style="margin:0;color:var(--ok);font-weight:600">This slab is a payment stage (${esc(payStage(t,s))}). Head CRM will be told to get the architect's certificate and raise the demands.</p>`:""}`:""}
     <div class="err" id="qs-err" role="alert"></div>
     <div class="actions"><button type="button" class="btn" data-close>Cancel</button><button class="btn primary" id="qs-save">Save</button></div>`);
   $("#sheetForm").onsubmit=async e=>{
@@ -790,14 +793,112 @@ function openQuickStage(id,stage){
     const doc={...p,status:cast?"cast":"progress",stage,actualStart:st||dt,actualEnd:cast?dt:null,
       stageLog:[...(p.stageLog||[]),{stage,date:dt,by:S.me}].slice(-20),updatedBy:S.me,updatedAt:now};
     const btn=$("#qs-save");btn.disabled=true;btn.textContent="Saving…";
-    try{await S.db.doc("progress/"+id).set(doc);closeOverlay();toast(`${s.name}: ${cast?"cast":STAGES[si].n}`);}
+    try{await S.db.doc("progress/"+id).set(doc);closeOverlay();toast(`${s.name}: ${cast?"cast":STAGES[si].n}`);if(cast&&canW())openPour({tower:t.key,slab:id,date:dt});}
     catch(e2){if(denied(e2))return;btn.disabled=false;btn.textContent="Save";err.textContent=saveErr(e2);}
   };
+}
+
+
+
+/* ---- speak instead of typing (the phone's own speech recognition; Hindi is turned into English when switched on) ---- */
+const SR=window.SpeechRecognition||window.webkitSpeechRecognition;
+function micRow(id){return SR?`<div class="microw"><button type="button" class="micbtn" data-mic="${id}" data-lang="en-IN">🎤 Speak in English</button><button type="button" class="micbtn" data-mic="${id}" data-lang="hi-IN">🎤 हिंदी में बोलें</button><span class="hint" id="${id}-mic"></span></div>`:"";}
+function wireMic(id){
+  if(!SR)return;
+  $$(`[data-mic="${id}"]`).forEach(b=>b.onclick=()=>{
+    const ta=$("#"+id),msg=$("#"+id+"-mic"),hindi=b.dataset.lang==="hi-IN";
+    const rec=new SR();rec.lang=b.dataset.lang;rec.interimResults=false;rec.continuous=false;
+    msg.textContent="Listening… speak now";b.disabled=true;
+    rec.onresult=async e=>{const said=[...e.results].map(r=>r[0].transcript).join(" ").trim();if(!said)return;
+      let text=said;
+      if(hindi){msg.textContent="Writing it in English…";
+        try{const r=await fetch("/api/site",{method:"POST",credentials:"same-origin",headers:{"Content-Type":"application/json"},body:JSON.stringify({op:"translate",text:said})});const j=await r.json();if(r.ok&&j.text)text=j.text;else msg.textContent="Kept in Hindi (translation is not switched on).";}catch(x){msg.textContent="Kept in Hindi (no connection).";}}
+      ta.value=(ta.value.trim()?ta.value.trim()+"\n":"")+text;ta.dispatchEvent(new Event("input"));
+      if(!/Kept/.test(msg.textContent))msg.textContent="Added. Check it, then speak again for more.";};
+    rec.onerror=e=>{msg.textContent=e.error==="not-allowed"?"Allow the microphone for this site to speak.":"Didn't catch that. Try again.";};
+    rec.onend=()=>{b.disabled=false;if(msg.textContent==="Listening… speak now")msg.textContent="";};
+    try{rec.start();}catch(x){b.disabled=false;msg.textContent="The microphone is busy. Try again.";}
+  });
+}
+
+/* ================= Pours and cube tests ================= */
+// Cube acceptance shown here (simplified from IS 456): 7-day average at least 65% of the grade, 28-day average at least the grade.
+const GRADES=["M10","M15","M20","M25","M30","M35","M40","M45","M50","M60"];
+const fck=g=>parseInt(String(g).replace(/\D/g,""),10)||0;
+const addD=(iso,k)=>n2d(d2n(iso)+k);
+function cubeState(p,k){const c=(p.cubes||{})[k]||{},need=k==="d7"?.65*fck(p.grade):fck(p.grade),due=c.due||addD(p.date,k==="d7"?7:28);
+  if(c.mpa!=null&&c.mpa!=="")return{due,mpa:+c.mpa,ok:+c.mpa>=need-1e-9,need,done:true};
+  return{due,need,done:false,late:due<todayIso(),today:due===todayIso()};}
+const poursList=()=>Object.values(S.pours||{}).filter(p=>!p.void).sort((a,b)=>String(b.date).localeCompare(String(a.date)));
+function cubesDue(){const out=[];for(const p of poursList())for(const k of["d7","d28"]){const c=cubeState(p,k);if(!c.done&&c.due<=todayIso())out.push({p,k,c});}return out.sort((a,b)=>a.c.due.localeCompare(b.c.due));}
+function slabLabel(tk,id){const t=S.towers.find(t=>t.key===tk);const s=t&&t.slabs.find(s=>s.id===id);return `${t?t.name:""}${s?" · "+s.name:""}`;}
+function openPour(pre){
+  pre=pre||{};const tk=pre.tower||S.tab||(S.towers[0]||{}).key;
+  const slabOpts=k=>{const t=S.towers.find(t=>t.key===k);if(!t)return"";const c=compute(t);return `<option value="">Not a slab (e.g. raft, retaining wall)</option>`+c.rows.map(r=>`<option value="${r.id}" ${(pre.slab?pre.slab===r.id:c.cur&&c.cur.id===r.id)?"selected":""}>${esc(r.name)}</option>`).join("")};
+  sheet(`<div><div class="eyebrow">Concrete pour</div><h2>Record the pour</h2><p class="hint" style="margin:4px 0 0">Cube tests at 7 and 28 days come up on the Today page when they are due.</p></div>
+    <div class="grid2"><div class="field"><label for="p-date">Date of pour</label><input type="date" id="p-date" max="${todayIso()}" value="${esc(pre.date||todayIso())}"></div>
+      <div class="field"><label for="p-grade">Grade</label><select id="p-grade">${GRADES.map(g=>`<option ${g==="M40"?"selected":""}>${g}</option>`).join("")}</select></div></div>
+    <div class="grid2"><div class="field"><label for="p-tower">Building</label><select id="p-tower">${S.towers.map(t=>`<option value="${t.key}" ${t.key===tk?"selected":""}>${esc(t.name)}</option>`).join("")}</select></div>
+      <div class="field"><label for="p-slab">Slab</label><select id="p-slab">${slabOpts(tk)}</select></div></div>
+    <div class="grid2"><div class="field"><label for="p-el">Element</label><select id="p-el">${["Slab & beams","Columns","Shear walls","Columns & walls","Raft / footing","Retaining wall","Other"].map(x=>`<option>${x}</option>`).join("")}</select></div>
+      <div class="field"><label for="p-qty">Quantity poured (m³)</label><input type="number" id="p-qty" min="0" step="any" inputmode="decimal"></div></div>
+    <div class="grid2"><div class="field"><label for="p-sup">RMC supplier</label><input id="p-sup" maxlength="80"></div>
+      <div class="field"><label for="p-ch">Challan nos.</label><input id="p-ch" maxlength="200" placeholder="Separate with commas"></div></div>
+    <div class="field"><label for="p-sets">Cube samples taken (sets of 3)</label><input type="number" id="p-sets" min="0" max="50" inputmode="numeric" value="2"></div>
+    <div class="err" id="p-err" role="alert"></div>
+    <div class="actions"><button type="button" class="btn" data-close>Skip</button><button class="btn primary" id="p-save">Save pour</button></div>`);
+  $("#p-tower").onchange=e=>{$("#p-slab").innerHTML=slabOpts(e.target.value);};
+  $("#sheetForm").onsubmit=async e=>{
+    e.preventDefault();const err=$("#p-err");err.textContent="";
+    const date=$("#p-date").value,qty=parseFloat($("#p-qty").value);
+    if(!date||date>todayIso()){err.textContent="Pick the date of the pour (not in the future).";return;}
+    if(!(qty>0)){err.textContent="Enter the quantity poured in m³.";return;}
+    const now=new Date().toISOString();
+    const doc={date,grade:$("#p-grade").value,tower:$("#p-tower").value,slab:$("#p-slab").value||null,element:$("#p-el").value,qty,supplier:$("#p-sup").value.trim(),challans:$("#p-ch").value.trim(),
+      sets:Math.max(0,parseInt($("#p-sets").value,10)||0),cubes:{d7:{due:addD(date,7)},d28:{due:addD(date,28)}},updatedAt:now};
+    const btn=$("#p-save");btn.disabled=true;btn.textContent="Saving…";
+    try{await S.db.collection("pours").add(doc);
+      // the RMC used goes into the materials log too, so wastage is counted
+      await upsertMat(date,uid(),{type:"used",material:"rmc",qty,unit:"m³",spec:doc.grade,tower:doc.tower,slab:doc.slab,note:`Pour: ${doc.element}`,by:S.me,at:now});
+      closeOverlay();toast(`Pour saved. Cube tests due ${fmtS(doc.cubes.d7.due)} and ${fmtS(doc.cubes.d28.due)}.`);}
+    catch(e2){if(denied(e2))return;btn.disabled=false;btn.textContent="Save pour";err.textContent=saveErr(e2);}
+  };
+}
+function openCube(id,k){
+  const p=S.pours[id];if(!p)return;const c=cubeState(p,k),age=k==="d7"?7:28;
+  sheet(`<div><div class="eyebrow">${esc(slabLabel(p.tower,p.slab))} · ${esc(p.element||"")}</div><h2>${age}-day cube result</h2><p class="hint" style="margin:4px 0 0">${esc(p.grade)} poured ${fmt(p.date)}. Pass mark: ${fmtQty(c.need)} N/mm² average.</p></div>
+    <div class="grid2"><div class="field"><label for="cb-mpa">Average strength (N/mm²)</label><input type="number" id="cb-mpa" min="0" max="120" step="0.1" inputmode="decimal" class="bignum"></div>
+      <div class="field"><label for="cb-on">Tested on</label><input type="date" id="cb-on" max="${todayIso()}" value="${todayIso()}"></div></div>
+    <div class="field"><label for="cb-lab">Lab / tested by (optional)</label><input id="cb-lab" maxlength="80"></div>
+    <div class="err" id="cb-err" role="alert"></div>
+    <div class="actions"><button type="button" class="btn" data-close>Cancel</button><button class="btn primary" id="cb-save">Save result</button></div>`);
+  $("#sheetForm").onsubmit=async e=>{
+    e.preventDefault();const err=$("#cb-err"),v=parseFloat($("#cb-mpa").value);
+    if(!(v>0)){err.textContent="Enter the average strength of the cubes.";return;}
+    const btn=$("#cb-save");btn.disabled=true;
+    try{await S.db.doc("pours/"+id).update({cubes:{[k]:{due:c.due,mpa:v,on:$("#cb-on").value,lab:$("#cb-lab").value.trim()}},updatedAt:new Date().toISOString()});closeOverlay();
+      toast(v>=c.need?`${age}-day result passed (${v} N/mm²).`:`${age}-day result is below the pass mark. Management will see it.`);}
+    catch(e2){if(denied(e2))return;btn.disabled=false;err.textContent=saveErr(e2);}
+  };
+}
+function cubeChip(p,k){const c=cubeState(p,k),age=k==="d7"?"7d":"28d";
+  if(c.done)return `<span class="tag ${c.ok?"go":"no"}">${age} ${fmtQty(c.mpa)}${c.ok?" ✓":" ✕"}</span>`;
+  return canW()&&c.due<=todayIso()?`<button type="button" class="tag ${c.late?"no":"wait"}" data-cube="${esc(p.id)}:${k}">${age} due ${fmtS(c.due)}</button>`:`<span class="tag">${age} ${fmtS(c.due)}</span>`;}
+function vPours(){
+  const ps=poursList(),w=canW();
+  const fail=ps.filter(p=>["d7","d28"].some(k=>{const c=cubeState(p,k);return c.done&&!c.ok;})).length,due=cubesDue().length,vol=ps.reduce((a,p)=>a+(+p.qty||0),0);
+  const rows=ps.map(p=>`<tr><td>${fmt(p.date)}</td><td>${esc(slabLabel(p.tower,p.slab))}<br><span class="muted">${esc(p.element||"")}</span></td><td>${esc(p.grade)}</td><td class="n">${fmtQty(+p.qty||0)}</td><td>${esc(p.supplier||"")}${p.challans?`<br><span class="muted">${esc(p.challans)}</span>`:""}</td><td class="n">${p.sets||0}</td><td>${cubeChip(p,"d7")} ${cubeChip(p,"d28")}</td></tr>`).join("")||`<tr><td colspan="7" class="muted">No pours recorded yet. Marking a slab Cast asks for its pour.</td></tr>`;
+  const k=(ic,l,v,sub,tone)=>`<div class="kpi" style="--tone:${tone}"><span class="ic">${icon(ic)}</span><span class="eyebrow">${l}</span><span class="v">${v}</span><span class="s">${sub}</span></div>`;
+  return `<section class="kpis">${k("mixer","Pours recorded",ps.length,`${fmtQty(vol)} m³ in total`,"var(--t2)")}${k("cube","Cube tests due",due,"results to enter","var(--t3)")}${k("issues","Below the pass mark",fail,"7-day ≥ 65% of grade · 28-day ≥ grade",fail?"var(--late)":"var(--ok)")}</section>
+    <section class="panel"><div class="panel-head"><div><h3>Pour register</h3><p>Every concrete pour with its cube results.</p></div>${w?`<button class="btn primary" data-newpour="1">Record a pour</button>`:""}</div>
+    <div class="tablewrap"><table style="min-width:820px"><thead><tr><th>Date</th><th>Where</th><th>Grade</th><th class="n">m³</th><th>Supplier · challans</th><th class="n">Cube sets</th><th>Cube results</th></tr></thead><tbody>${rows}</tbody></table></div></section>`;
 }
 
 /* ================= overlays ================= */
 function closeOverlay(){$("#overlay").innerHTML="";}
 function toast(msg){const t=document.createElement("div");t.className="toast";t.textContent=msg;document.body.appendChild(t);setTimeout(()=>t.remove(),2800);}
+// The payment-plan stage a slab completes (the server decides; this is only the hint on the form)
+function payStage(t,s){const sl=[...t.slabs].sort((a,b)=>a.seq-b.seq);if(t.key==="rehab")return null;if(/^plinth/i.test(s.name))return"On Completion of Plinth";if(sl[sl.length-1].id===s.id)return"On Completion of Top Slab";const m=String(s.name).match(/^(\d+)(st|nd|rd|th)\s+slab/i);return m&&+m[1]%5===0?`On Completion of ${m[1]}${m[2]} Slab`:null;}
 function findSlab(id){for(const t of S.towers){const s=t.slabs.find(s=>s.id===id);if(s)return{t,s};}return null;}
 function denied(e){if(e&&e.code==="invalid_argument"){S.canWrite=false;setRole();render();closeOverlay();toast("Your login can't make this change. Ask the Admin if you need it.");return true;}return false;}
 function confirmDelete(title,body,run){
@@ -930,7 +1031,7 @@ async function openDpr(date){
       <div><button type="button" class="btn small" id="addWork">Add work item</button></div></div>
     ${slabSel&&!d?`<div class="sect"><span class="lbl" style="font:600 13px var(--display);letter-spacing:.05em;text-transform:uppercase;color:var(--muted)">Slab stage reached today (optional)</span><div class="grid2">${slabSel}</div></div>`:""}
     <div class="sect">
-      <div class="field"><label for="dp-issues">Issues / hindrances</label><textarea id="dp-issues" placeholder="e.g. RMC delayed 3 hours, pour shifted">${esc(d?d.issues:"")}</textarea></div>
+      <div class="field"><label for="dp-issues">Issues / hindrances</label><textarea id="dp-issues" placeholder="e.g. RMC delayed 3 hours, pour shifted">${esc(d?d.issues:"")}</textarea>${micRow("dp-issues")}</div>
       <div class="field"><label for="dp-safety">Safety</label><textarea id="dp-safety" placeholder="Toolbox talk, PPE, incidents or near misses">${esc(d?d.safety:"")}</textarea></div>
       <div class="field"><label for="dp-tom">Plan for tomorrow</label><textarea id="dp-tom">${esc(d?d.tomorrow:"")}</textarea></div>
     </div>
@@ -957,6 +1058,7 @@ async function openDpr(date){
   $("#addTrade").onclick=()=>{$("#labour").insertAdjacentHTML("beforeend",lRow({trade:"",count:""}));bindRm();$("#labour .line:last-child input").focus();};
   $("#addWork").onclick=()=>{$("#work").insertAdjacentHTML("beforeend",wRow({text:"",tag:"site"}));bindRm();$("#work .line:last-child input").focus();};
   $$("#weather [data-w]").forEach(b=>b.onclick=()=>$$("#weather [data-w]").forEach(x=>x.setAttribute("aria-pressed",x===b)));
+  wireMic("dp-issues");
   $("#sheetForm").onsubmit=async e=>{
     e.preventDefault();const err=$("#dp-err");err.textContent="";
     const dt=$("#dp-date").value;if(!dt||dt>todayIso()){err.textContent="Pick a date that isn't in the future.";return;}
@@ -992,11 +1094,12 @@ function openHindrance(){
     <div class="grid2">
       <div class="field"><label for="h-from">From</label><input type="date" id="h-from" max="${todayIso()}" value="${todayIso()}"></div>
       <div class="field"><label for="h-days">Days lost (estimate)</label><input type="number" id="h-days" min="0" max="365" inputmode="numeric" value="0"></div></div>
-    <div class="field"><label for="h-desc">What happened</label><textarea id="h-desc" maxlength="600" placeholder="e.g. RMC plant shut, pour moved from Tue to Thu"></textarea></div>
+    <div class="field"><label for="h-desc">What happened</label><textarea id="h-desc" maxlength="600" placeholder="e.g. RMC plant shut, pour moved from Tue to Thu"></textarea>${micRow("h-desc")}</div>
     <div class="field"><label class="photobtn" for="h-ph">${icon("issues")}<span id="h-phl">Add a photo (optional)</span></label><input id="h-ph" type="file" accept="image/*" capture="environment" hidden><img id="h-img" class="phprev" alt="Photo" hidden></div>
     <div class="err" id="h-err" role="alert"></div>
     <div class="actions"><button type="button" class="btn" data-close>Cancel</button><button class="btn primary" id="h-save">Log hindrance</button></div>`);
   $("#h-tower").onchange=e=>{$("#h-slab").innerHTML=opts(e.target.value);};
+  wireMic("h-desc");
   let hphoto="";
   $("#h-ph").onchange=async e=>{const f=e.target.files&&e.target.files[0];if(!f)return;try{hphoto=await shrinkPhoto(f,1280,.68);$("#h-img").src=hphoto;$("#h-img").hidden=false;$("#h-phl").textContent="Take the photo again";}catch(x){$("#h-err").textContent=x.message;}};
   $("#sheetForm").onsubmit=async e=>{
@@ -1081,9 +1184,11 @@ async function flushWorks(k){
 
 /* ================= events ================= */
 document.addEventListener("click",e=>{
-  const t=e.target.closest("[data-edit],[data-tab],[data-wtab],[data-filter],[data-newh],[data-resolve],[data-dpr],[data-day],[data-deldpr],[data-delh],[data-newmat],[data-voidmat],[data-cell],[data-matf],[data-matk],[data-rp],[data-rpcopy],[data-rpcsv],[data-qdpr],[data-qstage],[data-showall],[data-preq],[data-prec],[data-prcv]");if(!t)return;
+  const t=e.target.closest("[data-edit],[data-tab],[data-wtab],[data-filter],[data-newh],[data-resolve],[data-dpr],[data-day],[data-deldpr],[data-delh],[data-newmat],[data-voidmat],[data-cell],[data-matf],[data-matk],[data-rp],[data-rpcopy],[data-rpcsv],[data-qdpr],[data-qstage],[data-showall],[data-preq],[data-prec],[data-prcv],[data-newpour],[data-cube]");if(!t)return;
   const ds=t.dataset;
-  if(ds.preq)openRequest();
+  if(ds.newpour)openPour();
+  else if(ds.cube){const [id,k]=ds.cube.split(":");openCube(id,k);}
+  else if(ds.preq)openRequest();
   else if(ds.prec)openArrived();
   else if(ds.prcv)openReceive(ds.prcv);
   else if(ds.qdpr)openQuickDpr();
@@ -1139,6 +1244,7 @@ function setRole(){
   db.collection("dpr").orderBy("date","desc").limit(1000).onSnapshot(s=>{S.dpr=Object.fromEntries(s.docs.map(d=>[d.id,d.data()]));render();if(S.view==="dpr")renderDprBy();},()=>{});
   db.collection("materials").orderBy("date","desc").limit(1000).onSnapshot(s=>{S.mats=Object.fromEntries(s.docs.map(d=>[d.id,d.data()]));render();},()=>{});
   db.collection("works").onSnapshot(s=>{S.works=Object.fromEntries(s.docs.map(d=>[d.id,d.data()]));render();},()=>{});
+  db.collection("pours").onSnapshot(s=>{S.pours=Object.fromEntries(s.docs.map(d=>[d.id,{id:d.id,...d.data()}]));render();},()=>{});
   const net=()=>{$("#offline").hidden=navigator.onLine;};window.addEventListener("online",net);window.addEventListener("offline",net);net();
   let day=todayIso();setInterval(()=>{if(todayIso()!==day){day=todayIso();render();}},60000);
 })();

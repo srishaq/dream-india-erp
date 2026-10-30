@@ -34,6 +34,12 @@ The person who enters something can never approve it.
 - Every new request goes to Management by email with a one-tap approval link (`/approve`, valid 3 days, for that person only), and on WhatsApp once Click Connect is connected and the approval template is set (Management dashboard → 10 am message). Replying `APPROVE PR-0012` or `REJECT PR-0012 reason` on WhatsApp from the approver's own mobile (Manage users → phone) also works. A request waiting 24 hours goes to the Admin.
 - **10 am summary** (cron `job=summary`, 04:30 UTC) to Admin and Management: what needs attention, over-budget requests, cash needed in the next 14 days.
 
+## Construction, second set
+- **Slab cast → demands:** when site marks a payment-stage slab cast (Plinth, every 5th slab, Top Slab; not the Rehab tower), Head CRM gets a high-priority Daily To-Do and Head CRM and Management an email, to get the architect's certificate, record the stage and raise the demands (`lib/slab-stage.js`).
+- **Pours & cubes** (Construction tab): every pour with grade, quantity, supplier, challans and cube sets; marking a slab Cast asks for its pour, and the RMC goes into the materials log. 7- and 28-day results (pass: 7-day ≥ 65% of the grade, 28-day ≥ the grade); tests due show on Today; failures and late results on the Management dashboard and in the 10 am summary.
+- **Daily report:** 6 pm email to the site team if today's report is not in (cron `job=dpr`, 12:30 UTC); "no report yesterday" on the dashboard; speak instead of typing (English, or Hindi turned into English when `ANTHROPIC_API_KEY` is set).
+- **Contractor bills** (`/contracts`, from Purchase): work orders (items, rates, retention, TDS, advance and its recovery, allowed RMC/steel wastage) and RA bills (previous, this bill, cumulative; slab items suggested from slabs cast; material recovery suggested from the site's design vs used quantities). Purchase enters, Management approves (not the person who entered it), Accounts pay. Site logins have no access.
+
 ## Technology
 - No outside packages. `lib/pg.js` is a small PostgreSQL client (TLS, SCRAM-SHA-256, parameterised queries).
 - Database: Postgres (Neon, added from Vercel → Storage). Its address arrives as `DATABASE_URL`.

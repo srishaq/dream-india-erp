@@ -7,7 +7,7 @@
   },
   "headers": [
     {
-      "source": "/((?!dashboard|ca$|ca\\.html|accounts$|accounts\\.html|site$|site\\.html|purchase$|purchase\\.html|drawings$|drawings\\.html|hr$|hr\\.html).*)",
+      "source": "/((?!dashboard|ca$|ca\\.html|accounts$|accounts\\.html|site$|site\\.html|purchase$|purchase\\.html|drawings$|drawings\\.html|contracts$|contracts\\.html|hr$|hr\\.html).*)",
       "headers": [
         {
           "key": "X-Frame-Options",
@@ -36,7 +36,7 @@
       ]
     },
     {
-      "source": "/(dashboard|ca|accounts|site|purchase|drawings|hr)(.html)?",
+      "source": "/(dashboard|ca|accounts|site|purchase|drawings|contracts|hr)(.html)?",
       "headers": [
         {
           "key": "X-Frame-Options",
@@ -73,6 +73,10 @@
     {
       "path": "/api/cron?job=summary",
       "schedule": "30 4 * * *"
+    },
+    {
+      "path": "/api/cron?job=dpr",
+      "schedule": "30 12 * * *"
     },
     {
       "path": "/api/cron?job=bank",

@@ -324,6 +324,7 @@ Shell.init({ module: 'purchase', modsEl: document.getElementById('mods'), userEl
     D = await api('GET');
     $('#fMat').innerHTML += Object.keys(D.materials).map((m) => `<option>${m}</option>`).join('');
     $('#newBtn').hidden = !D.can.request;
+    $('#woLink').hidden = !(D.can.order || D.can.accounts || D.can.approve);
     if (Object.values(D.orders).some(waitingFor)) $('#fStatus').value = 'mine';
     render();
   } catch (e) { $('#pageErr').textContent = e.message; }

@@ -2,7 +2,7 @@
 // backed by /api/site. Reads come from one GET (refreshed every 45 s and when the tab regains
 // focus); writes go to POST /api/site, which checks the role on the server.
 (function () {
-  const PATHS = { 'data/plan/towers': 'towers', progress: 'progress', dpr: 'dpr', hindrances: 'hindrances', materials: 'materials', works: 'works' };
+  const PATHS = { 'data/plan/towers': 'towers', progress: 'progress', dpr: 'dpr', hindrances: 'hindrances', materials: 'materials', works: 'works', pours: 'pours' };
   const Store = { data: null, subs: new Set(), loading: null };
   let me = null;
   async function api(method, payload) {
