@@ -183,6 +183,14 @@ const JPEG = 'data:image/jpeg;base64,/9j/4AAQSkZJRgABAQEASABIAAD/2wBDAP/////////
   await step('Contractor per sq ft: steel and cement checked against norms, recovered at our cost; final measurement settles and releases retention', async () => {
     const C = (c, body, qs = '') => c('/api/me?contracts=1' + qs, body);
     const g = await C(buyer1); assert.equal(g.status, 200, g.error);
+    // Mandal's signed work order is already entered, waiting for Management (once only)
+    const md = Object.values(g.wos).find((x) => /Mandal/.test(x.contractor));
+    assert.ok(md); assert.equal(md.status, 'pending_approval'); assert.equal(md.area * md.sqftRate, 884488500); assert.equal(md.items.length, 15); assert.equal(md.advance, 44224425);
+    assert.equal(md.advanceAt, md.items[2].id); assert.equal(md.areaFactors.length, 20); assert.equal(md.wastage.steelPct, 3); assert.equal(md.gstPct, 18);
+    assert.equal(Object.values((await C(buyer1)).wos).filter((x) => /Mandal/.test(x.contractor)).length, 1);
+    const pdf = 'data:application/pdf;base64,' + Buffer.from('%PDF-1.4 test').toString('base64');
+    assert.equal((await C(buyer1, { op: 'wo_file', id: md.id, data: { data: pdf, name: 'Mandal_WO.pdf' } })).status, 200);
+    const fr = await buyer1(`/api/me?contracts=1&file=${md.id}`, null, true); assert.equal(fr.headers.get('content-type'), 'application/pdf');
     const tower = Object.keys(g.cast)[0] || 'T1';
     const w = await C(buyer1, { op: 'wo_save', data: { contractor: 'Test Builders', scope: 'RCC labour', retentionPct: 5, tdsPct: 1, towers: [tower],
       norms: { steelKgPerSqft: 4, cementBagsPerSqft: 0.4 }, wastage: { steelPct: 3, steelRate: 60000, cementPct: 2, cementRate: 400 },
