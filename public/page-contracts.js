@@ -262,7 +262,13 @@ function showBill(id) {
 }
 function pickWo() {
   const act = Object.values(D.wos).filter((w) => w.status === 'active');
-  if (!act.length) { open(`<div class="top"><h3>New RA bill</h3><button class="x" data-close>×</button></div><p>${Object.keys(D.wos).length ? 'No approved work order yet. Management approves work orders first.' : 'Enter the contractor\'s work order first: its items and rates.'}</p><div class="acts"><button class="btn" data-close>OK</button></div>`); return; }
+  if (!act.length) {
+    const wait = Object.values(D.wos).filter((w) => w.status === 'pending_approval');
+    open(`<div class="top"><h3>New RA bill</h3><button class="x" data-close>×</button></div>
+      ${wait.length ? `<p>Bills can be entered once the work order is approved. Waiting for approval:</p>${wait.map((w) => `<div class="wo" style="margin:0 0 8px"><b>${esc(w.no)} · ${esc(w.contractor)}</b><div class="acts" style="justify-content:flex-start;margin-top:6px"><button class="btn small" data-editwo="${w.id}">Check the terms</button>${D.can.approve ? `<button class="btn go small" data-apwo="${w.id}">Approve</button>` : '<span class="note">Waiting for Sameer (Management) to approve.</span>'}</div></div>`).join('')}`
+        : `<p>${Object.keys(D.wos).length ? 'No active work order.' : 'Enter the contractor\'s work order first: its items and rates.'}</p>`}<div class="acts"><button class="btn" data-close>OK</button></div>`);
+    return;
+  }
   if (act.length === 1) return billForm(act[0].id);
   open(`<div class="top"><h3>New RA bill: which work order?</h3><button class="x" data-close>×</button></div><div class="wos">${act.map((w) => `<button class="tile" data-billwo="${w.id}" style="text-align:left"><b style="font-size:17px">${esc(w.no)} · ${esc(w.contractor)}</b><span>${esc(w.scope || '')}</span></button>`).join('')}</div>`);
 }
@@ -275,7 +281,7 @@ document.addEventListener('click', (e) => {
   if (t.dataset.bill) showBill(t.dataset.bill);
   else if (t.dataset.editwo) woForm(D.wos[t.dataset.editwo]);
   else if (t.dataset.billwo) billForm(t.dataset.billwo);
-  else if (t.dataset.apwo) api('POST', { op: 'wo_approve', id: t.dataset.apwo }).then(reload, (er) => { $('#pageErr').textContent = er.message; });
+  else if (t.dataset.apwo) api('POST', { op: 'wo_approve', id: t.dataset.apwo }).then(() => { close(); return reload(); }, (er) => { const e = $$('#sheet .err').pop(); if (!$('#scrim').hidden && e) e.textContent = er.message; else $('#pageErr').textContent = er.message; });
   else if (t.dataset.st) { if (t.dataset.st === 'wo') { tab = 'wos'; tileFilter = null; } else { tileFilter = tileFilter === t.dataset.st ? null : t.dataset.st; tab = 'bills'; } render(); }
 });
 $('#rows').addEventListener('keydown', (e) => { const tr = e.target.closest('tr[data-bill]'); if (tr && (e.key === 'Enter' || e.key === ' ')) { e.preventDefault(); showBill(tr.dataset.bill); } });
