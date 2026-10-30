@@ -172,6 +172,7 @@
     { group: 'Site & purchase' },
     { key: 'site', label: 'Construction (Site Office)', show: () => sec('site'), href: () => '/site' },
     { key: 'purchase', label: 'Purchase', show: () => sec('purchase'), href: () => '/purchase' },
+    { key: 'contracts', label: 'Contractor work orders & bills', show: () => sec('purchase') && !['site_head', 'site_engineer', 'site_team'].includes(me.role), href: () => '/contracts' },
     { key: 'drawings', label: 'Drawings', show: () => sec('drawings'), href: () => '/drawings' },
     { key: 'hr', label: 'HR & Admin', show: () => sec('hr'), href: () => '/hr' },
     { group: 'Set-up' },
