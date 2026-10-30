@@ -180,6 +180,41 @@ const JPEG = 'data:image/jpeg;base64,/9j/4AAQSkZJRgABAQEASABIAAD/2wBDAP/////////
     assert.ok(t); assert.equal(t.body.sample.bodyvar.length, 6); assert.match(t.body.sample.bodyvar[5], /\/approve\?t=/);
   });
 
+  await step('Contractor per sq ft: steel and cement checked against norms, recovered at our cost; final measurement settles and releases retention', async () => {
+    const C = (c, body, qs = '') => c('/api/me?contracts=1' + qs, body);
+    const g = await C(buyer1); assert.equal(g.status, 200, g.error);
+    const tower = Object.keys(g.cast)[0] || 'T1';
+    const w = await C(buyer1, { op: 'wo_save', data: { contractor: 'Test Builders', scope: 'RCC labour', retentionPct: 5, tdsPct: 1, towers: [tower],
+      norms: { steelKgPerSqft: 4, cementBagsPerSqft: 0.4 }, wastage: { steelPct: 3, steelRate: 60000, cementPct: 2, cementRate: 400 },
+      items: [{ desc: 'RCC structure labour', unit: 'sq ft', rate: 300, qty: 10000 }] } });
+    assert.equal(w.status, 200, w.error); const wo = w.wo || Object.values((await C(buyer1)).wos).find((x) => x.contractor === 'Test Builders');
+    assert.equal((await C(sameer, { op: 'wo_approve', id: wo.id })).status, 200);
+    const day = '2026-10-29';
+    await kv.hset('site:materials', day, { date: day, items: { a: { type: 'used', material: 'steel', qty: 9, tower }, b: { type: 'used', material: 'cement', qty: 900, tower } } });
+    // bill 1: 2,000 sq ft; recovery suggestion from the norms
+    const item = wo.items[0].id;
+    const sg = (await C(buyer1, null, `&suggest=${wo.id}&from=2026-10-01&to=2026-10-30`)).suggestion;
+    assert.ok(sg.normCalc && sg.normCalc.issued.steel === 9 && sg.normCalc.prevArea === 0); // the form works the recovery out from the sq ft typed
+    const b1 = await C(buyer1, { op: 'bill_save', data: { woId: wo.id, from: '2026-10-01', to: '2026-10-30', lines: [{ itemId: item, qty: 2000 }], materialRecovery: 0 } });
+    assert.equal(b1.status, 200, b1.error); assert.equal(b1.bill.totals.gross, 600000); assert.equal(b1.bill.totals.retention, 30000);
+    const sg2 = (await C(buyer1, null, `&suggest=${wo.id}&from=2026-10-01&to=2026-10-30`)).suggestion; // the draft counts as billed area
+    assert.equal(sg2.check.steel.allowed, 8.24); assert.equal(sg2.check.steel.excess, 0.76); assert.equal(sg2.check.cement.excess, 84);
+    assert.equal(sg2.material, 45600 + 33600);
+    await C(buyer1, { op: 'bill_save', id: b1.bill.id, data: { from: '2026-10-01', to: '2026-10-30', lines: [{ itemId: item, qty: 2000 }], materialRecovery: sg2.material } });
+    assert.equal((await C(buyer1, { op: 'bill_submit', id: b1.bill.id, data: {} })).status, 200);
+    assert.equal((await C(sameer, { op: 'bill_approve', id: b1.bill.id, data: {} })).status, 200);
+    // nothing more to recover once it was deducted
+    assert.equal((await C(buyer1, null, `&suggest=${wo.id}&from=2026-10-01&to=2026-10-30`)).suggestion.material, 0);
+    // final measurement: 2,100 sq ft certified → 100 sq ft more, retention released
+    const f = await C(buyer1, { op: 'bill_save', data: { woId: wo.id, final: true, from: '2026-10-31', to: '2026-10-31', lines: [{ itemId: item, final: 2100 }] } });
+    assert.equal(f.status, 200, f.error); assert.match(f.bill.no, /FINAL$/);
+    assert.equal(f.bill.totals.gross, 30000); assert.equal(f.bill.totals.retention, 0); assert.equal(f.bill.totals.released, 30000); assert.equal(f.bill.totals.net, 30000 - 300 + 30000);
+    assert.equal((await C(buyer1, { op: 'bill_save', data: { woId: wo.id, from: '2026-11-01', to: '2026-11-02', lines: [{ itemId: item, qty: 10 }] } })).status, 409);
+    await C(buyer1, { op: 'bill_submit', id: f.bill.id, data: {} }); await C(sameer, { op: 'bill_approve', id: f.bill.id, data: {} });
+    assert.equal((await C(acc, { op: 'bill_paid', id: f.bill.id, data: { amount: f.bill.totals.net, ref: 'UTR1', date: '2026-10-31' } })).status, 200);
+    assert.equal((await C(buyer1)).wos[wo.id].status, 'closed');
+  });
+
   await step('The challan reader\'s answer is cleaned (numbers, dates, lengths); it is off without an API key', async () => {
     const R = require('../lib/challan-read');
     assert.equal(R.configured(), false);
