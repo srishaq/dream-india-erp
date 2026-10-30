@@ -485,6 +485,30 @@
       })).join('') || '<p class="muted">No payment plans yet.</p>'}`;
   }
 
+  // The 8 pm day reports: see today's so far (the same email the head gets at 8 pm)
+  async function dayReport(which) {
+    const r = await api('/api/tasks?report=' + encodeURIComponent(which || 'x'));
+    const NAMES = { management: 'Management', crm: 'CRM', accounts: 'Accounts' };
+    const dl = document.createElement('dialog'); dl.style.maxWidth = '820px'; dl.style.width = '96vw'; dl.style.padding = '16px 18px';
+    dl.innerHTML = `<div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-bottom:8px"><b style="margin-right:auto">8 pm report · today so far</b>${r.mine.length > 1 ? r.mine.map((k) => `<button class="${k === r.which ? '' : 'ghost'} small" data-w="${k}">${NAMES[k]}</button>`).join('') : ''}<button class="ghost small" data-x>Close</button></div>
+      <p class="small muted" style="margin:0 0 8px">Email subject: ${esc(r.subject)}</p><div style="border:1px solid #eaecf0;border-radius:10px;padding:14px;max-height:70vh;overflow:auto;background:#fff">${r.html}</div>`;
+    document.body.appendChild(dl); dl.showModal();
+    const shut = () => { dl.close(); dl.remove(); };
+    $('[data-x]', dl).onclick = shut;
+    dl.querySelectorAll('[data-w]').forEach((b) => (b.onclick = () => { shut(); dayReport(b.dataset.w); }));
+  }
+  async function dayReportPanel(box) {
+    const S = await api('/api/tasks?report=status').catch(() => null); if (!S || !box) return;
+    const s = S.settings, R = S.recipients, list = (a) => (a.length ? esc(a.join(', ')) : '<span class="bad-t">nobody yet: add an email address to that login</span>');
+    box.innerHTML = `<h2>8 pm day reports</h2><p class="small muted" style="margin:0 0 8px">Every evening at 8 pm: Head CRM gets the CRM team's day, Head Accounts the Accounts team's day, and Management both, person by person: receipts entered and approved, calls and promises to pay, bookings, letters, payments out, bank work and the Today lists. ${S.live ? '' : '<b>Test version: all three go only to the test email address in Letter settings.</b>'}</p>
+      <table class="kv"><tr><th>CRM report to</th><td>${list(R.crm)} <span class="small muted">(Head CRM logins)</span></td></tr><tr><th>Accounts report to</th><td>${list(R.accounts)} <span class="small muted">(Head Accounts logins)</span></td></tr><tr><th>Management report to</th><td>${list(R.management)} <span class="small muted">(Management logins and the addresses below)</span></td></tr></table>
+      ${S.canSet ? `<div class="row" style="grid-template-columns:1fr auto;align-items:end"><div><label>Also send the Management report to</label><input id="drTo" value="${esc(s.mgmtTo || '')}" placeholder="name@dreamindiagroup.com"></div><label class="check" style="margin:0 0 10px"><input type="checkbox" id="drOn" ${s.on !== false ? 'checked' : ''}> Send at 8 pm</label></div>
+      <div class="actions"><button class="ghost" id="drSave">Save</button><button class="ghost" id="drSee">See today's so far</button><button class="ghost" data-dr="management">Send a test: Management</button><button class="ghost" data-dr="crm">CRM</button><button class="ghost" data-dr="accounts">Accounts</button></div>` : '<div class="actions"><button class="ghost" id="drSee">See today\'s so far</button></div>'}
+      <p class="small muted" style="margin:6px 0 0">${S.last.length ? 'Last sent: ' + S.last.map((x) => fmtD(x.date)).join(', ') + '.' : 'Not sent yet.'}</p>`;
+    $('#drSee').onclick = () => dayReport(S.mine[0]).catch((e) => alert(e.message));
+    if ($('#drSave')) $('#drSave').onclick = async () => { try { await api('/api/tasks', { action: 'report-settings', on: $('#drOn').checked, mgmtTo: $('#drTo').value }); toast('Saved.'); dayReportPanel(box); } catch (e) { alert(e.message); } };
+    box.querySelectorAll('[data-dr]').forEach((b) => (b.onclick = async () => { b.disabled = true; try { const r = await api('/api/tasks', { action: 'report-send', which: b.dataset.dr }); const x = r[b.dataset.dr]; toast(r.skipped ? r.skipped : x && x.to ? 'Sent to ' + x.to.join(', ') + (x.test ? ' (test address)' : '') + '.' : 'Not sent: ' + (x || 'no address')); } catch (e) { alert(e.message); } b.disabled = false; }));
+  }
   async function users(data) {
     const d = data || await api('/api/users');
     const pname = (id) => d.projects.find((p) => p.id === id)?.name || '';
@@ -496,7 +520,8 @@
         <td>${u.role === 'admin' || u.all_projects ? 'All projects' : esc(u.projects.map(pname).join(', ') || 'None')}</td>
         <td>${u.disabled ? '<span class="pill bad">disabled</span>' : u.must_change ? '<span class="pill grey">awaiting first sign-in</span>' : '<span class="pill good">active</span>'}</td>
         <td class="num" style="white-space:nowrap"><button class="ghost small" data-edit="${u.id}">Edit</button> <button class="ghost small" data-reset="${u.id}">Reset password</button>
-          ${u.id === me.id ? '' : `<button class="${u.disabled ? 'ghost' : 'danger'} small" data-toggle="${u.id}">${u.disabled ? 'Enable' : 'Disable'}</button>`}</td></tr>`).join('')}</table></div>`;
+          ${u.id === me.id ? '' : `<button class="${u.disabled ? 'ghost' : 'danger'} small" data-toggle="${u.id}">${u.disabled ? 'Enable' : 'Disable'}</button>`}</td></tr>`).join('')}</table></div><div class="panel" id="dayRep"><h2>8 pm day reports</h2><p class="muted small">Loading…</p></div>`;
+    dayReportPanel($('#dayRep'));
     const form = (u) => `<h2>${u ? 'Edit login' : 'Add login'}</h2>
       <div class="row"><div><label>Name</label><input name="name" value="${esc(u?.name)}" required></div>
       <div><label>Username</label><input name="username" value="${esc(u?.username)}" ${u ? 'disabled' : 'required'} placeholder="e.g. firstname.lastname"></div></div>
@@ -2436,7 +2461,7 @@
         <div class="td-who small">${who(r)}${d.can.edit && !r.done_at ? `<input class="note small" data-id="${r.id}" placeholder="Note when ticking (optional)">` : ''}</div></div>`;
     $('#page').innerHTML = `<div class="page-head"><div><h1>${name} · Daily To-Do</h1>
         <p class="muted">${dept === 'accounts' ? 'Every morning at 9 am the ERP audits the books and lists what needs doing; the list is also emailed to the accounts mailbox.' : 'Every morning at 9 am the ERP lists today’s calls, approvals and letters, and what Accounts found that the CRM must fix.'} Tick each line when it is done. Your own tasks stay on the list until ticked; an audit line that is not fixed comes back the next morning.</p></div>
-        <div class="actions">${d.can.run && isToday ? '<button class="ghost" id="rerun">Run the audit again</button>' : ''}</div></div>
+        <div class="actions">${isToday && (['admin', 'management'].includes(me.role) || (dept === 'crm' && me.role === 'head_crm') || (dept === 'accounts' && me.role === 'head_accounts')) ? `<button class="ghost" id="dayRepB">Today's 8 pm report</button>` : ''}${d.can.run && isToday ? '<button class="ghost" id="rerun">Run the audit again</button>' : ''}</div></div>
       <div class="kpis"><div class="kpi"><span>Open</span><b>${open.length}</b></div><div class="kpi"><span>Urgent</span><b class="${urgent.length ? 'bad-t' : ''}">${urgent.length}</b></div><div class="kpi"><span>Done</span><b class="good-t">${d.rows.length - open.length}</b></div>
         <div class="kpi"><span>Audit</span><b style="font-size:14px">${run ? `${new Date(run.run_at).toLocaleTimeString('en-IN', { hour: 'numeric', minute: '2-digit', timeZone: 'Asia/Kolkata' })} · ${run.found} found${run.error ? ' · error' : ''}` : isToday ? 'Runs at 9 am' : 'Did not run'}</b></div></div>
       <div class="panel"><div class="row" style="grid-template-columns:180px 1fr;align-items:end"><div><label>Day</label><input type="date" id="tdd" value="${esc(d.date)}" max="${esc(d.today)}"></div>
@@ -2452,6 +2477,7 @@
     document.querySelectorAll('.tk').forEach((c) => (c.onchange = () => { const note = document.querySelector(`.note[data-id="${c.dataset.id}"]`); act(c.checked ? { action: 'done', id: +c.dataset.id, note: note ? note.value : '' } : { action: 'undo', id: +c.dataset.id }); }));
     document.querySelectorAll('.asg').forEach((s) => (s.onchange = () => act({ action: 'assign', id: +s.dataset.id, userId: s.value || null })));
     document.querySelectorAll('.rm').forEach((b) => (b.onclick = () => act({ action: 'remove', id: +b.dataset.id })));
+    if ($('#dayRepB')) $('#dayRepB').onclick = () => dayReport(['admin', 'management'].includes(me.role) ? dept : dept).catch((e) => alert(e.message));
     if ($('#rerun')) $('#rerun').onclick = async (e) => { e.target.disabled = true; e.target.textContent = 'Running…'; try { const r = await api('/api/tasks', { action: 'run', dept }); toast(`Audit done: ${r.found} found.`); dailyTodo(dept, d.date); } catch (x) { e.target.disabled = false; alert(x.message); } };
     if ($('#addT')) $('#addT').onsubmit = (e) => { e.preventDefault(); const x = Object.fromEntries(new FormData(e.target)); act({ action: 'add', dept, title: x.title, assignedTo: x.assignedTo || null }); };
   }

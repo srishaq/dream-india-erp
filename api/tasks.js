@@ -13,6 +13,11 @@ const { route, fail, str, intOr } = require('../lib/http');
 const DATE = /^\d{4}-\d{2}-\d{2}$/;
 const istHour = () => new Date(Date.now() + 5.5 * 3600000).getUTCHours();
 
+function reportsFor(u) {
+  if (has(u, 'users.manage') || u.role === 'management') return ['management', 'crm', 'accounts'];
+  return [...(u.role === 'head_crm' ? ['crm'] : []), ...(u.role === 'head_accounts' ? ['accounts'] : [])];
+}
+
 async function taskFor(u, id) {
   const k = await db.one('select * from daily_tasks where id = $1', [id]);
   if (!k) throw fail(404, 'That task is not there any more.');
@@ -23,6 +28,16 @@ async function taskFor(u, id) {
 module.exports = route({
   GET: async (req, res) => {
     const u = await auth.guard(req, res); if (!u) return;
+    // the 8 pm day reports: what each person may see (heads their team's, management and admin all three)
+    if (req.query.report) {
+      const rp = require('../lib/day-report');
+      const mine = reportsFor(u); if (!mine.length) throw fail(403, 'Your role does not get the 8 pm reports.');
+      if (req.query.report === 'status') return res.json({ ...(await rp.status()), mine, canSet: has(u, 'users.manage') });
+      const which = mine.includes(req.query.report) ? req.query.report : mine[0];
+      const d = DATE.test(req.query.date || '') ? req.query.date : today();
+      const R = await rp.build(d);
+      return res.json({ which, mine, date: d, subject: R.mails[which].subject, html: R.mails[which].html });
+    }
     const dept = req.query.dept;
     if (!dt.can(u, dept, 'view')) throw fail(403, 'Your role does not see this list.');
     const date = DATE.test(req.query.date || '') ? req.query.date : today();
@@ -40,6 +55,20 @@ module.exports = route({
       const r = await db.one("insert into daily_tasks (dept, task_date, source, title, detail, assigned_to, created_by, since) values ($1, $2, 'own', $3, $4, $5, $6, $2) returning id", [b.dept, today(), title, str(b.detail, 1000) || null, to, u.id]);
       await audit.record(db.q, { user: u, action: 'task-add', entity: 'daily-task', entityId: r.id, after: { dept: b.dept, title, assignedTo: to } });
       return res.json({ ok: true, id: r.id });
+    }
+    if (b.action === 'report-settings') {
+      if (!has(u, 'users.manage')) throw fail(403, 'Only Admin changes the 8 pm reports.');
+      const rp = require('../lib/day-report'); const v = await rp.settings();
+      for (const k of ['on', 'crm', 'accounts', 'management']) if (b[k] != null) v[k] = !!b[k];
+      if (b.mgmtTo != null) v.mgmtTo = String(b.mgmtTo).split(/[\/,;\s]+/).filter((e) => /^[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}$/.test(e)).slice(0, 6).join(', ');
+      await rp.saveSettings(v);
+      await audit.record(db.q, { user: u, action: 'update', entity: 'settings', entityId: 'day_report', after: v });
+      return res.json({ ok: true, ...(await rp.status()) });
+    }
+    if (b.action === 'report-send') {
+      const mine = reportsFor(u); const which = str(b.which, 20);
+      if (!mine.includes(which) || !has(u, 'users.manage')) throw fail(403, 'Only Admin sends a test of the 8 pm reports.');
+      return res.json(await require('../lib/day-report').send({ only: which, user: u }));
     }
     if (b.action === 'run') {
       if (!dt.can(u, b.dept, 'run')) throw fail(403, 'Only the head of the team can run the audit.');

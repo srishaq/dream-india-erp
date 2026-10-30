@@ -83,6 +83,10 @@
       "schedule": "50 3 * * *"
     },
     {
+      "path": "/api/cron?job=evening",
+      "schedule": "30 14 * * *"
+    },
+    {
       "path": "/api/cron?job=mail",
       "schedule": "*/5 * * * *"
     }
