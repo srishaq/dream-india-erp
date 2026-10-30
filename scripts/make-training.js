@@ -99,7 +99,53 @@ async function seed() {
   await require('../lib/letters').prepareOne({ bookingId: noMail.id, type: 'Demand Letter', letterDate: t, set: await require('../lib/letters').settings(), user: null, projectId: sig.id }).catch((e) => console.warn('courier letter', e.message));
   await db.q("insert into settings (key, value) values ('letters', $1) on conflict (key) do update set value = settings.value || excluded.value", [{ testEmail: 'training@example.com', testMobile: '9800000000' }]);
   for (const dept of ['accounts', 'crm']) await api(ck, '/api/tasks', { action: 'run', dept });
+  await seedSite(sig);
   return { sig };
+}
+
+// ---------- Construction and Purchase sample (made-up vendors and contractor) ----------
+async function seedSite(sig) {
+  for (const [u, n, r] of [['ravi', 'Ravi (Site Engineer)', 'site_engineer'], ['sameer', 'Sameer (Management)', 'management'], ['farhan', 'Farhan (Purchase)', 'purchase_team']]) {
+    const x = await db.one('insert into users (username, name, role, password_hash, all_projects, email) values ($1, $2, $3, $4, true, $5) returning id', [u, n, r, auth.hashPassword(PW), u + '@example.com']);
+    await db.q('insert into user_projects (user_id, project_id) values ($1, $2) on conflict do nothing', [x.id, sig.id]).catch(() => {});
+  }
+  const as = async (u) => (await api('', '/api/session', { action: 'login', username: u, password: PW })).cookie;
+  const ravi = await as('ravi'), sameer = await as('sameer'), farhan = await as('farhan'), headacc = await as('headacc');
+  const t = ist();
+  const S = (await api(ravi, '/api/site')).j; // the slab schedule is loaded on first open
+  const A = Object.values(S.towers).find((x) => x.key === 'a'), sl = [...A.slabs].sort((x, y) => x.seq - y.seq);
+  // A-Wing: plinth and three slabs cast, the 4th in progress (reinforcement)
+  for (const [i, s0] of sl.slice(0, 4).entries()) await api(ravi, '/api/site', { op: 'set', col: 'progress', id: s0.id, data: { status: 'cast', stage: 'cast', actualStart: addDays(t, -70 + i * 15), actualEnd: addDays(t, -58 + i * 15) } });
+  await api(ravi, '/api/site', { op: 'set', col: 'progress', id: sl[4].id, data: { status: 'progress', stage: 'reinforcement', actualStart: addDays(t, -6) } });
+  await db.q("delete from daily_tasks where key like 'slab-stage:%'");
+  { const kv = require('../lib/portal/kv'); // entered earlier, not today (so Today's "Done today" list starts empty)
+    for (const [i, s0] of sl.slice(0, 5).entries()) { const d = await kv.hget('site:progress', s0.id); await kv.hset('site:progress', s0.id, { ...d, updatedAt: addDays(t, i < 4 ? -58 + i * 15 : -1) + 'T10:00:00.000Z' }); } }
+  // a pour seven days ago: its 7-day cube test is due today; the RMC and steel used, with design quantities
+  await api(ravi, '/api/site', { op: 'add', col: 'pours', data: { date: addDays(t, -7), grade: 'M40', tower: 'a', slab: sl[3].id, element: 'Slab & beams', qty: 186, supplier: 'Sample Concrete Co.', challans: 'SC-4410, SC-4411', sets: 2, cubes: { d7: { due: t }, d28: { due: addDays(t, 21) } } } });
+  await api(ravi, '/api/site', { op: 'set', col: 'materials', id: addDays(t, -7), data: { date: addDays(t, -7), items: { u1: { type: 'used', material: 'rmc', qty: 186, theo: 178, unit: 'm³', spec: 'M40', tower: 'a', slab: sl[3].id }, u2: { type: 'used', material: 'steel', qty: 21.6, theo: 21, unit: 'MT', tower: 'a', slab: sl[3].id } } } });
+  // purchase: steel ordered and on its way; cement received with its bill at Accounts; RMC waiting for Sameer
+  const P = (ck, b) => api(ck, '/api/me?purchase=1', b);
+  const g = (await api(ravi, '/api/me?purchase=1')).j;
+  const line = g.budget.lines.find((l) => l.building === 'Sale' && l.steel > 0 && !/Foundation/.test(l.floor)).key;
+  const steel = (await P(ravi, { op: 'request', data: { material: 'Steel', items: [{ spec: '12 mm', qty: 6 }, { spec: '16 mm', qty: 9 }], line, wing: 'A wing', neededBy: addDays(t, 3) } })).j.doc;
+  await P(sameer, { op: 'approve', id: steel.id, data: {} });
+  await P(farhan, { op: 'order', id: steel.id, data: { vendor: 'Sample Steel Suppliers', items: [{ spec: '12 mm', qty: 6, rate: 61500 }, { spec: '16 mm', qty: 9, rate: 60800 }], amount: 916200, billNo: 'SSS-2291', poNo: 'PO-2291' } });
+  const cem = (await P(ravi, { op: 'request', data: { material: 'Cement', items: [{ spec: 'OPC 53', qty: 400 }], line: 'Project|Cement', wing: '—' } })).j.doc;
+  await P(sameer, { op: 'approve', id: cem.id, data: {} });
+  await P(farhan, { op: 'order', id: cem.id, data: { vendor: 'Sample Cement Traders', items: [{ spec: 'OPC 53', qty: 400, rate: 385 }], amount: 154000, billNo: 'SCT-140' } });
+  await P(ravi, { op: 'receive', id: cem.id, data: { items: [{ spec: 'OPC 53', qty: 400 }], challan: 'SCT-DC-77', date: addDays(t, -1) } });
+  const rmc = (await P(ravi, { op: 'request', data: { material: 'RMC', items: [{ spec: 'M40', qty: 190 }], line, wing: 'A wing', element: '5th slab and beams', neededBy: addDays(t, 2) } })).j.doc;
+  IDS.rmc = rmc.id; IDS.steel = steel.id; IDS.cement = cem.id;
+  IDS.approveUrl = '/approve?t=' + encodeURIComponent(await require('../lib/staff-alerts').token(rmc.id, 'sameer'));
+  // contractor: an approved work order for A-Wing, slab items counted from the slabs cast; one RA bill paid earlier
+  const C = (ck, b) => api(ck, '/api/me?contracts=1', b);
+  const wo = (await C(sameer, { op: 'wo_save', data: { contractor: 'Sample Builders Pvt Ltd', company: 'Prime Realtors', scope: 'RCC structure, A-Wing, labour only (RMC and steel by us)', retentionPct: 5, tdsPct: 1, advance: 1000000, advanceRecoveryPct: 10, towers: ['a'],
+    wastage: { rmcPct: 2, steelPct: 3, rmcRate: 7758, steelRate: 61000 },
+    items: [{ desc: 'RCC slab, beams and columns: labour incl. shuttering', unit: 'sqm', rate: 520, qty: 42000, link: { tower: 'a' }, perSlab: 850 }, { desc: 'Blockwork 200 mm: labour', unit: 'sqm', rate: 95, qty: 30000 }, { desc: 'Internal plaster: labour', unit: 'sqm', rate: 70, qty: 60000 }] } })).j.wo;
+  const b1 = (await C(farhan, { op: 'bill_save', data: { woId: wo.id, from: addDays(t, -75), to: addDays(t, -31), billNo: 'SB/RA-01', lines: [{ itemId: wo.items[0].id, qty: 1700 }] } })).j.bill;
+  await C(farhan, { op: 'bill_submit', id: b1.id, data: {} });
+  await C(sameer, { op: 'bill_approve', id: b1.id, data: {} });
+  await C(headacc, { op: 'bill_paid', id: b1.id, data: { amount: b1.totals.net, ref: 'UTR SAMPLE 1101', date: addDays(t, -25) } });
 }
 
 // ---------- the player ----------
@@ -107,7 +153,7 @@ async function seed() {
 const OVERLAY = `(() => {
   if (window.__tr) return; window.__tr = true;
   const css = document.createElement('style');
-  css.textContent = \`#trcap{position:fixed;inset:auto 0 26px 0;margin:0 auto;max-width:980px;width:max-content;border:0;padding:14px 22px;border-radius:14px;background:rgba(20,12,89,.94);color:#fff;font:600 21px/1.35 system-ui,-apple-system,Segoe UI,sans-serif;box-shadow:0 10px 30px rgba(0,0,0,.25);text-align:center}
+  css.textContent = \`#trcap{pointer-events:none;position:fixed;inset:auto 0 26px 0;margin:0 auto;max-width:980px;width:max-content;border:0;padding:14px 22px;border-radius:14px;background:rgba(20,12,89,.94);color:#fff;font:600 21px/1.35 system-ui,-apple-system,Segoe UI,sans-serif;box-shadow:0 10px 30px rgba(0,0,0,.25);text-align:center}
   #trptr{position:fixed;inset:auto;left:0;top:0;margin:0;border:0;padding:0;width:26px;height:26px;border-radius:50%;background:rgba(255,166,0,.55);box-shadow:0 0 0 3px rgba(255,166,0,.95);transition:left .7s ease,top .7s ease,transform .15s;pointer-events:none;overflow:visible}
   #trptr.press{transform:scale(.7)}
   #trbox{position:fixed;inset:auto;margin:0;border:3px solid #FFA600;border-radius:10px;padding:0;background:transparent;pointer-events:none;transition:all .35s ease;box-shadow:0 0 0 4000px rgba(20,12,89,.18)}
@@ -141,7 +187,9 @@ let clipN = 0, CUR = null, segN = 0;
 // SEG_DIR: recorded narration already cut into one clip per caption, SEG_DIR/<module>/00.wav, 01.wav … in caption order
 // (made from a voice-over such as ElevenLabs by splitting it at its pauses). Used instead of Piper when present.
 const SEG_DIR = process.env.SEG_DIR;
+const LINES = {}; // what is spoken, in order, per video (the narration script)
 function say(text) {
+  if (CUR) (LINES[CUR] = LINES[CUR] || []).push(String(text));
   if (SEG_DIR && CUR && fs.existsSync(path.join(SEG_DIR, CUR))) {
     const f = path.join(SEG_DIR, CUR, String(segN++).padStart(2, '0') + '.wav');
     if (!fs.existsSync(f)) { console.warn('    no narration clip', f); return null; }
@@ -211,6 +259,7 @@ async function play(page, steps) {
       else if (op === 'scroll') { await page.mouse.wheel(0, a); await page.waitForTimeout(Math.max(b || 0, 2000)); }
       else if (op === 'top') { await page.evaluate(() => window.scrollTo({ top: 0, behavior: 'smooth' })); await page.waitForTimeout(800); }
       else if (op === 'wait') await page.waitForTimeout(a);
+      else if (op === 'file') { await page.setInputFiles(a, b); await page.waitForTimeout(c || 1800); await recap(); }
       else if (op === 'as') { // the same video goes on as another person (e.g. Head CRM approving what the CRM entered)
         const lg = await api('', '/api/session', { action: 'login', username: a, password: PW }); const [name, value] = lg.cookie.split('=');
         await page.context().clearCookies(); await page.context().addCookies([{ name, value, url: BASE }]);
@@ -430,6 +479,88 @@ const L = {
   ] },
 };
 
+// ---------- Construction (site staff) ----------
+L['site-today'] = { user: 'ravi', steps: [
+  ['go', '/site'], ['cap', 'Open Construction. Site engineers start on the Today page: four big buttons, and below them whatever is waiting for you.'],
+  ['hl', '.four', 2600], ['cap', 'Request material, Material came in, Daily report, and Report a problem. Everything you enter on site starts from here.'],
+  ['hl', '.st-hello', 1800], ['cap', 'The line under your name tells you if today’s daily report is still to send. It is due by 6 pm. If it is not in, the site team gets a reminder email at 6.'],
+] };
+L['site-request'] = { user: 'ravi', steps: [
+  ['go', '/site'], ['click', '[data-preq]'], ['cap', 'Need steel, RMC, cement or anything else? Tap Request material.'],
+  ['click', '#r-mat [data-m="Steel"]'], ['cap', 'Choose the material. For steel, type the quantity against each bar size you need. Leave the others empty.'],
+  ['type', '[data-spec="10 mm"]', '4'], ['type', '[data-spec="20 mm"]', '7'],
+  ['hl', '#r-line', 1800], ['cap', 'Choose the floor it is for, and the wing. The ERP shows how much of that floor’s BOQ quantity is left.'],
+  ['hl', '#r-bal', 2200], ['fill', '#r-need', () => addDays(ist(), 4)], ['type', '#r-el', 'Columns and shear walls'],
+  ['click', '#r-save', 2400], ['cap', 'Tap Send for approval. Sameer gets it straight away by email, and approves it with one tap.'],
+  ['scroll', 1400, 1600], ['hl', '.dlist.mine', 2600], ['cap', 'Your requests show at the bottom of Today: waiting for Management, approved, or rejected with the reason.'], ['top'],
+] };
+L['site-receive'] = { user: 'ravi', steps: [
+  ['go', '/site'], ['hl', '.dlist', 2200], ['cap', 'Deliveries that Purchase has ordered show under Deliveries expected. When the truck arrives, tap the one that came.'],
+  ['click', '.dlist [data-prcv] >> nth=0'],
+  ['hl', '.photobtn', 1800], ['cap', 'First take a photo of the delivery challan. It is kept with the order, so Accounts and Management can see it later.'],
+  ['file', '#c-ph', () => IDS.challanImg],
+  ['cap', 'Type the challan number, and check the quantity that actually came for each size. If something is short, change the number and add a note.'],
+  ['type', '#c-no', 'SSS-DC-5512'], ['set', '[data-rspec="16 mm"]', '8.8'], ['type', '#c-veh', 'MH 04 KX 2291'], ['type', '#c-note', '200 kg short in 16 mm'],
+  ['click', '#c-save', 2400], ['cap', 'Tap Save receipt. The bill goes to Accounts, and the delivery is also written in the site materials register, so you never enter it twice.'],
+] };
+L['site-dpr'] = { user: 'ravi', steps: [
+  ['go', '/site'], ['click', '[data-qdpr]'], ['cap', 'Every evening, tap Daily report. Choose the weather, type how many workers were on site, and what work was done.'],
+  ['set', '#q-n', '64'], ['hl', '.microw', 2600], ['cap', 'You can also speak instead of typing. Tap Speak in English, or Hindi, and say what was done. Check the text, then send.'],
+  ['type', '#q-work', 'A-Wing 5th slab steel binding\nB-Wing column shuttering'],
+  ['click', '#q-save', 2200], ['cap', 'Send report. Management sees it the same evening.'],
+] };
+L['site-slab'] = { user: 'ravi', steps: [
+  ['go', '/site'], ['scroll', 600, 1200], ['hl', '.bld >> nth=0', 2200], ['cap', 'Under Slab work, tap the stage each slab has reached today: shuttering, steel fixing, MEP sleeves, checks, concreting, and cast.'],
+  ['click', '.bld >> nth=0 >> [data-qstage$=":cast"]'], ['cap', 'When a slab is cast, tap Cast and confirm the date. If that slab is a payment stage, Head CRM is told at once to raise the demands.'],
+  ['click', '#qs-save', 2200], ['cap', 'Then the ERP asks for the pour: grade, quantity in cubic metres, the RMC supplier, challan numbers and how many cube samples were taken.'],
+  ['set', '#p-qty', '192'], ['type', '#p-sup', 'Sample Concrete Co.'], ['type', '#p-ch', 'SC-4501, SC-4502'],
+  ['click', '#p-save', 2400], ['cap', 'The cube tests at 7 and 28 days come up on Today on the day they are due.'],
+  ['top'], ['hl', '[data-cube] >> nth=0', 2000], ['cap', 'When the lab gives the result, tap Enter result and type the average strength.'],
+  ['click', '[data-cube] >> nth=0'], ['set', '#cb-mpa', '29.4'], ['type', '#cb-lab', 'Sample Testing Lab'],
+  ['click', '#cb-save', 2200], ['cap', 'The ERP checks it against the pass mark. A result below the mark goes to Management straight away.'],
+] };
+L['site-problem'] = { user: 'ravi', steps: [
+  ['go', '/site'], ['click', '[data-newh]'], ['cap', 'Anything holding up work: tap Report a problem. Choose the building, the cause and the days lost.'],
+  ['set', '#h-cat', 'Labour shortage'], ['set', '#h-days', '1'], ['type', '#h-desc', 'Only 30 men today, steel fixing for the 5th slab moved to tomorrow'],
+  ['file', '#h-ph', () => IDS.challanImg, 1400], ['cap', 'Add a photo if it helps, then save. Management sees open problems every morning in the 10 am summary.'],
+  ['click', '#h-save', 2200],
+  ['go', '/site'], ['hl', '.tlist', 2400], ['cap', 'Done today lists everything you entered today. That is the whole site day: request, receive, report, slabs and problems.'],
+] };
+// ---------- Purchase (purchase team, Management, Accounts) ----------
+L['pur-approve'] = { user: 'sameer', steps: [
+  ['go', () => IDS.approveUrl], ['cap', 'When the site asks for material, Sameer gets an email with a button. It opens this page, on the phone, without signing in.'],
+  ['hl', '.budget', 2400], ['cap', 'It shows what is asked for, for which floor, the approximate value, and whether it is within that floor’s BOQ budget.'],
+  ['click', '#yes', 2200], ['cap', 'One tap approves it. To reject, tap Reject and write the reason: the site sees it.'],
+  ['go', '/purchase'], ['cap', 'Everything is also on the Purchase page, where Management can approve from the list. A request waiting more than a day goes up to Rafi Sir.'],
+] };
+L['pur-order'] = { user: 'farhan', steps: [
+  ['go', '/purchase'], ['cap', 'The purchase team opens Purchase. Waiting for me lists the approved requests to order.'],
+  ['click', () => `tr[data-id="${IDS.rmc}"]`], ['cap', 'Open the request. Enter the vendor, the quantity and the rate including GST, and the bill details. The ERP checks the rate against the budget rate.'],
+  ['type', '#sheet [name=vendor]', 'Sample Concrete Co.'], ['set', '#sheet .box [name=qty]', '190'], ['set', '#sheet [name=rate]', '7650'], ['type', '#sheet [name=billNo]', 'SC-INV-901'],
+  ['click', '#sheet [data-op="order"]', 2400], ['cap', 'Save the order. The site now sees it under Deliveries expected, without any rates or amounts. Site logins never see money.'],
+  ['go', '/purchase'], ['click', () => `tr[data-id="${IDS.steel}"]`], ['cap', 'When the site receives a delivery, the request shows what came, the challan number, and the photo of the challan.'],
+  ['hl', '#sheet a[href*="photo"]', 2200], ['key', 'Escape', 800],
+] };
+L['pur-accounts'] = { user: 'headacc', steps: [
+  ['go', '/purchase'], ['click', () => `tr[data-id="${IDS.cement}"]`], ['cap', 'Accounts checks the bill against what the site received. If less came, the amount payable is worked out for the quantity received.'],
+  ['click', '#sheet [data-op="accounts_ok"]', 2200], ['cap', 'Approve it for payment. It then shows in Payments Out, so the payment fills in by itself, and the request is marked Paid.'],
+] };
+L['pur-contract'] = { user: 'farhan', steps: [
+  ['go', '/contracts'], ['cap', 'Contractor bills are on their own page: tap Contractor bills on the Purchase page. Each contractor has a work order with the item rates.'],
+  ['click', '[data-tab="wos"]', 1600], ['hl', '.wo >> nth=0', 2600], ['cap', 'The work order has the items and rates, retention, TDS, the advance and how fast it is recovered, and the wastage allowed on our RMC and steel.'],
+  ['click', '[data-tab="bills"]', 1000], ['click', '#newBill', 2600], ['cap', 'For a new RA bill, the slab work done since the last bill is filled in from the slabs site marked cast.'],
+  ['hl', '#sheet .ltbl', 2600], ['cap', 'It shows previous, this bill and cumulative for each item. Anything beyond the work order quantity is marked in red.'],
+  ['hl', '#sheet [name=materialRecovery]', 2400], ['cap', 'Recovery for RMC and steel used beyond the design quantity plus the allowance is suggested from the site’s records.'],
+  ['type', '#sheet [name=billNo]', 'SB/RA-02'], ['hl', '#tot', 2800], ['cap', 'Retention, TDS and advance recovery are worked out, and the net payable is at the bottom. Save and submit it to Management.'],
+  ['click', '#subBill', 2400],
+] };
+L['pur-contract-approve'] = { user: 'sameer', steps: [
+  ['go', '/contracts'], ['click', 'tr[data-bill] >> nth=0'], ['cap', 'Sameer opens the bill, checks the quantities and deductions, and approves the net amount. The person who entered a bill can never approve it.'],
+  ['click', '#sheet [data-op="bill_approve"]', 2200],
+  ['as', 'headacc'], ['go', '/contracts'], ['click', 'tr[data-bill] >> nth=0'], ['cap', 'Accounts then pays it and records the UTR. Approved bills to pay are in the 10 am summary under cash needed.'],
+  ['type', '#sheet [name=ref]', 'UTR SAMPLE 2207'], ['click', '#sheet [data-op="bill_paid"]', 2200],
+] };
+
 // The two courses: each part's steps one after another, as chapters, in one video (who is signed in changes per part).
 function course(title, sub, team, parts, intro) {
   const steps = [['title', 'Training · ' + team, title, sub], ...(intro || [])];
@@ -438,14 +569,19 @@ function course(title, sub, team, parts, intro) {
     steps.push(['as', P.user], ['chapter', 'Part ' + (i + 1), name]);
     for (const st of P.steps) if (st[0] !== 'title' && st[0] !== 'end') steps.push(st);
   });
-  steps.push(['end', title, team === 'Sales & CRM' ? 'Start each morning with Today.' : 'Start each morning with Today, and close each month on Checks.']);
+  steps.push(['end', title, { 'Sales & CRM': 'Start each morning with Today.', Construction: 'Start each day on Today, and send the daily report by 6 pm.', Purchase: 'Check Waiting for me every morning.' }[team] || 'Start each morning with Today, and close each month on Checks.']);
   return { user: parts[0] && L[parts[0][0]].user, steps };
 }
+const SITE_AROUND = [['cap', 'Open the ERP at erp dot dream india realty dot com on your phone and sign in with your own username and password. Add it to your home screen and it opens like an app.']];
 const AROUND = [['hash', '#/home'], ['cap', 'Open the ERP at erp dot dream india realty dot com and sign in with your own username and password. Your projects are on the home page.'],
   ['hl', '.tile >> nth=0'], ['click', '.tile >> nth=0'], ['cap', 'Each project has its departments. You see only the ones your login allows. Inside a department, Today always comes first.'],
   ['hl', '#cpw', 1600], ['cap', 'Change password and Sign out are at the top right. On your phone, add the ERP to your home screen and it opens like an app.']];
 L['crm-full'] = course('The complete CRM course', 'Every part of the CRM, start to finish', 'Sales & CRM',
   [['crm-flats', 'Flats and the flat file'], ['crm-today', 'Today and follow-up calls'], ['crm-receipts', 'Receipts and cheques'], ['crm-demands', 'Demands, letters and reminders'], ['crm-messages', 'Buyer messages, Dream Chat and documents'], ['crm-booking', 'Booking, approval and cancellation']], AROUND);
+L['site-full'] = course('The complete Construction course', 'For site engineers: everything you do on site, from your phone', 'Construction',
+  [['site-today', 'Your Today page'], ['site-request', 'Request material'], ['site-receive', 'Material came in'], ['site-dpr', 'The daily report'], ['site-slab', 'Slabs, pours and cube tests'], ['site-problem', 'Report a problem']], SITE_AROUND);
+L['purchase-full'] = course('The complete Purchase course', 'Approvals, orders, bills and contractor RA bills', 'Purchase',
+  [['pur-approve', 'Management approves'], ['pur-order', 'Purchase places the order'], ['pur-accounts', 'Accounts approves the bill'], ['pur-contract', 'Contractor RA bills'], ['pur-contract-approve', 'Approve and pay the RA bill']]);
 L['acc-full'] = course('The complete Accounts course', 'Every part of Accounts, start to finish', 'Accounts',
   [['acc-today', 'Today and the 9 am audit'], ['acc-registers', 'Receipts, payments and bills'], ['acc-bank', 'The bank, every day'], ['acc-approvals', 'Approvals, corrections and refunds'], ['acc-month', 'Month end, the CA and Tally']], AROUND);
 
@@ -456,6 +592,11 @@ L['acc-full'] = course('The complete Accounts course', 'Every part of Accounts, 
   await seed();
   fs.mkdirSync(OUT, { recursive: true });
   const browser = await chromium.launch();
+  { // a made-up delivery challan for the "photo of the challan" steps
+    const pg = await browser.newPage({ viewport: { width: 900, height: 640 } });
+    await pg.setContent(`<body style="margin:0;background:#e9e4d8;font-family:Georgia,serif"><div style="margin:24px;background:#fffdf6;padding:26px 30px;border:2px solid #333;transform:rotate(-1.2deg)"><div style="display:flex;justify-content:space-between"><b style="font-size:26px">SAMPLE STEEL SUPPLIERS</b><span style="font-size:20px">DELIVERY CHALLAN</span></div><p style="margin:6px 0 16px">Plot 9, Sample Industrial Estate · GSTIN 27XXXXX0000X1ZX</p><p>Challan No: <b>SSS-DC-5512</b> &nbsp;&nbsp; Date: ${ist()} &nbsp;&nbsp; Vehicle: MH 04 KX 2291</p><p>To: Dream Signature site, Jogeshwari</p><table style="width:100%;border-collapse:collapse;font-size:18px;margin-top:10px" border="1" cellpadding="8"><tr><th>Item</th><th>Qty</th></tr><tr><td>TMT Fe550D 12 mm</td><td>6.000 MT</td></tr><tr><td>TMT Fe550D 16 mm</td><td>8.800 MT</td></tr></table><p style="margin-top:30px">Received by: ____________</p></div></body>`);
+    IDS.challanImg = path.join(TMP, 'challan.jpg'); await pg.screenshot({ path: IDS.challanImg, type: 'jpeg', quality: 80 }); await pg.close();
+  }
   for (const m of MODULES) {
     if (only.length && !only.includes(m.id)) continue;
     const lesson = L[m.id]; if (!lesson) { console.warn('no lesson for', m.id); continue; }
@@ -483,6 +624,7 @@ L['acc-full'] = course('The complete Accounts course', 'Every part of Accounts, 
     execFileSync('ffmpeg', ['-y', '-loglevel', 'error', ...vin, ...aud, '-c:v', 'libx264', '-profile:v', 'main', '-level', '4.0', '-r', '25', '-preset', 'veryfast', '-crf', '28', '-pix_fmt', 'yuv420p', '-movflags', '+faststart', mp4]);
     execFileSync('ffmpeg', ['-y', '-loglevel', 'error', '-ss', '1.2', '-i', mp4, '-frames:v', '1', '-vf', 'scale=640:-2', '-q:v', '5', path.join(OUT, m.id + '.jpg')]);
     console.log('  saved', mp4, Math.round(fs.statSync(mp4).size / 1024) + ' KB');
+    if (process.env.LINES_OUT) fs.writeFileSync(path.join(process.env.LINES_OUT, m.id + '.json'), JSON.stringify(LINES[m.id] || [], null, 1));
   }
   await browser.close();
   process.exit(0);
