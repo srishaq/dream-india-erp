@@ -11,7 +11,8 @@ const iso = (k) => new Date(Date.now() - k * 864e5).toISOString().slice(0, 10);
 const mon = (k) => { const t = new Date(); return new Date(Date.UTC(t.getUTCFullYear(), t.getUTCMonth() - k, 1)).toISOString().slice(0, 10); };
 const fake = http.createServer(async (req, res) => {
   let body = ''; for await (const c of req) body += c;
-  calls.push(req.url); const u = new URL(req.url, 'http://x'), q = u.searchParams, P = u.pathname;
+  calls.push(req.method + ' ' + req.url); const u = new URL(req.url, 'http://x'), q = u.searchParams, P = u.pathname;
+  if (req.method === 'POST' && P.startsWith('/graph')) for (const [k, v] of new URLSearchParams(body)) q.set(k, v);
   const J = (o, st = 200) => { res.statusCode = st; res.setHeader('Content-Type', 'application/json'); res.end(JSON.stringify(o)); };
   if (P === '/pic.jpg') { res.setHeader('Content-Type', 'image/jpeg'); return res.end(Buffer.from([0xff, 0xd8, 0xff, 0xd9])); }
   if (P === '/gtoken') { const f = new URLSearchParams(body); return J(f.get('grant_type') === 'authorization_code' ? { access_token: 'YT', refresh_token: 'R1', expires_in: 3600 } : { access_token: 'YT2', expires_in: 3600 }); }
@@ -32,6 +33,10 @@ const fake = http.createServer(async (req, res) => {
   if (!tok || !q.get('appsecret_proof')) return J({ error: { message: 'token missing' } }, 400);
   const series = (val) => { const out = []; for (let d = q.get('since'); d < q.get('until'); d = new Date(Date.parse(d) + 864e5).toISOString().slice(0, 10)) out.push({ value: val, end_time: new Date(Date.parse(d) + 864e5).toISOString().slice(0, 10) + 'T07:00:00+0000' }); return out; };
   if (g === '/me') return J({ id: 'u1', name: 'Rafi' });
+  if (req.method === 'POST' && g === '/p1/photos') { global.posted = (global.posted || []).concat([{ fb: q.get('url'), caption: q.get('caption') }]); return J({ id: 'ph1', post_id: 'p1_99' }); }
+  if (req.method === 'POST' && g === '/ig1/media') { global.posted = (global.posted || []).concat([{ ig: q.get('image_url') }]); return J({ id: 'cont1' }); }
+  if (req.method === 'POST' && g === '/ig1/media_publish') return J({ id: 'igm9' });
+  if (g === '/igm9') return J({ permalink: 'https://www.instagram.com/p/igm9/' });
   if (g === '/me/accounts' && global.noIg && /instagram_business_account/.test(q.get('fields'))) return J({ error: { message: '(#100) Tried accessing nonexisting field (instagram_business_account)', code: 100 } }, 400);
   if (g === '/me/accounts') return J({ data: [{ id: 'p1', name: 'Dream India Realty', link: 'https://www.facebook.com/dreamindiarealty', access_token: 'PAGE', ...(global.noIg ? {} : { instagram_business_account: { id: 'ig1', username: 'dreamindiarealty' } }) }] });
   if (g === '/me/adaccounts') return J({ data: [{ id: 'act_9', name: 'Dream India Ads', currency: 'INR', account_status: 1 }] });
@@ -242,6 +247,47 @@ let n = 0; const step = async (name, fn) => { await fn(); n++; console.log('  âœ
     const g = await rupali('/api/marketing?scope=company'); assert.equal(g.channels.find((c) => c.network === 'instagram').viewsBefore, null); // no 30 days before to compare with
     const ix = g.channels.findIndex((c) => c.network === 'facebook'); assert.equal(g.channels[ix + 1].network, 'whatsapp'); assert.equal(g.channels[ix + 1].wa.year, 36);
     for (const k of ['wachats', 'waleads']) assert.equal((await rupali(`/api/marketing?mdrill=${k}&scope=company`)).status, 200);
+  });
+
+  await step('A campaign: brief, designs and budget; sent for approval; approved from the email link; designs scheduled and posted to Instagram and Facebook', async () => {
+    // (Facebook and Instagram are connected again for this step)
+    const st = new URL((await rupali('/api/marketing?connect=meta')).location).searchParams.get('state'); await rupali(`/oauth/meta?code=good&state=${encodeURIComponent(st)}`);
+    const c = await M(rupali, 'campaign.save', { name: 'Diwali site visits', brief: 'Site visits this weekend, 2 BHK offer', projectId: sig.id, channels: ['instagram', 'facebook', 'linkedin'], startOn: '2026-11-01', endOn: '2026-11-15', dailyBudget: '2,000', monthlyBudget: '60000' });
+    assert.equal(c.ok, true);
+    assert.equal((await M(rupali, 'campaign.submit', { id: c.id })).status, 400); // no design yet
+    const p = await M(rupali, 'post.save', { title: 'Diwali offer', channels: ['instagram', 'facebook', 'linkedin'], status: 'draft', projectId: sig.id, campaignId: c.id, caption: 'Visit Dream Signature', publishAt: new Date(Date.now() - 60000).toISOString() });
+    const png = Buffer.from('89504e470d0a1a0a0000000d49484452', 'hex').toString('base64');
+    await M(rupali, 'post.file', { postId: p.id, name: 'offer.png', mime: 'image/png', data: png });
+    assert.equal((await M(rupali, 'campaign.submit', { id: c.id })).ok, true);
+    let g = await rupali('/api/marketing?scope=company'); assert.equal(g.campaigns.find((x) => x.id === c.id).plan_status, 'submitted'); assert.equal(g.posts.find((x) => x.id === p.id).status, 'review');
+    assert.equal((await M(rupali, 'campaign.approve', { id: c.id, kind: 'both' })).status, 403);
+    // the email's link: opening it shows a page and changes nothing; Confirm approves
+    const F = require('../lib/mkt-flow'), sam = await db.one("select id from users where username = 'sameer'");
+    const tok = await F.sign({ c: c.id, k: 'designs', u: sam.id, e: Date.now() + 864e5 });
+    const view = await fetch(BASE + '/api/marketing?approve=' + encodeURIComponent(tok)); assert.equal(view.status, 200); assert.match(await view.text(), /Approve the designs/);
+    assert.equal((await db.one('select designs_ok_at from mkt_campaigns where id = $1', [c.id])).designs_ok_at, null);
+    const ok = await fetch(BASE + '/api/marketing?approve=' + encodeURIComponent(tok), { method: 'POST', headers: { 'Content-Type': 'application/x-www-form-urlencoded', Origin: BASE }, body: '' });
+    assert.match(await ok.text(), /Approved/);
+    assert.match(await (await fetch(BASE + '/api/marketing?approve=' + encodeURIComponent(tok.slice(0, -2) + 'xx'))).text(), /expired/);
+    g = await rupali('/api/marketing?scope=company'); assert.equal(g.campaigns.find((x) => x.id === c.id).plan_status, 'partly');
+    // nothing is posted until the budget is approved too
+    assert.equal((await F.publishDue()).posted, 0);
+    assert.equal((await M(sameer, 'campaign.approve', { id: c.id, kind: 'budget' })).ok, true);
+    g = await rupali('/api/marketing?scope=company'); assert.equal(g.campaigns.find((x) => x.id === c.id).plan_status, 'approved'); assert.equal(g.posts.find((x) => x.id === p.id).status, 'scheduled');
+    global.posted = [];
+    const r = await F.publishDue(); assert.equal(r.posted, 1);
+    const after = await db.one('select status, post_url, publish_log from mkt_posts where id = $1', [p.id]);
+    assert.equal(after.status, 'published'); assert.equal(after.publish_log.instagram.id, 'igm9'); assert.equal(after.publish_log.facebook.id, 'p1_99'); assert.equal(after.publish_log.linkedin.manual, true);
+    assert.equal(global.posted.length, 2); assert.match(global.posted[0].fb || global.posted[1].fb, /api\/marketing\?pub=/);
+    const pubUrl = new URL(global.posted.find((x) => x.ig).ig); const img = await fetch(BASE + pubUrl.pathname + pubUrl.search); assert.equal(img.status, 200); assert.equal(img.headers.get('content-type'), 'image/png');
+    assert.equal((await F.publishDue()).posted, 0); // not twice
+    // a changed budget goes back for approval
+    await M(rupali, 'campaign.save', { id: c.id, name: 'Diwali site visits', projectId: sig.id, channels: ['instagram'], dailyBudget: '3000', monthlyBudget: '60000' });
+    assert.equal((await db.one('select plan_status, budget_ok_at from mkt_campaigns where id = $1', [c.id])).budget_ok_at, null);
+    assert.equal((await M(sameer, 'campaign.sendback', { id: c.id, note: 'Too costly' })).ok, true);
+    const A = await rupali('/api/marketing?active=1&scope=company');
+    const m = A.rows.find((x) => x.name === 'Dream Signature 2BHK leads'); assert.equal(m.spend30, 2000); assert.equal(m.yesterday, 1000); assert.ok(A.totals.spend30 >= 2000);
+    assert.equal((await rupali(`/api/marketing?mdrill=campaign&period=c${m.id}&scope=company`)).rows.length, 3);
   });
 
   await step('Disconnecting keeps the figures already pulled; each part remembers its 12-month pull', async () => {

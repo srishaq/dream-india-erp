@@ -55,6 +55,7 @@ module.exports = route({
       const r = await require('../lib/mail-sync').sync({ trigger: 'schedule' });
       r.autoLetters = await require('../lib/letters').sendPendingAuto().catch((e) => ({ error: e.message }));
       r.approvals = await require('../lib/staff-alerts').runApprovals().catch((e) => ({ error: e.message }));
+      r.socialPosts = await require('../lib/mkt-flow').publishDue().catch((e) => ({ error: e.message })); // approved posts that are due: Instagram and Facebook
       // Click Connect: once the key is in Vercel, point its webhook at the ERP by itself (once; again if the key changes)
       r.whatsappHook = await (async () => {
         const wa = require('../lib/whatsapp'); if (!wa.ccm()) return null;

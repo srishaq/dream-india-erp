@@ -112,10 +112,12 @@ async function overview(u, scope, req) {
        (select coalesce(json_agg(json_build_object('id', f.id, 'name', f.name, 'mime', f.mime, 'size', f.size) order by f.id), '[]') from mkt_post_files f where f.post_id = p.id) as files
      from mkt_posts p left join users c on c.id = p.created_by left join users a on a.id = p.approved_by
      where ${inScope('p.project_id')} and (p.publish_at is null or p.publish_at > now() - interval '120 days') order by p.publish_at nulls first, p.id`);
-  const campaigns = await db.q(`select c.*, (select count(*)::int from mkt_leads l where l.campaign_id = c.id) as leads,
+  const campaigns = await db.q(`select c.*, array_to_json(c.channels) as channels, dz.name as designs_ok_name, bz.name as budget_ok_name, sb.name as submitted_name,
+       (select count(*)::int from mkt_leads l where l.campaign_id = c.id) as leads,
        (select count(*)::int from mkt_leads l where l.campaign_id = c.id and l.status = 'visit') as visit_leads,
        (select count(*)::int from mkt_leads l where l.campaign_id = c.id and l.status = 'booked') as booked
-     from mkt_campaigns c where ${inScope('c.project_id')} order by (c.status = 'done'), c.start_on desc nulls last, c.id desc`);
+     from mkt_campaigns c left join users dz on dz.id = c.designs_ok_by left join users bz on bz.id = c.budget_ok_by left join users sb on sb.id = c.submitted_by
+     where ${inScope('c.project_id')} order by (c.source = 'manual') desc, (c.status = 'done'), c.start_on desc nulls last, c.id desc`);
   const leads = await db.q(`select l.*, a.name as assigned_name, c.name as campaign_name,
        exists (select 1 from buyers y join booking_applicants ba on ba.buyer_id = y.id join bookings b on b.id = ba.booking_id join units un on un.id = b.unit_id
                where right(regexp_replace(coalesce(y.phone, ''), '\\D', '', 'g'), 10) = l.phone and b.status in ('active', 'pending') and (l.project_id is null or un.project_id = l.project_id)) as is_buyer
@@ -191,6 +193,32 @@ async function approvalMail(p, by, req) {
   return { to, test: !live };
 }
 
+// Active campaigns: everything running now and what it is spending (Meta Ads by day and month, the rest as typed in).
+async function activeCampaigns(scope) {
+  const projectId = pid(scope), fy = fyStart();
+  const rows = await db.q(`select c.id, c.name, c.source, c.ext_status, c.status, c.plan_status, p.name as project, c.start_on, c.end_on, c.daily_budget, c.monthly_budget, c.budget, c.account,
+       array_to_json(c.channels) as channels,
+       coalesce((select sum(d.spend) from mkt_campaign_days d where d.campaign_id = c.id and d.day > current_date - 30), 0) as spend30,
+       coalesce((select sum(d.spend) from mkt_campaign_days d where d.campaign_id = c.id and d.day > current_date - 7), 0) as spend7,
+       coalesce((select sum(d.spend) from mkt_campaign_days d where d.campaign_id = c.id and d.day = current_date - 1), 0) as yesterday,
+       coalesce((select sum(m.spend) from mkt_campaign_months m where m.campaign_id = c.id and m.month = date_trunc('month', current_date)), 0) as month,
+       coalesce((select sum(m.spend) from mkt_campaign_months m where m.campaign_id = c.id and m.month >= $1::date), 0) as fy,
+       coalesce((select sum(d.leads) from mkt_campaign_days d where d.campaign_id = c.id and d.day > current_date - 30), 0)::int as leads30,
+       coalesce((select sum(d.messages) from mkt_campaign_days d where d.campaign_id = c.id and d.day > current_date - 30), 0)::int as chats30,
+       (select count(*)::int from mkt_leads l where l.campaign_id = c.id and l.created_at > now() - interval '30 days') as crm30,
+       coalesce(c.spent, 0) as spent
+     from mkt_campaigns c left join projects p on p.id = c.project_id
+     where (upper(coalesce(c.ext_status, '')) = 'ACTIVE' or (c.source <> 'meta' and (c.status = 'active' or c.plan_status = 'approved') and (c.end_on is null or c.end_on >= current_date))
+            or exists (select 1 from mkt_campaign_days d where d.campaign_id = c.id and d.day > current_date - 7 and d.spend > 0)) ${projectId ? 'and c.project_id = ' + +projectId : ''}
+     order by spend30 desc, c.name`, [fy]);
+  const n = (v) => Number(v) || 0;
+  const list = rows.map((r) => { const meta = r.source === 'meta', s30 = meta ? n(r.spend30) : n(r.spent), l = Math.max(r.leads30, r.crm30);
+    return { ...r, spend30: s30, spend7: n(r.spend7), yesterday: n(r.yesterday), month: meta ? n(r.month) : null, fy: meta ? n(r.fy) : n(r.spent), daily_budget: r.daily_budget == null ? null : n(r.daily_budget), monthly_budget: r.monthly_budget == null ? null : n(r.monthly_budget),
+      leads30: l, cpl30: l ? s30 / l : null, pace: r.monthly_budget && meta ? n(r.month) / n(r.monthly_budget) : null }; });
+  const sum = (k) => list.reduce((a, r) => a + (n(r[k]) || 0), 0);
+  return { rows: list, totals: { campaigns: list.length, spend30: sum('spend30'), yesterday: sum('yesterday'), month: sum('month'), fy: sum('fy'), leads30: sum('leads30'), chats30: sum('chats30'), daily: sum('daily_budget') } };
+}
+
 // The rows behind a box on the Overview: followers, views, reach, content, leads, cost per lead (last 30 days).
 async function mdrill(key, scope, period) {
   const projectId = pid(scope), set = await settings(), ytd = period === 'ytd', fy = fyStart(), pj = (col) => (projectId ? `and ${col} = ${+projectId}` : '');
@@ -241,6 +269,11 @@ async function mdrill(key, scope, period) {
     const rows = await db.q(`select to_char(l.created_at + interval '330 minutes', 'YYYY-MM-DD') as day, l.name, l.phone, l.source, c.name as campaign, l.status, p.name as project, l.note
        from mkt_leads l left join mkt_campaigns c on c.id = l.campaign_id left join projects p on p.id = l.project_id where l.created_at > ${ytd ? `'${fy}'::date` : "now() - interval '30 days'"} ${projectId ? 'and l.project_id = ' + +projectId : ''} order by l.created_at desc`);
     return { title: `Leads, ${ytd ? FYT : 'last 30 days'}`, columns: [['day', 'Date', 'date'], ['name', 'Name'], ['phone', 'Phone'], ['source', 'Source'], ['campaign', 'Campaign'], ['status', 'Status'], ['project', 'Project'], ['note', 'Note']], rows };
+  }
+  if (key === 'campaign') {
+    const c = await db.one('select name from mkt_campaigns where id = $1', [intOr(String(period).replace(/^c/, ''))]);
+    const rows = await db.q(`select to_char(day, 'YYYY-MM-DD') as day, spend, impressions, clicks, leads, messages from mkt_campaign_days where campaign_id = $1 order by day desc`, [intOr(String(period).replace(/^c/, ''))]);
+    return { title: `${c ? c.name : 'Campaign'}: spend day by day`, columns: [['day', 'Date', 'date'], ['spend', 'Spent', 'inr'], ['impressions', 'Seen', 'n'], ['clicks', 'Clicks', 'n'], ['leads', 'Leads', 'n'], ['messages', 'Chats', 'n']], rows };
   }
   if (key === 'wachats') {
     const rows = await db.q(`select to_char(m.month, 'Mon YYYY') as month, c.name, m.messages, m.spend, m.leads from mkt_campaign_months m join mkt_campaigns c on c.id = m.campaign_id
@@ -369,6 +402,7 @@ const handler = route({
       return res.end(Buffer.isBuffer(f.data) ? f.data : Buffer.from(f.data));
     }
     if (q.report != null) return res.json(await report(q.report));
+    if (q.active != null) return res.json(await activeCampaigns(q.scope));
     if (q.mdrill) return res.json(await mdrill(String(q.mdrill), q.scope, String(q.period || 'd30')));
     if (q.thumb) {
       const t = /^[A-Za-z0-9_-]{10,80}$/.test(q.thumb) ? await require('../lib/drive').thumbnail(q.thumb).catch(() => null) : null;
@@ -455,13 +489,37 @@ const handler = route({
       editOnly();
       const name = str(d.name, 160); if (!name) throw fail(400, 'Name the campaign.');
       for (const k of ['startOn', 'endOn']) if (d[k] && !DATE.test(d[k])) throw fail(400, 'A date looks wrong.');
-      const v = [await projectOf(d.projectId), name, str(d.channel, 40) || null, d.startOn || null, d.endOn || null, num(d.budget), num(d.spent), num(d.visits), str(d.note, 1000) || null, ['planned', 'active', 'done'].includes(d.status) ? d.status : 'active'];
+      const chans = (Array.isArray(d.channels) ? d.channels : []).filter((c) => NETWORKS.includes(c));
+      const cur = d.id ? await db.one('select id, source, daily_budget, monthly_budget, budget, plan_status from mkt_campaigns where id = $1', [intOr(d.id)]) : null;
+      if (d.id && !cur) throw fail(404, 'That campaign is not there any more.');
+      const P = [await projectOf(d.projectId), str(d.brief, 4000) || null, chans, num(d.dailyBudget), num(d.monthlyBudget), str(d.note, 1000) || null];
       let id;
-      if (d.id) { id = intOr(d.id); await db.q('update mkt_campaigns set project_id=$1, name=$2, channel=$3, start_on=$4, end_on=$5, budget=$6, spent=$7, visits=$8, note=$9, status=$10, updated_at=now() where id=$11', [...v, id]); }
-      else id = (await db.one('insert into mkt_campaigns (project_id, name, channel, start_on, end_on, budget, spent, visits, note, status, created_by) values ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11) returning id', [...v, u.id])).id;
-      await log(d.id ? 'update' : 'create', 'mkt-campaign', id, { name, spent: v[6] });
+      if (cur && cur.source === 'meta') { // a campaign from Meta Ads: its figures come from Meta; only the plan is ours
+        id = cur.id; await db.q('update mkt_campaigns set project_id=$1, brief=$2, channels=$3, daily_budget=$4, monthly_budget=$5, note=$6, updated_at=now() where id=$7', [...P, id]);
+      } else {
+        const v = [name, chans[0] || str(d.channel, 40) || null, d.startOn || null, d.endOn || null, num(d.budget), num(d.spent), num(d.visits), ['planned', 'active', 'done'].includes(d.status) ? d.status : 'planned'];
+        if (cur) { id = cur.id; await db.q('update mkt_campaigns set project_id=$1, brief=$2, channels=$3, daily_budget=$4, monthly_budget=$5, note=$6, name=$7, channel=$8, start_on=$9, end_on=$10, budget=$11, spent=$12, visits=$13, status=$14, updated_at=now() where id=$15', [...P, ...v, id]); }
+        else id = (await db.one('insert into mkt_campaigns (project_id, brief, channels, daily_budget, monthly_budget, note, name, channel, start_on, end_on, budget, spent, visits, status, created_by) values ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15) returning id', [...P, ...v, u.id])).id;
+      }
+      // a budget changed after it was approved needs approving again
+      if (cur && ['submitted', 'partly', 'approved'].includes(cur.plan_status) && (num(d.dailyBudget) !== (cur.daily_budget == null ? null : +cur.daily_budget) || num(d.monthlyBudget) !== (cur.monthly_budget == null ? null : +cur.monthly_budget))) {
+        await db.q("update mkt_campaigns set budget_ok_at = null, budget_ok_by = null, plan_status = case when designs_ok_at is not null then 'partly' else 'submitted' end where id = $1", [id]);
+      }
+      await log(d.id ? 'update' : 'create', 'mkt-campaign', id, { name, daily: P[3], monthly: P[4] });
       return res.json({ ok: true, id });
     }
+    if (a === 'campaign.submit') { editOnly(); const r = await require('../lib/mkt-flow').submit(intOr(d.id), u); await log('send-for-approval', 'mkt-campaign', intOr(d.id), {}); return res.json(r); }
+    if (a === 'campaign.approve') {
+      if (!canApprove(u)) throw fail(403, 'Management approves campaigns.');
+      if (!['designs', 'budget', 'both'].includes(d.kind)) throw fail(400, 'Approve what?');
+      const r = await require('../lib/mkt-flow').approve(intOr(d.id), d.kind, u); await log('approve-' + d.kind, 'mkt-campaign', intOr(d.id), r); return res.json(r);
+    }
+    if (a === 'campaign.sendback') {
+      if (!canApprove(u)) throw fail(403, 'Management approves campaigns.');
+      if (!str(d.note, 1000)) throw fail(400, 'Write what should change.');
+      const r = await require('../lib/mkt-flow').sendBack(intOr(d.id), str(d.note, 1000), u); await log('send-back', 'mkt-campaign', intOr(d.id), { note: str(d.note, 300) }); return res.json(r);
+    }
+    if (a === 'post.publish') { editOnly(); return res.json(await require('../lib/mkt-flow').publishDue({ limit: 5 })); }
     if (a === 'campaign.delete') { editOnly(); await db.q('update mkt_leads set campaign_id = null where campaign_id = $1', [intOr(d.id)]); await db.q('delete from mkt_campaigns where id = $1', [intOr(d.id)]); return res.json({ ok: true }); }
 
     if (a === 'lead.save') {
@@ -516,6 +574,16 @@ const handler = route({
   },
 });
 
-module.exports = (req, res) => ((req.query || {}).ivr ? ivrHook(req, res).catch((e) => { console.error(e); res.statusCode = 200; res.end('OK'); })
+// A design file for Instagram / Facebook to fetch when posting (a signed link; only designs of approved posts).
+async function publicFile(req, res) {
+  const t = await require('../lib/mkt-flow').verify((req.query || {}).pub);
+  const f = t && t.f ? await db.one("select f.mime, f.data from mkt_post_files f join mkt_posts p on p.id = f.post_id where f.id = $1 and (p.status in ('approved', 'scheduled', 'published') or p.status = 'review')", [t.f]) : null;
+  if (!f) { res.statusCode = 404; return res.end('Not found'); }
+  res.setHeader('Content-Type', f.mime); res.setHeader('Cache-Control', 'public, max-age=3600');
+  return res.end(Buffer.isBuffer(f.data) ? f.data : Buffer.from(f.data));
+}
+module.exports = (req, res) => ((req.query || {}).approve ? require('../lib/mkt-flow').linkPage(req, res).catch((e) => { console.error(e); res.statusCode = 500; res.end('Something went wrong.'); })
+  : (req.query || {}).pub ? publicFile(req, res).catch(() => { res.statusCode = 404; res.end('Not found'); })
+  : (req.query || {}).ivr ? ivrHook(req, res).catch((e) => { console.error(e); res.statusCode = 200; res.end('OK'); })
   : (req.query || {}).lead ? leadHook(req, res).catch((e) => { console.error(e); res.status(500).json({ error: 'Could not save the lead.' }); }) : handler(req, res));
 module.exports.settings = settings;

@@ -73,6 +73,16 @@
   .mk-dl .mk-file .pdf{width:150px;height:150px;border-radius:10px;border:1px solid #EAECF0;background:#FEF3F2;color:#B42318;font-weight:800;display:flex;flex-direction:column;align-items:center;justify-content:center;text-decoration:none;font-size:20px}.mk-dl .mk-file .pdf small{font-size:11px;font-weight:400;padding:4px 8px;text-align:center;word-break:break-all}
   .mk-dl .mk-back{background:#FEF3F2;border:1px solid #FDA29B;border-radius:10px;padding:8px 10px;font-size:13px;color:#912018}.mk-dl .mk-design{margin-top:10px}
   .mk .mk-prow h3{font-size:13px;text-transform:uppercase;letter-spacing:.06em;color:var(--mut);margin:0 0 8px}.mk .mk-kpis.k7{grid-template-columns:repeat(auto-fit,minmax(140px,1fr))}.mk .mk-kpis.k7 .mk-kpi b{font-size:22px}
+  .mk .mk-plan{display:grid;grid-template-columns:1.2fr 1.6fr .7fr .8fr;gap:16px;background:#fff;border:1px solid var(--line);border-radius:18px;padding:16px;margin:0 0 14px}@media(max-width:1000px){.mk .mk-plan{grid-template-columns:1fr}}
+  .mk .mk-plan h3{margin:0;font-size:16px;color:var(--ink)}.mk .mk-plan h4{margin:0 0 8px;font-size:12px;text-transform:uppercase;letter-spacing:.06em;color:var(--mut)}.mk .mk-plan .brief{font-size:13px;line-height:1.5;margin:6px 0 10px;white-space:pre-wrap;color:#344054}
+  .mk .mk-plan .c2,.mk .mk-plan .c3,.mk .mk-plan .c4{border-left:1px solid var(--line);padding-left:16px}@media(max-width:1000px){.mk .mk-plan .c2,.mk .mk-plan .c3,.mk .mk-plan .c4{border-left:0;padding-left:0;border-top:1px solid var(--line);padding-top:12px}}
+  .mk .mk-dzs{display:grid;grid-template-columns:repeat(auto-fill,minmax(104px,1fr));gap:8px}.mk .mk-dz{all:unset;cursor:pointer;position:relative;display:block;border:1px solid var(--line);border-radius:12px;overflow:hidden;background:var(--soft)}
+  .mk .mk-dz img{width:100%;aspect-ratio:1;object-fit:cover;display:block}.mk .mk-dz>span{display:flex;align-items:center;justify-content:center;aspect-ratio:1;font-size:12px;font-weight:700;color:var(--mut)}.mk .mk-dz.add{border-style:dashed}.mk .mk-dz.add span{color:#7A5AF8}
+  .mk .mk-dz em{position:absolute;left:6px;top:6px;color:#fff;font-style:normal;font-size:10px;font-weight:700;border-radius:6px;padding:2px 6px}.mk .mk-dz small{display:block;padding:4px 6px;font-size:11px;color:var(--mut);background:#fff}.mk .mk-dz small .mk-ic{width:12px;height:12px}
+  .mk .mk-plan .bg{margin:0 0 8px}.mk .mk-plan .bg b{display:block;font-size:20px;color:var(--ink)}.mk .mk-plan .bg span{font-size:12px;color:var(--mut)}
+  .mk .mk-okrow{display:flex;align-items:center;gap:8px;font-size:14px;margin:0 0 8px}.mk .mk-okrow small{color:var(--mut)}.mk .mk-ok{width:22px;height:22px;border-radius:50%;background:#F2F4F7;color:#98A2B3;display:inline-flex;align-items:center;justify-content:center;font-weight:800;font-size:12px}.mk .mk-ok.y{background:#12B76A;color:#fff}
+  .mk .mk-plan .c4 button{margin:0 6px 6px 0}
+  .mk-dl .mk-plog{background:#F7F7FB;border-radius:10px;padding:8px 10px;font-size:13px;margin:8px 0 0}.mk-dl .mk-plog div{margin:2px 0}
   .mk button.mk-fig{all:unset;cursor:pointer;display:block;border-radius:8px}.mk button.mk-fig:hover b{color:#7A5AF8}.mk .mk-chan .fig button.mk-fig b{display:block;font-size:20px;color:var(--ink)}.mk .mk-chan .fig button.mk-fig span{font-size:12px;color:var(--mut)}
   .mk button.mk-kpi{display:block;width:100%;text-align:left;font:inherit;font-weight:400;cursor:pointer;color:inherit;transition:border-color .15s,box-shadow .15s}.mk button.mk-kpi:hover{background:#fff;border-color:#7A5AF8;box-shadow:0 4px 14px #7A5AF822}
   .mk-dlg{position:fixed;inset:0;background:#10114e66;z-index:80;display:flex;align-items:flex-start;justify-content:center;padding:40px 16px}.mk-dlg .box{background:#fff;border-radius:18px;width:min(1200px,100%);max-height:calc(100vh - 80px);display:flex;flex-direction:column;box-shadow:0 20px 60px #10182855}
@@ -130,15 +140,15 @@
   }
   function paint() {
     const SO = D.social, sync = SO.lastSync, on = [SO.meta.connected && SO.meta.pages.some((p) => p.instagram) && 'Instagram', SO.meta.connected && 'Facebook', SO.meta.connected && SO.meta.ads.length && 'Meta Ads', SO.youtube.connected && 'YouTube'].filter(Boolean);
-    const tabs = [['overview', 'Overview'], ['report', '12-month report'], ['calendar', 'Content calendar'], ['leads', 'Leads'], ['campaigns', 'Campaigns & spend'], ['library', 'Design library'], ['tasks', 'Tasks'], ['setup', 'Set-up']];
+    const tabs = [['overview', 'Overview'], ['active', 'Active campaigns'], ['report', '12-month report'], ['calendar', 'Content calendar'], ['leads', 'Leads'], ['campaigns', 'Campaigns & spend'], ['library', 'Design library'], ['tasks', 'Tasks'], ['setup', 'Set-up']];
     $('#page').innerHTML = `<div class="mk"><div class="mk-hero"><span class="mk-eyebrow">Company-wide · by project</span><h1>Marketing & Social Media</h1><p>Every channel, post, lead and campaign in one place.</p>
       <div class="mk-sync">${on.length ? `Live from ${on.join(', ')}${sync ? ' · ' + when(sync.at) : ''}` : 'Channels not connected yet (Set-up)'}${SO.meta.error || SO.youtube.error ? '<br><b style="color:#FECDCA">A channel needs connecting again (Set-up)</b>' : ''}</div>
       <div class="mk-scope">${[['company', 'Company'], ...D.projects.map((p) => [String(p.id), p.name])].map(([k, l]) => `<button data-scope="${k}" aria-pressed="${String(S.scope) === k}">${esc(l)}</button>`).join('')}</div></div>
-      <div class="mk-tabs" role="tablist">${tabs.map(([k, l]) => `<button role="tab" data-tab="${k}" aria-selected="${S.tab === k}">${l}</button>`).join('')}</div>
+      <nav class="ff-tabs no-print" role="tablist">${tabs.map(([k, l]) => `<button type="button" role="tab" data-tab="${k}" aria-selected="${S.tab === k}">${l}</button>`).join('')}</nav>
       <div id="mkBody"></div></div>`;
     $$('#page [data-scope]').forEach((b) => (b.onclick = async () => { S.scope = b.dataset.scope; S.lib = null; await load(); paint(); }));
     $$('#page [data-tab]').forEach((b) => (b.onclick = () => { S.tab = b.dataset.tab; paint(); }));
-    ({ overview, report, calendar, leads, campaigns, library, tasks, setup }[S.tab] || overview)();
+    ({ overview, active, report, calendar, leads, campaigns, library, tasks, setup }[S.tab] || overview)();
   }
   const body = (h) => ($('#mkBody').innerHTML = h);
 
@@ -329,7 +339,7 @@
     const dt = p && p.publish_at ? new Date(p.publish_at) : dayIso ? new Date(dayIso + 'T11:00') : null;
     const local = dt ? new Date(dt.getTime() - dt.getTimezoneOffset() * 6e4).toISOString().slice(0, 16) : '';
     const ro = !D.can.edit;
-    const dl = C.dialog(`<div class="mk-dl"><h2>${p ? 'Post' : 'Plan a post'}</h2>
+    const dl = C.dialog(`<div class="mk-dl"><h2>${p && p.id ? 'Post' : pr.campaign_id ? 'Add a design to the campaign' : 'Plan a post'}</h2>
       <label>Title<input name="title" value="${esc(pr.title)}" required placeholder="e.g. Dream Signature amenities reel" ${ro ? 'disabled' : ''}></label>
       <div class="row"><div><label>For</label><select name="projectId"><option value="company">Company (Dream India)</option>${D.projects.map((x) => `<option value="${x.id}" ${pr.project_id === x.id ? 'selected' : ''}>${esc(x.name)}</option>`).join('')}</select></div>
         <div><label>Type</label><select name="kind">${Object.entries(KIND).map(([k, l]) => `<option value="${k}" ${pr.kind === k ? 'selected' : ''}>${l}</option>`).join('')}</select></div></div>
@@ -343,10 +353,11 @@
         <div class="mk-files">${(pr.files || []).map((f) => `<div class="mk-file">${/^image\//.test(f.mime) ? `<a href="/api/marketing?pfile=${f.id}" target="_blank" rel="noopener"><img src="/api/marketing?pfile=${f.id}" alt=""></a>` : /^video\//.test(f.mime) ? `<video src="/api/marketing?pfile=${f.id}" controls preload="metadata"></video>` : `<a class="pdf" href="/api/marketing?pfile=${f.id}" target="_blank" rel="noopener">PDF<small>${esc(f.name)}</small></a>`}${D.can.edit ? `<button type="button" class="ghost small" data-rmf="${f.id}">Remove</button>` : ''}</div>`).join('') || (ro ? '<p class="small muted" style="margin:0">No design attached.</p>' : '')}</div>
         ${ro ? '' : '<input type="file" id="pfIn" multiple accept="image/png,image/jpeg,image/webp,image/gif,application/pdf,video/mp4">'}</div>
       ${pr.review_note ? `<p class="mk-back"><b>Sent back:</b> ${esc(pr.review_note)}</p>` : ''}
+      ${pr.publish_log && Object.keys(pr.publish_log).filter((k) => k !== '_done').length ? `<div class="mk-plog"><b>Posting</b>${Object.entries(pr.publish_log).filter(([k]) => k !== '_done').map(([n, x]) => `<div>${esc((NET[n] || {}).n || n)}: ${x.id ? `posted ✓ ${x.url ? `<a href="${esc(x.url)}" target="_blank" rel="noopener">open ↗</a>` : ''}` : x.pending ? 'Instagram is preparing the video…' : x.manual ? 'post by hand (the design is above)' : `<span style="color:#B42318">not posted: ${esc(x.error)}${x.tries >= 3 ? ' (stopped after 3 tries)' : ' (will try again)'}</span>`}</div>`).join('')}</div>` : ''}
       <input type="hidden" name="send" value="">
-      ${D.can.edit && (!p || !['review', 'published'].includes(p.status)) ? '<p style="margin:10px 0 0"><button type="button" id="sendPost">Save and send for approval</button> <span class="small muted">Management gets an email with the design.</span></p>' : ''}
+      ${D.can.edit && !pr.campaign_id && (!p || !['review', 'published'].includes(p.status)) ? '<p style="margin:10px 0 0"><button type="button" id="sendPost">Save and send for approval</button> <span class="small muted">Management gets an email with the design.</span></p>' : ''}
       ${p && p.status === 'review' && D.can.approve ? '<p style="margin:10px 0 0"><button type="button" id="apprPost">Approve this post</button> <button type="button" class="ghost" id="backPost">Send back with a comment</button></p>' : ''}
-      ${p && p.approved_name ? `<p class="small muted">Approved by ${esc(p.approved_name)}.</p>` : ''}${p ? `<p class="small muted">Planned by ${esc(p.created_name || '')}. ${D.can.edit ? '<a href="#" id="delPost" style="color:#B42318">Delete</a>' : ''}</p>` : ''}</div>`,
+      ${p && p.approved_name ? `<p class="small muted">Approved by ${esc(p.approved_name)}.</p>` : ''}${p && p.id ? `<p class="small muted">Planned by ${esc(p.created_name || '')}. ${D.can.edit ? '<a href="#" id="delPost" style="color:#B42318">Delete</a>' : ''}</p>` : ''}</div>`,
     async (x) => {
       if (ro) return;
       const send = x.send === '1'; delete x.send;
@@ -402,27 +413,74 @@
   }
 
   // ---------- campaigns ----------
+  // ---------- active campaigns: where the money is going now ----------
+  async function active() {
+    body('<p class="muted">Loading…</p>');
+    const A = await C.api('/api/marketing?active=1&scope=' + encodeURIComponent(S.scope)), T = A.totals;
+    const sk = S.actSort || 'spend30', dir = S.actDir || -1;
+    const rows = [...A.rows].sort((a, b) => (typeof a[sk] === 'string' ? String(a[sk] || '').localeCompare(String(b[sk] || '')) : ((+a[sk] || 0) - (+b[sk] || 0))) * dir);
+    const COLS = [['name', 'Campaign'], ['project', 'For'], ['src', 'Where'], ['daily_budget', 'Daily budget', 'inr'], ['yesterday', 'Yesterday', 'inr'], ['spend7', 'Last 7 days', 'inr'], ['spend30', 'Last 30 days', 'inr'], ['month', 'This month', 'inr'], ['pace', 'Of monthly budget', 'pct'], ['fy', 'This year', 'inr'], ['leads30', 'Leads, 30 days', 'n'], ['cpl30', 'Per lead', 'inr'], ['chats30', 'Chats, 30 days', 'n'], ['end_on', 'Ends', 'date']];
+    const f = (v, t) => (v == null || v === '' ? '–' : t === 'inr' ? inr(+v) : t === 'n' ? nf(+v) : t === 'pct' ? Math.round(v * 100) + '%' : t === 'date' ? day(v) : esc(v));
+    body(`<div class="mk-kpis">
+        <div class="mk-kpi"><span>Active campaigns</span><b>${nf(T.campaigns)}</b><span>${T.daily ? inr(T.daily) + ' a day budgeted' : ''}</span></div>
+        <div class="mk-kpi"><span>Spent yesterday</span><b>${inr(T.yesterday)}</b></div>
+        <div class="mk-kpi"><span>Spent, last 30 days</span><b>${inr(T.spend30)}</b></div>
+        <div class="mk-kpi"><span>Spent this month</span><b>${inr(T.month)}</b></div>
+        <div class="mk-kpi"><span>Spent this financial year</span><b>${inr(T.fy)}</b></div>
+        <div class="mk-kpi"><span>Leads, last 30 days</span><b>${nf(T.leads30)}</b><span>${T.leads30 && T.spend30 ? inr(T.spend30 / T.leads30) + ' per lead' : ''}${T.chats30 ? ' · ' + nf(T.chats30) + ' chats' : ''}</span></div></div>
+      <div class="mk-card"><h3>Where the money is going</h3><p class="small muted" style="margin:0 0 8px">Every campaign running now. Meta Ads figures come in by themselves each morning; others are as typed in. Click a campaign for its spend day by day.</p>
+        ${rows.length ? `<div style="overflow-x:auto"><table class="mk-t"><tr>${COLS.map(([k, l, t]) => `<th data-as="${k}" style="cursor:pointer;white-space:nowrap;${t && t !== 'date' ? 'text-align:right' : ''}">${l}${sk === k ? (dir < 0 ? ' ▾' : ' ▴') : ''}</th>`).join('')}</tr>
+          ${rows.map((r) => `<tr data-ac="${r.id}" data-meta="${r.source === 'meta' ? 1 : ''}" style="cursor:pointer">${COLS.map(([k, , t]) => `<td style="${t && t !== 'date' ? 'text-align:right;white-space:nowrap' : ''}">${k === 'src' ? (r.source === 'meta' ? 'Meta Ads' : esc((r.channels || []).map((n) => (NET[n] || {}).n || n).join(', ') || 'Other')) : k === 'pace' && r.pace != null ? `<span style="color:${r.pace > 1 ? '#B42318' : '#067647'};font-weight:700">${f(r.pace, 'pct')}</span>` : f(r[k], t)}</td>`).join('')}</tr>`).join('')}
+          <tr style="font-weight:700"><td>Total</td><td></td><td></td><td style="text-align:right">${inr(T.daily)}</td><td style="text-align:right">${inr(T.yesterday)}</td><td></td><td style="text-align:right">${inr(T.spend30)}</td><td style="text-align:right">${inr(T.month)}</td><td></td><td style="text-align:right">${inr(T.fy)}</td><td style="text-align:right">${nf(T.leads30)}</td><td></td><td style="text-align:right">${nf(T.chats30)}</td><td></td></tr></table></div>` : '<div class="mk-empty">No campaign is running right now.</div>'}</div>`);
+    $$('#mkBody [data-as]').forEach((th) => (th.onclick = () => { if (S.actSort === th.dataset.as) S.actDir = -(S.actDir || -1); else { S.actSort = th.dataset.as; S.actDir = -1; } active(); }));
+    $$('#mkBody [data-ac]').forEach((tr) => (tr.onclick = () => { if (tr.dataset.meta) mdrill('campaign', 'c' + tr.dataset.ac); else campForm(D.campaigns.find((c) => c.id === +tr.dataset.ac)); }));
+  }
+
+  // ---------- campaigns: plan → designs → budget → approval → calendar → posted ----------
+  const PLAN = { draft: ['Being planned', '#667085'], submitted: ['Waiting for approval', '#DC6803'], partly: ['Partly approved', '#7A5AF8'], approved: ['Approved', '#12B76A'], sent_back: ['Sent back', '#B42318'] };
   function campaigns() {
-    body(`<div class="mk-actions">${D.can.edit ? '<button id="newCamp">+ New campaign</button>' : ''}<span class="muted small">Meta Ads campaigns come in by themselves with spend and leads (the 12-month report has them month by month). Add others (print, portals, events) by hand.</span></div>
-      <div class="mk-camp">${D.campaigns.map((c) => { const sp = +c.spent || 0, bud = +c.budget || 0, N = NET[c.channel] || (c.source === 'meta' ? { n: 'Meta Ads' } : null), ld = Math.max(+c.ad_leads || 0, c.leads || 0);
-        return `<div class="mk-card" style="margin:0"><div style="display:flex;justify-content:space-between;gap:8px;align-items:flex-start"><div><h3 style="margin:0">${esc(c.name)}</h3><div class="small muted">${c.source === 'meta' ? '<span class="mk-pill" style="background:#EEF4FF;color:#1877F2">From Meta Ads</span> ' : ''}${N ? N.n + ' · ' : ''}${c.start_on ? day(c.start_on) : ''}${c.end_on ? ' – ' + day(c.end_on) : ''} · ${esc(projName(c.project_id))}</div></div><span class="mk-pill">${c.status === 'done' ? 'Finished' : c.status === 'planned' ? 'Planned' : 'Running'}</span></div>
-          <div style="margin:12px 0 6px;display:flex;justify-content:space-between;font-size:13px"><span>Spent ${inr(sp)}</span><span class="muted">of ${inr(bud)}</span></div><div class="mk-bar"><i style="width:${bud ? Math.min(100, Math.round((sp / bud) * 100)) : 0}%"></i></div>
-          ${c.source === 'meta' ? `<div class="small muted" style="margin-top:6px">${nf(+c.impressions || 0)} seen · ${nf(+c.clicks || 0)} clicks${c.messages ? ' · ' + nf(+c.messages) + ' chats' : ''}${c.objective ? ' · ' + esc(String(c.objective).replace(/^OUTCOME_/, '').toLowerCase()) : ''}</div>` : ''}
-          <div class="mk-funnel" style="margin-top:12px"><div><b>${ld}</b><span>Leads</span></div><div><b>${ld && sp ? inr(sp / ld) : '–'}</b><span>Per lead</span></div><div><b>${c.visits ?? c.visit_leads ?? 0}</b><span>Site visits</span></div><div><b>${c.booked}</b><span>Booked</span></div></div>
-          ${D.can.edit ? `<div class="mk-actions" style="margin:10px 0 0"><button class="ghost small" data-camp="${c.id}">Change</button></div>` : ''}</div>`; }).join('') || '<div class="mk-empty">No campaigns yet. Add each ad or drive with its budget and what was spent, and tag its leads.</div>'}</div>`);
+    const plans = D.campaigns.filter((c) => c.source !== 'meta'), meta = D.campaigns.filter((c) => c.source === 'meta');
+    const des = (c) => D.posts.filter((p) => p.campaign_id === c.id);
+    const thumb = (p) => { const f = (p.files || []).find((x) => /^image\//.test(x.mime)) || (p.files || [])[0];
+      return `<button type="button" class="mk-dz" data-post="${p.id}" title="${esc(p.title)}">${f && /^image\//.test(f.mime) ? `<img src="/api/marketing?pfile=${f.id}" alt="" loading="lazy">` : `<span>${f ? (/video/.test(f.mime) ? 'Video' : 'PDF') : 'No file'}</span>`}<em style="background:${ST[p.status][1]}">${ST[p.status][0]}</em><small>${p.publish_at ? day(p.publish_at) : 'no date'} ${chanDots(p)}</small></button>`; };
+    const card = (c) => { const ps = PLAN[c.plan_status] || PLAN.draft, d = des(c), ok = (x) => `<span class="mk-ok ${x ? 'y' : ''}">${x ? '✓' : '…'}</span>`;
+      return `<div class="mk-plan"><div class="c1"><div style="display:flex;justify-content:space-between;gap:8px;align-items:flex-start"><h3>${esc(c.name)}</h3><span class="mk-pill" style="color:${ps[1]}">${ps[0]}</span></div>
+          <div class="small muted">${esc(projName(c.project_id))}${c.start_on ? ' · ' + day(c.start_on) : ''}${c.end_on ? ' – ' + day(c.end_on) : ''}</div><div style="margin:6px 0">${(c.channels || []).map((n) => `<span style="color:${(NET[n] || NET.website).c}">${ic(n)}</span>`).join(' ')}</div>
+          <p class="brief">${esc(c.brief || 'No description yet.')}</p>${c.review_note ? `<p class="mk-back" style="margin:6px 0 0"><b>Sent back:</b> ${esc(c.review_note)}</p>` : ''}
+          ${D.can.edit ? `<button class="ghost small" data-camp="${c.id}">Change</button>` : ''}</div>
+        <div class="c2"><h4>Designs (${d.length})</h4><div class="mk-dzs">${d.map(thumb).join('')}${D.can.edit && c.plan_status !== 'approved' ? `<button type="button" class="mk-dz add" data-adddes="${c.id}"><span>+ Add design</span></button>` : ''}</div></div>
+        <div class="c3"><h4>Budget</h4><div class="bg"><b>${inr(c.daily_budget)}</b><span>a day</span></div><div class="bg"><b>${inr(c.monthly_budget)}</b><span>a month</span></div>${c.budget ? `<div class="bg"><b>${inr(c.budget)}</b><span>in all</span></div>` : ''}${+c.spent ? `<div class="small muted">Spent so far ${inr(c.spent)}</div>` : ''}</div>
+        <div class="c4"><h4>Approval</h4><div class="mk-okrow">${ok(c.designs_ok_at)} Designs${c.designs_ok_name ? ` <small>${esc(c.designs_ok_name)}</small>` : ''}</div><div class="mk-okrow">${ok(c.budget_ok_at)} Budget${c.budget_ok_name ? ` <small>${esc(c.budget_ok_name)}</small>` : ''}</div>
+          ${D.can.approve && ['submitted', 'partly'].includes(c.plan_status) ? `${!c.designs_ok_at ? `<button class="small" data-ap="designs" data-c="${c.id}">Approve designs</button>` : ''}${!c.budget_ok_at ? `<button class="small" data-ap="budget" data-c="${c.id}">Approve budget</button>` : ''}<button class="ghost small" data-back="${c.id}">Send back</button>` : ''}
+          ${D.can.edit && ['draft', 'sent_back'].includes(c.plan_status) ? `<button class="small" data-submit="${c.id}">Send for approval</button><p class="small muted" style="margin:4px 0 0">You get an email with approve buttons.</p>` : ''}
+          ${c.plan_status === 'approved' ? '<p class="small" style="margin:4px 0 0;color:#067647">The designs are in the calendar and post on their dates.</p>' : ''}</div></div>`; };
+    body(`<div class="mk-actions">${D.can.edit ? '<button id="newCamp">+ New campaign</button>' : ''}<span class="muted small">Plan the campaign, add its Canva designs and the budget, and send it for approval. Once the designs and the budget are approved, the designs go to the calendar and post on their dates.</span></div>
+      ${plans.length ? plans.map(card).join('') : '<div class="mk-empty">No campaigns yet. Press "+ New campaign".</div>'}
+      ${meta.length ? `<h3 style="margin:22px 0 8px;color:#10114e;font-size:15px">Running on Meta Ads</h3><div class="mk-camp">${meta.map((c) => { const ld = Math.max(+c.ad_leads || 0, c.leads || 0), sp = +c.spent || 0;
+        return `<div class="mk-card" style="margin:0"><div style="display:flex;justify-content:space-between;gap:8px"><h3 style="margin:0">${esc(c.name)}</h3><span class="mk-pill">${esc(String(c.ext_status || c.status).toLowerCase())}</span></div><div class="small muted">${esc(projName(c.project_id))} · ${nf(+c.impressions || 0)} seen · ${nf(+c.clicks || 0)} clicks</div>
+          <div class="mk-funnel" style="margin-top:10px"><div><b>${inr(sp)}</b><span>Spent</span></div><div><b>${ld}</b><span>Leads</span></div><div><b>${ld && sp ? inr(sp / ld) : '–'}</b><span>Per lead</span></div><div><b>${nf(+c.messages || 0)}</b><span>Chats</span></div></div></div>`; }).join('')}</div>` : ''}`);
     if ($('#newCamp')) $('#newCamp').onclick = () => campForm(null);
     $$('#mkBody [data-camp]').forEach((b) => (b.onclick = () => campForm(D.campaigns.find((c) => c.id === +b.dataset.camp))));
+    $$('#mkBody [data-post]').forEach((b) => (b.onclick = () => postForm(D.posts.find((p) => p.id === +b.dataset.post))));
+    $$('#mkBody [data-adddes]').forEach((b) => (b.onclick = () => { const c = D.campaigns.find((x) => x.id === +b.dataset.adddes); postForm({ campaign_id: c.id, project_id: c.project_id, channels: (c.channels && c.channels.length ? c.channels : ['instagram', 'facebook']), status: 'draft', kind: 'post', title: c.name + ': ' }); }));
+    $$('#mkBody [data-submit]').forEach((b) => (b.onclick = async () => { try { const r = await C.api('/api/marketing', { action: 'campaign.submit', data: { id: +b.dataset.submit } }); const m = Object.values(r.mail || {})[0] || {}; C.toast(m.to ? 'Sent for approval: Management has been emailed.' : 'Sent for approval.'); await load(); paint(); } catch (e) { alert(e.message); } }));
+    $$('#mkBody [data-ap]').forEach((b) => (b.onclick = async () => { const r = await C.api('/api/marketing', { action: 'campaign.approve', data: { id: +b.dataset.c, kind: b.dataset.ap } }); C.toast(r.designs && r.budget ? `Approved: ${r.scheduled} designs are in the calendar.` : 'Approved.'); await load(); paint(); }));
+    $$('#mkBody [data-back]').forEach((b) => (b.onclick = async () => { const note = prompt('What should change?'); if (!note || !note.trim()) return; await C.api('/api/marketing', { action: 'campaign.sendback', data: { id: +b.dataset.back, note } }); C.toast('Sent back.'); await load(); paint(); }));
   }
   function campForm(c) {
-    const x = c || { status: 'active', project_id: S.scope === 'company' ? (D.projects.find((p) => /signature/i.test(p.name)) || {}).id : +S.scope };
-    const dl = C.dialog(`<div class="mk-dl"><h2>${c ? 'Campaign' : 'New campaign'}</h2><label>Name<input name="name" value="${esc(x.name)}" required placeholder="e.g. Diwali site-visit drive"></label>
-      <div class="row"><div><label>For</label><select name="projectId"><option value="company">Company</option>${D.projects.map((p) => `<option value="${p.id}" ${x.project_id === p.id ? 'selected' : ''}>${esc(p.name)}</option>`).join('')}</select></div><div><label>Channel</label><select name="channel"><option value="">—</option>${Object.entries(NET).map(([k, v]) => `<option value="${k}" ${x.channel === k ? 'selected' : ''}>${v.n}</option>`).join('')}<option value="print" ${x.channel === 'print' ? 'selected' : ''}>Print / hoarding</option><option value="portal" ${x.channel === 'portal' ? 'selected' : ''}>Property portals</option><option value="event" ${x.channel === 'event' ? 'selected' : ''}>Event</option></select></div></div>
-      <div class="row"><div><label>From</label><input type="date" name="startOn" value="${esc((x.start_on || '').slice(0, 10))}"></div><div><label>To</label><input type="date" name="endOn" value="${esc((x.end_on || '').slice(0, 10))}"></div></div>
-      <div class="row"><div><label>Budget ₹</label><input name="budget" inputmode="decimal" value="${x.budget ?? ''}"></div><div><label>Spent so far ₹</label><input name="spent" inputmode="decimal" value="${x.spent ?? ''}"></div></div>
-      <div class="row"><div><label>Site visits (if not tracked on leads)</label><input name="visits" inputmode="numeric" value="${x.visits ?? ''}"></div><div><label>Status</label><select name="status"><option value="planned" ${x.status === 'planned' ? 'selected' : ''}>Planned</option><option value="active" ${x.status === 'active' ? 'selected' : ''}>Running</option><option value="done" ${x.status === 'done' ? 'selected' : ''}>Finished</option></select></div></div>
-      <label>Note</label><textarea name="note" rows="2">${esc(x.note)}</textarea>${c ? '<p class="small"><a href="#" id="delCamp" style="color:#B42318">Delete campaign</a></p>' : ''}</div>`,
-    async (v) => { await C.api('/api/marketing', { action: 'campaign.save', data: { id: c && c.id, ...v } }); C.toast('Saved.'); await load(); paint(); });
-    const db = $('#delCamp', dl); if (db) db.onclick = async (e) => { e.preventDefault(); if (!confirm('Delete this campaign? Its leads stay.')) return; await C.api('/api/marketing', { action: 'campaign.delete', data: { id: c.id } }); dl.close(); dl.remove(); await load(); paint(); };
+    const x = c || { status: 'planned', channels: ['instagram', 'facebook'], project_id: S.scope === 'company' ? (D.projects.find((p) => /signature/i.test(p.name)) || {}).id : +S.scope };
+    const metaC = x.source === 'meta';
+    const dl = C.dialog(`<div class="mk-dl"><h2>${c ? 'Campaign' : 'New campaign'}</h2><label>Name<input name="name" value="${esc(x.name)}" required placeholder="e.g. Dream Signature Diwali site visits" ${metaC ? 'readonly' : ''}></label>
+      <label>What the campaign is about</label><textarea name="brief" rows="4" placeholder="The idea, the offer, who it is for, the message, what we want people to do">${esc(x.brief)}</textarea>
+      <div class="row"><div><label>For</label><select name="projectId"><option value="company">Company</option>${D.projects.map((p) => `<option value="${p.id}" ${x.project_id === p.id ? 'selected' : ''}>${esc(p.name)}</option>`).join('')}</select></div>
+        <div><label>Runs from</label><input type="date" name="startOn" value="${esc((x.start_on || '').slice(0, 10))}" ${metaC ? 'readonly' : ''}></div><div><label>to</label><input type="date" name="endOn" value="${esc((x.end_on || '').slice(0, 10))}" ${metaC ? 'readonly' : ''}></div></div>
+      <label>Channels</label><div class="mk-ch">${['instagram', 'facebook', 'youtube', 'linkedin', 'whatsapp', 'google', 'website'].map((n) => `<label><input type="checkbox" name="ch" value="${n}" ${(x.channels || []).includes(n) ? 'checked' : ''}>${ic(n, 'mk-ic', NET[n].c)}${NET[n].n}</label>`).join('')}</div>
+      <div class="row"><div><label>Daily budget ₹</label><input name="dailyBudget" inputmode="decimal" value="${x.daily_budget ?? ''}"></div><div><label>Monthly budget ₹</label><input name="monthlyBudget" inputmode="decimal" value="${x.monthly_budget ?? ''}"></div><div><label>Total budget ₹</label><input name="budget" inputmode="decimal" value="${x.budget ?? ''}" ${metaC ? 'readonly' : ''}></div></div>
+      ${metaC ? '' : `<div class="row"><div><label>Spent so far ₹ (print, portals, events)</label><input name="spent" inputmode="decimal" value="${x.spent ?? ''}"></div><div><label>Site visits (if not tracked on leads)</label><input name="visits" inputmode="numeric" value="${x.visits ?? ''}"></div></div>`}
+      <label>Note</label><input name="note" value="${esc(x.note)}">${c && !metaC ? '<p class="small"><a href="#" id="delCamp" style="color:#B42318">Delete campaign</a></p>' : ''}
+      ${c && ['submitted', 'partly', 'approved'].includes(c.plan_status) ? '<p class="small muted">Changing the daily or monthly budget sends the budget for approval again.</p>' : ''}</div>`,
+    async (v) => { const r = await C.api('/api/marketing', { action: 'campaign.save', data: { id: c && c.id, ...v, channels: $$('.mk-dl [name=ch]:checked').map((i) => i.value), status: x.status } }); C.toast(c ? 'Saved.' : 'Campaign created: now add its designs.'); await load(); paint(); return r; });
+    const db = $('#delCamp', dl); if (db) db.onclick = async (e) => { e.preventDefault(); if (!confirm('Delete this campaign? Its posts and leads stay.')) return; await C.api('/api/marketing', { action: 'campaign.delete', data: { id: c.id } }); dl.close(); dl.remove(); await load(); paint(); };
   }
 
   // ---------- design library ----------
