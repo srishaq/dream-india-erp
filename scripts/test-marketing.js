@@ -80,7 +80,7 @@ let n = 0; const step = async (name, fn) => { await fn(); n++; console.log('  âœ
   await step('Marketing opens for the marketing role, Management and Admin; not for the CRM team', async () => {
     const g = await rupali('/api/marketing?scope=company');
     assert.equal(g.status, 200, g.error); assert.equal(g.can.edit, true); assert.equal(g.can.approve, false);
-    assert.equal(g.channels.filter((c) => !c.wa).length, 1); assert.equal(g.channels[0].handle, 'dreamindiarealty'); assert.equal(g.channels[1].network, 'whatsapp');
+    assert.equal(g.channels.filter((c) => !c.wa && !c.ivr).length, 1); assert.equal(g.channels[2].network, 'ivr'); assert.equal(g.channels[0].handle, 'dreamindiarealty'); assert.equal(g.channels[1].network, 'whatsapp');
     assert.equal((await sameer('/api/marketing?scope=company')).can.approve, true);
     assert.equal((await crm('/api/marketing?scope=company')).status, 403);
     assert.equal((await M(sameer, 'post.save', { title: 'x' })).status, 403); // Management approves, the marketing team plans
@@ -136,6 +136,23 @@ let n = 0; const step = async (name, fn) => { await fn(); n++; console.log('  âœ
     assert.equal(a.ok, true);
     const b = await post(g.settings.leadUrl, { name: 'Web Enquiry', phone: '9000000001' }); assert.equal(b.duplicate, true);
     const l = await db.one("select * from mkt_leads where phone = '9000000001'"); assert.equal(l.source, 'website'); assert.equal(l.project_id, sig.id); assert.match(l.note, /Came again/);
+  });
+
+  await step('IVR: each call (Exotel Passthru, GET) is kept, a new caller becomes a lead, a repeat caller gets a note, a missed call is listed', async () => {
+    const g = await admin('/api/marketing?scope=company'); const link = g.settings.ivrUrl; assert.ok(link);
+    const hit = (qs) => fetch(BASE + link + '&' + qs).then(async (r) => ({ status: r.status, text: await r.text() }));
+    assert.equal((await fetch(BASE + '/api/marketing?ivr=wrongkeywrongkeywrongkey&CallFrom=09876543210')).status, 403);
+    const a = await hit('CallSid=s1&CallFrom=09876543210&CallTo=02261234567&StartTime=2026-10-30%2011:05:00&CallType=completed&DialCallDuration=42&RecordingUrl=https%3A%2F%2Frec.example%2F1.mp3');
+    assert.equal(a.status, 200); assert.equal(a.text, 'OK');
+    await hit('CallSid=s1&CallFrom=09876543210&CallType=completed&DialCallDuration=42'); // the same call again: not doubled
+    await hit('CallSid=s2&CallFrom=09876543210&CallTo=02261234567&CallType=call-attempt&DialCallDuration=0'); // the same caller, missed
+    const l = await db.q("select * from mkt_leads where phone = '9876543210'"); assert.equal(l.length, 1); assert.equal(l[0].source, 'ivr'); assert.match(l[0].note, /Called the IVR again/);
+    assert.equal((await db.one('select count(*)::int as n from mkt_ivr_calls')).n, 2);
+    const o = await rupali('/api/marketing?scope=company'); const iv = o.channels.find((c) => c.ivr).ivr;
+    assert.equal(iv.calls30, 2); assert.equal(iv.callers30, 1); assert.equal(iv.missed30, 1); assert.equal(iv.leads30, 1);
+    assert.equal((await rupali('/api/marketing?mdrill=ivrmissed&scope=company')).rows.length, 1);
+    assert.equal((await rupali('/api/marketing?mdrill=ivrcalls&scope=company')).rows[1].recording_url, 'https://rec.example/1.mp3');
+    await db.q("delete from mkt_ivr_calls"); await db.q("delete from mkt_leads where phone = '9876543210'");
   });
 
   await step('Tasks and figures typed by hand', async () => {

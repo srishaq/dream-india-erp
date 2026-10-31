@@ -17,7 +17,7 @@ const { has } = require('../lib/roles');
 const { route, fail, str, intOr } = require('../lib/http');
 
 const NETWORKS = ['instagram', 'facebook', 'youtube', 'linkedin', 'website', 'whatsapp', 'google'];
-const SOURCES = ['instagram', 'facebook', 'meta_ads', 'google_ads', 'youtube', 'website', 'whatsapp', '99acres', 'magicbricks', 'housing', 'walk_in', 'referral', 'channel_partner', 'telecalling', 'hoarding', 'event', 'other'];
+const SOURCES = ['instagram', 'facebook', 'meta_ads', 'google_ads', 'youtube', 'website', 'whatsapp', 'ivr', '99acres', 'magicbricks', 'housing', 'walk_in', 'referral', 'channel_partner', 'telecalling', 'hoarding', 'event', 'other'];
 const KINDS = ['post', 'reel', 'story', 'video', 'carousel', 'ad', 'brochure', 'email', 'other'];
 const STATUSES = ['idea', 'draft', 'review', 'approved', 'scheduled', 'published'];
 const LEAD_ST = ['new', 'contacted', 'visit', 'booked', 'lost'];
@@ -74,6 +74,11 @@ async function overview(u, scope, req) {
   const waCh = chans.find((c) => c.network === 'whatsapp') || { network: 'whatsapp', handle: '', url: null, projectId: null };
   const fbAt = channels.findIndex((c) => c.network === 'facebook');
   channels.splice(fbAt >= 0 ? fbAt + 1 : channels.length, 0, { ...waCh, wa: { ...wa, spend: +wa.spend, leads30: wl.d30, leads: wl.total } });
+  const iv = await db.one(`select count(*) filter (where called_at > now() - interval '30 days')::int as calls30, count(distinct caller) filter (where called_at > now() - interval '30 days')::int as callers30,
+      count(*) filter (where called_at > now() - interval '30 days' and (status ~* 'miss|no.?answer|busy|fail|incomplete|call-attempt' or coalesce(duration, 0) = 0))::int as missed30,
+      count(*)::int as total, max(called_at) as last from mkt_ivr_calls ${projectId ? 'where project_id = ' + +projectId : ''}`);
+  const ivl = await db.one(`select count(*) filter (where created_at > now() - interval '30 days')::int as d30 from mkt_leads where source = 'ivr' ${projectId ? 'and project_id = ' + +projectId : ''}`);
+  channels.splice(channels.findIndex((c) => c.wa) + 1, 0, { network: 'ivr', handle: '', ivr: { ...iv, leads30: ivl.d30 } });
   const posts = await db.q(`select p.*, array_to_json(p.channels) as channels, c.name as created_name, a.name as approved_name,
        (select coalesce(json_agg(json_build_object('id', f.id, 'name', f.name, 'mime', f.mime, 'size', f.size) order by f.id), '[]') from mkt_post_files f where f.post_id = p.id) as files
      from mkt_posts p left join users c on c.id = p.created_by left join users a on a.id = p.approved_by
@@ -95,7 +100,7 @@ async function overview(u, scope, req) {
        coalesce(likes, 0) + coalesce(comments, 0) + coalesce(shares, 0) + coalesce(saves, 0) as engagement
      from mkt_media where posted_at > now() - interval '30 days' order by coalesce(likes, 0) + coalesce(comments, 0) + coalesce(shares, 0) + coalesce(saves, 0) desc, views desc nulls last limit 8`);
   return { top, scope: projectId || 'company', projects, team, channels, posts, campaigns, leads, tasks,
-    settings: { channels: set.channels, drive: set.drive, needApproval: !!set.needApproval, share: (() => { try { return require('../lib/sheets').serviceEmail(); } catch { return null; } })(), leadUrl: canEdit(u) ? `/api/marketing?lead=${set.leadKey}` : null },
+    settings: { channels: set.channels, drive: set.drive, needApproval: !!set.needApproval, share: (() => { try { return require('../lib/sheets').serviceEmail(); } catch { return null; } })(), leadUrl: canEdit(u) ? `/api/marketing?lead=${set.leadKey}` : null, ivrUrl: canEdit(u) ? `/api/marketing?ivr=${set.leadKey}` : null },
     social: { ...social, metaRedirect: canEdit(u) ? require('../lib/social').metaRedirect(req) : null },
     can: { edit: canEdit(u), approve: canApprove(u), admin: u.role === 'admin' }, lists: { networks: NETWORKS, sources: SOURCES, kinds: KINDS, statuses: STATUSES, leadStatuses: LEAD_ST } };
 }
@@ -198,6 +203,17 @@ async function mdrill(key, scope) {
        from mkt_leads l left join mkt_campaigns c on c.id = l.campaign_id left join projects p on p.id = l.project_id where l.source = 'whatsapp' ${projectId ? 'and l.project_id = ' + +projectId : ''} order by l.created_at desc`);
     return { title: 'Leads that came in on WhatsApp', columns: [['day', 'Date', 'date'], ['name', 'Name'], ['phone', 'Phone'], ['campaign', 'Campaign'], ['status', 'Status'], ['project', 'Project'], ['note', 'Note']], rows };
   }
+  if (key === 'ivrcalls' || key === 'ivrmissed') {
+    const rows = await db.q(`select to_char(c.called_at + interval '330 minutes', 'YYYY-MM-DD HH24:MI') as at, c.caller, c.ivr_number, c.status, c.duration, c.digits, c.recording_url, l.status as lead_status, l.name
+       from mkt_ivr_calls c left join mkt_leads l on l.id = c.lead_id where c.called_at > now() - interval '30 days' ${projectId ? 'and c.project_id = ' + +projectId : ''}
+       ${key === 'ivrmissed' ? "and (c.status ~* 'miss|no.?answer|busy|fail|incomplete|call-attempt' or coalesce(c.duration, 0) = 0)" : ''} order by c.called_at desc`);
+    return { title: key === 'ivrmissed' ? 'Missed IVR calls, last 30 days: call these back' : 'IVR calls, last 30 days', columns: [['at', 'When'], ['caller', 'Caller'], ['name', 'Name'], ['ivr_number', 'IVR number'], ['status', 'Status'], ['duration', 'Seconds', 'n'], ['digits', 'Pressed'], ['lead_status', 'Lead'], ['recording_url', 'Recording', 'link']], rows };
+  }
+  if (key === 'ivrleads') {
+    const rows = await db.q(`select to_char(l.created_at + interval '330 minutes', 'YYYY-MM-DD') as day, l.name, l.phone, l.status, p.name as project, l.note from mkt_leads l left join projects p on p.id = l.project_id
+       where l.source = 'ivr' and l.created_at > now() - interval '30 days' ${projectId ? 'and l.project_id = ' + +projectId : ''} order by l.created_at desc`);
+    return { title: 'Leads from the IVR, last 30 days', columns: [['day', 'Date', 'date'], ['name', 'Name'], ['phone', 'Phone'], ['status', 'Status'], ['project', 'Project'], ['note', 'Note']], rows };
+  }
   if (key === 'cpl') {
     const rows = await db.q(`select c.name, c.source, c.ext_status, p.name as project, coalesce(c.spent, 0) as spent, coalesce(c.ad_leads, 0) as ad_leads,
         (select count(*)::int from mkt_leads l where l.campaign_id = c.id) as crm_leads, coalesce(c.messages, 0) as chats
@@ -228,6 +244,42 @@ async function leadHook(req, res) {
   const r = await db.one(`insert into mkt_leads (project_id, name, phone, email, source, note, ext_id) values ($1, $2, $3, $4, $5, $6, $7)
      on conflict (ext_id) where ext_id is not null do update set updated_at = now() returning id`, [pj && pj.id, name || null, phone, email || null, source, str(b.message || b.note, 1000) || null, ext]);
   return res.json({ ok: true, id: r.id });
+}
+
+// A call to the IVR number (Exotel Passthru / status callback, or any IVR that can call a link): GET or POST, checked by the
+// key in the link. Every call is kept; a new number becomes a lead (source IVR), a number already a lead in the last
+// 30 days gets a note. Answers plain 200 "OK" at once, as Exotel expects.
+async function ivrHook(req, res) {
+  res.setHeader('Cache-Control', 'no-store');
+  const set = await settings();
+  const k = String((req.query || {}).ivr || '');
+  if (k.length !== set.leadKey.length || !crypto.timingSafeEqual(Buffer.from(k), Buffer.from(set.leadKey))) return res.status(403).end('Wrong key');
+  let b = req.body; if (Buffer.isBuffer(b)) b = b.toString('utf8'); if (typeof b === 'string') { try { b = JSON.parse(b); } catch { b = Object.fromEntries(new URLSearchParams(b)); } }
+  const P = { ...(req.query || {}), ...(b && typeof b === 'object' ? b : {}) };
+  const g = (...names) => { for (const n of names) for (const key of Object.keys(P)) if (key.toLowerCase() === n.toLowerCase() && P[key] != null && P[key] !== '') return String(P[key]); return ''; };
+  const caller = phone10(g('CallFrom', 'From', 'caller', 'caller_number', 'callerid', 'mobile', 'phone', 'customer_number'));
+  if (!caller) { res.statusCode = 200; return res.end('OK'); }
+  const sid = str(g('CallSid', 'call_sid', 'sid', 'call_id', 'uuid'), 120) || null;
+  const ivrNo = phone10(g('CallTo', 'To', 'did', 'virtual_number', 'ivr_number', 'called_number')) || str(g('CallTo', 'To'), 20) || null;
+  const at = (() => { const t = g('StartTime', 'start_time', 'Created', 'time'); const d = t ? new Date(/Z|[+-]\d\d:?\d\d$/.test(t) ? t : t.replace(' ', 'T') + '+05:30') : new Date(); return isNaN(d) ? new Date() : d; })();
+  const status = str(g('DialCallStatus', 'CallStatus', 'Status', 'CallType', 'call_status'), 40) || null;
+  const duration = intOr(g('DialCallDuration', 'Duration', 'ConversationDuration', 'duration')) || null;
+  const rec = url(g('RecordingUrl', 'recording_url', 'recording'));
+  const digits = str(g('digits', 'Digits', 'dtmf'), 20) || null;
+  const proj = (set.ivrProjects || {})[ivrNo] || (await db.one("select id from projects where code = 'SIGNATURE'") || {}).id || null;
+  const call = await db.one(`insert into mkt_ivr_calls (sid, caller, ivr_number, called_at, status, duration, recording_url, digits, project_id, raw) values ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)
+     on conflict (sid) do update set status = coalesce(excluded.status, mkt_ivr_calls.status), duration = coalesce(excluded.duration, mkt_ivr_calls.duration),
+       recording_url = coalesce(excluded.recording_url, mkt_ivr_calls.recording_url), raw = excluded.raw returning id, lead_id, (xmax = 0) as fresh`,
+  [sid || `ivr-${caller}-${at.getTime()}`, caller, ivrNo, at, status, duration, rec, digits, proj, P]);
+  if (!call.lead_id) {
+    const when = at.toLocaleString('en-IN', { day: 'numeric', month: 'short', hour: 'numeric', minute: '2-digit', timeZone: 'Asia/Kolkata' });
+    const dup = await db.one("select id from mkt_leads where phone = $1 and created_at > now() - interval '30 days' order by id desc limit 1", [caller]);
+    let leadId;
+    if (dup) { leadId = dup.id; await db.q("update mkt_leads set note = concat_ws(E'\\n', note, $2::text), updated_at = now() where id = $1", [dup.id, `Called the IVR again on ${when}`]); }
+    else leadId = (await db.one("insert into mkt_leads (project_id, phone, source, note, ext_id) values ($1, $2, 'ivr', $3, $4) returning id", [proj, caller, `Called the IVR${ivrNo ? ' (' + ivrNo + ')' : ''} on ${when}`, 'ivr:' + (sid || caller + at.getTime())])).id;
+    await db.q('update mkt_ivr_calls set lead_id = $2 where id = $1', [call.id, leadId]);
+  }
+  res.statusCode = 200; res.setHeader('Content-Type', 'text/plain'); return res.end('OK');
 }
 
 const handler = route({
@@ -415,5 +467,6 @@ const handler = route({
   },
 });
 
-module.exports = (req, res) => ((req.query || {}).lead ? leadHook(req, res).catch((e) => { console.error(e); res.status(500).json({ error: 'Could not save the lead.' }); }) : handler(req, res));
+module.exports = (req, res) => ((req.query || {}).ivr ? ivrHook(req, res).catch((e) => { console.error(e); res.statusCode = 200; res.end('OK'); })
+  : (req.query || {}).lead ? leadHook(req, res).catch((e) => { console.error(e); res.status(500).json({ error: 'Could not save the lead.' }); }) : handler(req, res));
 module.exports.settings = settings;
