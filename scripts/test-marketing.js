@@ -442,6 +442,10 @@ let n = 0; const step = async (name, fn) => { await fn(); n++; console.log('  âœ
     assert.deepEqual(global.capi.data.map((x) => x.event_name), ['Contacted', 'Site visit']); assert.equal(global.capi.data[0].user_data.lead_id, 1234567890); assert.equal(global.capi.data[0].custom_data.event_source, 'crm'); assert.equal(global.capi.access_token, 'capitok');
     assert.equal(global.capi.data[0].user_data.ph[0].length, 64); // hashed, never the number itself
     assert.equal((await L.capi({})).sent, 0);
+    // no token of its own: the connected Facebook login's token is used
+    delete process.env.META_CAPI_TOKEN;
+    await M(rupali, 'lead.contact', { id: r.id, outcome: 'lost' });
+    assert.equal((await L.capi({})).sent, 1); assert.equal(global.capi.access_token, 'LONG'); assert.ok(global.capi.appsecret_proof);
     delete process.env.META_DATASET_ID; delete process.env.META_CAPI_TOKEN;
   });
 
