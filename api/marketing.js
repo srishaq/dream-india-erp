@@ -110,6 +110,9 @@ async function overview(u, scope, req) {
       count(*)::int as total, max(called_at) as last from mkt_ivr_calls ${projectId ? 'where project_id = ' + +projectId : ''}`);
   const ivl = await db.one(`select count(*) filter (where created_at > now() - interval '30 days')::int as d30 from mkt_leads where source = 'ivr' ${projectId ? 'and project_id = ' + +projectId : ''}`);
   channels.splice(channels.findIndex((c) => c.wa) + 1, 0, { network: 'ivr', handle: '', ivr: { ...iv, leads30: ivl.d30 } });
+  // the website, once its tracker sends visits (or when a website channel is set up)
+  { const wf = await webFigures(30); const at = channels.findIndex((c) => c.network === 'website'); const wl = await db.one("select count(*) filter (where created_at > now() - interval '30 days')::int as d30 from mkt_leads where source = 'website' or 'website' = any(sources)");
+    if (wf.ever || at >= 0) { const base = at >= 0 ? channels.splice(at, 1)[0] : { network: 'website', handle: 'dreamindiarealty.com', url: 'https://dreamindiarealty.com', projectId: null }; channels.push({ ...base, web: { ...wf, leads30: wl.d30 } }); } }
   const posts = await db.q(`select p.*, array_to_json(p.channels) as channels, c.name as created_name, a.name as approved_name,
        (select coalesce(json_agg(json_build_object('id', f.id, 'name', f.name, 'mime', f.mime, 'size', f.size) order by f.id), '[]') from mkt_post_files f where f.post_id = p.id) as files
      from mkt_posts p left join users c on c.id = p.created_by left join users a on a.id = p.approved_by
@@ -301,6 +304,25 @@ async function mdrill(key, scope, period) {
        where l.source = 'ivr' and l.created_at > now() - interval '30 days' ${projectId ? 'and l.project_id = ' + +projectId : ''} order by l.created_at desc`);
     return { title: 'Leads from the IVR, last 30 days', columns: [['day', 'Date', 'date'], ['name', 'Name'], ['phone', 'Phone'], ['status', 'Status'], ['project', 'Project'], ['note', 'Note']], rows };
   }
+  if (key === 'webdays') {
+    const rows = await db.q(`select (at + interval '330 minutes')::date as day, count(distinct visitor) filter (where kind = 'view')::int as visitors, count(distinct session) filter (where kind = 'view')::int as visits, count(*) filter (where kind = 'view')::int as views,
+        count(*) filter (where kind = 'call')::int as calls, count(*) filter (where kind = 'whatsapp')::int as whatsapp, count(*) filter (where kind = 'enquiry')::int as enquiries from mkt_web_hits where at > now() - interval '30 days' group by 1 order by 1 desc`);
+    return { title: 'Website, day by day (last 30 days)', columns: [['day', 'Date', 'date'], ['visitors', 'Visitors', 'n'], ['visits', 'Visits', 'n'], ['views', 'Pages seen', 'n'], ['calls', 'Call clicks', 'n'], ['whatsapp', 'WhatsApp clicks', 'n'], ['enquiries', 'Enquiry forms', 'n']], rows };
+  }
+  if (key === 'websources') {
+    const rows = await db.q(`select channel, count(distinct visitor) filter (where kind = 'view')::int as visitors, count(distinct session) filter (where kind = 'view')::int as visits, count(*) filter (where kind = 'view')::int as views,
+        count(*) filter (where kind in ('call', 'whatsapp'))::int as clicks, count(*) filter (where kind = 'enquiry')::int as enquiries,
+        string_agg(distinct campaign, ', ') filter (where campaign is not null) as campaigns from mkt_web_hits where at > now() - interval '30 days' group by 1 order by 3 desc, 4 desc`);
+    return { title: 'Where website visitors came from (last 30 days)', columns: [['channel', 'From'], ['visitors', 'Visitors', 'n'], ['visits', 'Visits', 'n'], ['views', 'Pages seen', 'n'], ['clicks', 'Call / WhatsApp clicks', 'n'], ['enquiries', 'Enquiry forms', 'n'], ['campaigns', 'Campaigns (utm)']], rows };
+  }
+  if (key === 'webpages') {
+    const rows = await db.q(`select path, max(title) as title, count(*)::int as views, count(distinct visitor)::int as visitors from mkt_web_hits where kind = 'view' and at > now() - interval '30 days' group by 1 order by 3 desc limit 200`);
+    return { title: 'Pages seen most (last 30 days)', columns: [['path', 'Page'], ['title', 'Title'], ['views', 'Views', 'n'], ['visitors', 'Visitors', 'n']], rows };
+  }
+  if (key === 'webclicks') {
+    const rows = await db.q(`select to_char(at + interval '330 minutes', 'YYYY-MM-DD HH24:MI') as at, kind, label, path, channel, device from mkt_web_hits where kind <> 'view' and at > now() - interval '30 days' order by id desc limit 500`);
+    return { title: 'Calls, WhatsApp, brochure and enquiry clicks on the website (last 30 days)', columns: [['at', 'When'], ['kind', 'What'], ['label', 'Number / link'], ['path', 'On page'], ['channel', 'Came from'], ['device', 'Device']], rows };
+  }
   if (key === 'cpl') {
     const rows = await db.q(`select c.name, c.source, c.ext_status, p.name as project, coalesce(c.spent, 0) as spent, coalesce(c.ad_leads, 0) as ad_leads,
         (select count(*)::int from mkt_leads l where l.campaign_id = c.id) as crm_leads, coalesce(c.messages, 0) as chats
@@ -323,13 +345,22 @@ async function leadHook(req, res) {
   const name = str(b.name || b.full_name || [b.first_name, b.last_name].filter(Boolean).join(' '), 120), phone = phone10(b.phone || b.phone_number || b.mobile), email = str(b.email, 160);
   if (!phone && !email) return res.status(400).json({ error: 'A lead needs a phone number or an email.' });
   const projects = await db.q('select id, name, code from projects where active');
-  const pj = projects.find((p) => String(p.id) === String(b.project) || (b.project && new RegExp(String(b.project).replace(/[^a-z0-9 ]/gi, ''), 'i').test(p.name))) || projects.find((p) => p.code === 'SIGNATURE') || null;
+  const said = `${b.project || ''} ${b.page || ''}`.toLowerCase();
+  const words = (n) => String(n).toLowerCase().replace(/^dream\s+(india\s+)?/, '').split(/\W+/).filter((w) => w.length > 3);
+  const pj = projects.find((p) => String(p.id) === String(b.project)) || projects.find((p) => b.project && new RegExp(String(b.project).replace(/[^a-z0-9 ]/gi, ''), 'i').test(p.name))
+    || projects.find((p) => words(p.name).length && words(p.name).every((w) => said.includes(w))) || projects.find((p) => p.code === 'SIGNATURE') || null;
   const source = SOURCES.includes(String(b.source || '').toLowerCase()) ? String(b.source).toLowerCase() : 'website';
   const ext = str(b.id || b.leadgen_id, 120) || null;
   // the website form sends where the visitor came from (utm_… from the ad link): kept, and the campaign found by its name
   const utm = {}; for (const k of ['utm_source', 'utm_medium', 'utm_campaign', 'utm_content', 'utm_term', 'gclid', 'fbclid', 'page', 'referrer']) { const v = str(b[k], 300); if (v) utm[k] = v; }
-  const camp = utm.utm_campaign ? await db.one("select id, project_id from mkt_campaigns where lower(name) = lower($1) or ext_id = $2 or ext_id = $3 order by id desc limit 1", [utm.utm_campaign, 'meta:' + utm.utm_campaign, 'gads:' + utm.utm_campaign]) : null;
-  const src = source === 'website' && /google|gclid/i.test(`${utm.utm_source || ''} ${utm.gclid ? 'gclid' : ''}`) ? 'google_ads' : source === 'website' && /facebook|instagram|meta|fb|ig/i.test(utm.utm_source || '') ? 'meta_ads' : source;
+  const vid = str(b.vid, 60);
+  if (vid) { // the visit that brought them (first page of their first visit), from the website tracker
+    const first = await db.one("select source, medium, campaign, channel, path, referrer from mkt_web_hits where visitor = $1 and kind = 'view' order by at limit 1", [vid]);
+    if (first) { utm.visitor = vid; utm.first_channel = first.channel; utm.landing = first.path; if (!utm.utm_source && first.source) utm.utm_source = first.source; if (!utm.utm_campaign && first.campaign) utm.utm_campaign = first.campaign; if (!utm.utm_medium && first.medium) utm.utm_medium = first.medium; if (!utm.referrer && first.referrer) utm.referrer = first.referrer; }
+  }
+  const camp = utm.utm_campaign ? await db.one("select id, project_id, source from mkt_campaigns where lower(name) = lower($1) or ext_id = $2 or ext_id = $3 order by id desc limit 1", [utm.utm_campaign, 'meta:' + utm.utm_campaign, 'gads:' + utm.utm_campaign]) : null;
+  const paid = /cpc|paid|ads?$|ppc|display/i.test(utm.utm_medium || '') || utm.gclid || utm.first_channel === 'Google Ads' || utm.first_channel === 'Meta Ads';
+  const src = source === 'website' && camp && camp.source === 'meta' ? 'meta_ads' : source === 'website' && camp && camp.source === 'google' ? 'google_ads' : source === 'website' && (utm.gclid || (/google/i.test(utm.utm_source || '') && paid)) ? 'google_ads' : source === 'website' && /facebook|instagram|meta|fb|ig/i.test(utm.utm_source || '') && (paid || utm.fbclid) ? 'meta_ads' : source;
   const r = await require('../lib/mkt-leads').add({ name, phone, email, source: src, projectId: (camp && camp.project_id) || (pj && pj.id), campaignId: camp && camp.id, note: str(b.message || b.note, 1000) || null, ext, utm: Object.keys(utm).length ? utm : null });
   return res.json({ ok: true, id: r.id, duplicate: !!r.duplicate });
 }
@@ -415,6 +446,64 @@ async function postingTimes() {
   const kinds = await db.q(`select network, kind, count(*)::int as n, avg(coalesce(likes, 0) + coalesce(comments, 0) * 2 + coalesce(shares, 0) * 3 + coalesce(saves, 0) * 3) as eng, avg(views) as views, avg(reach) as reach
     from mkt_media where posted_at > now() - interval '12 months' group by 1, 2 having count(*) >= 2 order by eng desc`);
   return { cells: rows.map((r) => ({ ...r, eng: +r.eng, views: r.views == null ? null : +r.views })), kinds: kinds.map((r) => ({ ...r, eng: +r.eng, views: r.views == null ? null : +r.views, reach: r.reach == null ? null : +r.reach })) };
+}
+
+// ---------- the website (visits sent by /t.js on dreamindiarealty.com) ----------
+// Where a visit came from, in plain words.
+function webChannel({ source, medium, referrer, gclid, fbclid }) {
+  const s = String(source || '').toLowerCase(), m = String(medium || '').toLowerCase(), r = String(referrer || '').toLowerCase();
+  if (gclid || (/google/.test(s) && /cpc|paid|ppc|ads/.test(m))) return 'Google Ads';
+  if (/facebook|instagram|meta|fb|ig/.test(s) && /cpc|paid|ads|ppc/.test(m)) return 'Meta Ads';
+  if (fbclid && !s) return /instagram/.test(r) ? 'Instagram' : 'Facebook';
+  if (/whatsapp|wa\.me/.test(s + r)) return 'WhatsApp';
+  if (/instagram/.test(s + r)) return 'Instagram';
+  if (/facebook|fb\.com/.test(s + r)) return 'Facebook';
+  if (/youtube|youtu\.be/.test(s + r)) return 'YouTube';
+  if (/linkedin|lnkd/.test(s + r)) return 'LinkedIn';
+  if (/99acres|magicbricks|housing\.com|nobroker|squareyards/.test(s + r)) return 'Property portals';
+  if (s) return 'Campaign: ' + s.slice(0, 40);
+  if (/google\.|bing\.|yahoo\.|duckduckgo|search/.test(r)) return 'Google search';
+  if (r) { try { return 'Link from ' + new URL(r).hostname.replace(/^www\./, ''); } catch { return 'Other sites'; } }
+  return 'Typed in / direct';
+}
+async function hitHook(req, res) {
+  res.setHeader('Access-Control-Allow-Origin', '*'); res.setHeader('Cache-Control', 'no-store');
+  if (req.method === 'OPTIONS') { res.statusCode = 204; return res.end(); }
+  const set = await settings(), k = String((req.query || {}).hit || '');
+  if (k.length !== set.leadKey.length || !crypto.timingSafeEqual(Buffer.from(k), Buffer.from(set.leadKey))) { res.statusCode = 403; return res.end(); }
+  let b = req.body; if (Buffer.isBuffer(b)) b = b.toString('utf8'); if (typeof b === 'string') { if (b.length > 6000) { res.statusCode = 413; return res.end(); } try { b = JSON.parse(b); } catch { b = {}; } }
+  b = b && typeof b === 'object' ? b : {};
+  if (/bot|crawl|spider|slurp|headless|lighthouse|preview|monitor/i.test(String(req.headers['user-agent'] || ''))) { res.statusCode = 204; return res.end(); }
+  const kind = ['view', 'call', 'whatsapp', 'brochure', 'enquiry'].includes(b.k) ? b.k : 'view';
+  const f = { source: str(b.utm_source, 80), medium: str(b.utm_medium, 80), campaign: str(b.utm_campaign, 150), content: str(b.utm_content, 150), term: str(b.utm_term, 150), referrer: str(b.referrer, 300), gclid: !!b.gclid, fbclid: !!b.fbclid };
+  await db.q(`insert into mkt_web_hits (visitor, session, kind, host, path, title, referrer, source, medium, campaign, content, term, channel, device, label) values ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15)`,
+    [str(b.v, 60), str(b.s, 60), kind, str(b.h, 120), str(b.p, 300) || '/', str(b.t, 150), f.referrer, f.source, f.medium, f.campaign, f.content, f.term, webChannel(f), +b.w && +b.w < 768 ? 'mobile' : 'desktop', str(b.l, 120)]);
+  res.statusCode = 204; return res.end();
+}
+async function webFigures(days = 30) {
+  const w = await db.one(`select count(distinct visitor) filter (where kind = 'view')::int as visitors, count(distinct session) filter (where kind = 'view')::int as visits, count(*) filter (where kind = 'view')::int as views,
+      count(*) filter (where kind = 'call')::int as calls, count(*) filter (where kind = 'whatsapp')::int as whatsapp, count(*) filter (where kind = 'enquiry')::int as enquiries,
+      count(distinct visitor) filter (where kind = 'view' and device = 'mobile')::int as mobile, max(at) as last
+    from mkt_web_hits where at > now() - ($1 || ' days')::interval`, [String(days)]);
+  const was = await db.one(`select count(distinct visitor) filter (where kind = 'view')::int as visitors from mkt_web_hits where at <= now() - ($1 || ' days')::interval and at > now() - ($1 || ' days')::interval * 2`, [String(days)]);
+  const top = await db.q(`select channel, count(distinct session)::int as n from mkt_web_hits where kind = 'view' and at > now() - ($1 || ' days')::interval group by 1 order by 2 desc limit 3`, [String(days)]);
+  const spark = (await db.q(`select (at + interval '330 minutes')::date as d, count(distinct visitor)::int as n from mkt_web_hits where kind = 'view' and at > now() - interval '30 days' group by 1 order by 1`)).map((r) => r.n);
+  const any = await db.one('select max(at) as at from mkt_web_hits');
+  return { ...w, visitorsBefore: was.visitors || null, top, spark, ever: any && any.at };
+}
+// each morning: yesterday (and the days before, if missed) into the daily and monthly figures, so the website sits in the
+// 30-day boxes and the 12-month report like the other channels; visits older than 13 months are deleted.
+async function webAggregate() {
+  const days = await db.q(`select (at + interval '330 minutes')::date as d, count(distinct visitor) filter (where kind = 'view')::int as reach, count(*) filter (where kind = 'view')::int as views,
+      count(distinct session) filter (where kind = 'view')::int as sessions, count(*) filter (where kind <> 'view')::int as interactions
+    from mkt_web_hits where at > now() - interval '8 days' group by 1`);
+  for (const r of days) await db.q("insert into mkt_stats (network, day, metrics, source) values ('website', $1, $2, 'direct') on conflict (network, day) do update set metrics = excluded.metrics, updated_at = now()", [r.d, { views: r.views, reach: r.reach, sessions: r.sessions, interactions: r.interactions }]);
+  const months = await db.q(`select date_trunc('month', at + interval '330 minutes')::date as m, count(distinct visitor) filter (where kind = 'view')::int as reach, count(*) filter (where kind = 'view')::int as views,
+      count(distinct session) filter (where kind = 'view')::int as sessions, count(*) filter (where kind <> 'view')::int as interactions
+    from mkt_web_hits where at >= date_trunc('month', now()) - interval '1 month' group by 1`);
+  for (const r of months) await db.q("insert into mkt_stats_month (network, month, metrics) values ('website', $1, $2) on conflict (network, month) do update set metrics = excluded.metrics, updated_at = now()", [r.m, { views: r.views, reach: r.reach, sessions: r.sessions, interactions: r.interactions }]);
+  await db.q("delete from mkt_web_hits where at < now() - interval '13 months'");
+  return { days: days.length };
 }
 
 const handler = route({
@@ -755,7 +844,10 @@ async function publicFile(req, res) {
 }
 module.exports = (req, res) => ((req.query || {}).approve ? require('../lib/mkt-flow').linkPage(req, res).catch((e) => { console.error('approval link', e); if (res.headersSent) return; res.statusCode = 500; res.setHeader('Content-Type', 'text/html; charset=utf-8'); res.end(`<!doctype html><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Dream India ERP</title><body style="font-family:Arial,sans-serif;background:#F7F7FB;padding:24px;color:#10114e"><div style="max-width:560px;margin:0 auto;background:#fff;border-radius:16px;padding:24px"><h2>That did not go through</h2><p>${String(e.message || 'Unknown error').replace(/[<>&]/g, '')}</p><p>Approve it from Marketing in the ERP instead.</p></div></body>`); })
   : (req.query || {}).pub ? publicFile(req, res).catch(() => { res.statusCode = 404; res.end('Not found'); })
+  : (req.query || {}).hit ? hitHook(req, res).catch((e) => { console.error('hit', e.message); res.statusCode = 204; res.end(); })
   : (req.query || {}).ivr ? ivrHook(req, res).catch((e) => { console.error(e); res.statusCode = 200; res.end('OK'); })
   : (req.query || {}).lead ? leadHook(req, res).catch((e) => { console.error(e); res.status(500).json({ error: 'Could not save the lead.' }); }) : handler(req, res));
 module.exports.settings = settings;
 module.exports.recordIvrCall = recordIvrCall;
+module.exports.webAggregate = webAggregate;
+module.exports.webChannel = webChannel;

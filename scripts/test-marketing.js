@@ -492,6 +492,30 @@ let n = 0; const step = async (name, fn) => { await fn(); n++; console.log('  âœ
     assert.equal((await M(rupali, 'alerts.run', {})).status, 403);
   });
 
+  await step('Website: visits from the tracker (where from, pages, clicks), counted like a channel; its enquiry form becomes a lead with the ad that brought it', async () => {
+    const key = (await db.one("select value from settings where key = 'marketing'")).value.leadKey;
+    const hit = (b, ua) => fetch(BASE + '/api/marketing?hit=' + key, { method: 'POST', headers: { 'Content-Type': 'text/plain;charset=UTF-8', ...(ua ? { 'User-Agent': ua } : {}) }, body: JSON.stringify(b) });
+    const r = await hit({ k: 'view', v: 'V1', s: 'S1', h: 'dreamindiarealty.com', p: '/dream-signature', t: 'Dream Signature | 2 BHK Oshiwara', utm_source: 'facebook', utm_medium: 'paid', utm_campaign: 'signature-diwali', fbclid: 'x', w: 390 });
+    assert.equal(r.status, 204); assert.equal(r.headers.get('access-control-allow-origin'), '*');
+    await hit({ k: 'view', v: 'V1', s: 'S1', p: '/floor-plans', t: 'Floor plans', utm_source: 'facebook', utm_medium: 'paid', utm_campaign: 'signature-diwali', w: 390 });
+    await hit({ k: 'whatsapp', v: 'V1', s: 'S1', p: '/floor-plans', l: 'https://wa.me/919800000000', utm_source: 'facebook', utm_medium: 'paid' });
+    await hit({ k: 'view', v: 'V2', s: 'S2', p: '/', referrer: 'https://www.google.com/', w: 1400 });
+    await hit({ k: 'view', v: 'V3', s: 'S3', p: '/' }, 'Googlebot/2.1');
+    assert.equal((await fetch(BASE + '/api/marketing?hit=wrong', { method: 'POST', body: '{}' })).status, 403);
+    const ch = (await db.q('select channel from mkt_web_hits order by id')).map((x) => x.channel);
+    assert.deepEqual(ch, ['Meta Ads', 'Meta Ads', 'Meta Ads', 'Google search']); // the bot is not counted
+    const lead = await fetch(BASE + '/api/marketing?lead=' + key, { method: 'POST', headers: { 'Content-Type': 'application/x-www-form-urlencoded' }, body: new URLSearchParams({ name: 'Site Visitor', phone: '9700000077', source: 'website', vid: 'V1', page: 'https://dreamindiarealty.com/dream-signature', project: 'Dream Signature | 2 BHK Oshiwara' }).toString() }).then((x) => x.json());
+    const l = await db.one('select source, utm, project_id from mkt_leads where id = $1', [lead.id]);
+    assert.equal(l.source, 'meta_ads'); assert.equal(l.utm.first_channel, 'Meta Ads'); assert.equal(l.utm.landing, '/dream-signature'); assert.equal(l.utm.utm_campaign, 'signature-diwali'); assert.equal(l.project_id, sig.id);
+    await require('../api/marketing').webAggregate();
+    const g = await rupali('/api/marketing?scope=company'), w = g.channels.find((c) => c.web);
+    assert.equal(w.web.visitors, 2); assert.equal(w.web.views, 3); assert.equal(w.web.whatsapp, 1); assert.equal(w.web.mobile, 1);
+    assert.ok(g.periods.d30.views >= 3);
+    const S = await rupali('/api/marketing?mdrill=websources&scope=company'); const mr = S.rows.find((x) => x.channel === 'Meta Ads'); assert.equal(mr.views, 2); assert.equal(mr.clicks, 1);
+    assert.equal((await rupali('/api/marketing?mdrill=webpages&scope=company')).rows.length, 3);
+    const js = await fetch(BASE + '/t.js'); assert.equal(js.status, 200); assert.match(js.headers.get('content-type'), /javascript/);
+  });
+
   await step('Disconnecting keeps the figures already pulled; each part remembers its 12-month pull', async () => {
     const c = (await db.one("select value from settings where key = 'social'")).value;
     assert.equal((await M(rupali, 'disconnect', { net: 'meta' })).ok, true);
