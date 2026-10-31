@@ -72,6 +72,7 @@
   .mk-dl .mk-files{display:flex;gap:10px;flex-wrap:wrap;margin:6px 0}.mk-dl .mk-file{width:150px;display:flex;flex-direction:column;gap:4px}.mk-dl .mk-file img,.mk-dl .mk-file video{width:150px;height:150px;object-fit:cover;border-radius:10px;border:1px solid #EAECF0;background:#F7F7FB}
   .mk-dl .mk-file .pdf{width:150px;height:150px;border-radius:10px;border:1px solid #EAECF0;background:#FEF3F2;color:#B42318;font-weight:800;display:flex;flex-direction:column;align-items:center;justify-content:center;text-decoration:none;font-size:20px}.mk-dl .mk-file .pdf small{font-size:11px;font-weight:400;padding:4px 8px;text-align:center;word-break:break-all}
   .mk-dl .mk-back{background:#FEF3F2;border:1px solid #FDA29B;border-radius:10px;padding:8px 10px;font-size:13px;color:#912018}.mk-dl .mk-design{margin-top:10px}
+  .mk .mk-prow h3{font-size:13px;text-transform:uppercase;letter-spacing:.06em;color:var(--mut);margin:0 0 8px}.mk .mk-kpis.k7{grid-template-columns:repeat(auto-fit,minmax(140px,1fr))}.mk .mk-kpis.k7 .mk-kpi b{font-size:22px}
   .mk button.mk-fig{all:unset;cursor:pointer;display:block;border-radius:8px}.mk button.mk-fig:hover b{color:#7A5AF8}.mk .mk-chan .fig button.mk-fig b{display:block;font-size:20px;color:var(--ink)}.mk .mk-chan .fig button.mk-fig span{font-size:12px;color:var(--mut)}
   .mk button.mk-kpi{display:block;width:100%;text-align:left;font:inherit;font-weight:400;cursor:pointer;color:inherit;transition:border-color .15s,box-shadow .15s}.mk button.mk-kpi:hover{background:#fff;border-color:#7A5AF8;box-shadow:0 4px 14px #7A5AF822}
   .mk-dlg{position:fixed;inset:0;background:#10114e66;z-index:80;display:flex;align-items:flex-start;justify-content:center;padding:40px 16px}.mk-dlg .box{background:#fff;border-radius:18px;width:min(1200px,100%);max-height:calc(100vh - 80px);display:flex;flex-direction:column;box-shadow:0 20px 60px #10182855}
@@ -152,13 +153,16 @@
     const srcs = Object.entries(bySrc).sort((a, b) => b[1] - a[1]); const mx = srcs.length ? srcs[0][1] : 1;
     const f = (s) => D.leads.filter((l) => (s === 'contacted' ? ['contacted', 'visit', 'booked'].includes(l.status) : s === 'visit' ? ['visit', 'booked'].includes(l.status) : l.status === s || (s === 'booked' && l.is_buyer))).length;
     const soc = ch.filter((c) => !c.wa && !c.ivr), bef = (k) => (soc.length && soc.every((c) => c[k + 'Before'] != null) ? sum(k + 'Before') : null); // compared only when the 30 days before were pulled
-    body(`<div class="mk-kpis">
-        <button type="button" class="mk-kpi" data-md="followers"><span>Followers, all channels</span><b>${nf(fol)}</b>${delta(fol, folB)} <span>in 30 days</span></button>
-        <button type="button" class="mk-kpi" data-md="views"><span>Views, last 30 days</span><b>${nf(sum('views'))}</b>${delta(sum('views'), bef('views'))}</button>
-        <button type="button" class="mk-kpi" data-md="reach"><span>Reach, last 30 days</span><b>${nf(sum('reach'))}</b>${delta(sum('reach'), bef('reach'))}</button>
-        <button type="button" class="mk-kpi" data-md="posts"><span>Content published, 30 days</span><b>${nf(sum('posts'))}</b>${delta(sum('posts'), bef('posts'))}</button>
-        <button type="button" class="mk-kpi" data-md="leads"><span>Leads, last 30 days</span><b>${nf(recent.length)}</b>${delta(recent.length, prevL.length)}</button>
-        <button type="button" class="mk-kpi" data-md="cpl"><span>Cost per lead (campaigns)</span><b>${(campLeads || allLeads) && spent ? inr(spent / (campLeads || allLeads)) : '–'}</b><span>${inr(spent)} spent</span></button></div>
+    const P = D.periods, fyLabel = `This financial year · since 1 Apr ${P.fy.slice(0, 4)}`;
+    const row = (k, x, label) => `<div class="mk-prow"><h3>${esc(label)}</h3><div class="mk-kpis k7">
+        <button type="button" class="mk-kpi" data-md="followers" data-per="${k}"><span>Followers, all channels</span><b>${nf(x.followers)}</b>${x.followersBefore ? `${delta(x.followersCmp, x.followersBefore)} <span>${k === 'ytd' ? 'this year' : 'in 30 days'}</span>` : ''}</button>
+        <button type="button" class="mk-kpi" data-md="views" data-per="${k}"><span>Views</span><b>${nf(x.views)}</b></button>
+        <button type="button" class="mk-kpi" data-md="reach" data-per="${k}"><span>Reach</span><b>${nf(x.reach)}</b></button>
+        <button type="button" class="mk-kpi" data-md="posts" data-per="${k}"><span>Content published</span><b>${nf(x.posts)}</b></button>
+        <button type="button" class="mk-kpi" data-md="leads" data-per="${k}"><span>Leads</span><b>${nf(x.leads)}</b>${x.adLeads ? `<span>Meta reports ${nf(x.adLeads)} form leads</span>` : ''}</button>
+        <button type="button" class="mk-kpi" data-md="spend" data-per="${k}"><span>Amount spent</span><b>${inr(x.spend)}</b>${x.chats ? `<span>${nf(x.chats)} WhatsApp chats</span>` : ''}</button>
+        <button type="button" class="mk-kpi" data-md="spend" data-per="${k}"><span>Cost per lead</span><b>${x.cpl != null ? inr(x.cpl) : '–'}</b></button></div></div>`;
+    body(`${row('d30', P.d30, 'Last 30 days')}${row('ytd', P.ytd, fyLabel)}
       <div class="mk-chans">${ch.map(chanCard).join('') || `<div class="mk-empty">No channels yet. Add Instagram, Facebook, YouTube and the website under Set-up.</div>`}</div>
       ${D.can.approve && D.posts.some((p) => p.status === 'review') ? `<div class="mk-card" style="border-color:#FEC84B;background:#FFFCF5"><h3>Waiting for your approval (${D.posts.filter((p) => p.status === 'review').length})</h3>${apprGrid(D.posts.filter((p) => p.status === 'review'))}</div>` : ''}
       ${D.top.length ? `<div class="mk-card"><h3>Best posts, last 30 days</h3><div class="mk-posts">${D.top.map(postTile).join('')}</div></div>` : ''}
@@ -166,17 +170,17 @@
         <div class="mk-card"><h3>Leads: from enquiry to booking</h3><div class="mk-funnel"><div><b>${allLeads}</b><span>Leads</span></div><div><b>${f('contacted')}</b><span>Contacted</span></div><div><b>${f('visit')}</b><span>Site visit</span></div><div><b>${f('booked')}</b><span>Booked</span></div></div>
           <h3 style="margin-top:16px">Where leads come from</h3>${srcs.map(([s, n]) => `<div style="margin:0 0 8px"><div style="display:flex;justify-content:space-between;font-size:13px"><span>${esc(SRC[s] || s)}</span><b>${n}</b></div><div class="mk-bar"><i style="width:${Math.round((n / mx) * 100)}%"></i></div></div>`).join('') || '<p class="muted small" style="margin:0">No leads yet.</p>'}</div></div>`);
     $$('#mkBody [data-post]').forEach((x) => (x.onclick = () => postForm(D.posts.find((p) => p.id === +x.dataset.post))));
-    $$('#mkBody [data-md]').forEach((x) => (x.onclick = () => mdrill(x.dataset.md)));
+    $$('#mkBody [data-md]').forEach((x) => (x.onclick = () => mdrill(x.dataset.md, x.dataset.per)));
   }
   // the rows behind a box
-  async function mdrill(key) {
+  async function mdrill(key, per) {
     const dl = document.createElement('div'); dl.className = 'mk-dlg';
     dl.innerHTML = `<div class="box" role="dialog" aria-modal="true"><div class="hd"><h2>Loading…</h2><input type="search" placeholder="Search"><button class="ghost small" data-csv>Download (CSV)</button><button class="ghost small" data-x>Close</button></div><div class="bd"></div></div>`;
     document.body.appendChild(dl);
     const close = () => { dl.remove(); document.removeEventListener('keydown', esc1); }, esc1 = (e) => { if (e.key === 'Escape') close(); };
     document.addEventListener('keydown', esc1); dl.onclick = (e) => { if (e.target === dl || e.target.closest('[data-x]')) close(); };
     let R;
-    try { R = await C.api(`/api/marketing?mdrill=${encodeURIComponent(key)}&scope=${encodeURIComponent(S.scope)}`); } catch (e) { $('.bd', dl).innerHTML = `<div class="err">${esc(e.message)}</div>`; return; }
+    try { R = await C.api(`/api/marketing?mdrill=${encodeURIComponent(key)}&scope=${encodeURIComponent(S.scope)}&period=${per || 'd30'}`); } catch (e) { $('.bd', dl).innerHTML = `<div class="err">${esc(e.message)}</div>`; return; }
     const fmt = (v, t) => (v == null || v === '' ? '–' : t === 'n' ? nf(+v) : t === 'inr' ? '₹' + Math.round(+v).toLocaleString('en-IN') : t === 'date' ? day(v) : t === 'link' ? `<a href="${esc(v)}" target="_blank" rel="noopener">Open ↗</a>` : esc(v));
     const draw = (q) => { const rows = R.rows.filter((r) => !q || Object.values(r).some((v) => String(v ?? '').toLowerCase().includes(q)));
       $('h2', dl).textContent = `${R.title} (${rows.length})`;

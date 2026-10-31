@@ -44,6 +44,7 @@ const fake = http.createServer(async (req, res) => {
   if (g === '/m1/insights') return J({ data: [{ name: 'views', values: [{ value: 900 }] }, { name: 'reach', values: [{ value: 700 }] }, { name: 'saved', values: [{ value: 6 }] }, { name: 'shares', values: [{ value: 3 }] }] });
   if (g === '/act_9/campaigns') return J({ data: [{ id: 'c1', name: 'Dream Signature 2BHK leads', effective_status: 'ACTIVE', objective: 'OUTCOME_LEADS', start_time: mon(2) + 'T00:00:00+0530' }] });
   if (g === '/act_9/insights') {
+    if (q.get('time_increment') === '1') return J({ data: [1, 2, 40].map((k) => ({ campaign_id: 'c1', spend: '1000', impressions: '5000', clicks: '80', actions: [{ action_type: 'lead', value: '4' }, { action_type: 'onsite_conversion.messaging_conversation_started_7d', value: '1' }], date_start: iso(k) })) });
     if (q.get('time_increment') === 'monthly') return J({ data: [2, 1, 0].map((k) => ({ campaign_id: 'c1', campaign_name: 'Dream Signature 2BHK leads', spend: '10000.50', impressions: '50000', reach: '20000', clicks: '800', actions: [{ action_type: 'lead', value: '40' }, { action_type: 'onsite_conversion.messaging_conversation_started_7d', value: '12' }], date_start: mon(k) })) });
     return J({ data: [{ campaign_id: 'c1', reach: '45000' }] });
   }
@@ -231,7 +232,11 @@ let n = 0; const step = async (name, fn) => { await fn(); n++; console.log('  âœ
   });
 
   await step('Every box on the Overview opens its rows: followers, views, reach, content, leads, cost per lead', async () => {
-    for (const k of ['followers', 'views', 'reach', 'posts', 'leads', 'cpl']) { const r = await rupali(`/api/marketing?mdrill=${k}&scope=company`); assert.equal(r.status, 200, k + ' ' + r.error); assert.ok(r.columns.length && Array.isArray(r.rows), k); }
+    for (const per of ['d30', 'ytd']) for (const k of ['followers', 'views', 'reach', 'posts', 'leads', 'spend', 'cpl']) { const r = await rupali(`/api/marketing?mdrill=${k}&scope=company&period=${per}`); assert.equal(r.status, 200, k + ' ' + r.error); assert.ok(r.columns.length && Array.isArray(r.rows), k); }
+    const P = (await rupali('/api/marketing?scope=company')).periods;
+    assert.equal(P.d30.spend, 92000); // 2 days of Meta spend + the Diwali drive typed in assert.equal(P.d30.adLeads, 8); assert.equal(P.d30.chats, 2); // the day 40 days ago is outside
+    assert.ok(P.ytd.spend >= P.d30.spend); assert.ok(P.ytd.views > 0);
+    const sp = await rupali('/api/marketing?mdrill=spend&scope=company&period=d30'); assert.equal(+sp.rows.find((r) => r.name === 'Dream Signature 2BHK leads').spend, 2000);
     assert.ok((await rupali('/api/marketing?mdrill=posts&scope=company')).rows.some((x) => x.caption === 'Rooftop pool reel'));
     assert.ok((await rupali('/api/marketing?mdrill=cpl&scope=company')).rows.some((x) => x.name === 'Dream Signature 2BHK leads' && x.cpl === 250));
     const g = await rupali('/api/marketing?scope=company'); assert.equal(g.channels.find((c) => c.network === 'instagram').viewsBefore, null); // no 30 days before to compare with

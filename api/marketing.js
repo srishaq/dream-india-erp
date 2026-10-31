@@ -58,6 +58,35 @@ async function channelFigures(network) {
   return out;
 }
 
+// The two rows of boxes on the Overview: the last 30 days, and this financial year (from 1 April).
+const fyStart = () => { const t = new Date(Date.now() + 5.5 * 3600e3), y = t.getUTCMonth() >= 3 ? t.getUTCFullYear() : t.getUTCFullYear() - 1; return `${y}-04-01`; };
+async function periods(projectId, nets) {
+  const fy = fyStart(), pj = (col) => (projectId ? `and ${col} = ${+projectId}` : '');
+  const num = (v) => Number(v) || 0;
+  // 30 days: day-by-day figures
+  const d = await db.one(`select coalesce(sum((metrics->>'views')::numeric), 0) as views, coalesce(sum((metrics->>'reach')::numeric), 0) as reach, coalesce(sum((metrics->>'posts')::numeric), 0) as posts
+     from mkt_stats where network = any($1) and day > current_date - 30`, [nets]);
+  const nowBy = Object.fromEntries((await db.q(`select distinct on (network) network, (metrics->>'followers')::numeric as f from mkt_stats where network = any($1) and metrics ? 'followers' order by network, day desc`, [nets])).map((r) => [r.network, +r.f]));
+  const fNow = { f: Object.values(nowBy).reduce((a, v) => a + v, 0) };
+  // compared over the same channels only (a channel connected lately has no figure from 30 days ago)
+  const was = await db.q(`select distinct on (network) network, (metrics->>'followers')::numeric as f from mkt_stats where network = any($1) and metrics ? 'followers' and day <= current_date - 30 order by network, day desc`, [nets]);
+  const f30 = { f: was.reduce((a, r) => a + +r.f, 0), n: was.length, now: was.reduce((a, r) => a + (nowBy[r.network] || 0), 0) };
+  const ad30 = await db.one(`select coalesce(sum(cd.spend), 0) as spend, coalesce(sum(cd.leads), 0)::int as leads, coalesce(sum(cd.messages), 0)::int as chats from mkt_campaign_days cd join mkt_campaigns c on c.id = cd.campaign_id where cd.day > current_date - 30 ${pj('c.project_id')}`);
+  const man30 = await db.one(`select coalesce(sum(spent), 0) as spent from mkt_campaigns c where source = 'manual' and coalesce(start_on, created_at::date) > current_date - 30 ${pj('c.project_id')}`);
+  const l30 = await db.one(`select count(*)::int as n from mkt_leads where created_at > now() - interval '30 days' ${pj('project_id')}`);
+  // the financial year: month-by-month figures
+  const y = await db.one(`select coalesce(sum((metrics->>'views')::numeric), 0) as views, coalesce(sum((metrics->>'reach')::numeric), 0) as reach, coalesce(sum((metrics->>'posts')::numeric), 0) as posts
+     from mkt_stats_month where network = any($1) and month >= $2::date`, [nets, fy]);
+  const wasY = await db.q(`select distinct on (network) network, (metrics->>'followers')::numeric as f from mkt_stats_month where network = any($1) and metrics ? 'followers' and month >= $2::date order by network, month`, [nets, fy]);
+  const fFy = { f: wasY.reduce((a, r) => a + +r.f, 0), n: wasY.length, now: wasY.reduce((a, r) => a + (nowBy[r.network] || 0), 0) };
+  const adY = await db.one(`select coalesce(sum(m.spend), 0) as spend, coalesce(sum(m.leads), 0)::int as leads, coalesce(sum(m.messages), 0)::int as chats from mkt_campaign_months m join mkt_campaigns c on c.id = m.campaign_id where m.month >= $1::date ${pj('c.project_id')}`, [fy]);
+  const manY = await db.one(`select coalesce(sum(spent), 0) as spent from mkt_campaigns c where source = 'manual' and coalesce(start_on, created_at::date) >= $1::date ${pj('c.project_id')}`, [fy]);
+  const lY = await db.one(`select count(*)::int as n from mkt_leads where created_at >= $1::date ${pj('project_id')}`, [fy]);
+  const mk = (v, fb, ad, man, leads) => { const spend = num(ad.spend) + num(man.spent), best = Math.max(leads.n, ad.leads);
+    return { views: num(v.views), reach: num(v.reach), posts: num(v.posts), followers: num(fNow.f), followersBefore: fb.n ? fb.f : null, followersCmp: fb.n ? fb.now : null, leads: leads.n, adLeads: ad.leads, chats: ad.chats, spend, cpl: best ? spend / best : null }; };
+  return { fy, d30: mk(d, f30, ad30, man30, l30), ytd: mk(y, fFy, adY, manY, lY) };
+}
+
 async function overview(u, scope, req) {
   const set = await settings();
   const projectId = pid(scope);
@@ -99,7 +128,8 @@ async function overview(u, scope, req) {
   const top = await db.q(`select network, ext_id, account, posted_at, kind, caption, permalink, thumb is not null as has_thumb, likes, comments, shares, saves, views, reach,
        coalesce(likes, 0) + coalesce(comments, 0) + coalesce(shares, 0) + coalesce(saves, 0) as engagement
      from mkt_media where posted_at > now() - interval '30 days' order by coalesce(likes, 0) + coalesce(comments, 0) + coalesce(shares, 0) + coalesce(saves, 0) desc, views desc nulls last limit 8`);
-  return { top, scope: projectId || 'company', projects, team, channels, posts, campaigns, leads, tasks,
+  const per = await periods(projectId, channels.filter((c) => !c.wa && !c.ivr).map((c) => c.network));
+  return { periods: per, top, scope: projectId || 'company', projects, team, channels, posts, campaigns, leads, tasks,
     settings: { channels: set.channels, drive: set.drive, needApproval: !!set.needApproval, share: (() => { try { return require('../lib/sheets').serviceEmail(); } catch { return null; } })(), leadUrl: canEdit(u) ? `/api/marketing?lead=${set.leadKey}` : null, ivrUrl: canEdit(u) ? `/api/marketing?ivr=${set.leadKey}` : null },
     social: { ...social, metaRedirect: canEdit(u) ? require('../lib/social').metaRedirect(req) : null },
     can: { edit: canEdit(u), approve: canApprove(u), admin: u.role === 'admin' }, lists: { networks: NETWORKS, sources: SOURCES, kinds: KINDS, statuses: STATUSES, leadStatuses: LEAD_ST } };
@@ -162,8 +192,9 @@ async function approvalMail(p, by, req) {
 }
 
 // The rows behind a box on the Overview: followers, views, reach, content, leads, cost per lead (last 30 days).
-async function mdrill(key, scope) {
-  const projectId = pid(scope), set = await settings();
+async function mdrill(key, scope, period) {
+  const projectId = pid(scope), set = await settings(), ytd = period === 'ytd', fy = fyStart(), pj = (col) => (projectId ? `and ${col} = ${+projectId}` : '');
+  const FYT = `since 1 Apr ${fy.slice(0, 4)}`;
   const nets = [...new Set(set.channels.filter((c) => !projectId || !c.projectId || +c.projectId === projectId).map((c) => c.network))];
   const NAME = { instagram: 'Instagram', facebook: 'Facebook', youtube: 'YouTube', linkedin: 'LinkedIn', website: 'Website', whatsapp: 'WhatsApp', google: 'Google' };
   const since = "current_date - 30";
@@ -176,6 +207,24 @@ async function mdrill(key, scope) {
     }
     return { title: 'Followers by channel', columns: [['channel', 'Channel'], ['now', 'Followers now', 'n'], ['before', '30 days ago', 'n'], ['change', 'Change', 'n'], ['history', 'Month by month']], rows };
   }
+  if ((key === 'views' || key === 'reach' || key === 'posts_month') && ytd) {
+    const rows = await db.q(`select to_char(month, 'Mon YYYY') as month, network, (metrics->>'views')::numeric as views, (metrics->>'reach')::numeric as reach, (metrics->>'interactions')::numeric as interactions,
+        (metrics->>'posts')::numeric as posts, (metrics->>'followers')::numeric as followers from mkt_stats_month where month >= $2::date and network = any($1) order by month desc, network`, [nets, fy]);
+    return { title: `${key === 'reach' ? 'Reach' : 'Views'} month by month (${FYT})`, columns: [['month', 'Month'], ['network', 'Channel'], ['views', 'Views', 'n'], ['reach', 'Reach', 'n'], ['interactions', 'Interactions', 'n'], ['posts', 'Posts', 'n'], ['followers', 'Followers', 'n']], rows: rows.map((r) => ({ ...r, network: NAME[r.network] || r.network })) };
+  }
+  if (key === 'spend') {
+    const rows = ytd
+      ? await db.q(`select c.name, p.name as project, c.ext_status, c.source, coalesce(sum(m.spend), 0) as spend, coalesce(sum(m.leads), 0)::int as leads, coalesce(sum(m.messages), 0)::int as chats, coalesce(sum(m.impressions), 0) as seen, coalesce(sum(m.clicks), 0) as clicks
+          from mkt_campaigns c left join projects p on p.id = c.project_id join mkt_campaign_months m on m.campaign_id = c.id and m.month >= $1::date where true ${pj('c.project_id')} group by c.id, p.name
+          union all select c.name, p.name, 'typed in', c.source, coalesce(c.spent, 0), 0, 0, 0, 0 from mkt_campaigns c left join projects p on p.id = c.project_id where c.source = 'manual' and coalesce(c.start_on, c.created_at::date) >= $1::date ${pj('c.project_id')}
+          order by 5 desc`, [fy])
+      : await db.q(`select c.name, p.name as project, c.ext_status, c.source, coalesce(sum(d.spend), 0) as spend, coalesce(sum(d.leads), 0)::int as leads, coalesce(sum(d.messages), 0)::int as chats, coalesce(sum(d.impressions), 0) as seen, coalesce(sum(d.clicks), 0) as clicks
+          from mkt_campaigns c left join projects p on p.id = c.project_id join mkt_campaign_days d on d.campaign_id = c.id and d.day > current_date - 30 where true ${pj('c.project_id')} group by c.id, p.name
+          union all select c.name, p.name, 'typed in', c.source, coalesce(c.spent, 0), 0, 0, 0, 0 from mkt_campaigns c left join projects p on p.id = c.project_id where c.source = 'manual' and coalesce(c.start_on, c.created_at::date) > current_date - 30 ${pj('c.project_id')}
+          order by 5 desc`);
+    return { title: `Amount spent by campaign (${ytd ? FYT : 'last 30 days'})`, columns: [['name', 'Campaign'], ['project', 'For'], ['ext_status', 'Status'], ['spend', 'Spent', 'inr'], ['seen', 'Seen', 'n'], ['clicks', 'Clicks', 'n'], ['leads', 'Leads (Meta)', 'n'], ['chats', 'Chats', 'n'], ['cpl', 'Per lead', 'inr']],
+      rows: rows.map((r) => ({ ...r, ext_status: r.ext_status ? String(r.ext_status).replace(/_/g, ' ').toLowerCase() : '', cpl: +r.leads ? Math.round(+r.spend / +r.leads) : null })) };
+  }
   if (key === 'views' || key === 'reach') {
     const rows = await db.q(`select to_char(day, 'YYYY-MM-DD') as day, network, (metrics->>'views')::numeric as views, (metrics->>'reach')::numeric as reach, (metrics->>'interactions')::numeric as interactions,
         (metrics->>'posts')::numeric as posts, (metrics->>'followers')::numeric as followers from mkt_stats where day > ${since} and network = any($1) order by day desc, network`, [nets]);
@@ -184,14 +233,14 @@ async function mdrill(key, scope) {
   }
   if (key === 'posts') {
     const rows = await db.q(`select to_char(posted_at + interval '330 minutes', 'YYYY-MM-DD') as day, network, kind, caption, views, reach, likes, comments, shares, saves, permalink
-       from mkt_media where posted_at > now() - interval '30 days' and network = any($1) order by posted_at desc`, [nets]);
-    return { title: 'Content published, last 30 days', columns: [['day', 'Date', 'date'], ['network', 'Channel'], ['kind', 'Type'], ['caption', 'Caption'], ['views', 'Views', 'n'], ['reach', 'Reach', 'n'], ['likes', 'Likes', 'n'], ['comments', 'Comments', 'n'], ['shares', 'Shares', 'n'], ['permalink', 'Link', 'link']],
+       from mkt_media where posted_at > ${ytd ? "$2::date" : "now() - interval '30 days'"} and network = any($1) order by posted_at desc`, ytd ? [nets, fy] : [nets]);
+    return { title: `Content published, ${ytd ? FYT : 'last 30 days'}`, columns: [['day', 'Date', 'date'], ['network', 'Channel'], ['kind', 'Type'], ['caption', 'Caption'], ['views', 'Views', 'n'], ['reach', 'Reach', 'n'], ['likes', 'Likes', 'n'], ['comments', 'Comments', 'n'], ['shares', 'Shares', 'n'], ['permalink', 'Link', 'link']],
       rows: rows.map((r) => ({ ...r, network: NAME[r.network] || r.network, caption: String(r.caption || '').slice(0, 140) })) };
   }
   if (key === 'leads') {
     const rows = await db.q(`select to_char(l.created_at + interval '330 minutes', 'YYYY-MM-DD') as day, l.name, l.phone, l.source, c.name as campaign, l.status, p.name as project, l.note
-       from mkt_leads l left join mkt_campaigns c on c.id = l.campaign_id left join projects p on p.id = l.project_id where l.created_at > now() - interval '30 days' ${projectId ? 'and l.project_id = ' + +projectId : ''} order by l.created_at desc`);
-    return { title: 'Leads, last 30 days', columns: [['day', 'Date', 'date'], ['name', 'Name'], ['phone', 'Phone'], ['source', 'Source'], ['campaign', 'Campaign'], ['status', 'Status'], ['project', 'Project'], ['note', 'Note']], rows };
+       from mkt_leads l left join mkt_campaigns c on c.id = l.campaign_id left join projects p on p.id = l.project_id where l.created_at > ${ytd ? `'${fy}'::date` : "now() - interval '30 days'"} ${projectId ? 'and l.project_id = ' + +projectId : ''} order by l.created_at desc`);
+    return { title: `Leads, ${ytd ? FYT : 'last 30 days'}`, columns: [['day', 'Date', 'date'], ['name', 'Name'], ['phone', 'Phone'], ['source', 'Source'], ['campaign', 'Campaign'], ['status', 'Status'], ['project', 'Project'], ['note', 'Note']], rows };
   }
   if (key === 'wachats') {
     const rows = await db.q(`select to_char(m.month, 'Mon YYYY') as month, c.name, m.messages, m.spend, m.leads from mkt_campaign_months m join mkt_campaigns c on c.id = m.campaign_id
@@ -320,7 +369,7 @@ const handler = route({
       return res.end(Buffer.isBuffer(f.data) ? f.data : Buffer.from(f.data));
     }
     if (q.report != null) return res.json(await report(q.report));
-    if (q.mdrill) return res.json(await mdrill(String(q.mdrill), q.scope));
+    if (q.mdrill) return res.json(await mdrill(String(q.mdrill), q.scope, String(q.period || 'd30')));
     if (q.thumb) {
       const t = /^[A-Za-z0-9_-]{10,80}$/.test(q.thumb) ? await require('../lib/drive').thumbnail(q.thumb).catch(() => null) : null;
       if (!t) return res.status(404).json({ error: 'No preview.' });
