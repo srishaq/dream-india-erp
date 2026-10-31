@@ -64,7 +64,16 @@ async function overview(u, scope, req) {
   const inScope = (col = 'project_id') => (projectId ? `${col} = ${+projectId}` : 'true');
   const chans = set.channels.filter((c) => !projectId || !c.projectId || +c.projectId === projectId);
   const channels = [];
-  for (const c of chans) channels.push({ ...c, ...(await channelFigures(c.network)) });
+  for (const c of chans) if (c.network !== 'whatsapp') channels.push({ ...c, ...(await channelFigures(c.network)) });
+  // WhatsApp, next to Facebook: chats started from click-to-WhatsApp ads, and the leads that came in on WhatsApp
+  const wa = await db.one(`select coalesce(sum(m.messages) filter (where m.month >= date_trunc('month', current_date)), 0)::int as this_month,
+      coalesce(sum(m.messages) filter (where m.month = date_trunc('month', current_date) - interval '1 month'), 0)::int as last_month,
+      coalesce(sum(m.messages), 0)::int as year, coalesce(sum(m.spend) filter (where m.messages > 0), 0) as spend
+    from mkt_campaign_months m join mkt_campaigns c on c.id = m.campaign_id where m.month > current_date - interval '12 months' ${projectId ? 'and c.project_id = ' + +projectId : ''}`);
+  const wl = await db.one(`select count(*) filter (where created_at > now() - interval '30 days')::int as d30, count(*)::int as total from mkt_leads where source = 'whatsapp' ${projectId ? 'and project_id = ' + +projectId : ''}`);
+  const waCh = chans.find((c) => c.network === 'whatsapp') || { network: 'whatsapp', handle: '', url: null, projectId: null };
+  const fbAt = channels.findIndex((c) => c.network === 'facebook');
+  channels.splice(fbAt >= 0 ? fbAt + 1 : channels.length, 0, { ...waCh, wa: { ...wa, spend: +wa.spend, leads30: wl.d30, leads: wl.total } });
   const posts = await db.q(`select p.*, array_to_json(p.channels) as channels, c.name as created_name, a.name as approved_name from mkt_posts p left join users c on c.id = p.created_by left join users a on a.id = p.approved_by
      where ${inScope('p.project_id')} and (p.publish_at is null or p.publish_at > now() - interval '120 days') order by p.publish_at nulls first, p.id`);
   const campaigns = await db.q(`select c.*, (select count(*)::int from mkt_leads l where l.campaign_id = c.id) as leads,
@@ -149,6 +158,16 @@ async function mdrill(key, scope) {
     const rows = await db.q(`select to_char(l.created_at + interval '330 minutes', 'YYYY-MM-DD') as day, l.name, l.phone, l.source, c.name as campaign, l.status, p.name as project, l.note
        from mkt_leads l left join mkt_campaigns c on c.id = l.campaign_id left join projects p on p.id = l.project_id where l.created_at > now() - interval '30 days' ${projectId ? 'and l.project_id = ' + +projectId : ''} order by l.created_at desc`);
     return { title: 'Leads, last 30 days', columns: [['day', 'Date', 'date'], ['name', 'Name'], ['phone', 'Phone'], ['source', 'Source'], ['campaign', 'Campaign'], ['status', 'Status'], ['project', 'Project'], ['note', 'Note']], rows };
+  }
+  if (key === 'wachats') {
+    const rows = await db.q(`select to_char(m.month, 'Mon YYYY') as month, c.name, m.messages, m.spend, m.leads from mkt_campaign_months m join mkt_campaigns c on c.id = m.campaign_id
+       where m.messages > 0 and m.month > current_date - interval '12 months' ${projectId ? 'and c.project_id = ' + +projectId : ''} order by m.month desc, m.messages desc`);
+    return { title: 'WhatsApp / Messenger chats from ads, month by month', columns: [['month', 'Month'], ['name', 'Campaign'], ['messages', 'Chats', 'n'], ['spend', 'Spend', 'inr'], ['per', 'Per chat', 'inr'], ['leads', 'Form leads', 'n']], rows: rows.map((r) => ({ ...r, per: r.messages ? Math.round(+r.spend / r.messages) : null })) };
+  }
+  if (key === 'waleads') {
+    const rows = await db.q(`select to_char(l.created_at + interval '330 minutes', 'YYYY-MM-DD') as day, l.name, l.phone, c.name as campaign, l.status, p.name as project, l.note
+       from mkt_leads l left join mkt_campaigns c on c.id = l.campaign_id left join projects p on p.id = l.project_id where l.source = 'whatsapp' ${projectId ? 'and l.project_id = ' + +projectId : ''} order by l.created_at desc`);
+    return { title: 'Leads that came in on WhatsApp', columns: [['day', 'Date', 'date'], ['name', 'Name'], ['phone', 'Phone'], ['campaign', 'Campaign'], ['status', 'Status'], ['project', 'Project'], ['note', 'Note']], rows };
   }
   if (key === 'cpl') {
     const rows = await db.q(`select c.name, c.source, c.ext_status, p.name as project, coalesce(c.spent, 0) as spent, coalesce(c.ad_leads, 0) as ad_leads,

@@ -80,7 +80,7 @@ let n = 0; const step = async (name, fn) => { await fn(); n++; console.log('  âœ
   await step('Marketing opens for the marketing role, Management and Admin; not for the CRM team', async () => {
     const g = await rupali('/api/marketing?scope=company');
     assert.equal(g.status, 200, g.error); assert.equal(g.can.edit, true); assert.equal(g.can.approve, false);
-    assert.equal(g.channels.length, 1); assert.equal(g.channels[0].handle, 'dreamindiarealty');
+    assert.equal(g.channels.filter((c) => !c.wa).length, 1); assert.equal(g.channels[0].handle, 'dreamindiarealty'); assert.equal(g.channels[1].network, 'whatsapp');
     assert.equal((await sameer('/api/marketing?scope=company')).can.approve, true);
     assert.equal((await crm('/api/marketing?scope=company')).status, 403);
     assert.equal((await M(sameer, 'post.save', { title: 'x' })).status, 403); // Management approves, the marketing team plans
@@ -202,6 +202,8 @@ let n = 0; const step = async (name, fn) => { await fn(); n++; console.log('  âœ
     assert.ok((await rupali('/api/marketing?mdrill=posts&scope=company')).rows.some((x) => x.caption === 'Rooftop pool reel'));
     assert.ok((await rupali('/api/marketing?mdrill=cpl&scope=company')).rows.some((x) => x.name === 'Dream Signature 2BHK leads' && x.cpl === 250));
     const g = await rupali('/api/marketing?scope=company'); assert.equal(g.channels.find((c) => c.network === 'instagram').viewsBefore, null); // no 30 days before to compare with
+    const ix = g.channels.findIndex((c) => c.network === 'facebook'); assert.equal(g.channels[ix + 1].network, 'whatsapp'); assert.equal(g.channels[ix + 1].wa.year, 36);
+    for (const k of ['wachats', 'waleads']) assert.equal((await rupali(`/api/marketing?mdrill=${k}&scope=company`)).status, 200);
   });
 
   await step('Disconnecting keeps the figures already pulled; each part remembers its 12-month pull', async () => {

@@ -67,6 +67,7 @@
   .mk .mk-chart{width:100%;overflow:visible}.mk .mk-chart text{font-size:11px;fill:#667085}.mk .mk-chart .v{fill:#10114e;font-weight:700}
   .mk .mk-legend{display:flex;gap:14px;flex-wrap:wrap;font-size:12px;color:var(--mut);margin:0 0 6px}.mk .mk-legend i{display:inline-block;width:10px;height:10px;border-radius:3px;margin-right:5px;vertical-align:-1px}
   .mk .mk-scroll{overflow-x:auto}.mk table.mk-t th[data-sort]{cursor:pointer;white-space:nowrap}.mk table.mk-t td.n,.mk table.mk-t th.n{text-align:right;white-space:nowrap}.mk .mk-tip{position:fixed;pointer-events:none;background:#10114e;color:#fff;font-size:12px;padding:6px 8px;border-radius:8px;z-index:70;white-space:nowrap}
+  .mk button.mk-fig{all:unset;cursor:pointer;display:block;border-radius:8px}.mk button.mk-fig:hover b{color:#7A5AF8}.mk .mk-chan .fig button.mk-fig b{display:block;font-size:20px;color:var(--ink)}.mk .mk-chan .fig button.mk-fig span{font-size:12px;color:var(--mut)}
   .mk button.mk-kpi{display:block;width:100%;text-align:left;font:inherit;font-weight:400;cursor:pointer;color:inherit;transition:border-color .15s,box-shadow .15s}.mk button.mk-kpi:hover{background:#fff;border-color:#7A5AF8;box-shadow:0 4px 14px #7A5AF822}
   .mk-dlg{position:fixed;inset:0;background:#10114e66;z-index:80;display:flex;align-items:flex-start;justify-content:center;padding:40px 16px}.mk-dlg .box{background:#fff;border-radius:18px;width:min(1200px,100%);max-height:calc(100vh - 80px);display:flex;flex-direction:column;box-shadow:0 20px 60px #10182855}
   .mk-dlg .hd{display:flex;gap:10px;align-items:center;flex-wrap:wrap;padding:16px 18px;border-bottom:1px solid #EAECF0}.mk-dlg .hd h2{margin:0;font-size:17px;color:#10114e;flex:1;min-width:200px}.mk-dlg .hd input{max-width:220px;margin:0}.mk-dlg .bd{overflow:auto;padding:0 18px 14px}
@@ -145,7 +146,7 @@
     const bySrc = {}; for (const l of D.leads) bySrc[l.source] = (bySrc[l.source] || 0) + 1;
     const srcs = Object.entries(bySrc).sort((a, b) => b[1] - a[1]); const mx = srcs.length ? srcs[0][1] : 1;
     const f = (s) => D.leads.filter((l) => (s === 'contacted' ? ['contacted', 'visit', 'booked'].includes(l.status) : s === 'visit' ? ['visit', 'booked'].includes(l.status) : l.status === s || (s === 'booked' && l.is_buyer))).length;
-    const bef = (k) => (ch.length && ch.every((c) => c[k + 'Before'] != null) ? sum(k + 'Before') : null); // compared only when the 30 days before were pulled
+    const soc = ch.filter((c) => !c.wa), bef = (k) => (soc.length && soc.every((c) => c[k + 'Before'] != null) ? sum(k + 'Before') : null); // compared only when the 30 days before were pulled
     body(`<div class="mk-kpis">
         <button type="button" class="mk-kpi" data-md="followers"><span>Followers, all channels</span><b>${nf(fol)}</b>${delta(fol, folB)} <span>in 30 days</span></button>
         <button type="button" class="mk-kpi" data-md="views"><span>Views, last 30 days</span><b>${nf(sum('views'))}</b>${delta(sum('views'), bef('views'))}</button>
@@ -181,6 +182,10 @@
   }
   function chanCard(c) {
     const N = NET[c.network] || NET.website, has = c.followers != null || c.views;
+    if (c.wa) return `<div class="mk-chan"><div class="ctop" style="background:${N.g}">${ic('whatsapp', '', '#fff')}<div><b>WhatsApp</b><small>${esc(c.handle || 'chats and leads')}</small></div></div>
+      <div class="fig"><button type="button" class="mk-fig" data-md="wachats"><b>${nf(c.wa.this_month)}</b><span>chats from ads, this month${c.wa.last_month ? ' · ' + nf(c.wa.last_month) + ' last month' : ''}</span></button><button type="button" class="mk-fig" data-md="waleads"><b>${nf(c.wa.leads30)}</b><span>WhatsApp leads, 30 days</span></button>
+        <button type="button" class="mk-fig" data-md="wachats"><b>${nf(c.wa.year)}</b><span>chats from ads, 12 months</span></button><button type="button" class="mk-fig" data-md="wachats"><b>${c.wa.year && c.wa.spend ? inr(c.wa.spend / c.wa.year) : '–'}</b><span>ad spend per chat</span></button></div>
+      <div class="foot"><span>From Meta Ads (click-to-WhatsApp) and Leads</span></div></div>`;
     return `<div class="mk-chan"><div class="ctop" style="background:${N.g}">${ic(c.network, '', '#fff')}<div><b>${N.n}</b><small>${esc(c.handle ? '@' + c.handle.replace(/^@/, '') : c.url || '')}${c.projectId ? ' · ' + esc(projName(c.projectId)) : ''}</small></div></div>
       ${has ? `<div class="fig"><div><b>${nf(c.followers)}</b><span>${c.network === 'youtube' ? 'subscribers' : 'followers'} ${c.followersBefore != null ? delta(c.followers, c.followersBefore) : ''}</span></div><div><b>${nf(c.views || c.reach)}</b><span>${c.views ? 'views' : 'reach'}, 30 days ${delta(c.views || c.reach, c.viewsBefore || c.reachBefore)}</span></div>
         <div><b>${nf(c.posts)}</b><span>posts &amp; reels</span></div><div><b>${nf(c.interactions)}</b><span>interactions</span></div></div><div class="spark">${spark(c.spark, N.c)}</div>`
