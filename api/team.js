@@ -38,8 +38,9 @@ module.exports = route({
       from team_messages m left join users s on s.id = m.from_user left join users d on d.id = m.done_by
       left join bookings b on b.id = m.booking_id left join units un on un.id = b.unit_id
       where ${where.join(' and ')} order by m.id desc limit 300`, args);
-    const open = await db.one(`select count(*) filter (where to_team = 'crm')::int as crm, count(*) filter (where to_team = 'accounts')::int as accounts
-      from team_messages where needs_action and done_at is null`);
+    const open = await db.one(`select count(*) filter (where m.to_team = 'crm')::int as crm, count(*) filter (where m.to_team = 'accounts')::int as accounts
+      from team_messages m left join bookings b on b.id = m.booking_id left join units un on un.id = b.unit_id
+      where m.needs_action and m.done_at is null and (m.booking_id is null or un.project_id = any($1))`, [u.projects]);
     const flat = bk ? await db.one('select b.id, u.unit_no from bookings b join units u on u.id = b.unit_id where b.id = $1', [bk]) : null;
     await T.markRead(u);
     return res.json({ rows: rows.reverse(), team: t, open, flat, me: u.id });
@@ -71,7 +72,7 @@ module.exports = route({
       return res.json({ ok: true, id });
     }
     if (b.action === 'done' || b.action === 'reopen') {
-      const m = await db.one('select id, to_team, from_user from team_messages where id = $1', [intOr(b.id)]); if (!m) throw fail(404, 'That message is not there.');
+      const m = await db.one('select m.id, m.to_team, m.from_user from team_messages m left join bookings b on b.id = m.booking_id left join units un on un.id = b.unit_id where m.id = $1 and (m.booking_id is null or un.project_id = any($2))', [intOr(b.id), u.projects]); if (!m) throw fail(404, 'That message is not there.');
       const t = T.teamOf(u);
       if (t !== 'both' && t !== m.to_team && m.from_user !== u.id) throw fail(403, 'Only the team it was sent to can mark it done.');
       await db.q(b.action === 'done' ? 'update team_messages set done_at = now(), done_by = $2 where id = $1' : 'update team_messages set done_at = null, done_by = null where id = $1', b.action === 'done' ? [m.id, u.id] : [m.id]);

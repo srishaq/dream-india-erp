@@ -80,18 +80,18 @@ module.exports = route({
     }
     if (!act(u)) throw fail(403, 'Your role cannot change buyer communication.');
     if (b.action === 'noreply' || b.action === 'reopen-reply') {
-      const c = await db.one("select id from communications where id = $1 and direction = 'in'", [intOr(b.id)]); if (!c) throw fail(404, 'That message is not there.');
+      const c = await db.one("select c.id from communications c where c.id = $1 and c.direction = 'in' and (c.booking_id is null or exists (select 1 from bookings b join units u on u.id = b.unit_id where b.id = c.booking_id and u.project_id = any($2)))", [intOr(b.id), u.projects]); if (!c) throw fail(404, 'That message is not there.');
       await db.q(b.action === 'noreply' ? 'update communications set reply_closed_at = now(), reply_closed_by = $2 where id = $1' : 'update communications set reply_closed_at = null, reply_closed_by = null where id = $1', b.action === 'noreply' ? [c.id, u.id] : [c.id]);
       await audit.record(db.q, { user: u, action: b.action, entity: 'communication', entityId: c.id });
       return res.json({ ok: true });
     }
     if (b.action === 'read') {
       const ids = (Array.isArray(b.ids) ? b.ids : [b.id]).map((x) => intOr(x)).filter(Boolean).slice(0, 500);
-      await db.q('update communications set read_by = $2, read_at = now() where id = any($1) and read_at is null', [ids, u.id]);
+      await db.q('update communications c set read_by = $2, read_at = now() where c.id = any($1) and c.read_at is null and (c.booking_id is null or exists (select 1 from bookings b join units u on u.id = b.unit_id where b.id = c.booking_id and u.project_id = any($3)))', [ids, u.id, u.projects]);
       return res.json({ ok: true });
     }
     if (b.action === 'link') {
-      const c = await db.one('select * from communications where id = $1', [intOr(b.id)]); if (!c) throw fail(404, 'That message is not there.');
+      const c = await db.one('select c.* from communications c where c.id = $1 and (c.booking_id is null or exists (select 1 from bookings b join units u on u.id = b.unit_id where b.id = c.booking_id and u.project_id = any($2)))', [intOr(b.id), u.projects]); if (!c) throw fail(404, 'That message is not there.');
       const bk = await bookingFor(u, intOr(b.bookingId));
       await db.q("update communications set booking_id = $2, status = 'matched', matched_by = 'linked by ' || $3, linked_by = $4 where id = $1", [c.id, bk.id, u.name || 'CRM', u.id]);
       await audit.record(db.q, { user: u, action: 'link', entity: 'communication', entityId: c.id, projectId: bk.project_id, after: { unit: bk.unit_no } });
@@ -126,7 +126,7 @@ module.exports = route({
       return res.json({ ok: true, count: rows.length });
     }
     if (b.action === 'dismiss') {
-      const c = await db.one("select id from communications where id = $1 and direction = 'in'", [intOr(b.id)]); if (!c) throw fail(404, 'That message is not there.');
+      const c = await db.one("select c.id from communications c where c.id = $1 and c.direction = 'in' and (c.booking_id is null or exists (select 1 from bookings b join units u on u.id = b.unit_id where b.id = c.booking_id and u.project_id = any($2)))", [intOr(b.id), u.projects]); if (!c) throw fail(404, 'That message is not there.');
       await db.q("update communications set status = 'dismissed', read_by = $2, read_at = coalesce(read_at, now()) where id = $1", [c.id, u.id]);
       await audit.record(db.q, { user: u, action: 'dismiss', entity: 'communication', entityId: c.id });
       return res.json({ ok: true });

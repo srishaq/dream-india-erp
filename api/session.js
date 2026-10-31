@@ -49,7 +49,7 @@ module.exports = route({
         return res.json({ ok: true });
       }
       case 'login': {
-        const r = await auth.authenticate(b.username, b.password);
+        const r = await auth.authenticate(b.username, b.password, req);
         if (r.error) throw fail(401, r.error);
         await auth.issue(req, res, r.user);
         return res.json({ ok: true, user: auth.publicUser(r.user) });

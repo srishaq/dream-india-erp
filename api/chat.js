@@ -265,7 +265,7 @@ module.exports = route({
   POST: async (req, res, b) => {
     const a = b.action;
     if (a === 'login') {
-      const r = await auth.authenticate(b.username, b.password);
+      const r = await auth.authenticate(b.username, b.password, req);
       if (r.error) throw fail(401, r.error);
       if (r.user.must_change) throw fail(403, 'Set a new password first: open the ERP once and sign in there, then come back.');
       await auth.issueChat(req, res, r.user);
@@ -487,6 +487,8 @@ module.exports = route({
     if (a === 'push') {
       const s = b.sub || {}, endpoint = str(s.endpoint, 1000), p256dh = str(s.keys && s.keys.p256dh, 200), au = str(s.keys && s.keys.auth, 100);
       if (!/^https:\/\//.test(endpoint) || !p256dh || !au) throw fail(400, 'This phone did not give a notification address.');
+      const host = (() => { try { return new URL(endpoint).hostname; } catch { return ''; } })(); // only the phone makers' push services
+      if (!/(^|\.)(fcm\.googleapis\.com|android\.googleapis\.com|push\.services\.mozilla\.com|push\.apple\.com|notify\.windows\.com)$/.test(host) && !(!process.env.VERCEL && /\.test$/.test(host))) throw fail(400, 'This is not a notification address the ERP can use.');
       await db.q(`insert into chat_push (user_id, endpoint, p256dh, auth, device) values ($1, $2, $3, $4, $5)
         on conflict (endpoint) do update set user_id = excluded.user_id, p256dh = excluded.p256dh, auth = excluded.auth, device = excluded.device, fails = 0`, [u.id, endpoint, p256dh, au, str(b.device, 120) || null]);
       return res.json({ ok: true });
