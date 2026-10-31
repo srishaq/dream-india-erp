@@ -14,6 +14,13 @@ const fake = http.createServer(async (req, res) => {
   calls.push(req.method + ' ' + req.url); const u = new URL(req.url, 'http://x'), q = u.searchParams, P = u.pathname;
   if (req.method === 'POST' && P.startsWith('/graph')) for (const [k, v] of new URLSearchParams(body)) q.set(k, v);
   const J = (o, st = 200) => { res.statusCode = st; res.setHeader('Content-Type', 'application/json'); res.end(JSON.stringify(o)); };
+  if (P.startsWith('/exo/v1/Accounts/ACC1/Calls.json')) {
+    if (req.headers.authorization !== 'Basic ' + Buffer.from('k1:t1').toString('base64')) return J({ RestException: { Message: 'Authentication failed' } }, 401);
+    if (q.get('page') === '2') return J({ Metadata: {}, Calls: [{ Sid: 'x3', From: '09111122222', To: '02261234567', Direction: 'inbound', Status: 'no-answer', StartTime: '2026-06-02 09:00:00', Duration: '0' }] });
+    return J({ Metadata: { NextPageUri: '/exo/v1/Accounts/ACC1/Calls.json?page=2' }, Calls: [
+      { Sid: 'x1', From: '09111122222', To: '02261234567', Direction: 'inbound', Status: 'completed', StartTime: '2026-06-01 10:00:00', Duration: '65', RecordingUrl: 'https://rec/x1.mp3' },
+      { Sid: 'x2', From: '02261234567', To: '09111133333', Direction: 'outbound-api', Status: 'completed', StartTime: '2026-06-01 11:00:00', Duration: '20' }] });
+  }
   if (P === '/pic.jpg') { res.setHeader('Content-Type', 'image/jpeg'); return res.end(Buffer.from([0xff, 0xd8, 0xff, 0xd9])); }
   if (P === '/gtoken') { const f = new URLSearchParams(body); return J(f.get('grant_type') === 'authorization_code' ? { access_token: 'YT', refresh_token: 'R1', expires_in: 3600 } : { access_token: 'YT2', expires_in: 3600 }); }
   if (P.startsWith('/yt/')) {
@@ -159,6 +166,14 @@ let n = 0; const step = async (name, fn) => { await fn(); n++; console.log('  âœ
     assert.equal((await rupali('/api/marketing?mdrill=ivrmissed&scope=company')).rows.length, 1);
     assert.equal((await rupali('/api/marketing?mdrill=ivrcalls&scope=company')).rows[1].recording_url, 'https://rec.example/1.mp3');
     await db.q("delete from mkt_ivr_calls"); await db.q("delete from mkt_leads where phone = '9876543210'");
+    // the Exotel call history (12 months, page by page): inbound calls kept, outbound left out, one lead per caller
+    assert.ok((await M(rupali, 'ivr.sync')).skipped);
+    Object.assign(process.env, { EXOTEL_SID: 'ACC1', EXOTEL_API_KEY: 'k1', EXOTEL_API_TOKEN: 't1', EXOTEL_API: 'http://127.0.0.1:2539/exo' });
+    const x = await M(rupali, 'ivr.sync'); assert.equal(x.ok, true, JSON.stringify(x) + calls.filter((c) => /exo/.test(c)).join(' ')); assert.equal(x.read, 3); assert.equal(x.kept, 2);
+    const leads = await db.q("select * from mkt_leads where phone = '9111122222'"); assert.equal(leads.length, 1); assert.equal(leads[0].source, 'ivr'); assert.equal(String(leads[0].created_at.toISOString ? leads[0].created_at.toISOString() : leads[0].created_at).slice(0, 10), '2026-06-01');
+    await M(rupali, 'ivr.sync', { full: true }); assert.equal((await db.one('select count(*)::int as n from mkt_ivr_calls')).n, 2); // not doubled
+    await db.q("delete from mkt_ivr_calls"); await db.q("delete from mkt_leads where phone = '9111122222'");
+    for (const k of ['EXOTEL_SID', 'EXOTEL_API_KEY', 'EXOTEL_API_TOKEN', 'EXOTEL_API']) delete process.env[k];
   });
 
   await step('Tasks and figures typed by hand', async () => {

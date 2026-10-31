@@ -132,7 +132,7 @@ async function overview(u, scope, req) {
      from mkt_media where posted_at > now() - interval '30 days' order by coalesce(likes, 0) + coalesce(comments, 0) + coalesce(shares, 0) + coalesce(saves, 0) desc, views desc nulls last limit 8`);
   const per = await periods(projectId, channels.filter((c) => !c.wa && !c.ivr).map((c) => c.network));
   return { periods: per, top, scope: projectId || 'company', projects, team, channels, posts, campaigns, leads, tasks,
-    settings: { channels: set.channels, drive: set.drive, needApproval: !!set.needApproval, share: (() => { try { return require('../lib/sheets').serviceEmail(); } catch { return null; } })(), leadUrl: canEdit(u) ? `/api/marketing?lead=${set.leadKey}` : null, ivrUrl: canEdit(u) ? `/api/marketing?ivr=${set.leadKey}` : null },
+    settings: { channels: set.channels, drive: set.drive, needApproval: !!set.needApproval, share: (() => { try { return require('../lib/sheets').serviceEmail(); } catch { return null; } })(), leadUrl: canEdit(u) ? `/api/marketing?lead=${set.leadKey}` : null, ivrUrl: canEdit(u) ? `/api/marketing?ivr=${set.leadKey}` : null, exotel: await require('../lib/exotel').status() },
     social: { ...social, metaRedirect: canEdit(u) ? require('../lib/social').metaRedirect(req) : null },
     can: { edit: canEdit(u), approve: canApprove(u), admin: u.role === 'admin' }, lists: { networks: NETWORKS, sources: SOURCES, kinds: KINDS, statuses: STATUSES, leadStatuses: LEAD_ST } };
 }
@@ -328,6 +328,25 @@ async function leadHook(req, res) {
   return res.json({ ok: true, id: r.id });
 }
 
+// One IVR call into the ERP (from the live link or the Exotel call history); the caller becomes a lead.
+async function recordIvrCall({ sid, caller, ivrNo, at, status, duration, rec, digits, raw }, set, { backfill = false } = {}) {
+  set = set || await settings();
+  const proj = (set.ivrProjects || {})[ivrNo] || (await db.one("select id from projects where code = 'SIGNATURE'") || {}).id || null;
+  const call = await db.one(`insert into mkt_ivr_calls (sid, caller, ivr_number, called_at, status, duration, recording_url, digits, project_id, raw) values ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)
+     on conflict (sid) do update set status = coalesce(excluded.status, mkt_ivr_calls.status), duration = coalesce(excluded.duration, mkt_ivr_calls.duration),
+       recording_url = coalesce(excluded.recording_url, mkt_ivr_calls.recording_url), raw = excluded.raw returning id, lead_id, (xmax = 0) as fresh`,
+  [sid || `ivr-${caller}-${at.getTime()}`, caller, ivrNo, at, status, duration, rec, digits, proj, raw || {}]);
+  if (!call.lead_id) {
+    const when = at.toLocaleString('en-IN', { day: 'numeric', month: 'short', hour: 'numeric', minute: '2-digit', timeZone: 'Asia/Kolkata' });
+    const dup = await db.one(`select id from mkt_leads where phone = $1 ${backfill ? '' : "and created_at > now() - interval '30 days'"} order by id desc limit 1`, [caller]);
+    let leadId;
+    if (dup) { leadId = dup.id; await db.q("update mkt_leads set note = concat_ws(E'\\n', note, $2::text), updated_at = now() where id = $1", [dup.id, `Called the IVR again on ${when}`]); }
+    else leadId = (await db.one("insert into mkt_leads (project_id, phone, source, note, ext_id, created_at) values ($1, $2, 'ivr', $3, $4, $5) on conflict (ext_id) where ext_id is not null do update set updated_at = now() returning id", [proj, caller, `Called the IVR${ivrNo ? ' (' + ivrNo + ')' : ''} on ${when}`, 'ivr:' + (sid || caller + at.getTime()), at])).id;
+    await db.q('update mkt_ivr_calls set lead_id = $2 where id = $1', [call.id, leadId]);
+  }
+  return call.id;
+}
+
 // A call to the IVR number (Exotel Passthru / status callback, or any IVR that can call a link): GET or POST, checked by the
 // key in the link. Every call is kept; a new number becomes a lead (source IVR), a number already a lead in the last
 // 30 days gets a note. Answers plain 200 "OK" at once, as Exotel expects.
@@ -348,19 +367,7 @@ async function ivrHook(req, res) {
   const duration = intOr(g('DialCallDuration', 'Duration', 'ConversationDuration', 'duration')) || null;
   const rec = url(g('RecordingUrl', 'recording_url', 'recording'));
   const digits = str(g('digits', 'Digits', 'dtmf'), 20) || null;
-  const proj = (set.ivrProjects || {})[ivrNo] || (await db.one("select id from projects where code = 'SIGNATURE'") || {}).id || null;
-  const call = await db.one(`insert into mkt_ivr_calls (sid, caller, ivr_number, called_at, status, duration, recording_url, digits, project_id, raw) values ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)
-     on conflict (sid) do update set status = coalesce(excluded.status, mkt_ivr_calls.status), duration = coalesce(excluded.duration, mkt_ivr_calls.duration),
-       recording_url = coalesce(excluded.recording_url, mkt_ivr_calls.recording_url), raw = excluded.raw returning id, lead_id, (xmax = 0) as fresh`,
-  [sid || `ivr-${caller}-${at.getTime()}`, caller, ivrNo, at, status, duration, rec, digits, proj, P]);
-  if (!call.lead_id) {
-    const when = at.toLocaleString('en-IN', { day: 'numeric', month: 'short', hour: 'numeric', minute: '2-digit', timeZone: 'Asia/Kolkata' });
-    const dup = await db.one("select id from mkt_leads where phone = $1 and created_at > now() - interval '30 days' order by id desc limit 1", [caller]);
-    let leadId;
-    if (dup) { leadId = dup.id; await db.q("update mkt_leads set note = concat_ws(E'\\n', note, $2::text), updated_at = now() where id = $1", [dup.id, `Called the IVR again on ${when}`]); }
-    else leadId = (await db.one("insert into mkt_leads (project_id, phone, source, note, ext_id) values ($1, $2, 'ivr', $3, $4) returning id", [proj, caller, `Called the IVR${ivrNo ? ' (' + ivrNo + ')' : ''} on ${when}`, 'ivr:' + (sid || caller + at.getTime())])).id;
-    await db.q('update mkt_ivr_calls set lead_id = $2 where id = $1', [call.id, leadId]);
-  }
+  await recordIvrCall({ sid, caller, ivrNo, at, status, duration, rec, digits, raw: Object.fromEntries(Object.entries(P).filter(([x]) => x !== 'ivr')) }, set);
   res.statusCode = 200; res.setHeader('Content-Type', 'text/plain'); return res.end('OK');
 }
 
@@ -519,6 +526,7 @@ const handler = route({
       if (!str(d.note, 1000)) throw fail(400, 'Write what should change.');
       const r = await require('../lib/mkt-flow').sendBack(intOr(d.id), str(d.note, 1000), u); await log('send-back', 'mkt-campaign', intOr(d.id), { note: str(d.note, 300) }); return res.json(r);
     }
+    if (a === 'ivr.sync') { editOnly(); return res.json({ ok: true, ...(await require('../lib/exotel').sync({ full: !!d.full })) }); }
     if (a === 'post.publish') { editOnly(); return res.json(await require('../lib/mkt-flow').publishDue({ limit: 5 })); }
     if (a === 'campaign.delete') { editOnly(); await db.q('update mkt_leads set campaign_id = null where campaign_id = $1', [intOr(d.id)]); await db.q('delete from mkt_campaigns where id = $1', [intOr(d.id)]); return res.json({ ok: true }); }
 
@@ -587,3 +595,4 @@ module.exports = (req, res) => ((req.query || {}).approve ? require('../lib/mkt-
   : (req.query || {}).ivr ? ivrHook(req, res).catch((e) => { console.error(e); res.statusCode = 200; res.end('OK'); })
   : (req.query || {}).lead ? leadHook(req, res).catch((e) => { console.error(e); res.status(500).json({ error: 'Could not save the lead.' }); }) : handler(req, res));
 module.exports.settings = settings;
+module.exports.recordIvrCall = recordIvrCall;

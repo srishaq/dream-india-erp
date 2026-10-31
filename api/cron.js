@@ -36,6 +36,7 @@ module.exports = route({
       out.reminders = await require('../lib/letters').reminders().catch((e) => ({ error: e.message }));
       out.caPack = await require('../lib/ca-pack').morning().catch((e) => ({ error: e.message }));
       out.cheques = await require('../lib/cheque-match').run({ trigger: 'morning' }).catch((e) => ({ error: e.message }));
+      out.exotel = await require('../lib/exotel').sync({}).catch((e) => ({ error: e.message })); // yesterday's IVR calls (and the 12-month history, part by part)
       out.social = await require('../lib/social').sync({}).catch((e) => ({ error: e.message })); // yesterday's Instagram, Facebook, Meta Ads and YouTube figures
       for (const dept of ['accounts', 'crm']) {
         if (!secret && await dt.ranToday(dept)) { out[dept] = 'already ran'; continue; }
