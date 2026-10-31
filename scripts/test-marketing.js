@@ -197,6 +197,13 @@ let n = 0; const step = async (name, fn) => { await fn(); n++; console.log('  âœ
     assert.equal(g.social.meta.connected, true); assert.match(g.social.meta.lastFail.message, /bad code/);
   });
 
+  await step('Every box on the Overview opens its rows: followers, views, reach, content, leads, cost per lead', async () => {
+    for (const k of ['followers', 'views', 'reach', 'posts', 'leads', 'cpl']) { const r = await rupali(`/api/marketing?mdrill=${k}&scope=company`); assert.equal(r.status, 200, k + ' ' + r.error); assert.ok(r.columns.length && Array.isArray(r.rows), k); }
+    assert.ok((await rupali('/api/marketing?mdrill=posts&scope=company')).rows.some((x) => x.caption === 'Rooftop pool reel'));
+    assert.ok((await rupali('/api/marketing?mdrill=cpl&scope=company')).rows.some((x) => x.name === 'Dream Signature 2BHK leads' && x.cpl === 250));
+    const g = await rupali('/api/marketing?scope=company'); assert.equal(g.channels.find((c) => c.network === 'instagram').viewsBefore, null); // no 30 days before to compare with
+  });
+
   await step('Disconnecting keeps the figures already pulled; each part remembers its 12-month pull', async () => {
     const c = (await db.one("select value from settings where key = 'social'")).value;
     assert.equal((await M(rupali, 'disconnect', { net: 'meta' })).ok, true);

@@ -67,6 +67,10 @@
   .mk .mk-chart{width:100%;overflow:visible}.mk .mk-chart text{font-size:11px;fill:#667085}.mk .mk-chart .v{fill:#10114e;font-weight:700}
   .mk .mk-legend{display:flex;gap:14px;flex-wrap:wrap;font-size:12px;color:var(--mut);margin:0 0 6px}.mk .mk-legend i{display:inline-block;width:10px;height:10px;border-radius:3px;margin-right:5px;vertical-align:-1px}
   .mk .mk-scroll{overflow-x:auto}.mk table.mk-t th[data-sort]{cursor:pointer;white-space:nowrap}.mk table.mk-t td.n,.mk table.mk-t th.n{text-align:right;white-space:nowrap}.mk .mk-tip{position:fixed;pointer-events:none;background:#10114e;color:#fff;font-size:12px;padding:6px 8px;border-radius:8px;z-index:70;white-space:nowrap}
+  .mk button.mk-kpi{display:block;width:100%;text-align:left;font:inherit;font-weight:400;cursor:pointer;color:inherit;transition:border-color .15s,box-shadow .15s}.mk button.mk-kpi:hover{background:#fff;border-color:#7A5AF8;box-shadow:0 4px 14px #7A5AF822}
+  .mk-dlg{position:fixed;inset:0;background:#10114e66;z-index:80;display:flex;align-items:flex-start;justify-content:center;padding:40px 16px}.mk-dlg .box{background:#fff;border-radius:18px;width:min(1200px,100%);max-height:calc(100vh - 80px);display:flex;flex-direction:column;box-shadow:0 20px 60px #10182855}
+  .mk-dlg .hd{display:flex;gap:10px;align-items:center;flex-wrap:wrap;padding:16px 18px;border-bottom:1px solid #EAECF0}.mk-dlg .hd h2{margin:0;font-size:17px;color:#10114e;flex:1;min-width:200px}.mk-dlg .hd input{max-width:220px;margin:0}.mk-dlg .bd{overflow:auto;padding:0 18px 14px}
+  .mk-dlg table.mk-t{width:100%;border-collapse:collapse;font-size:13px}.mk-dlg table.mk-t th{position:sticky;top:0;background:#fff;text-align:left;font-size:12px;color:#667085;padding:8px;border-bottom:1px solid #EAECF0;white-space:nowrap}.mk-dlg table.mk-t td{padding:7px 8px;border-bottom:1px solid #F2F4F7;vertical-align:top}
   .mk-dl .mk-ch{display:flex;gap:8px;flex-wrap:wrap}.mk-dl .mk-ch label{display:flex;gap:6px;align-items:center;border:1px solid #EAECF0;border-radius:999px;padding:5px 10px;font-weight:500;margin:0}.mk-dl .mk-ch input{width:auto;margin:0}
   `;
   const $ = (s, r = document) => r.querySelector(s), $$ = (s, r = document) => [...r.querySelectorAll(s)];
@@ -141,19 +145,39 @@
     const bySrc = {}; for (const l of D.leads) bySrc[l.source] = (bySrc[l.source] || 0) + 1;
     const srcs = Object.entries(bySrc).sort((a, b) => b[1] - a[1]); const mx = srcs.length ? srcs[0][1] : 1;
     const f = (s) => D.leads.filter((l) => (s === 'contacted' ? ['contacted', 'visit', 'booked'].includes(l.status) : s === 'visit' ? ['visit', 'booked'].includes(l.status) : l.status === s || (s === 'booked' && l.is_buyer))).length;
+    const bef = (k) => (ch.length && ch.every((c) => c[k + 'Before'] != null) ? sum(k + 'Before') : null); // compared only when the 30 days before were pulled
     body(`<div class="mk-kpis">
-        <div class="mk-kpi"><span>Followers, all channels</span><b>${nf(fol)}</b>${delta(fol, folB)} <span>in 30 days</span></div>
-        <div class="mk-kpi"><span>Views, last 30 days</span><b>${nf(sum('views'))}</b>${delta(sum('views'), sum('viewsBefore'))}</div>
-        <div class="mk-kpi"><span>Reach, last 30 days</span><b>${nf(sum('reach'))}</b>${delta(sum('reach'), sum('reachBefore'))}</div>
-        <div class="mk-kpi"><span>Content published, 30 days</span><b>${nf(sum('posts'))}</b>${delta(sum('posts'), sum('postsBefore'))}</div>
-        <div class="mk-kpi"><span>Leads, last 30 days</span><b>${nf(recent.length)}</b>${delta(recent.length, prevL.length)}</div>
-        <div class="mk-kpi"><span>Cost per lead (campaigns)</span><b>${(campLeads || allLeads) && spent ? inr(spent / (campLeads || allLeads)) : '–'}</b><span>${inr(spent)} spent</span></div></div>
+        <button type="button" class="mk-kpi" data-md="followers"><span>Followers, all channels</span><b>${nf(fol)}</b>${delta(fol, folB)} <span>in 30 days</span></button>
+        <button type="button" class="mk-kpi" data-md="views"><span>Views, last 30 days</span><b>${nf(sum('views'))}</b>${delta(sum('views'), bef('views'))}</button>
+        <button type="button" class="mk-kpi" data-md="reach"><span>Reach, last 30 days</span><b>${nf(sum('reach'))}</b>${delta(sum('reach'), bef('reach'))}</button>
+        <button type="button" class="mk-kpi" data-md="posts"><span>Content published, 30 days</span><b>${nf(sum('posts'))}</b>${delta(sum('posts'), bef('posts'))}</button>
+        <button type="button" class="mk-kpi" data-md="leads"><span>Leads, last 30 days</span><b>${nf(recent.length)}</b>${delta(recent.length, prevL.length)}</button>
+        <button type="button" class="mk-kpi" data-md="cpl"><span>Cost per lead (campaigns)</span><b>${(campLeads || allLeads) && spent ? inr(spent / (campLeads || allLeads)) : '–'}</b><span>${inr(spent)} spent</span></button></div>
       <div class="mk-chans">${ch.map(chanCard).join('') || `<div class="mk-empty">No channels yet. Add Instagram, Facebook, YouTube and the website under Set-up.</div>`}</div>
       ${D.top.length ? `<div class="mk-card"><h3>Best posts, last 30 days</h3><div class="mk-posts">${D.top.map(postTile).join('')}</div></div>` : ''}
       <div class="mk-grid2"><div class="mk-card"><h3>Coming up</h3>${up.map(postRow).join('') || '<p class="muted small" style="margin:0">Nothing planned for the next days. Plan posts in the Content calendar.</p>'}</div>
         <div class="mk-card"><h3>Leads: from enquiry to booking</h3><div class="mk-funnel"><div><b>${allLeads}</b><span>Leads</span></div><div><b>${f('contacted')}</b><span>Contacted</span></div><div><b>${f('visit')}</b><span>Site visit</span></div><div><b>${f('booked')}</b><span>Booked</span></div></div>
           <h3 style="margin-top:16px">Where leads come from</h3>${srcs.map(([s, n]) => `<div style="margin:0 0 8px"><div style="display:flex;justify-content:space-between;font-size:13px"><span>${esc(SRC[s] || s)}</span><b>${n}</b></div><div class="mk-bar"><i style="width:${Math.round((n / mx) * 100)}%"></i></div></div>`).join('') || '<p class="muted small" style="margin:0">No leads yet.</p>'}</div></div>`);
     $$('#mkBody [data-post]').forEach((x) => (x.onclick = () => postForm(D.posts.find((p) => p.id === +x.dataset.post))));
+    $$('#mkBody [data-md]').forEach((x) => (x.onclick = () => mdrill(x.dataset.md)));
+  }
+  // the rows behind a box
+  async function mdrill(key) {
+    const dl = document.createElement('div'); dl.className = 'mk-dlg';
+    dl.innerHTML = `<div class="box" role="dialog" aria-modal="true"><div class="hd"><h2>Loading…</h2><input type="search" placeholder="Search"><button class="ghost small" data-csv>Download (CSV)</button><button class="ghost small" data-x>Close</button></div><div class="bd"></div></div>`;
+    document.body.appendChild(dl);
+    const close = () => { dl.remove(); document.removeEventListener('keydown', esc1); }, esc1 = (e) => { if (e.key === 'Escape') close(); };
+    document.addEventListener('keydown', esc1); dl.onclick = (e) => { if (e.target === dl || e.target.closest('[data-x]')) close(); };
+    let R;
+    try { R = await C.api(`/api/marketing?mdrill=${encodeURIComponent(key)}&scope=${encodeURIComponent(S.scope)}`); } catch (e) { $('.bd', dl).innerHTML = `<div class="err">${esc(e.message)}</div>`; return; }
+    const fmt = (v, t) => (v == null || v === '' ? '–' : t === 'n' ? nf(+v) : t === 'inr' ? '₹' + Math.round(+v).toLocaleString('en-IN') : t === 'date' ? day(v) : t === 'link' ? `<a href="${esc(v)}" target="_blank" rel="noopener">Open ↗</a>` : esc(v));
+    const draw = (q) => { const rows = R.rows.filter((r) => !q || Object.values(r).some((v) => String(v ?? '').toLowerCase().includes(q)));
+      $('h2', dl).textContent = `${R.title} (${rows.length})`;
+      $('.bd', dl).innerHTML = rows.length ? `<table class="mk-t"><tr>${R.columns.map(([, l, t]) => `<th style="${t && t !== 'date' && t !== 'link' ? 'text-align:right' : ''}">${esc(l)}</th>`).join('')}</tr>${rows.map((r) => `<tr>${R.columns.map(([k, , t]) => `<td style="${t && t !== 'date' && t !== 'link' ? 'text-align:right;white-space:nowrap' : ''}">${fmt(r[k], t)}</td>`).join('')}</tr>`).join('')}</table>` : '<p class="muted" style="padding:16px 0">Nothing here yet.</p>'; };
+    draw('');
+    $('input', dl).oninput = (e) => draw(e.target.value.trim().toLowerCase());
+    $('[data-csv]', dl).onclick = () => { const q = (v) => { const t = v == null ? '' : String(v); return /[",\n]/.test(t) ? '"' + t.replace(/"/g, '""') + '"' : t; };
+      const a = document.createElement('a'); a.href = URL.createObjectURL(new Blob(['\ufeff' + [R.columns.map((c) => c[1]), ...R.rows.map((r) => R.columns.map(([k]) => r[k]))].map((r) => r.map(q).join(',')).join('\n')], { type: 'text/csv' })); a.download = key + '.csv'; document.body.appendChild(a); a.click(); setTimeout(() => a.remove(), 500); };
   }
   function chanCard(c) {
     const N = NET[c.network] || NET.website, has = c.followers != null || c.views;

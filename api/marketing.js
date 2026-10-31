@@ -53,7 +53,8 @@ async function channelFigures(network) {
   const lastF = [...rows].reverse().find((r) => r.metrics.followers != null);
   const f30 = [...prev].reverse().find((r) => r.metrics.followers != null);
   const out = { followers: lastF ? +lastF.metrics.followers : null, followersBefore: f30 ? +f30.metrics.followers : null, spark: cur.map((r) => +r.metrics.views || +r.metrics.reach || 0), followerSpark: rows.filter((r) => r.metrics.followers != null).map((r) => +r.metrics.followers), updated: rows.length ? dstr(rows[rows.length - 1].day) : null };
-  for (const k of ['views', 'reach', 'posts', 'interactions', 'gained']) { out[k] = sum(k, cur); out[k + 'Before'] = sum(k, prev); }
+  // the 30 days before are compared only when they were pulled too (the first pull brings day-by-day figures for about 5 weeks)
+  for (const k of ['views', 'reach', 'posts', 'interactions', 'gained']) { out[k] = sum(k, cur); const pd = prev.filter((r) => r.metrics[k] != null).length; out[k + 'Before'] = pd >= 25 || k === 'posts' && prev.length >= 25 ? sum(k, prev) : null; }
   return out;
 }
 
@@ -117,6 +118,48 @@ async function report(scope) {
      from mkt_media where posted_at >= $1 group by 1, 2, 3 order by 2`, [from]);
   return { months, organic, campaigns: camps, adMonths, leadMonths, top, media };
 }
+// The rows behind a box on the Overview: followers, views, reach, content, leads, cost per lead (last 30 days).
+async function mdrill(key, scope) {
+  const projectId = pid(scope), set = await settings();
+  const nets = [...new Set(set.channels.filter((c) => !projectId || !c.projectId || +c.projectId === projectId).map((c) => c.network))];
+  const NAME = { instagram: 'Instagram', facebook: 'Facebook', youtube: 'YouTube', linkedin: 'LinkedIn', website: 'Website', whatsapp: 'WhatsApp', google: 'Google' };
+  const since = "current_date - 30";
+  if (key === 'followers') {
+    const rows = [];
+    for (const n of nets) {
+      const f = await channelFigures(n);
+      const months = await db.q("select to_char(month, 'Mon YYYY') as m, metrics->>'followers' as f from mkt_stats_month where network = $1 and metrics ? 'followers' order by month", [n]);
+      rows.push({ channel: NAME[n] || n, now: f.followers, before: f.followersBefore, change: f.followers != null && f.followersBefore != null ? f.followers - f.followersBefore : null, history: months.map((x) => `${x.m}: ${Number(x.f).toLocaleString('en-IN')}`).join(' · ') });
+    }
+    return { title: 'Followers by channel', columns: [['channel', 'Channel'], ['now', 'Followers now', 'n'], ['before', '30 days ago', 'n'], ['change', 'Change', 'n'], ['history', 'Month by month']], rows };
+  }
+  if (key === 'views' || key === 'reach') {
+    const rows = await db.q(`select to_char(day, 'YYYY-MM-DD') as day, network, (metrics->>'views')::numeric as views, (metrics->>'reach')::numeric as reach, (metrics->>'interactions')::numeric as interactions,
+        (metrics->>'posts')::numeric as posts, (metrics->>'followers')::numeric as followers from mkt_stats where day > ${since} and network = any($1) order by day desc, network`, [nets]);
+    return { title: key === 'views' ? 'Views, day by day (last 30 days)' : 'Reach, day by day (last 30 days)',
+      columns: [['day', 'Date', 'date'], ['network', 'Channel'], ['views', 'Views', 'n'], ['reach', 'Reach', 'n'], ['interactions', 'Interactions', 'n'], ['posts', 'Posts', 'n'], ['followers', 'Followers', 'n']], rows: rows.map((r) => ({ ...r, network: NAME[r.network] || r.network })) };
+  }
+  if (key === 'posts') {
+    const rows = await db.q(`select to_char(posted_at + interval '330 minutes', 'YYYY-MM-DD') as day, network, kind, caption, views, reach, likes, comments, shares, saves, permalink
+       from mkt_media where posted_at > now() - interval '30 days' and network = any($1) order by posted_at desc`, [nets]);
+    return { title: 'Content published, last 30 days', columns: [['day', 'Date', 'date'], ['network', 'Channel'], ['kind', 'Type'], ['caption', 'Caption'], ['views', 'Views', 'n'], ['reach', 'Reach', 'n'], ['likes', 'Likes', 'n'], ['comments', 'Comments', 'n'], ['shares', 'Shares', 'n'], ['permalink', 'Link', 'link']],
+      rows: rows.map((r) => ({ ...r, network: NAME[r.network] || r.network, caption: String(r.caption || '').slice(0, 140) })) };
+  }
+  if (key === 'leads') {
+    const rows = await db.q(`select to_char(l.created_at + interval '330 minutes', 'YYYY-MM-DD') as day, l.name, l.phone, l.source, c.name as campaign, l.status, p.name as project, l.note
+       from mkt_leads l left join mkt_campaigns c on c.id = l.campaign_id left join projects p on p.id = l.project_id where l.created_at > now() - interval '30 days' ${projectId ? 'and l.project_id = ' + +projectId : ''} order by l.created_at desc`);
+    return { title: 'Leads, last 30 days', columns: [['day', 'Date', 'date'], ['name', 'Name'], ['phone', 'Phone'], ['source', 'Source'], ['campaign', 'Campaign'], ['status', 'Status'], ['project', 'Project'], ['note', 'Note']], rows };
+  }
+  if (key === 'cpl') {
+    const rows = await db.q(`select c.name, c.source, c.ext_status, p.name as project, coalesce(c.spent, 0) as spent, coalesce(c.ad_leads, 0) as ad_leads,
+        (select count(*)::int from mkt_leads l where l.campaign_id = c.id) as crm_leads, coalesce(c.messages, 0) as chats
+       from mkt_campaigns c left join projects p on p.id = c.project_id ${projectId ? 'where c.project_id = ' + +projectId : ''} order by coalesce(c.spent, 0) desc`);
+    return { title: 'Cost per lead, by campaign', columns: [['name', 'Campaign'], ['project', 'For'], ['ext_status', 'Status'], ['spent', 'Spent', 'inr'], ['ad_leads', 'Leads (Meta)', 'n'], ['crm_leads', 'Leads in our list', 'n'], ['chats', 'Chats', 'n'], ['cpl', 'Per lead', 'inr']],
+      rows: rows.map((r) => { const l = Math.max(+r.ad_leads, r.crm_leads); return { ...r, ext_status: r.ext_status ? String(r.ext_status).toLowerCase() : r.source === 'manual' ? 'typed in' : '', cpl: l ? Math.round(+r.spent / l) : null }; }) };
+  }
+  throw fail(400, 'Unknown figure.');
+}
+
 // A lead from outside (website form, Meta lead ads via a connector, a property portal): checked by the key in the link.
 async function leadHook(req, res) {
   res.setHeader('Cache-Control', 'no-store');
@@ -170,6 +213,7 @@ const handler = route({
       return res.end(buf);
     }
     if (q.report != null) return res.json(await report(q.report));
+    if (q.mdrill) return res.json(await mdrill(String(q.mdrill), q.scope));
     if (q.thumb) {
       const t = /^[A-Za-z0-9_-]{10,80}$/.test(q.thumb) ? await require('../lib/drive').thumbnail(q.thumb).catch(() => null) : null;
       if (!t) return res.status(404).json({ error: 'No preview.' });
