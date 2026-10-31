@@ -114,7 +114,10 @@ module.exports = route({
       const dk = reg.dateKey;
       const prev = id && dk ? await db.one(`select ${dk} as d from ${reg.table} where id = $1 and book = $2`, [id, acc.BOOK]) : null;
       const closedOn = dk ? await guardClosed(u, b.reg, [data[dk], prev && prev.d], b.reason) : null;
+      // paid against an approved purchase bill: checked, saved and the Purchase order marked Paid in one transaction
+      const poId = b.reg === 'payments' && b.poId && !id ? str(b.poId, 60) : null;
       const out = await db.tx(async (t) => {
+        const bill = poId ? await acc.billToPay(t, poId, { amount: data.amount, tds: data.tds_deducted, user: u }) : null;
         if (id) {
           const before = await t.one(`select * from ${reg.table} where id = $1 and book = $2`, [id, acc.BOOK]);
           if (!before) throw fail(404, 'Row not found.');
@@ -128,14 +131,10 @@ module.exports = route({
         const cols = Object.keys(data).filter((c) => data[c] !== null);
         const row = await t.one(`insert into ${reg.table} (book, created_by${ref ? ', ref_id' : ''}${cols.map((c) => ', ' + c).join('')}) values ($1, $2${ref ? ', $3' : ''}${cols.map((c, i) => `, $${i + (ref ? 4 : 3)}`).join('')}) returning id`,
           [acc.BOOK, u.id, ...(ref ? [ref] : []), ...cols.map((c) => data[c])]);
-        await audit.record(t.q, { user: u, action: closedOn ? 'create-closed-month' : 'create', entity: 'acc-' + b.reg, entityId: row.id, after: { ref, ...data }, note: closedOn ? `Books closed to ${closedOn}. Reason: ${str(b.reason, 300)}` : null });
-        return { id: row.id, ref_id: ref };
+        await audit.record(t.q, { user: u, action: closedOn ? 'create-closed-month' : 'create', entity: 'acc-' + b.reg, entityId: row.id, after: { ref, ...data, ...(poId ? { purchaseBill: poId } : {}) }, note: closedOn ? `Books closed to ${closedOn}. Reason: ${str(b.reason, 300)}` : null });
+        if (bill) await acc.markBillPaid(t, poId, bill, { amount: data.amount, ref: data.reference, date: data[dk], paymentId: ref, user: u });
+        return { id: row.id, ref_id: ref, ...(bill ? { billPaid: true } : {}) };
       });
-      // paid against an approved purchase bill: the Purchase order is marked Paid with this payment's reference
-      if (b.reg === 'payments' && b.poId && !id) {
-        try { await acc.markBillPaid(str(b.poId, 60), { amount: data.amount, ref: data.reference, date: data[dk], paymentId: out.ref_id, user: u }); out.billPaid = true; }
-        catch (e) { out.billPaid = false; out.billError = e.message; }
-      }
       return res.json({ ok: true, ...out });
     }
     if (b.action === 'delete') {
@@ -194,6 +193,11 @@ module.exports = route({
     if (b.action === 'confirm-day') {
       need('accounts.enter');
       if (!DATE.test(b.date || '')) throw fail(400, 'Enter the date.');
+      // the day is confirmed by someone other than the person who typed its bank balances (the Admin excepted)
+      if (u.role !== 'admin') {
+        const mine = await db.q('select b.name from acc_bank_stated s join acc_daily_banks b on b.id = s.daily_bank_id where s.on_date = $1 and s.created_by = $2 order by b.seq, b.id', [b.date, u.id]);
+        if (mine.length) throw fail(403, `You typed the Balance per Bank for ${mine.map((x) => x.name).join(', ')} on this day, so someone else must confirm it.`);
+      }
       const bal = await acc.balances(b.date);
       const off = bal.rows.filter((r) => r.difference != null && Math.abs(r.difference) > 1);
       const missing = bal.rows.filter((r) => r.perBank == null && (r.receipts || r.payments));

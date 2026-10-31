@@ -262,11 +262,9 @@ function actionBox(o) {
     <div class="form"><label class="field">Amount payable (₹)<input name="payable" inputmode="decimal" value="${Math.round(o.receipt.qty !== o.order.qty ? receivedValue(o) : o.order.amount)}"></label>
     <label class="field wide">Note<textarea name="note" placeholder="Reason, needed to put on hold"></textarea></label></div><p class="err"></p>
     <div class="acts"><button class="btn warn" data-op="hold">Put on hold</button><button class="btn go" data-op="accounts_ok">Approve for payment</button></div></div>`;
-  if (o.status === 'accounts_ok' && c.accounts) return `<div class="box"><h4>Record the payment</h4>
-    <div class="form"><label class="field">Amount paid (₹)<input name="amount" inputmode="decimal" value="${Math.round(o.accounts.payable || o.order.amount)}"></label>
-    <label class="field">Payment date<input name="date" type="date" value="${today()}"></label>
-    <label class="field">UTR / cheque no.<input name="ref" autocomplete="off"></label></div><p class="err"></p>
-    <div class="acts"><button class="btn go" data-op="paid">Mark paid</button></div></div>`;
+  if (o.status === 'accounts_ok' && c.accounts) return `<div class="box"><h4>Pay this bill</h4>
+    <p class="note" style="margin:0">Approved for ${inr(o.accounts.payable || o.order.amount)}. Pay it from <b>Accounts → Payments Out</b> in the ERP: add a row and choose this bill under "Paying an approved purchase bill?". Saving that payment marks the bill Paid here, so every payment is in the books.</p>
+    <div class="acts"><a class="btn go" href="/#/reg-payments">Open Payments Out</a></div></div>`;
   return '';
 }
 function showOrder(id, okMsg) {

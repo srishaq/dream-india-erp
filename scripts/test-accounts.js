@@ -77,18 +77,35 @@ let n = 0; const step = async (name, fn) => { await fn(); n++; console.log('  âœ
     const u = await admin('/api/accounts?reg=receipts&filter=bounced'); assert.equal(u.rows.filter((r) => r.unit_no === 'A-1002').reduce((a, r) => a + Number(r.amount), 0), 350000);
     const p = await admin('/api/accounts?view=report&name=payees'); assert.equal(p.rows.find((r) => r.payee === 'Skyway').paid, 155354);
     const t = await admin('/api/accounts?reg=tds'); assert.equal(t.rows.reduce((a, r) => a + Number(r.tds_amount), 0), 4858);
-    const x = await admin('/api/accounts?view=tally&from=2026-01-01&to=2026-12-31', null, true); assert.match(x.text, /<VOUCHER VCHTYPE="Receipt"/); assert.match(x.text, /<LEDGERNAME>RMC<\/LEDGERNAME>/);
-    assert.ok(!/BL00004/.test(x.text)); // bounced cheque left out
-    const c = await admin('/api/accounts?view=tally&from=2026-01-01&to=2026-12-31&format=csv', null, true); assert.match(c.text, /^ï»¿?Date,Voucher Type/);
+    // the Tally export: the Tally link's vouchers (REMOTEID), ERP entries only (rows imported from the sheet are in Tally already)
+    const tp = await admin('/api/accounts', { action: 'save', reg: 'payments', data: { txn_date: '2026-10-20', bank: 'Yes RERA Collection 100% (0700)', amount: '1234', head: 'RMC', payee: 'Tally Export Test', vendor_pan: 'AAAAA0000A', bill_no: 'T-1', bill_date: '2026-10-20', taxable_value: '1234', gst_on_bill: '0', tds_deducted: '0', tds_challan: 'NA' } });
+    assert.equal(tp.ok, true, tp.error);
+    const x = await admin('/api/accounts?view=tally&from=2026-01-01&to=2026-12-31', null, true);
+    assert.match(x.text, new RegExp(`<VOUCHER REMOTEID="DIERP-${tp.ref_id}" VCHTYPE="Payment"`)); assert.match(x.text, /<LEDGERNAME>RMC<\/LEDGERNAME>/);
+    assert.ok(!/BL00004/.test(x.text)); assert.ok(!/BL00007/.test(x.text)); // imported rows, and a bounced cheque Tally never had, left out
+    const c = await admin('/api/accounts?view=tally&from=2026-01-01&to=2026-12-31&format=csv', null, true); assert.match(c.text, /^ï»¿?Date,Voucher Type/); assert.match(c.text, new RegExp(`DIERP-${tp.ref_id}`));
+    // a receipt not found on the bank statement is not money received
+    const before = (await admin(`/api/accounts?view=report&name=gst&project=${sig.id}`)).rows.find((r) => r.unit === 'A-1001').avReceived;
+    const nf = await admin('/api/accounts', { action: 'save', reg: 'receipts', data: { txn_date: '2026-10-21', bank: 'Yes RERA Collection 100% (0700)', amount: '5000', head: 'Receipts From Customers', payment_head: 'AV', unit_no: 'A-1001', payer_type: 'Current buyer', cheque_status: 'Not found on statement' } });
+    assert.equal(nf.ok, true, nf.error);
+    assert.equal((await admin(`/api/accounts?view=report&name=gst&project=${sig.id}`)).rows.find((r) => r.unit === 'A-1001').avReceived, before);
+    const db = require('../lib/db');
+    await db.q('delete from acc_receipts where id = $1', [nf.id]); // so the receipt counts below stay as they were
+    // the registers are Dream Signature's book: another project is refused
+    const other = await db.one("insert into projects (code, name, company_id) select 'OTHERP', 'Other Project', company_id from projects where id = $1 returning id", [sig.id]);
+    const ref = await admin(`/api/accounts?view=report&name=gst&project=${other.id}`); assert.equal(ref.status, 400); assert.match(ref.error, /Dream Signature/);
+    assert.equal((await admin(`/api/books-crm?project=${other.id}`)).status, 400);
+    await db.q('delete from projects where id = $1', [other.id]);
   });
-  await step('CP Commissions: brokerage released comes in as paid on the booking', async () => {
-    const p = await admin(`/api/partners?project=${sig.id}`); const r = p.rows.find((x) => x.unit_no === 'A-1001');
-    assert.equal(Number(r.paid), 97150); assert.equal(Number(r.brokerage), 97150); assert.equal(r.state, 'Paid');
+  await step('CP Commissions: brokerage released comes in on the booking, counted as paid once verified', async () => {
+    const p = await admin(`/api/partners?project=${sig.id}&ledger=1`); const r = p.bookings.find((x) => x.unit_no === 'A-1001');
+    assert.equal(Number(r.to_verify), 97150, JSON.stringify(r)); assert.equal(Number(r.brokerage), 97150); // the sheet's released brokerage, waiting to be verified on the ledger
+    assert.equal((await admin(`/api/partners?project=${sig.id}`)).status, 400); // the old per-booking list is gone
   });
   await step('importing again replaces the earlier import and keeps rows entered in the ERP', async () => {
     assert.equal((await admin('/api/accounts', { action: 'import', projectId: sig.id })).ok, true);
     const l = await admin('/api/accounts?reg=receipts'); assert.equal(l.total, 7); assert.ok(l.rows.some((r) => r.ref_id === 'BL00007'));
-    const p = await admin(`/api/partners?project=${sig.id}`); assert.equal(Number(p.rows.find((x) => x.unit_no === 'A-1001').paid), 97150);
+    const p = await admin(`/api/partners?project=${sig.id}&ledger=1`); const r = p.bookings.find((x) => x.unit_no === 'A-1001'); assert.equal(Number(r.to_verify), 97150);
   });
   await step('roles: Sales has no accounts access; heads can only be set up by Accounts admin', async () => {
     const c = await admin('/api/users', { action: 'create', name: 'Acc One', username: 'acc1', role: 'accounts', projects: [sig.id] });
@@ -121,10 +138,30 @@ let n = 0; const step = async (name, fn) => { await fn(); n++; console.log('  âœ
     await kv.hset('po:orders', 'PO123456', { id: 'PO123456', material: 'RMC', line: 'A wing|5th slab', status: 'accounts_ok', order: { vendor: 'Concrete Ltd', amount: 250000, billNo: 'B-77', billDate: '2026-10-20' }, accounts: { by: 'hacc', at: '2026-10-21T10:00:00Z', payable: 250000 }, history: [] });
     const B = await admin('/api/accounts?view=bills'); const b = B.bills.find((x) => x.id === 'PO123456');
     assert.ok(b); assert.equal(b.amount, 250000); assert.equal(b.head, 'RMC'); assert.equal(B.tds.RMC.sec, '194Q');
-    const r = await admin('/api/accounts', { action: 'save', reg: 'payments', poId: 'PO123456', data: { txn_date: '2026-10-27', bank: 'Yes RERA Collection 100% (0700)', amount: '250000', head: 'RMC', payee: 'Concrete Ltd', reference: 'UTR999' } });
-    assert.equal(r.billPaid, true, r.billError);
+    const pay = { txn_date: '2026-10-27', bank: 'Yes RERA Collection 100% (0700)', amount: '250000', head: 'RMC', payee: 'Concrete Ltd', reference: 'UTR999' };
+    const count = async () => (await admin('/api/accounts?reg=payments')).total;
+    const n0 = await count();
+    // the amount must be what Accounts approved (or that less the TDS on the row); nothing is saved otherwise
+    const wrong = await admin('/api/accounts', { action: 'save', reg: 'payments', poId: 'PO123456', data: { ...pay, amount: '260000' } });
+    assert.equal(wrong.status, 400); assert.match(wrong.error, /approved for â‚¹2,50,000/); assert.equal(await count(), n0);
+    // the one who approved the bill cannot pay it
+    const h = await admin('/api/users', { action: 'create', name: 'Head Acc', username: 'hacc', role: 'head_accounts', projects: [sig.id] });
+    const hc = client(); await hc('/api/session', { action: 'login', username: 'hacc', password: h.tempPassword }); await hc('/api/session', { action: 'password', current: h.tempPassword, next: 'head-acc-password-1' });
+    const own = await hc('/api/accounts', { action: 'save', reg: 'payments', poId: 'PO123456', data: pay }); assert.equal(own.status, 403, JSON.stringify(own)); assert.equal(await count(), n0);
+    const r = await admin('/api/accounts', { action: 'save', reg: 'payments', poId: 'PO123456', data: pay });
+    assert.equal(r.billPaid, true, r.error);
     const o = await kv.hget('po:orders', 'PO123456'); assert.equal(o.status, 'paid'); assert.equal(o.payment.ref, 'UTR999'); assert.equal(o.payment.erpPayment, r.ref_id);
     assert.equal((await admin('/api/accounts?view=bills')).bills.length, 0);
+    // paid once only
+    const twice = await admin('/api/accounts', { action: 'save', reg: 'payments', poId: 'PO123456', data: { ...pay, reference: 'UTR1000' } }); assert.equal(twice.status, 409); assert.equal(await count(), n0 + 1);
+    // a bill less TDS: approved 1,00,000, paid 99,900 with TDS of 100 on the row
+    await kv.hset('po:orders', 'PO654321', { id: 'PO654321', material: 'Steel', line: 'A wing|5th slab', status: 'accounts_ok', order: { vendor: 'Steel Co', amount: 100000 }, accounts: { by: 'hacc', at: '2026-10-21T10:00:00Z', payable: 100000 }, history: [] });
+    assert.equal((await admin('/api/accounts', { action: 'save', reg: 'payments', poId: 'PO654321', data: { ...pay, amount: '99900', tds_deducted: '100', payee: 'Steel Co', reference: 'UTR77' } })).billPaid, true);
+    // the Purchase page can no longer mark a bill Paid without a Payments Out row
+    await kv.hset('po:orders', 'PO777777', { id: 'PO777777', no: 'PR-0777', material: 'Steel', line: 'A wing|5th slab', status: 'accounts_ok', order: { vendor: 'Steel Co', amount: 5000 }, accounts: { by: 'hacc', payable: 5000 }, history: [] });
+    const pp = await admin('/api/me?purchase=1', { op: 'paid', id: 'PO777777', data: { amount: 5000, ref: 'X', date: '2026-10-27' } });
+    assert.equal(pp.status, 400, JSON.stringify(pp)); assert.match(pp.error, /Payments Out/);
+    await kv.hdel('po:orders', 'PO777777');
   });
   await step('Today: last month\'s TDS to deposit by the 7th, and the closing balances to confirm', async () => {
     const dt = require('../lib/daily-tasks');
@@ -132,11 +169,20 @@ let n = 0; const step = async (name, fn) => { await fn(); n++; console.log('  âœ
     const r = await dt.run('accounts', { today: '2026-10-03', mail: false });
     const t = r.found.find((x) => x.key === 'tds-deposit-2026-09'); assert.ok(t, r.found.map((x) => x.key).join()); assert.match(t.title, /by the 7th/);
     const late = (await dt.run('accounts', { today: '2026-10-09', mail: false })).found.find((x) => x.key === 'tds-deposit-2026-09'); assert.match(late.title, /late/);
+    // older months not deposited are listed too; March's TDS is due by 30 April
+    await admin('/api/accounts', { action: 'save', reg: 'payments', data: { txn_date: '2026-03-15', bank: 'Yes RERA Collection 100% (0700)', amount: '1000', head: 'RMC', payee: 'X', tds_deducted: '30' } });
+    const mar = (await dt.run('accounts', { today: '2026-04-20', mail: false })).found.find((x) => x.key === 'tds-deposit-2026-03'); assert.ok(mar); assert.match(mar.title, /by 30 April/);
+    const old = (await dt.run('accounts', { today: '2026-10-03', mail: false })).found; assert.ok(old.some((x) => x.key === 'tds-deposit-2026-03' && /late/.test(x.title)) && old.some((x) => x.key === 'tds-deposit-2026-09'));
     const c = (await dt.run('accounts', { today: '2026-10-26', mail: false })).found.find((x) => x.key === 'daily-confirm'); assert.ok(c); assert.match(c.title, /25-Oct-2026/);
   });
   await step('closing balances: a bank that does not agree needs a note to confirm', async () => {
     assert.equal((await admin('/api/accounts', { action: 'confirm-day', date: '2026-10-25' })).status, 400); // PRIME HDFC differs by 5
     assert.equal((await admin('/api/accounts', { action: 'confirm-day', date: '2026-10-25', note: 'Bank charge of Rs 5 to enter' })).ok, true);
+    // whoever typed a day's Balance per Bank does not confirm that day (the Admin excepted)
+    const a1 = client(); await a1('/api/session', { action: 'login', username: 'acc1', password: 'accounts-password-1' });
+    const bk = (await admin('/api/accounts?view=balances&date=2026-10-24')).rows[0];
+    assert.equal((await a1('/api/accounts', { action: 'stated', bankId: bk.id, date: '2026-10-24', balance: bk.closing })).ok, true);
+    const own = await a1('/api/accounts', { action: 'confirm-day', date: '2026-10-24', note: 'x' }); assert.equal(own.status, 403); assert.match(own.error, /someone else/);
     const b = await admin('/api/accounts?view=balances&date=2026-10-25'); assert.equal(b.confirmed.by, 'Admin');
     const c = (await require('../lib/daily-tasks').run('accounts', { today: '2026-10-26', mail: false })).found.find((x) => x.key === 'daily-confirm'); assert.equal(c, undefined);
   });
@@ -187,6 +233,19 @@ let n = 0; const step = async (name, fn) => { await fn(); n++; console.log('  âœ
     const again = await feed('&format=json'); assert.ok(again.vouchers.some((v) => v.id === done.id && v.action === 'Alter'));
     const s = client(); await s('/api/session', { action: 'login', username: 'acc1', password: 'accounts-password-1' });
     assert.equal((await s('/api/accounts', { action: 'tally-link', newKey: true })).status, 403);
+  });
+  await step('SDR challans: cancelling or bringing one back needs Head Accounts and a reason, and is checked for duplicates', async () => {
+    const add = (x) => admin('/api/sdr', { action: 'add', projectId: sig.id, unit: 'A-1001', kind: 'stamp_duty', amount: 500000, challanDate: '2026-10-20', ...x });
+    const c1 = await add({ grn: 'GRNT1' }); assert.equal(c1.ok, true, c1.error);
+    const up = (k, x) => k('/api/sdr', { action: 'update', projectId: sig.id, id: c1.id, ...x });
+    assert.equal((await up(admin, { status: 'cancelled' })).status, 400); // no reason
+    const a1 = client(); await a1('/api/session', { action: 'login', username: 'acc1', password: 'accounts-password-1' });
+    assert.equal((await up(a1, { status: 'cancelled', reason: 'failed' })).status, 403);
+    assert.equal((await up(a1, { note: 'a note is fine' })).ok, true);
+    assert.equal((await up(admin, { status: 'cancelled', reason: 'Challan failed at the bank' })).ok, true);
+    const c2 = await add({ grn: 'GRNT2' }); assert.equal(c2.ok, true, c2.error); assert.equal(c2.second, false);
+    const back = await up(admin, { status: 'paid', reason: 'Entered as cancelled by mistake' }); assert.equal(back.status, 409); assert.ok(back.duplicate);
+    assert.equal((await up(admin, { status: 'paid', reason: 'Entered as cancelled by mistake', duplicateReason: 'Both were paid; refund claimed on the second' })).ok, true);
   });
   console.log(`\nAll ${n} accounts checks passed.`);
   server.close(); require('../lib/db').reset(); process.exit(0);

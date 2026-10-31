@@ -95,24 +95,28 @@ const docs = require('../lib/docs');
     assert.equal(a.stage, 'On Completion of Plinth'); assert.equal(b.stage, 'On Completion of 5th Slab'); // A has excavation demanded, B plinth
     assert.ok(a.amount > 0 && Math.abs(a.gst - a.amount * 0.05) < 2);
   });
-  await step('brokerage: amount, bill, not paid before it is due, paid once due; per-firm totals', async () => {
+  await step('brokerage: bill, not paid before it is due, paid once due and verified; per-firm totals', async () => {
+    const db = require('../lib/db');
     const reg = ledger.find((r) => Number(r.outstanding) >= 0 && r.booking_id !== bk.booking_id);
     const det = await admin(`/api/bookings?id=${reg.booking_id}`);
-    assert.equal((await admin('/api/partners', { action: 'amount', bookingId: reg.booking_id, amount: 100000, cpName: 'House of Inani' })).ok, true);
-    assert.equal((await admin('/api/partners', { action: 'bill', bookingId: reg.booking_id, amount: 100000, date: '2026-10-01', reference: 'INV-7' })).ok, true);
-    let p = await admin(`/api/partners?project=${sig.id}`);
-    let row = p.rows.find((r) => r.booking_id === reg.booking_id);
-    assert.equal(row.cp_name, 'House of Inani'); assert.equal(Number(row.billed), 100000);
+    const f = await db.one("insert into channel_partners (name, name_key) values ('House of Inani', 'house of inani') on conflict (name_key) do update set name = excluded.name returning id");
+    await db.q('update bookings set brokerage = 100000, cp_name = $2, cp_id = $3, sample = false where id = $1', [reg.booking_id, 'House of Inani', f.id]); // the ledger leaves sample bookings out
+    const e = (x) => admin('/api/partners', { action: 'cp-entry', projectId: sig.id, cpId: f.id, bookingId: reg.booking_id, ...x });
+    assert.equal((await e({ kind: 'bill', amount: 100000, date: '2026-10-01', reference: 'INV-7' })).ok, true);
+    const page = async () => { const d = await admin(`/api/partners?project=${sig.id}&cp=${f.id}`); return { d, row: d.bookings.find((r) => r.booking_id === reg.booking_id) }; };
+    let { row } = await page();
+    assert.equal(Number(row.billed), 100000);
     // make the rule strict so it is not due, then relax it
     await admin('/api/partners', { action: 'rule', afterRegistration: true, minReceivedPct: 99 });
-    const early = await admin('/api/partners', { action: 'payment', bookingId: reg.booking_id, amount: 50000, date: '2026-10-02', reference: 'UTR1' });
+    const early = await e({ kind: 'payment', amount: 50000, date: '2026-10-02', reference: 'UTR1' });
     assert.equal(early.status, 409); assert.match(early.error, /not due yet/);
     await admin('/api/partners', { action: 'rule', afterRegistration: false, minReceivedPct: 0 });
-    assert.equal((await admin('/api/partners', { action: 'payment', bookingId: reg.booking_id, amount: 60000, date: '2026-10-02', reference: 'UTR1' })).ok, true);
-    assert.equal((await admin('/api/partners', { action: 'payment', bookingId: reg.booking_id, amount: 50000, date: '2026-10-03', reference: 'UTR2' })).status, 400); // only 40,000 left
-    p = await admin(`/api/partners?project=${sig.id}`); row = p.rows.find((r) => r.booking_id === reg.booking_id);
-    assert.equal(row.balance, 40000); assert.equal(row.state, 'Due');
-    const firm = p.firms.find((f) => f.firm === 'House of Inani'); assert.equal(firm.paid, 60000);
+    const p1 = await e({ kind: 'payment', amount: 60000, date: '2026-10-02', reference: 'UTR1' }); assert.equal(p1.ok, true); assert.equal(p1.toVerify, true);
+    assert.equal((await e({ kind: 'payment', amount: 50000, date: '2026-10-03', reference: 'UTR2' })).status, 400); // only 40,000 left
+    assert.equal((await admin('/api/partners', { action: 'cp-verify', id: p1.id })).ok, true);
+    let d; ({ d, row } = await page());
+    assert.equal(row.balance, 40000); assert.equal(row.state, 'Due'); assert.equal(d.firm.paid, 60000);
+    assert.equal((await admin('/api/partners', { action: 'bill', bookingId: reg.booking_id, amount: 1, date: '2026-10-01', reference: 'X' })).status, 400); // the old per-booking actions are gone
     assert.ok(det.booking.id === reg.booking_id);
   });
   console.log(`\nAll ${n} sales checks passed.`);

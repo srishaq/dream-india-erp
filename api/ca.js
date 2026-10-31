@@ -13,8 +13,9 @@ module.exports = route({
     const q = req.query || {};
     if (q.refresh === '1' || !cache.model || Date.now() - cache.at > TTL_MS) {
       const { summary, detail } = await ca.model();
-      cache = { at: Date.now(), model: { ...summary, readAt: new Date().toISOString(), user: { name: u.name, role: u.roleLabel || u.role } }, detail };
+      cache = { at: Date.now(), model: { ...summary, readAt: new Date().toISOString() }, detail };
     }
-    return res.json(q.detail === '1' ? { ...cache.detail, readAt: cache.model.readAt } : cache.model);
+    // the model is shared for a minute; who is looking is added to each response, never kept in the cache
+    return res.json(q.detail === '1' ? { ...cache.detail, readAt: cache.model.readAt } : { ...cache.model, user: { name: u.name, role: u.roleLabel || u.role } });
   },
 });
