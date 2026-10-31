@@ -143,7 +143,7 @@ let n = 0; const step = async (name, fn) => { await fn(); n++; console.log('  �
     const p = (await rupali('/api/marketing?scope=company')).posts.find((x) => x.id === postId);
     assert.equal(p.files.length, 1); assert.equal(p.files[0].mime, 'image/png');
     const img = await fetch(BASE + '/api/marketing?pfile=' + p.files[0].id); assert.equal(img.status, 401); // only signed in
-    const sent = await M(rupali, 'post.send', { id: postId }); assert.equal(sent.ok, true); assert.ok(sent.mail.skipped);
+    const sent = await M(rupali, 'post.send', { id: postId }); assert.equal(sent.ok, true); assert.ok(sent.mail.skipped, JSON.stringify(sent.mail));
     assert.equal((await M(rupali, 'post.sendback', { id: postId, note: 'Bigger logo' })).status, 403);
     assert.equal((await M(sameer, 'post.sendback', { id: postId, note: 'Bigger logo' })).ok, true);
     const b = (await rupali('/api/marketing?scope=company')).posts.find((x) => x.id === postId); assert.equal(b.status, 'draft'); assert.match(b.review_note, /Bigger logo/);
@@ -182,7 +182,7 @@ let n = 0; const step = async (name, fn) => { await fn(); n++; console.log('  �
     assert.equal(a.status, 200); assert.equal(a.text, 'OK');
     await hit('CallSid=s1&CallFrom=09876543210&CallType=completed&DialCallDuration=42'); // the same call again: not doubled
     await hit('CallSid=s2&CallFrom=09876543210&CallTo=02261234567&CallType=call-attempt&DialCallDuration=0'); // the same caller, missed
-    const l = await db.q("select * from mkt_leads where phone = '9876543210'"); assert.equal(l.length, 1); assert.equal(l[0].source, 'ivr'); assert.match(l[0].note, /Called the IVR again/);
+    const l = await db.q("select * from mkt_leads where phone = '9876543210'"); assert.equal(l.length, 1); assert.equal(l[0].source, 'ivr'); assert.match(l[0].note, /Came again from IVR call/);
     assert.equal((await db.one('select count(*)::int as n from mkt_ivr_calls')).n, 2);
     const o = await rupali('/api/marketing?scope=company'); const iv = o.channels.find((c) => c.ivr).ivr;
     assert.equal(iv.calls30, 2); assert.equal(iv.callers30, 1); assert.equal(iv.missed30, 1); assert.equal(iv.leads30, 1);
@@ -316,7 +316,9 @@ let n = 0; const step = async (name, fn) => { await fn(); n++; console.log('  �
       const r2 = await fetch(BASE + '/api/marketing?approve=' + encodeURIComponent(t2), { method: 'POST', headers: { Origin: 'null' } });
       const tx = await r2.text(); assert.equal(r2.status, 200, tx); assert.match(tx, /designs approved ✓ · budget approved ✓/);
       const r3 = await fetch(BASE + '/api/marketing?approve=' + encodeURIComponent(t2), { method: 'POST', headers: { Origin: 'https://evil.example' } }); assert.match(await r3.text(), /Not allowed/);
-      await M(sameer, 'campaign.delete', { id: c2.id });
+      // a campaign with a scheduled post is not deleted; once the post is gone it is
+      const del = await M(rupali, 'campaign.delete', { id: c2.id }); assert.equal(del.status, 409); assert.match(del.error, /scheduled post/);
+      await M(rupali, 'post.delete', { id: p2.id }); assert.equal((await M(rupali, 'campaign.delete', { id: c2.id })).ok, true);
     }
     g = await rupali('/api/marketing?scope=company'); assert.equal(g.campaigns.find((x) => x.id === c.id).plan_status, 'partly');
     // nothing is posted until the budget is approved too
@@ -402,7 +404,8 @@ let n = 0; const step = async (name, fn) => { await fn(); n++; console.log('  �
     const s1 = await db.one("insert into users (username, name, role, password_hash, email) values ('s1', 'Sales One', 'sales', 'x', 's1@x.in') returning id");
     const s2 = await db.one("insert into users (username, name, role, password_hash, email) values ('s2', 'Sales Two', 'sales', 'x', 's2@x.in') returning id");
     assert.equal((await M(rupali, 'follow.save', { people: { company: [s1.id, s2.id] }, alertHours: 2, template: 'T1' })).ok, true);
-    const key = (await db.one("select value from settings where key = 'marketing'")).value.leadKey;
+    await db.q('delete from mkt_rate'); // the rate limits count from here
+    const key = (await db.one("select value from settings where key = 'marketing'")).value.webKey;
     const post = (b) => fetch(BASE + '/api/marketing?lead=' + key, { method: 'POST', headers: { 'Content-Type': 'application/x-www-form-urlencoded' }, body: new URLSearchParams(b).toString() }).then((r) => r.json());
     const a = await post({ name: 'Web One', phone: '9700000001', utm_source: 'facebook', utm_campaign: 'Dream Signature 2BHK leads', page: 'https://dreamindiarealty.com/signature' });
     const c = await post({ name: 'Web Two', phone: '9700000002' });
@@ -498,7 +501,8 @@ let n = 0; const step = async (name, fn) => { await fn(); n++; console.log('  �
   });
 
   await step('Website: visits from the tracker (where from, pages, clicks), counted like a channel; its enquiry form becomes a lead with the ad that brought it', async () => {
-    const key = (await db.one("select value from settings where key = 'marketing'")).value.leadKey;
+    await db.q('delete from mkt_rate');
+    const key = (await db.one("select value from settings where key = 'marketing'")).value.webKey;
     const hit = (b, ua) => fetch(BASE + '/api/marketing?hit=' + key, { method: 'POST', headers: { 'Content-Type': 'text/plain;charset=UTF-8', ...(ua ? { 'User-Agent': ua } : {}) }, body: JSON.stringify(b) });
     const r = await hit({ k: 'view', v: 'V1', s: 'S1', h: 'dreamindiarealty.com', p: '/dream-signature', t: 'Dream Signature | 2 BHK Oshiwara', utm_source: 'facebook', utm_medium: 'paid', utm_campaign: 'signature-diwali', fbclid: 'x', w: 390 });
     assert.equal(r.status, 204); assert.equal(r.headers.get('access-control-allow-origin'), '*');
@@ -555,7 +559,170 @@ let n = 0; const step = async (name, fn) => { await fn(); n++; console.log('  �
     const tl = await db.one("select id from tm_leads where mobile = '9700000501'");
     await db.q("insert into tm_outcomes (lead_id, caller_id, tm_project_id, cp_id, call_date, code) values ($1, $2, $3, $4, current_date - 1, 2), ($1, $2, $3, $4, current_date - 1, 5)", [tl.id, c1.id, tp.id, cp.id]);
     const R2 = await rupali('/api/marketing?results=' + sig.id + '&period=all'); assert.equal(R2.totals.teleSpend, 800); assert.ok(R2.bySource.find((x) => x.source === 'telecalling').spend >= 800);
+    // the same caller also called for a launch of no project that day (1 call of 3): Signature pays 2/3 of the day
+    const tp2 = await db.one("insert into tm_projects (name, status) values ('Other launch', 'open') returning id");
+    await db.q("insert into tm_outcomes (lead_id, caller_id, tm_project_id, call_date, code) values ($1, $2, $3, current_date - 1, 5)", [tl.id, c1.id, tp2.id]);
+    assert.equal(Math.round((await require('../lib/mkt-results').teleCost(sig.id, '2000-01-01')).cost), 533);
+    assert.equal(Math.round((await require('../lib/mkt-results').teleCost(null, '2000-01-01')).cost), 800); // the day is paid once
+    // a caller with no rate (0) costs the one default rate, the same as in the telecalling report
+    await db.q('update tm_callers set daily_rate = 0 where id = $1', [c1.id]);
+    assert.equal(Math.round((await require('../lib/mkt-results').teleCost(null, '2000-01-01')).cost), require('../lib/tm').DEFAULT_RATE);
+    assert.equal(require('../lib/tm-results').DEFAULT_RATE, require('../lib/tm').DEFAULT_RATE);
+    await db.q('update tm_callers set daily_rate = 800 where id = $1', [c1.id]); await db.q('delete from tm_outcomes where tm_project_id = $1', [tp2.id]);
     assert.ok((await rupali('/api/marketing?plan=' + sig.id)).channels.find((c) => c.key === 'telemarketing').spend >= 800);
+  });
+
+  await step('Keys: the website key opens only the tracker and the form, the secret IVR key only the IVR; the old key until retired; limits per address and number', async () => {
+    await db.q('delete from mkt_rate');
+    const set0 = (await db.one("select value from settings where key = 'marketing'")).value;
+    assert.ok(set0.webKey && set0.ivrKey && set0.webKey !== set0.ivrKey);
+    const g = await admin('/api/marketing?scope=company'), r = await rupali('/api/marketing?scope=company');
+    assert.match(g.settings.ivrUrl, new RegExp('ivr=' + set0.ivrKey)); assert.equal(r.settings.ivrUrl, null); // only the Admin sees the IVR link
+    assert.match(r.settings.leadUrl, new RegExp('lead=' + set0.webKey)); assert.equal(r.settings.webKey, set0.webKey);
+    const lead = (k, b) => fetch(BASE + '/api/marketing?lead=' + k, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(b) }).then(async (x) => ({ status: x.status, ...(await x.json()) }));
+    assert.equal((await lead(set0.ivrKey, { phone: '9600000001' })).status, 403); // the IVR key is not for forms
+    assert.equal((await fetch(BASE + `/api/marketing?ivr=${set0.webKey}&CallFrom=09600000002`)).status, 403); // the public key does not open the IVR
+    assert.equal((await fetch(BASE + `/api/marketing?hit=${set0.ivrKey}`, { method: 'POST', body: '{}' })).status, 403);
+    // the old single key (as on the live website and in Exotel today) keeps working until the Admin retires it
+    await db.q("update settings set value = value || jsonb_build_object('leadKey', 'oldkeyoldkeyoldkeyoldkey') where key = 'marketing'");
+    assert.equal((await admin('/api/marketing?scope=company')).settings.oldKey, true);
+    assert.equal((await lead('oldkeyoldkeyoldkeyoldkey', { phone: '9600000003' })).ok, true);
+    assert.equal((await fetch(BASE + '/api/marketing?ivr=oldkeyoldkeyoldkeyoldkey&CallSid=k1&CallFrom=09600000004')).status, 200);
+    assert.equal((await fetch(BASE + '/api/marketing?hit=oldkeyoldkeyoldkeyoldkey', { method: 'POST', body: JSON.stringify({ k: 'view', v: 'K1', s: 'K1', p: '/' }) })).status, 204);
+    assert.equal((await M(rupali, 'settings', { rotate: 'old' })).status, 403);
+    assert.equal((await M(admin, 'settings', { rotate: 'old' })).ok, true);
+    assert.equal((await lead('oldkeyoldkeyoldkeyoldkey', { phone: '9600000005' })).status, 403);
+    assert.equal((await fetch(BASE + '/api/marketing?ivr=oldkeyoldkeyoldkeyoldkey&CallFrom=09600000006')).status, 403);
+    assert.equal((await M(admin, 'settings', { rotate: 'ivr' })).ok, true);
+    const set1 = (await db.one("select value from settings where key = 'marketing'")).value; assert.notEqual(set1.ivrKey, set0.ivrKey); assert.equal(set1.webKey, set0.webKey);
+    assert.equal((await fetch(BASE + `/api/marketing?ivr=${set0.ivrKey}&CallFrom=09600000007`)).status, 403);
+    // a number shorter than 10 digits is a 400, not a server error
+    const short = await lead(set1.webKey, { name: 'Short', phone: '12345' }); assert.equal(short.status, 400);
+    // a page title with no latin letters does not match every project
+    const hi = await lead(set1.webKey, { name: 'Hindi title', phone: '9600000008', project: 'ड्रीम सिग्नेचर' }); assert.equal(hi.ok, true);
+    assert.equal((await db.one('select project_id from mkt_leads where id = $1', [hi.id])).project_id, sig.id);
+    // 5 an hour from one address (the old-key one, the short one and the Hindi one count too)
+    assert.equal((await lead(set1.webKey, { phone: '9600000011' })).ok, true); assert.equal((await lead(set1.webKey, { phone: '9600000012' })).ok, true);
+    assert.equal((await lead(set1.webKey, { phone: '9600000009' })).status, 429);
+    await db.q('delete from mkt_rate');
+    // 3 a day for one number
+    for (let i = 0; i < 3; i++) assert.equal((await lead(set1.webKey, { phone: '9600000010' })).ok, true);
+    assert.equal((await lead(set1.webKey, { phone: '9600000010' })).status, 429);
+    // visits: 300 an hour from one address
+    await db.q("insert into mkt_rate (key, win, n) values ($1, date_trunc('hour', now()), 300)", ['hit-ip:' + require('../lib/mkt-rate').hash('10.0.0.9')]);
+    const hit2 = (ip) => fetch(BASE + '/api/marketing?hit=' + set1.webKey, { method: 'POST', headers: { 'X-Forwarded-For': ip + ', 10.1.1.1' }, body: JSON.stringify({ k: 'view', v: 'K2', s: 'K2', p: '/' }) }).then((x) => x.status);
+    assert.equal(await hit2('10.0.0.9'), 429); assert.equal(await hit2('10.0.0.10'), 204);
+    await db.q('delete from mkt_rate');
+  });
+
+  await step('A website lead is given to sales but not sent the WhatsApp welcome; a lead typed in is', async () => {
+    await db.q('delete from mkt_rate');
+    const W = require('../lib/whatsapp'), was = { configured: W.configured, sendStaff: W.sendStaff }, sent = [];
+    W.configured = () => true; W.sendStaff = async (x) => { sent.push(x); return { ok: true }; };
+    await db.q("insert into settings (key, value) values ('letters', '{\"testMobile\":\"9999999999\"}') on conflict (key) do update set value = settings.value || excluded.value");
+    try {
+      const key = (await db.one("select value from settings where key = 'marketing'")).value.webKey;
+      const w = await fetch(BASE + '/api/marketing?lead=' + key, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ name: 'Form fill', phone: '9600000020' }) }).then((x) => x.json());
+      const lw = await db.one('select assigned_to, welcomed_at from mkt_leads where id = $1', [w.id]); assert.ok(lw.assigned_to); assert.equal(lw.welcomed_at, null);
+      assert.equal(sent.filter((x) => x.template === 'T1').length, 0);
+      const t = await M(rupali, 'lead.save', { name: 'Typed in', phone: '9600000021', source: 'referral' }); assert.equal(t.ok, true);
+      assert.equal(sent.filter((x) => x.template === 'T1').length, 1);
+    } finally { Object.assign(W, was); }
+  });
+
+  await step('One number, one lead: the database refuses a second; a number changed to another lead\'s is refused; old duplicates are merged', async () => {
+    const a = await M(rupali, 'lead.save', { name: 'Dup A', phone: '9600000030' }), b = await M(rupali, 'lead.save', { name: 'Dup B', phone: '9600000031' });
+    const ch = await M(rupali, 'lead.save', { id: b.id, name: 'Dup B', phone: '9600000030' }); assert.equal(ch.status, 409); assert.equal(ch.duplicate, a.id);
+    assert.equal((await M(rupali, 'lead.save', { name: 'Dup again', phone: '9600000030', force: true })).status, 409);
+    await assert.rejects(db.q("insert into mkt_leads (phone, source) values ('9600000030', 'other')"), /mkt_leads_phone_one/);
+    // the same number from two places at once: still one lead
+    const L = require('../lib/mkt-leads'); const two = await Promise.all([L.add({ phone: '9600000032', source: 'walk_in' }), L.add({ phone: '9600000032', source: 'ivr' })]);
+    assert.equal(two[0].id, two[1].id); assert.equal((await db.one("select count(*)::int as n from mkt_leads where phone = '9600000032'")).n, 1);
+    // an IVR call from a number that became a lead long ago is the same lead (no 30-day window)
+    await db.q("update mkt_leads set created_at = now() - interval '200 days' where id = $1", [a.id]);
+    const set = (await db.one("select value from settings where key = 'marketing'")).value;
+    assert.equal((await fetch(BASE + `/api/marketing?ivr=${set.ivrKey}&CallSid=old1&CallFrom=09600000030`)).status, 200);
+    assert.equal((await db.one("select count(*)::int as n from mkt_leads where phone = '9600000030'")).n, 1);
+    assert.equal((await db.one("select lead_id from mkt_ivr_calls where sid = 'old1'")).lead_id, a.id);
+    assert.ok((await db.one('select array_to_json(sources) as s from mkt_leads where id = $1', [a.id])).s.includes('ivr'));
+    // the migration: duplicates made before the rule are merged into the oldest, with what hangs off them
+    await db.q('drop index mkt_leads_phone_one');
+    const o1 = await db.one("insert into mkt_leads (project_id, phone, name, source, sources, status, note, created_at) values ($1, '9600000040', 'First', 'website', '{website}', 'lost', 'first note', now() - interval '20 days') returning id", [sig.id]);
+    const o2 = await db.one("insert into mkt_leads (phone, source, sources, status, note, ext_id, email, first_contact_at) values ('9600000040', 'meta_ads', '{meta_ads}', 'visit', 'second note', 'meta:555', 'x@y.in', now() - interval '1 day') returning id");
+    await db.q("insert into mkt_capi (lead_id, stage) values ($1, 'visit')", [o2.id]);
+    await db.q("insert into mkt_ivr_calls (sid, caller, called_at, lead_id) values ('mg1', '9600000040', now(), $1)", [o2.id]);
+    const sql = require('../lib/migrations').find((m) => m.id === '045_mkt_one_lead_per_phone').sql;
+    await db.script(sql.slice(sql.indexOf('create temp table mk_g')));
+    const m = await db.q("select *, array_to_json(sources) as src from mkt_leads where phone = '9600000040'"); assert.equal(m.length, 1); assert.equal(m[0].id, o1.id);
+    assert.deepEqual(m[0].src, ['website', 'meta_ads']); assert.equal(m[0].status, 'visit'); assert.equal(m[0].name, 'First'); assert.equal(m[0].email, 'x@y.in'); assert.equal(m[0].ext_id, 'meta:555');
+    assert.match(m[0].note, /first note\nMerged in from lead #\d+ \(meta_ads.*\[meta:555\]: second note/); assert.ok(m[0].first_contact_at);
+    assert.equal((await db.one("select lead_id from mkt_capi where stage = 'visit' and lead_id = $1", [o1.id])).lead_id, o1.id);
+    assert.equal((await db.one("select lead_id from mkt_ivr_calls where sid = 'mg1'")).lead_id, o1.id);
+    await assert.rejects(db.q("insert into mkt_leads (phone, source) values ('9600000040', 'other')"), /mkt_leads_phone_one/);
+  });
+
+  await step('Portal emails: only from the portal (or a forwarding address set up); a buyer\'s number is not a lead', async () => {
+    const L = require('../lib/mkt-leads');
+    const text = 'Name: Forwarded Person\nMobile: 9600000050\nProject: Dream Signature';
+    assert.equal(await L.portalLead({ from: 'friend@gmail.com', subject: 'Fwd: New response on 99acres for Dream Signature', text, id: '<f1>' }), null);
+    assert.equal(await L.portalLead({ from: 'Leads <leads@99acres.com.evil.in>', subject: 'New response on 99acres', text, id: '<f2>' }), null);
+    assert.equal((await db.one("select count(*)::int as n from mkt_leads where phone = '9600000050'")).n, 0);
+    assert.equal((await M(rupali, 'settings', { portalForwarders: 'Sales@DreamIndiaRealty.com, not-an-email' })).ok, true);
+    assert.deepEqual((await rupali('/api/marketing?scope=company')).settings.portalForwarders, ['sales@dreamindiarealty.com']);
+    const f = await L.portalLead({ from: 'Sales <sales@dreamindiarealty.com>', subject: 'Fwd: New response on 99acres', text, id: '<f3>' }); assert.ok(f && f.id);
+    assert.ok((await L.portalLead({ from: 'alerts@mail.magicbricks.com', subject: 'New enquiry on MagicBricks', text: 'Name: MB Person\nMobile: 9600000051', id: '<f4>' })).id);
+    const buyer = await db.one("select right(regexp_replace(phone, '\\D', '', 'g'), 10) as p from buyers where coalesce(phone, '') <> '' limit 1");
+    if (buyer) assert.equal(await L.portalLead({ from: 'leads@99acres.com', subject: 'New response on 99acres', text: `Name: Buyer\nMobile: ${buyer.p}`, id: '<f5>' }), null);
+  });
+
+  await step('Posts: approval cannot be skipped through the status; only approved posts go out, once, even when two runs meet; design links only for approved posts', async () => {
+    const F = require('../lib/mkt-flow'), png = Buffer.from('89504e470d0a1a0a0000000d49484452', 'hex').toString('base64');
+    const p = await M(rupali, 'post.save', { title: 'Sneaky', channels: ['instagram', 'facebook'], status: 'draft', caption: 'MahaRERA No. P51800012345', publishAt: new Date(Date.now() - 60000).toISOString() });
+    await M(rupali, 'post.file', { postId: p.id, name: 's.png', mime: 'image/png', data: png });
+    const st = await M(rupali, 'post.status', { id: p.id, status: 'scheduled' }); assert.equal(st.status, 'review');
+    assert.equal((await db.one('select status from mkt_posts where id = $1', [p.id])).status, 'review');
+    // a design of a post not approved is not served, even with a signed link; the approval email's preview is
+    const fid = (await db.one('select id from mkt_post_files where post_id = $1', [p.id])).id;
+    const pub = (u) => { const x = new URL(u); return fetch(BASE + x.pathname + x.search); };
+    assert.equal((await pub(await F.fileUrl(fid))).status, 404);
+    assert.equal((await pub(await F.fileUrl(fid, { preview: true }))).status, 200);
+    await db.q("update mkt_posts set status = 'draft' where id = $1", [p.id]); assert.equal((await pub(await F.fileUrl(fid, { preview: true }))).status, 404);
+    // scheduled straight in the database without an approval: not posted while approvals are on
+    await db.q("update mkt_posts set status = 'scheduled', approved_at = null where id = $1", [p.id]);
+    global.posted = []; assert.equal((await F.publishDue()).out.filter((x) => x.id === p.id).length, 0); assert.equal(global.posted.length, 0);
+    // approved: two runs at once post it once
+    assert.equal((await M(sameer, 'post.status', { id: p.id, status: 'approved' })).ok, true);
+    assert.equal((await M(rupali, 'post.status', { id: p.id, status: 'scheduled' })).status, 'scheduled');
+    const runs = await Promise.all([F.publishDue(), F.publishDue(), M(rupali, 'post.publish', {})]);
+    assert.equal(runs.reduce((a, r) => a + (r.out || []).filter((x) => x.id === p.id).length, 0), 1);
+    assert.equal(global.posted.filter((x) => x.ig).length, 1); assert.equal(global.posted.filter((x) => x.fb).length, 1);
+    const after = await db.one('select status, publishing_at from mkt_posts where id = $1', [p.id]); assert.equal(after.status, 'published'); assert.equal(after.publishing_at, null);
+    assert.equal((await pub(await F.fileUrl(fid))).status, 200);
+  });
+
+  await step('Figures add up: the Overview spend is what Results counts; a booking two leads matched counts once; campaigns typed in show spend only when dated', async () => {
+    const O = await rupali('/api/marketing?scope=company'), R = await rupali('/api/marketing?results=company&period=d30');
+    assert.equal(Math.round(O.periods.d30.spend), Math.round(R.totals.spend)); assert.ok(O.periods.d30.spend >= 70000 + 92000 - 1);
+    const OS = await rupali(`/api/marketing?scope=${sig.id}`), RS = await rupali(`/api/marketing?results=${sig.id}&period=fy`); assert.equal(Math.round(OS.periods.ytd.spend), Math.round(RS.totals.spend));
+    const sd = await rupali('/api/marketing?mdrill=spend&scope=company&period=d30'); assert.ok(sd.rows.some((x) => x.ext_status === 'spend entry' && +x.spend === 50000));
+    // co-applicants: two leads matched to one booking
+    const bk = await db.one("select b.id, b.agreement_value from bookings b join units u on u.id = b.unit_id where b.status = 'active' and u.project_id = $1 order by b.id desc limit 1", [sig.id]);
+    const before = (await rupali(`/api/marketing?results=${sig.id}&period=all`)).totals;
+    await db.q("insert into mkt_leads (project_id, name, phone, source, sources, booking_id) values ($1, 'Co 1', '9600000061', 'referral', '{referral}', $2), ($1, 'Co 2', '9600000062', 'referral', '{referral}', $2)", [sig.id, bk.id]);
+    const after = (await rupali(`/api/marketing?results=${sig.id}&period=all`)).totals;
+    assert.equal(after.bookings - before.bookings, 1); assert.equal(Math.round(after.value - before.value), Math.round(+bk.agreement_value));
+    // a campaign typed in: its total is not shown as the last 30 days / this year unless it started then
+    const c1 = await M(rupali, 'campaign.save', { name: 'Old hoarding run', status: 'active', spent: '5000' });
+    const c2 = await M(rupali, 'campaign.save', { name: 'New radio run', status: 'active', spent: '7000', startOn: new Date(Date.now() + 5.5 * 3600e3).toISOString().slice(0, 10) });
+    const A = await rupali('/api/marketing?active=1&scope=company'), x1 = A.rows.find((r) => r.id === c1.id), x2 = A.rows.find((r) => r.id === c2.id);
+    assert.equal(x1.spend30, null); assert.equal(x1.fy, null); assert.equal(x1.spent, 5000); assert.equal(x2.spend30, 7000); assert.equal(x2.fy, 7000);
+    // website leads on a project's Overview are that project's only
+    const other = await db.one("insert into projects (code, name, company_id) select 'MKOTHER', 'Other Towers', company_id from projects where id = $1 returning id", [sig.id]);
+    await db.q("insert into mkt_leads (project_id, phone, source, sources) values ($1, '9600000070', 'website', '{website}')", [other.id]);
+    const wsig = (await rupali(`/api/marketing?scope=${sig.id}`)).channels.find((c) => c.web), woth = (await rupali(`/api/marketing?scope=${other.id}`)).channels.find((c) => c.web);
+    assert.equal(woth.web.leads30, 1); assert.ok(wsig.web.leads30 >= 1);
+    assert.equal((await rupali('/api/marketing?scope=company')).channels.find((c) => c.web).web.leads30, wsig.web.leads30 + 1);
+    await db.q('update projects set active = false where id = $1', [other.id]);
   });
 
   await step('Disconnecting keeps the figures already pulled; each part remembers its 12-month pull', async () => {

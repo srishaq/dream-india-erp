@@ -95,8 +95,14 @@ const firm = (i, extra = {}) => ({ username: 'partner' + i, password: 'secret12'
     const r = await A('/api/cp-portal', { action: 'upload', projectId: launch, rows, consent: true, fileName: 'clients.csv' });
     assert.equal(r.accepted, 3, r.error); assert.equal(r.received, rows.length); upA = r.uploadId;
     const c = Object.fromEntries(r.issues.map((x) => [x.reason, x.count]));
-    assert.equal(c['Repeated in file'], 1); assert.equal(c['Invalid number'], 1); assert.equal(c['In Dream India database'], 1);
-    if (buyer) assert.equal(c['Existing customer'], 1);
+    // the partner is not told that a number is ours (database or customer) or another partner's: "Not registered"
+    assert.equal(c['Repeated in file'], 1); assert.equal(c['Invalid number'], 1); assert.equal(c['Not registered'], buyer ? 2 : 1);
+    for (const k of ['In Dream India database', 'Existing customer', 'Registered with another partner']) { assert.equal(c[k], undefined); assert.ok(!r.rows.some((x) => x.reason === k)); }
+    const is = await A('/api/cp-portal?issues=' + upA); assert.ok(is.rows.some((x) => x.reason === 'Not registered')); assert.ok(!is.rows.some((x) => /database|customer/i.test(x.reason)));
+    // staff still see why
+    const staff = await db.q('select reason from tm_upload_issues where upload_id = $1', [upA]); assert.ok(staff.some((x) => x.reason === 'In Dream India database'));
+    if (buyer) assert.ok(staff.some((x) => x.reason === 'Existing customer'));
+    assert.equal((await admin('/api/tm?overview=1')).issues['In Dream India database'], 1);
     assert.ok(r.rows.every((x) => !/^\d{10}$/.test(x.mobile)), 'masked');
     const again = await A('/api/cp-portal', { action: 'upload', projectId: launch, rows: [{ mobile: '9000000002' }], consent: true });
     assert.equal(again.issues.find((x) => x.reason === 'Already uploaded by you').count, 1);
@@ -110,7 +116,7 @@ const firm = (i, extra = {}) => ({ username: 'partner' + i, password: 'secret12'
     for (const k of ['pan', 'gst', 'rera', 'agreement']) await db.q("insert into cp_docs (cp_id, kind, how) values ($1, $2, 'test')", [id, k]);
     assert.equal((await admin('/api/tm', { action: 'partner-status', id, status: 'approved' })).ok, true);
     const r = await B('/api/cp-portal', { action: 'upload', projectId: launch, rows: [{ mobile: '9000000001', name: 'Asha' }, { mobile: '9000000009', name: 'Own' }], consent: true });
-    assert.equal(r.accepted, 1); assert.equal(r.issues.find((x) => x.reason === 'Registered with another partner').count, 1);
+    assert.equal(r.accepted, 1); assert.equal(r.issues.find((x) => x.reason === 'Not registered').count, 1); assert.ok(!r.issues.some((x) => x.reason === 'Registered with another partner'));
     const lb = await B('/api/cp-portal?leads=1');
     assert.deepEqual(lb.rows.map((x) => x.mobile), ['90XXXXXX09']);
     assert.equal((await B('/api/cp-portal?issues=' + upA)).rows.length, 0);
@@ -210,6 +216,65 @@ const firm = (i, extra = {}) => ({ username: 'partner' + i, password: 'secret12'
     assert.equal(s.settings.ownershipDays, 365); assert.equal(s.settings.autoApprove, false); assert.deepEqual(s.settings.approvers.length, 1); // partners are approved by hand once their papers are in; approvers kept
     const page = await fetch(BASE + '/partner.html'); assert.equal(page.status, 200);
     assert.equal((await fetch(BASE + '/telemarketing.js')).status, 200);
+  });
+
+  await step('Limits: partner uploads per day, verification codes per email, address and in all; a self-registered firm never takes over a firm already in the ERP', async () => {
+    // uploads: at most so many rows a day per partner
+    await db.q("insert into settings (key, value) values ('tm', '{\"partnerDailyRows\": 12}') on conflict (key) do update set value = settings.value || excluded.value");
+    const cpA = (await db.one("select id from channel_partners where cp_code = 'DI-CP-0001'")).id;
+    const done = (await db.one("select coalesce(sum(received), 0)::int as n from tm_uploads where cp_id = $1 and (created_at + interval '330 minutes')::date = (now() + interval '330 minutes')::date", [cpA])).n;
+    const left = 12 - done, rows = (k) => Array.from({ length: k }, (_, i) => ({ mobile: '93' + String(10000000 + i + done * 100).padStart(8, '0'), name: 'Cap ' + i }));
+    if (left > 0) assert.equal((await A('/api/cp-portal', { action: 'upload', projectId: launch, rows: rows(left), consent: true })).received, left);
+    const over = await A('/api/cp-portal', { action: 'upload', projectId: launch, rows: rows(1), consent: true }); assert.equal(over.status, 429); assert.match(over.error, /up to 12 rows a day/);
+    assert.equal((await A('/api/cp-portal?home=1')).maxRows, 12);
+    await db.q("update settings set value = value - 'partnerDailyRows' where key = 'tm'");
+    // codes: 5 an hour for one email address, even from different mobiles
+    await db.q('delete from mkt_rate');
+    const X = client();
+    for (let i = 0; i < 5; i++) assert.ok((await X('/api/cp-portal', { action: 'register-start', ...firm(30 + i, { email: 'same@example.com', rera: 'A5180000' + String(30 + i).padStart(4, '0') }) })).token);
+    const e6 = await X('/api/cp-portal', { action: 'register-start', ...firm(40, { email: 'same@example.com', rera: 'A51800000040' }) }); assert.equal(e6.status, 429); assert.match(e6.error, /email/);
+    // 10 an hour from one internet address
+    await db.q('delete from mkt_rate');
+    for (let i = 0; i < 10; i++) assert.ok((await X('/api/cp-portal', { action: 'register-start', ...firm(50 + i, { rera: 'A5180000' + String(50 + i).padStart(4, '0') }) })).token);
+    const i11 = await X('/api/cp-portal', { action: 'register-start', ...firm(70, { rera: 'A51800000070' }) }); assert.equal(i11.status, 429); assert.match(i11.error, /internet connection/);
+    // and a cap for the whole portal
+    await db.q('delete from mkt_rate');
+    await db.q("insert into mkt_rate (key, win, n) values ($1, date_trunc('hour', now()), 200)", ['otp-all:' + require('../lib/mkt-rate').hash('portal')]);
+    const g = await X('/api/cp-portal', { action: 'register-start', ...firm(71, { rera: 'A51800000071' }) }); assert.equal(g.status, 429); assert.match(g.error, /busy/);
+    await db.q('delete from mkt_rate');
+    // a firm already in the ERP (from bookings) under the same name: the registration is a new pending firm, flagged
+    const old = await db.one("insert into channel_partners (name, name_key, phone) values ('Shree Estates', 'shree estates', '9822233344') returning id");
+    await db.q("update bookings set cp_id = $1 where id = (select id from bookings order by id limit 1)", [old.id]);
+    const Y = client(), s = await Y('/api/cp-portal', { action: 'register-start', ...firm(80, { firm: 'Shree Estates', rera: 'A51800000080' }) }); assert.ok(s.token, s.error);
+    const v = await Y('/api/cp-portal', { action: 'register-verify', token: s.token, otp: '424242' }); assert.ok(v.cpCode, v.error);
+    const mine = await db.one('select id, name, note, portal_status, username from channel_partners where cp_code = $1', [v.cpCode]);
+    assert.notEqual(mine.id, old.id); assert.equal(mine.portal_status, 'pending'); assert.equal(mine.name, 'Shree Estates'); assert.match(mine.note, new RegExp(`Possible match: "Shree Estates" \\(partner #${old.id}\\)`));
+    const o2 = await db.one('select username, pw_hash, portal_status from channel_partners where id = $1', [old.id]); assert.equal(o2.username, null); assert.equal(o2.pw_hash, null); assert.equal(o2.portal_status, null);
+    assert.equal((await Y('/api/cp-portal?home=1')).stats.bookings, 0); // the old firm's bookings are not shown to the new login
+    assert.ok((await admin('/api/tm?partners=1')).rows.find((x) => x.id === mine.id).note);
+  });
+
+  await step('Launch figures: bookings are those of the launch\'s project; a caller-day shared by two launches is split; one default rate', async () => {
+    const TM = require('../lib/tm');
+    const cpA = (await db.one("select id from channel_partners where cp_code = 'DI-CP-0001'")).id;
+    await db.q("update bookings set cp_id = $1 where id = (select b.id from bookings b join units u on u.id = b.unit_id where b.status = 'active' and u.project_id = $2 order by b.id desc limit 1)", [cpA, sig.id]);
+    const other = await db.one("insert into projects (code, name, company_id) select 'TMOTHER', 'Other Heights', company_id from projects where id = $1 returning id", [sig.id]);
+    const lSig = await db.one("insert into tm_projects (name, project_id, status) values ('Sig launch', $1, 'open') returning id", [sig.id]);
+    const lOth = await db.one("insert into tm_projects (name, project_id, status) values ('Other launch', $1, 'open') returning id", [other.id]);
+    assert.ok((await TM.analytics(lSig.id)).bookings >= 1);
+    assert.equal((await TM.analytics(lOth.id)).bookings, 0);
+    // one caller, one day, 3 calls for one launch and 1 for the other: the day is split 3:1
+    const c = await db.one("insert into tm_callers (name, daily_rate) values ('Split caller', 1200) returning id");
+    const tl = await db.one("insert into tm_leads (mobile, tm_project_id, source) values ('9333300001', $1, 'history') returning id", [lSig.id]);
+    await db.q("insert into tm_outcomes (lead_id, caller_id, tm_project_id, call_date, code) values ($1, $2, $3, current_date, 5), ($1, $2, $3, current_date, 5), ($1, $2, $3, current_date, 4), ($1, $2, $4, current_date, 5)", [tl.id, c.id, lSig.id, lOth.id]);
+    assert.equal((await TM.analytics(lSig.id)).callers.find((x) => x.name === 'Split caller').cost, 900);
+    assert.equal((await TM.analytics(lOth.id)).callers.find((x) => x.name === 'Split caller').cost, 300);
+    assert.equal((await require('../lib/tm-results').summary(lSig.id)).kpis[0].cost, 900);
+    // no rate (0): the one default
+    await db.q('update tm_callers set daily_rate = 0 where id = $1', [c.id]);
+    assert.equal((await TM.analytics(lSig.id)).callers.find((x) => x.name === 'Split caller').cost, TM.DEFAULT_RATE * 3 / 4);
+    assert.equal((await require('../lib/tm-results').summary(lOth.id)).kpis[0].cost, TM.DEFAULT_RATE / 4);
+    await db.q('update projects set active = false where id = $1', [other.id]);
   });
 
   console.log(`\nPartner & Telemarketing: ${n} checks passed.`);
