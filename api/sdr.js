@@ -65,9 +65,23 @@ module.exports = route({
       if (b.note != null) set.note = str(b.note, 300) || null;
       if (b.paidFrom != null) set.paid_from = str(b.paidFrom, 80) || null;
       if (DATE.test(b.challanDate || '')) set.challan_date = b.challanDate;
+      // Cancelling a challan (or bringing a cancelled one back) changes what counts as the flat's duty paid:
+      // Head Accounts only, with the reason; a challan brought back is checked for duplicates like a new one.
+      const cancelChange = set.status && set.status !== c.status && (set.status === 'cancelled' || c.status === 'cancelled');
+      const reason = str(b.reason, 300);
+      if (cancelChange) {
+        if (!has(u, 'accounts.manage')) throw fail(403, 'Only Head Accounts can cancel a challan or bring a cancelled one back.');
+        if (!reason) throw fail(400, set.status === 'cancelled' ? 'Say why this challan is being cancelled.' : 'Say why this cancelled challan is being brought back.');
+        if (c.status === 'cancelled') {
+          if (c.grn) { const g = await db.one("select id, unit_no from sdr_challans where upper(grn) = upper($1) and status <> 'cancelled' and id <> $2", [c.grn, c.id]); if (g) throw fail(409, `GRN ${c.grn} is already entered, for ${g.unit_no}. The same challan cannot count twice.`); }
+          const ex = await existing(pid, c.unit_no, c.kind, c.id);
+          if (ex.length && !str(b.duplicateReason, 300)) throw Object.assign(fail(409, `${c.unit_no} already has ${ex.length === 1 ? 'a' : ex.length} ${c.kind === 'registration' ? 'registration' : 'stamp duty'} challan${ex.length > 1 ? 's' : ''} (${ex.map((e) => `${e.grn || e.challan_no || 'no GRN'}, ₹${Math.round(e.amount).toLocaleString('en-IN')}, ${e.status}`).join('; ')}). Bringing this one back would count the same duty twice; give the reason if it is really a second challan.`), { duplicate: ex });
+          if (ex.length) set.duplicate_reason = str(b.duplicateReason, 300);
+        }
+      }
       const cols = Object.keys(set); if (!cols.length) throw fail(400, 'Nothing to change.');
       await db.q(`update sdr_challans set ${cols.map((k, i) => `${k} = $${i + 2}`).join(', ')}, updated_by = $${cols.length + 2}, updated_at = now() where id = $1`, [c.id, ...cols.map((k) => set[k]), u.id]);
-      await audit.record(db.q, { user: u, action: 'update', entity: 'sdr-challan', entityId: c.id, projectId: pid, before: Object.fromEntries(cols.map((k) => [k, c[k]])), after: set });
+      await audit.record(db.q, { user: u, action: cancelChange ? (set.status === 'cancelled' ? 'cancel' : 'uncancel') : 'update', entity: 'sdr-challan', entityId: c.id, projectId: pid, before: Object.fromEntries(cols.map((k) => [k, c[k]])), after: set, note: cancelChange ? reason : null });
       return res.json({ ok: true });
     }
     throw fail(400, 'Unknown action.');

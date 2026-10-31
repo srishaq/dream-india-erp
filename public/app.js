@@ -1991,7 +1991,17 @@
     if ($('#sdrAdd')) $('#sdrAdd').onclick = () => form();
     document.querySelectorAll('[data-ed]').forEach((b) => (b.onclick = () => { const r = d.rows.find((x) => x.id === +b.dataset.ed);
       dialog(`<h2>Challan · ${esc(r.unit_no)}</h2><div class="row"><div><label>Status</label><select name="status">${d.statuses.map((k) => `<option value="${k}" ${k === r.status ? 'selected' : ''}>${SL[k]}</option>`).join('')}</select></div><div><label>Paid from</label><input name="paidFrom" value="${esc(r.paid_from || '')}"></div></div>
-        <label>Note</label><input name="note" value="${esc(r.note || '')}">`, async (x) => { await api('/api/sdr', { action: 'update', projectId: proj, id: r.id, ...x }); toast('Saved.'); sdrPage(); }); }));
+        <label>Note</label><input name="note" value="${esc(r.note || '')}">
+        <label>Reason (needed to cancel the challan or bring a cancelled one back; Head Accounts only)</label><input name="reason">`, async (x) => {
+          const body = { action: 'update', projectId: proj, id: r.id, ...x };
+          try { await api('/api/sdr', body); }
+          catch (e) {
+            if (!(e.data && e.data.duplicate)) throw e;
+            const why = prompt(e.message + '\n\nIf this really is a second challan for the flat, type the reason. Otherwise press Cancel.');
+            if (!why) throw new Error('Not changed: this flat already has a challan.');
+            await api('/api/sdr', { ...body, duplicateReason: why });
+          }
+          toast('Saved.'); sdrPage(); }); }));
   }
 
   // ---------- Dream Chat, full page ----------
