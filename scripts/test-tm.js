@@ -64,6 +64,22 @@ const firm = (i, extra = {}) => ({ username: 'partner' + i, password: 'secret12'
     const p = await admin('/api/tm?partners=1');
     assert.equal(p.rows.length, 1); assert.equal(p.rows[0].portal_status, 'pending');
     assert.equal((await crm('/api/tm?partners=1')).status, 403);
+    // papers first: PAN, GST, MahaRERA certificate and the agreement
+    const no = await admin('/api/tm', { action: 'partner-status', id: p.rows[0].id, status: 'approved' }); assert.equal(no.status, 400); assert.match(no.error, /PAN card, GST certificate, MahaRERA agent certificate, Partner agreement/);
+    const pdf = Buffer.from('%PDF-1.4 x').toString('base64');
+    assert.equal((await A('/api/cp-portal', { action: 'doc-upload', kind: 'pan', number: 'abcde1234', file: { name: 'pan.pdf', mime: 'application/pdf', data: pdf } })).status, 400);
+    assert.equal((await A('/api/cp-portal', { action: 'doc-upload', kind: 'pan', number: 'abcde1234f', file: { name: 'pan.pdf', mime: 'application/pdf', data: pdf } })).complete, false);
+    await A('/api/cp-portal', { action: 'doc-upload', kind: 'gst', number: '27ABCDE1234F1Z5', file: { name: 'gst.pdf', mime: 'application/pdf', data: pdf } });
+    await A('/api/cp-portal', { action: 'doc-upload', kind: 'rera', file: { name: 'rera.jpg', mime: 'image/jpeg', data: pdf } });
+    assert.equal((await A('/api/cp-portal', { action: 'agreement-sign', name: 'A', agree: true })).status, 400);
+    const sg = await A('/api/cp-portal', { action: 'agreement-sign', name: 'Arun Mehta', agree: true }); assert.equal(sg.complete, true);
+    const dd = await admin('/api/tm?docs=' + p.rows[0].id); assert.equal(dd.docs.find((x) => x.kind === 'agreement').signedName, 'Arun Mehta'); assert.equal(dd.docs.find((x) => x.kind === 'pan').number, 'ABCDE1234F');
+    assert.equal((await fetch(BASE + '/api/tm?cpdoc=' + dd.docs[0].id)).status, 401);
+    // only the person named approves (Mubeen)
+    const mub = await db.one("insert into users (username, name, role, password_hash, all_projects) values ('mubeen', 'Mubeen', 'management', $1, true) returning id", [require('../lib/auth').hashPassword('pass-word-123')]);
+    assert.ok((await require('../lib/cp-docs').approvers()).includes(mub.id)); // found by name until someone is chosen in Settings
+    const nope = await admin('/api/tm', { action: 'partner-status', id: p.rows[0].id, status: 'approved' }); assert.equal(nope.status, 403); assert.match(nope.error, /approved by Mubeen/);
+    await db.q("insert into settings (key, value) values ('tm', jsonb_build_object('approvers', jsonb_build_array($1::int))) on conflict (key) do update set value = settings.value || excluded.value", [(await db.one("select id from users where username = 'admin'")).id]);
     assert.equal((await admin('/api/tm', { action: 'partner-status', id: p.rows[0].id, status: 'approved' })).ok, true);
     const h = await A('/api/cp-portal?home=1');
     assert.equal(h.profile.approved, true); assert.equal(h.projects.length, 1); assert.equal(h.projects[0].id, launch);
@@ -91,7 +107,8 @@ const firm = (i, extra = {}) => ({ username: 'partner' + i, password: 'secret12'
     const v = await B('/api/cp-portal', { action: 'register-verify', token: s.token, otp: '424242' });
     assert.equal(v.cpCode, 'DI-CP-0002');
     const id = (await db.one("select id from channel_partners where cp_code = 'DI-CP-0002'")).id;
-    await admin('/api/tm', { action: 'partner-status', id, status: 'approved' });
+    for (const k of ['pan', 'gst', 'rera', 'agreement']) await db.q("insert into cp_docs (cp_id, kind, how) values ($1, $2, 'test')", [id, k]);
+    assert.equal((await admin('/api/tm', { action: 'partner-status', id, status: 'approved' })).ok, true);
     const r = await B('/api/cp-portal', { action: 'upload', projectId: launch, rows: [{ mobile: '9000000001', name: 'Asha' }, { mobile: '9000000009', name: 'Own' }], consent: true });
     assert.equal(r.accepted, 1); assert.equal(r.issues.find((x) => x.reason === 'Registered with another partner').count, 1);
     const lb = await B('/api/cp-portal?leads=1');
@@ -190,7 +207,7 @@ const firm = (i, extra = {}) => ({ username: 'partner' + i, password: 'secret12'
 
   await step('Settings saved within limits; a staff page for Partner & Telemarketing loads', async () => {
     const s = await admin('/api/tm', { action: 'settings-save', settings: { ownershipDays: 1000, historyPolicy: 'accept', autoApprove: true, maxAttempts: 4, gapDays: 3 } });
-    assert.equal(s.settings.ownershipDays, 365); assert.equal(s.settings.autoApprove, true);
+    assert.equal(s.settings.ownershipDays, 365); assert.equal(s.settings.autoApprove, false); assert.deepEqual(s.settings.approvers.length, 1); // partners are approved by hand once their papers are in; approvers kept
     const page = await fetch(BASE + '/partner.html'); assert.equal(page.status, 200);
     assert.equal((await fetch(BASE + '/telemarketing.js')).status, 200);
   });

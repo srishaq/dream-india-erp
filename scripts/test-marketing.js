@@ -523,6 +523,37 @@ let n = 0; const step = async (name, fn) => { await fn(); n++; console.log('  âœ
     assert.equal(by.spend.done, true); assert.equal(by.website.done, true); assert.equal(by.portals.done, true); assert.equal(by.canva.done, true); assert.equal(by.capi.done, false);
   });
 
+  await step('Each project has a plan (channels, budgets, phases) against actual; the site visit decides whose buyer it is', async () => {
+    const P0 = await rupali('/api/marketing?plan=' + sig.id); const meta = P0.channels.find((c) => c.key === 'meta_ads');
+    assert.equal(meta.on, true); assert.ok(meta.spend > 0); assert.ok(P0.channels.find((c) => c.key === 'hoarding').spend >= 50000); assert.ok(P0.channels.find((c) => c.key === 'portals').spend >= 20000);
+    assert.equal((await M(crm, 'plan.save', { scope: sig.id })).status, 403);
+    assert.equal((await M(rupali, 'plan.save', { scope: sig.id, channels: [{ key: 'meta_ads', on: true, budget: '2,00,000' }, { key: 'newspaper', on: true, budget: '50000' }], phases: [{ name: 'Launch', from: '2026-11-01', to: '2026-12-31' }] })).ok, true);
+    assert.equal((await M(rupali, 'plan.approve', { scope: sig.id })).status, 403);
+    assert.equal((await M(sameer, 'plan.approve', { scope: sig.id })).ok, true);
+    let P = await rupali('/api/marketing?plan=' + sig.id); assert.equal(P.status, 'approved'); assert.equal(P.total_budget, 250000); assert.equal(P.channels.find((c) => c.key === 'meta_ads').budget, 200000); assert.equal(P.phases[0].name, 'Launch');
+    const r2 = await M(rupali, 'plan.save', { scope: sig.id, channels: [{ key: 'meta_ads', on: true, budget: '3,00,000' }], phases: [] }); assert.equal(r2.reapprove, true);
+    assert.equal((await rupali('/api/marketing?plan=' + sig.id)).status, 'draft');
+    // a partner's registered buyer: came with the partner = theirs; came on their own = ours
+    const cp = await db.one("insert into channel_partners (name, name_key, cp_code, portal_status) values ('Om Realty', 'om realty', 'DI-CP-0099', 'approved') returning id");
+    const tp = await db.one("insert into tm_projects (name, project_id, status) values ('Signature launch', $1, 'open') returning id", [sig.id]);
+    await db.q("insert into tm_leads (mobile, name, tm_project_id, cp_id, source, owner_until) values ('9700000501', 'Partner client', $1, $2, 'partner', current_date + 60), ('9700000502', 'Partner client 2', $1, $2, 'partner', current_date + 60)", [tp.id, cp.id]);
+    assert.equal((await rupali('/api/marketing?partnerOf=9700000501')).partner.cp_code, 'DI-CP-0099');
+    assert.ok((await rupali('/api/marketing?scope=company')).partners.some((p) => p.id === cp.id));
+    const a1 = await M(rupali, 'lead.save', { name: 'With partner', phone: '9700000501', source: 'walk_in', status: 'visit', projectId: sig.id });
+    const v1 = await M(rupali, 'lead.visit', { id: a1.id, viaCpId: cp.id }); assert.equal(v1.owner, 'Om Realty');
+    const a2 = await M(rupali, 'lead.save', { name: 'On own', phone: '9700000502', source: 'walk_in', status: 'visit', projectId: sig.id });
+    const v2 = await M(rupali, 'lead.visit', { id: a2.id }); assert.equal(v2.owner, 'Dream India'); assert.equal(v2.registered.firm, 'Om Realty');
+    const l1 = await db.one('select owner_cp_id, visit_via from mkt_leads where id = $1', [a1.id]), l2 = await db.one('select owner_cp_id, visit_via, note from mkt_leads where id = $1', [a2.id]);
+    assert.equal(l1.owner_cp_id, cp.id); assert.equal(l2.owner_cp_id, null); assert.equal(l2.visit_via, 'direct'); assert.match(l2.note, /registered by Om Realty .* came on their own/);
+    const R = await rupali('/api/marketing?results=' + sig.id + '&period=all'); assert.ok(R.bySource.find((x) => x.source === 'channel_partner').visits >= 1);
+    // telecallers' pay counts in the project's cost
+    const c1 = await db.one("insert into tm_callers (name, daily_rate) values ('Caller A', 800) returning id");
+    const tl = await db.one("select id from tm_leads where mobile = '9700000501'");
+    await db.q("insert into tm_outcomes (lead_id, caller_id, tm_project_id, cp_id, call_date, code) values ($1, $2, $3, $4, current_date - 1, 2), ($1, $2, $3, $4, current_date - 1, 5)", [tl.id, c1.id, tp.id, cp.id]);
+    const R2 = await rupali('/api/marketing?results=' + sig.id + '&period=all'); assert.equal(R2.totals.teleSpend, 800); assert.ok(R2.bySource.find((x) => x.source === 'telecalling').spend >= 800);
+    assert.ok((await rupali('/api/marketing?plan=' + sig.id)).channels.find((c) => c.key === 'telemarketing').spend >= 800);
+  });
+
   await step('Disconnecting keeps the figures already pulled; each part remembers its 12-month pull', async () => {
     const c = (await db.one("select value from settings where key = 'social'")).value;
     assert.equal((await M(rupali, 'disconnect', { net: 'meta' })).ok, true);

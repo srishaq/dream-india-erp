@@ -120,8 +120,8 @@
   const PAGES = [
     { key: 'home', label: 'Home', show: () => true },
     { key: 'mgmt', label: 'Management dashboard', show: () => can('mgmt.view') },
-    { key: 'marketing', label: 'Marketing & social media', show: () => can('marketing.view') },
-    { key: 'telemarketing', label: 'Partner & Telemarketing', show: () => anyOf('tm.view', 'tm.manage', 'tm.entry') },
+    { key: 'marketing', label: 'Sales & Marketing', show: () => can('marketing.view') },
+    { key: 'telemarketing', label: 'Telemarketing & partners', show: () => anyOf('tm.view', 'tm.manage', 'tm.entry') && !can('marketing.view') },
     { key: 'training', label: 'Training videos', show: () => true },
     { group: 'CRM' },
     { key: 'crmtodo', label: 'Today', show: () => anyOf('demand.raise', 'booking.create', 'booking.approve', 'ledger.view') },
@@ -264,7 +264,7 @@
     $('#cpw').onclick = () => changePassword(false);
     if ($('#proj')) $('#proj').onchange = (e) => { proj = +e.target.value; store.set('erp_project', proj); shell(); };
     if (/^reg-/.test(page || '') && can('accounts.view')) { try { await accRegister(page.slice(4)); } catch (e) { $('#page').innerHTML = `<div class="err">${esc(e.message)}</div>`; } return; }
-    const fn = { stages: () => demands(true), home, mgmt, marketing: () => window.Marketing.render({ api, dialog, toast, me }, store.get('erp_mkt_scope') || null), telemarketing: () => window.Telemarketing.render({ api, dialog, toast, me }), ca: caPage, accdash, collections, flats, custdocs, comms, team: teamPage, accteam: teamPage, sdr: sdrPage, cp: cpPage, project: projectHome, crmtodo: () => dailyTodo('crm'), acctodo: () => dailyTodo('accounts'), training, projects, plans, users, audit, units, bookings, demands, receipts, ledgers, letters, followups, verify, prices, partners, balances: accBalances, bankauto: bankAuto, bookscrm: booksCrm, accreports: accReports, checks: accChecks, accsetup: accSetup, import: importPage, booking: bookingPage, statement: statementPage, run: runPage };
+    const fn = { stages: () => demands(true), home, mgmt, marketing: () => window.Marketing.render({ api, dialog, toast, me }, (/^\d+$/.test(location.hash.split('/')[2] || '') ? location.hash.split('/')[2] : null) || store.get('erp_mkt_scope') || null), telemarketing: () => window.Telemarketing.render({ api, dialog, toast, me }), ca: caPage, accdash, collections, flats, custdocs, comms, team: teamPage, accteam: teamPage, sdr: sdrPage, cp: cpPage, project: projectHome, crmtodo: () => dailyTodo('crm'), acctodo: () => dailyTodo('accounts'), training, projects, plans, users, audit, units, bookings, demands, receipts, ledgers, letters, followups, verify, prices, partners, balances: accBalances, bankauto: bankAuto, bookscrm: booksCrm, accreports: accReports, checks: accChecks, accsetup: accSetup, import: importPage, booking: bookingPage, statement: statementPage, run: runPage };
     const key = DETAIL[page] && arg ? page : cur.key;
     try { await fn[key](arg ? +arg : undefined); } catch (e) { $('#page').innerHTML = `<div class="err">${esc(e.message)}</div>`; }
   }
@@ -327,6 +327,7 @@
     { key: 'accounts', title: 'Accounts', sub: 'Bank, receipts, payments, PDC, TDS, SRA rent, GST, SDR and Tally', icon: 'book', tone: '#117A65', group: 'Accounts', skip: ['ca', 'bookscrm', 'checks'],
       sections: [['Every day', ['acctodo', 'acc-bank', 'acc-money', 'accteam']], ['Taxes & compliance', ['acc-tax']], ['Refunds, partners & tenants', ['reg-cancellations', 'cpacc', 'acc-sra']], ['Reports & set-up', ['accdash', 'accreports', 'accsetup']]] },
     { key: 'audit', title: 'CRM/Accounts Audit', sub: 'Tally against the CRM, checks, reconciling items and cancelled flats', icon: 'check', tone: '#0E8C9B', pages: ['bookscrm', 'checks', 'reg-recon', 'reg-cancellations', 'verify', 'audit'] },
+    { key: 'salesmkt', title: 'Sales & Marketing', sub: 'This project’s marketing plan and budget, campaigns, leads, telemarketing and channel partners, from lead to booking', icon: 'megaphone', tone: '#C2185B', direct: 'marketing' },
     { key: 'cpdept', title: 'Channel Partners', sub: 'Every partner firm: brokerage earned, bills, pass back, payments and what is still owed', icon: 'users', tone: '#0E8C9B', direct: 'partners' },
     { key: 'ca', title: 'CA / Tax', sub: 'GST, TDS payable, RERA quarterly, cash flow and compliance', icon: 'chart', tone: '#7A5C99', direct: 'ca' },
     { key: 'construction', title: 'Construction', sub: 'Site Office: slab cycle, daily progress reports, hindrances, materials and stages', icon: 'hammer', tone: '#B7791F', pages: ['site', 'stages'], later: ['Contractor billing'] },
@@ -369,8 +370,8 @@
     if (!act.some((p) => /aspire/i.test(p.name))) projTiles.push({ title: 'Dream Aspire', sub: 'Lokhandwala, Andheri West · commercial · not in the ERP yet', icon: 'building', tone: '#0E8C9B', soon: true });
     const mgmtTiles = [
       can('mgmt.view') && { title: 'Management', sub: 'Cash, collections, dues, site, purchase, approvals, compliance and taxes on one screen', icon: 'chart', tone: '#140C59', href: '#/mgmt' },
-      can('marketing.view') && { title: 'Marketing & social media', sub: 'Every channel, the content calendar, leads, campaigns and the design library', icon: 'megaphone', tone: '#C2185B', href: '#/marketing' },
-      anyOf('tm.view', 'tm.manage', 'tm.entry') && { title: 'Partner & Telemarketing', sub: 'Channel partner sign-ups and client uploads, call sheets, telecaller results and costs', icon: 'handshake', tone: '#0E8C9B', href: '#/telemarketing' },
+      can('marketing.view') && { title: 'Sales & Marketing', sub: 'Project by project: plan and budget, ads, portals, website, telemarketing, channel partners and leads to bookings', icon: 'megaphone', tone: '#C2185B', href: '#/marketing' },
+      !can('marketing.view') && anyOf('tm.view', 'tm.manage', 'tm.entry') && { title: 'Telemarketing & partners', sub: 'Channel partner sign-ups and client uploads, call sheets, telecaller results and costs', icon: 'handshake', tone: '#0E8C9B', href: '#/telemarketing' },
       sec('hr') ? { title: 'HR & Admin', sub: 'Staff records, leave, letters and HR policies', icon: 'users', tone: '#7A5C99', href: '/hr' } : { title: 'HR & Admin', sub: 'Staff records, leave, letters and HR policies', icon: 'users', tone: '#7A5C99', soon: true },
       { title: 'Project feasibility', sub: 'SRA Feasibility Desk · analyse Reg. 33(10) sites and keep the register', icon: 'grid', tone: '#2B5C8A', href: 'https://claude.ai/artifact/EnCX84ZBXUSRTzQ52qf4D6', ext: true },
     ].filter(Boolean);
@@ -412,7 +413,7 @@
     }
     const tiles = DEPTS.map((x) => {
       if (x.soon) return { ...x };
-      if (x.direct) { const pg = PAGES.find((q) => q.key === x.direct); return pg && pg.show() ? { ...x, href: hrefOf(pg) } : null; }
+      if (x.direct) { const pg = PAGES.find((q) => q.key === x.direct); return pg && pg.show() ? { ...x, href: x.direct === 'marketing' ? `#/marketing/${p.id}` : hrefOf(pg) } : null; }
       const pgs = pagesOf(x).concat(x.more ? pagesOf({ group: x.more }) : []);
       if (!pgs.length) return x.later ? { ...x, soon: true } : null;
       return { ...x, href: `#/project/${p.id}/${x.key}` };

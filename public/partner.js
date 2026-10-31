@@ -144,7 +144,7 @@
   }
 
   // ---------- portal ----------
-  const NAV = [['home', 'Overview', 'home'], ['upload', 'Upload clients', 'upload'], ['clients', 'My clients', 'users'], ['history', 'Upload history', 'clock'], ['profile', 'Firm profile', 'office']];
+  const NAV = [['home', 'Overview', 'home'], ['docs', 'Documents', 'file'], ['upload', 'Upload clients', 'upload'], ['clients', 'My clients', 'users'], ['history', 'Upload history', 'clock'], ['profile', 'Firm profile', 'office']];
   function portal() {
     const ini = (ME.firm || '?').split(/\s+/).map((w) => w[0]).join('').slice(0, 2).toUpperCase();
     app.innerHTML = `<div class="shell"><aside class="side"><img src="/logo.svg" alt="Dream India Realty"><nav>${NAV.map(([k, l, ic]) => `<button data-v="${k}" aria-current="${k === view}">${I[ic]}${l}</button>`).join('')}
@@ -160,12 +160,44 @@
     const v = $('#v'); v.innerHTML = '<p class="muted">Loading…</p>';
     try {
       H = await api('/api/cp-portal?home=1'); ME = H.profile;
-      ({ home, upload, clients, history, profile })[view](v);
+      ({ home, docs, upload, clients, history, profile })[view](v);
       window.scrollTo(0, 0);
     } catch (e) { showErr(v, e); }
   }
   const go = (k) => { view = k; $$('[data-v]').forEach((x) => x.setAttribute('aria-current', x.dataset.v === k)); show(); };
-  const pending = () => (ME.approved ? '' : '<div class="banner warn">Your account is waiting for approval by the Dream India team. You can upload clients once it is approved. For help, call the Dream India office.</div>');
+  const pending = () => (ME.approved ? '' : H && H.docs && !H.docs.complete
+    ? `<div class="banner warn">To be approved, please send your documents: <b>${esc(H.docs.missing.join(', '))}</b>. <button type="button" class="link" data-godocs>Add them now</button></div>`
+    : '<div class="banner warn">Your documents are in. Your account is waiting for approval by the Dream India team; you can upload clients once it is approved.</div>');
+  document.addEventListener('click', (e) => { if (e.target.closest && e.target.closest('[data-godocs]')) { e.preventDefault(); go('docs'); } });
+
+  // documents for approval: PAN, GST, MahaRERA certificate, partner agreement (accepted online or a signed copy)
+  async function docs(v) {
+    const D = await api('/api/cp-portal?docs=1'), by = Object.fromEntries(D.docs.map((d) => [d.kind, d]));
+    const tick = (d) => (d.done ? `<span class="pill good">Received${d.at ? ' ' + dd(d.at) : ''}</span>` : '<span class="pill warn">Needed</span>');
+    const up = (k, numLabel, val, ph) => `<form class="card" data-doc="${k}"><h2>${esc(by[k].label)} ${tick(by[k])}</h2>
+      ${numLabel ? `<label>${numLabel}</label><input name="number" value="${esc(by[k].number || val || '')}" placeholder="${ph}" ${k === 'rera' ? 'readonly' : 'required'}>` : ''}
+      ${by[k].file ? `<p class="hint">On file: ${esc(by[k].fileName || '')}. Upload again to replace it.</p>` : ''}
+      <label>File (PDF or a clear photo, up to 3 MB)</label><input type="file" name="f" accept="application/pdf,image/png,image/jpeg" required>
+      <div class="actions"><button>Send</button></div><div class="m"></div></form>`;
+    const ag = by.agreement;
+    v.innerHTML = `${ME.approved ? '' : `<div class="banner ${D.complete ? 'good' : 'warn'}">${D.complete ? 'All documents are in. The Dream India team will review and approve your account.' : 'Dream India approves a partner once these four are in.'}</div>`}
+      ${up('pan', 'PAN of the firm', D.pan, 'ABCDE1234F')}${up('gst', 'GSTIN', D.gstin, '27ABCDE1234F1Z5')}${up('rera', 'MahaRERA agent registration no.', D.rera, '')}
+      <div class="card"><h2>Partner agreement ${tick(ag)}</h2>${ag.done ? `<p>${ag.how === 'accepted online' ? `Accepted online by <b>${esc(ag.signedName)}</b> on ${dd(ag.at)}.` : esc(ag.how) + (ag.at ? ' on ' + dd(ag.at) : '') + '.'}</p>` : ''}
+        <div style="white-space:pre-wrap;max-height:300px;overflow:auto;border:1px solid #EAECF0;border-radius:10px;padding:12px;font-size:13px;line-height:1.5;background:#FAFAFC">${esc(D.agreement)}</div>
+        <p class="hint">Version ${esc(D.fingerprint)}</p>
+        <form id="agOn"><h3>Sign online</h3><label>Full name of the person signing for ${esc(ME.firm)}</label><input name="name" required value="${esc(ME.contact || '')}">
+          <label class="check"><input type="checkbox" name="agree" required> I have read this agreement and accept it on behalf of ${esc(ME.firm)} (${esc(ME.cpCode)}).</label>
+          <div class="actions"><button>Accept and sign</button></div><div class="m"></div></form>
+        <form data-doc="agreement" style="margin-top:14px"><h3>Or upload the signed copy</h3><p class="hint">Print, sign and stamp it, then upload a scan. You can also bring the signed copy to the Dream India office.</p>
+          <input type="file" name="f" accept="application/pdf,image/png,image/jpeg" required><div class="actions"><button class="ghost">Upload signed copy</button></div><div class="m"></div></form></div>${SECURE}`;
+    const b64 = (f) => new Promise((ok, no) => { const r = new FileReader(); r.onload = () => ok(String(r.result).split(',')[1] || ''); r.onerror = () => no(new Error('Could not read the file.')); r.readAsDataURL(f); });
+    $$('[data-doc]', v).forEach((f) => (f.onsubmit = (e) => { e.preventDefault(); busy($('button', f), async () => {
+      try { const file = f.f.files[0]; if (file.size > 3 * 1024 * 1024) throw new Error('The file must be under 3 MB.');
+        await api('/api/cp-portal', { action: 'doc-upload', kind: f.dataset.doc, number: f.number ? f.number.value : null, file: { name: file.name, mime: file.type, data: await b64(file) } });
+        H = await api('/api/cp-portal?home=1'); docs(v); } catch (x) { showErr($('.m', f), x); } }); }));
+    $('#agOn', v).onsubmit = (e) => { e.preventDefault(); busy($('button', e.target), async () => {
+      try { await api('/api/cp-portal', { action: 'agreement-sign', name: e.target.name.value, agree: e.target.agree.checked }); H = await api('/api/cp-portal?home=1'); docs(v); } catch (x) { showErr($('.m', e.target), x); } }); };
+  }
 
   function home(v) {
     const s = H.stats, st = Object.entries(s.status || {});

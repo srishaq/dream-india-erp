@@ -39,9 +39,11 @@ module.exports = route({
         where u.cp_id = $1 order by u.id desc limit 50`, [c.id]);
       const bk = await db.one("select count(*)::int as c from bookings where cp_id = $1 and status = 'active'", [c.id]);
       const projects = (await TM.openProjects()).map((p) => ({ id: p.id, name: p.name, location: p.location, rera: p.rera_no, until: TM.iso(p.upload_until) }));
-      return res.json({ profile: profile(c), projects, stats: { leads, active, uploads: uploads.length, bookings: bk.c, status },
+      const docs = await require('../lib/cp-docs').status(c.id);
+      return res.json({ docs, profile: profile(c), projects, stats: { leads, active, uploads: uploads.length, bookings: bk.c, status },
         uploads: uploads.map((u) => ({ id: u.id, at: u.created_at, file: u.file_name, received: u.received, accepted: u.accepted, project: u.project })), areas: AREAS, maxRows: TM.MAX_ROWS });
     }
+    if (Q.docs) { const D2 = require('../lib/cp-docs'); const text = await D2.agreementText(); return res.json({ ...(await D2.status(c.id)), agreement: text, fingerprint: D2.fingerprint(text), rera: c.rera_no, pan: c.pan, gstin: c.gstin }); }
     if (Q.leads) {
       const q = str(Q.q, 40).toLowerCase(), pid = intOr(Q.project);
       const rows = await db.q(`select l.id, l.name, l.mobile, l.config, l.locality, l.uploaded_on, l.owner_until, l.status, p.name as project
@@ -84,7 +86,7 @@ module.exports = route({
       const code = await CA.checkCode(b.token, 'register', b.otp);
       const f = code.payload;
       const S = await TM.settings();
-      const status = S.autoApprove ? 'approved' : 'pending';
+      const status = 'pending'; // approved by hand once PAN, GST, MahaRERA certificate and the agreement are in
       const cp = await db.tx(async (t) => {
         if (await t.one('select 1 from channel_partners where lower(username) = $1', [f.username])) throw fail(409, 'This account already exists. Please sign in.');
         const k = keyOf(f.firm);
@@ -139,6 +141,8 @@ module.exports = route({
       const r = await TM.upload({ cpId: c.id, projectId: intOr(b.projectId), rows: b.rows, fileName: b.fileName });
       return res.json(r);
     }
+    if (a === 'doc-upload') { const r = await require('../lib/cp-docs').upload(c, { kind: b.kind, number: b.number, file: b.file }); await audit.record(db.q, { user: null, action: 'partner-doc', entity: 'channel-partner', entityId: c.id, after: { kind: b.kind } }); return res.json(r); }
+    if (a === 'agreement-sign') { const r = await require('../lib/cp-docs').signOnline(c, { name: b.name, agree: !!b.agree, ip: String(req.headers['x-forwarded-for'] || '').split(',')[0] }); await audit.record(db.q, { user: null, action: 'partner-agreement-online', entity: 'channel-partner', entityId: c.id, after: { name: str(b.name, 120) } }); return res.json(r); }
     if (a === 'profile') {
       const r = await db.one(`update channel_partners set office_address = coalesce(nullif($2, ''), office_address), office_area = coalesce(nullif($3, ''), office_area),
           contact_person = coalesce(nullif($4, ''), contact_person), designation = $5, alt_phone = $6, callers_in_team = $7 where id = $1 returning *`,

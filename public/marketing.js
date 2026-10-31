@@ -112,11 +112,15 @@
     return `<svg viewBox="0 0 ${w} ${h}" width="100%" height="${h}" preserveAspectRatio="none"><polyline points="0,${h} ${pts} ${w},${h}" fill="${color}22" stroke="none"/><polyline points="${pts}" fill="none" stroke="${color}" stroke-width="2" stroke-linejoin="round"/></svg>`;
   };
 
-  async function load() { D = await C.api('/api/marketing?scope=' + encodeURIComponent(S.scope)); S.rep = null; }
+  async function load() {
+    if (S.scope == null) { const m = await C.api('/api/marketing?scope=company'); S.scope = m.projects.length ? String(m.projects[0].id) : 'company'; if (S.scope === 'company') { D = m; S.rep = null; return; } }
+    D = await C.api('/api/marketing?scope=' + encodeURIComponent(S.scope)); S.rep = null; S.resC = {};
+    try { localStorage.setItem('erp_mkt_scope', String(S.scope)); } catch {}
+  }
   async function render(ctx, scope, tab) {
     C = ctx;
     if (!$('#mk-css')) { const st = document.createElement('style'); st.id = 'mk-css'; st.textContent = css; document.head.appendChild(st); }
-    if (scope != null) S.scope = scope; if (S.scope == null) S.scope = 'company'; if (tab) S.tab = tab;
+    if (scope != null) S.scope = scope; if (tab) S.tab = tab;
     $('#page').innerHTML = '<div class="mk"><p class="muted">Loading…</p></div>';
     await load();
     paint();
@@ -144,15 +148,17 @@
   }
   function paint() {
     const SO = D.social, sync = SO.lastSync, on = [SO.meta.connected && SO.meta.pages.some((p) => p.instagram) && 'Instagram', SO.meta.connected && 'Facebook', SO.meta.connected && SO.meta.ads.length && 'Meta Ads', SO.youtube.connected && 'YouTube'].filter(Boolean);
-    const tabs = [['overview', 'Overview'], ['campaigns', 'Campaigns & spend'], ['active', 'Active campaigns'], ['calendar', 'Content calendar'], ['leads', 'Leads'], ['inbox', 'Inbox'], ['library', 'Design library'], ['tasks', 'Tasks'], ['report', '12-month report'], ['setup', 'Set-up']];
-    $('#page').innerHTML = `<div class="mk"><div class="mk-hero"><span class="mk-eyebrow">Company-wide · by project</span><h1>Marketing & Social Media</h1><p>Every channel, post, lead and campaign in one place.</p>
+    const tmOk = ['tm.view', 'tm.manage', 'tm.entry'].some((p) => (C.me.perms || []).includes(p));
+    const tabs = [['overview', 'Overview'], ['plan', 'Plan & budget'], ['campaigns', 'Campaigns & spend'], ['active', 'Active campaigns'], ['calendar', 'Content calendar'], ['leads', 'Leads'],
+      ...(tmOk ? [['tele', 'Telemarketing'], ['cps', 'Channel partners']] : []), ['inbox', 'Inbox'], ['library', 'Design library'], ['tasks', 'Tasks'], ['report', '12-month report'], ['setup', 'Set-up']];
+    $('#page').innerHTML = `<div class="mk"><div class="mk-hero"><span class="mk-eyebrow">${S.scope === 'company' ? 'Company & brand' : 'Project · ' + esc(projName(+S.scope))}</span><h1>Sales &amp; Marketing</h1><p>Every channel of the project in one place: ads, portals, print, website, IVR, telemarketing and channel partners, from lead to booking.</p>
       <div class="mk-sync">${on.length ? `Live from ${on.join(', ')}${sync ? ' · ' + when(sync.at) : ''}` : 'Channels not connected yet (Set-up)'}${SO.meta.error || SO.youtube.error ? '<br><b style="color:#FECDCA">A channel needs connecting again (Set-up)</b>' : ''}</div>
-      <div class="mk-scope">${[['company', 'Company'], ...D.projects.map((p) => [String(p.id), p.name])].map(([k, l]) => `<button data-scope="${k}" aria-pressed="${String(S.scope) === k}">${esc(l)}</button>`).join('')}</div></div>
+      <div class="mk-scope">${[...D.projects.map((p) => [String(p.id), p.name]), ['company', 'Company & brand']].map(([k, l]) => `<button data-scope="${k}" aria-pressed="${String(S.scope) === k}">${esc(l)}</button>`).join('')}</div></div>
       <nav class="ff-tabs no-print" role="tablist">${tabs.map(([k, l]) => `<button type="button" role="tab" data-tab="${k}" aria-selected="${S.tab === k}">${l}</button>`).join('')}</nav>
       <div id="mkBody"></div></div>`;
     $$('#page [data-scope]').forEach((b) => (b.onclick = async () => { S.scope = b.dataset.scope; S.lib = null; await load(); paint(); }));
     $$('#page [data-tab]').forEach((b) => (b.onclick = () => { S.tab = b.dataset.tab; paint(); }));
-    ({ overview, active, report, calendar, leads, inbox, campaigns, library, tasks, setup }[S.tab] || overview)();
+    ({ overview, plan, active, report, calendar, leads, tele, cps, inbox, campaigns, library, tasks, setup }[S.tab] || overview)();
   }
   const body = (h) => ($('#mkBody').innerHTML = h);
 
@@ -415,7 +421,7 @@
     body(`<div class="mk-actions"><button id="newLead">+ Add a lead</button><button class="ghost" id="walkIn">+ Walk-in at site</button><input id="lq" placeholder="Search name, phone, email" value="${esc(S.leadQ)}" style="max-width:260px"></div>
       <div class="mk-chips">${[['all', `All ${D.leads.length}`], ['waiting', `Not called yet ${waiting}`], ['due', 'Call today'], ...Object.entries(LST).map(([k, [l]]) => [k, `${l} ${cnt(k)}`])].map(([k, l]) => `<button data-lf="${k}" aria-pressed="${S.leadF === k}">${esc(l)}</button>`).join('')}</div>
       <div class="mk-card" style="padding:6px 10px;overflow-x:auto">${list.length ? `<table class="mk-t"><tr><th>Lead</th><th>Source</th><th>For</th><th>Status</th><th>Next call</th><th>With</th><th></th></tr>${list.slice(0, 400).map((l) => `<tr><td><b>${esc(l.name || '—')}</b><div class="small muted">${esc(l.phone || '')}${l.email ? ' · ' + esc(l.email) : ''}</div></td><td><span class="mk-pill">${esc(SRC[l.source] || l.source)}</span>${l.campaign_name ? `<div class="small muted">${esc(l.campaign_name)}</div>` : ''}</td><td class="small">${esc(projName(l.project_id))}</td>
-        <td><span class="mk-pill" style="color:${LST[l.status][1]}"><span class="mk-dot" style="background:${LST[l.status][1]}"></span>${LST[l.status][0]}</span>${l.is_buyer ? ' <span class="mk-pill" style="background:#ECFDF3;color:#067647">Buyer in CRM ✓</span>' : ''}${waitTag(l)}${(l.sources || []).length > 1 ? `<div class="small muted">also ${esc(l.sources.filter((x) => x !== l.source).map((x) => SRC[x] || x).join(', '))}</div>` : ''}</td><td class="small">${l.next_date ? day(l.next_date) : ''}</td><td class="small">${esc(l.assigned_name || '')}</td>
+        <td><span class="mk-pill" style="color:${LST[l.status][1]}"><span class="mk-dot" style="background:${LST[l.status][1]}"></span>${LST[l.status][0]}</span>${l.is_buyer ? ' <span class="mk-pill" style="background:#ECFDF3;color:#067647">Buyer in CRM ✓</span>' : ''}${waitTag(l)}${l.visit_via ? `<div class="small" style="color:${l.owner_cp_id ? '#7A5AF8' : '#067647'};font-weight:600">${l.owner_cp_id ? 'Partner: ' + esc(((D.partners || []).find((p) => p.id === l.owner_cp_id) || {}).name || '') : 'Our buyer (came directly)'}</div>` : ''}${(l.sources || []).length > 1 ? `<div class="small muted">also ${esc(l.sources.filter((x) => x !== l.source).map((x) => SRC[x] || x).join(', '))}</div>` : ''}</td><td class="small">${l.next_date ? day(l.next_date) : ''}</td><td class="small">${esc(l.assigned_name || '')}</td>
         <td style="white-space:nowrap">${l.phone ? `<a href="tel:+91${esc(l.phone)}" title="Call">📞</a> <a href="https://wa.me/91${esc(l.phone)}" target="_blank" rel="noopener" title="WhatsApp">💬</a> ` : ''}${l.status === 'new' || l.status === 'contacted' ? `<button class="small" data-called="${l.id}">${l.status === 'new' ? 'Called' : 'Update'}</button> ` : ''}<button class="ghost small" data-lead="${l.id}">Open</button></td></tr>`).join('')}</table>` : '<div class="mk-empty">No leads here yet. Add one, or connect the website form and ad forms under Set-up.</div>'}</div>`);
     $('#newLead').onclick = () => leadForm(null);
     $('#walkIn').onclick = () => leadForm(null, { walkIn: true });
@@ -431,14 +437,25 @@
       <div class="row"><div><label>Email</label><input name="email" value="${esc(x.email)}"></div><div><label>For</label><select name="projectId"><option value="company">Company</option>${D.projects.map((p) => `<option value="${p.id}" ${x.project_id === p.id ? 'selected' : ''}>${esc(p.name)}</option>`).join('')}</select></div></div>
       <div class="row"><div><label>Came from</label><select name="source">${Object.entries(SRC).map(([k, v]) => `<option value="${k}" ${x.source === k ? 'selected' : ''}>${v}</option>`).join('')}</select></div><div><label>Campaign</label><select name="campaignId"><option value="">—</option>${D.campaigns.map((c) => `<option value="${c.id}" ${x.campaign_id === c.id ? 'selected' : ''}>${esc(c.name)}</option>`).join('')}</select></div></div>
       <div class="row"><div><label>Status</label><select name="status">${Object.entries(LST).map(([k, [v]]) => `<option value="${k}" ${x.status === k ? 'selected' : ''}>${v}</option>`).join('')}</select></div><div><label>Next call</label><input type="date" name="nextDate" value="${esc((x.next_date || '').slice(0, 10))}"></div></div>
+      ${opt.walkIn ? viaPick() : ''}
       <label>Handled by</label><select name="assignedTo"><option value="">—</option>${D.team.map((u) => `<option value="${u.id}" ${x.assigned_to === u.id ? 'selected' : ''}>${esc(u.name)}</option>`).join('')}</select>
       <label>Notes</label><textarea name="note" rows="3">${esc(x.note)}</textarea>
+      ${l && l.visit_via ? `<p class="small" style="margin:6px 0 0"><b>Whose buyer:</b> ${l.owner_cp_id ? esc(((D.partners || []).find((p) => p.id === l.owner_cp_id) || {}).name || 'a channel partner') + ' (came with the partner)' : 'Dream India (came directly)'}</p>` : ''}
       ${l ? `<p class="small muted">Came in ${when(l.created_at)}${(l.sources || []).length ? ' · from ' + esc(l.sources.map((x) => SRC[x] || x).join(', ')) : ''}${l.first_contact_at ? ' · first called ' + when(l.first_contact_at) + ' (' + mins(l.created_at, l.first_contact_at) + ' later)' : ''}${l.welcomed_at ? ' · WhatsApp welcome sent' : ''}${l.utm ? ' · ' + esc(Object.entries(l.utm).map(([k, v]) => k.replace('utm_', '') + ': ' + v).join(', ')) : ''}. ${D.can.edit ? '<a href="#" id="delLead" style="color:#B42318">Delete</a>' : ''}</p>` : ''}</div>`,
     async (v) => {
+      const via = v.viaCpId; delete v.viaCpId;
+      if (opt.walkIn) { // a walk-in: a new lead, or the lead we already have, with the visit recorded and the owner decided
+        let id;
+        try { id = (await C.api('/api/marketing', { action: 'lead.save', data: { ...v, welcome: false } })).id; }
+        catch (e) { if (e.data && e.data.duplicate) id = e.data.duplicate; else throw e; }
+        const r = await C.api('/api/marketing', { action: 'lead.visit', data: { id, viaCpId: via || null } });
+        C.toast(`Site visit saved: ${r.owner}'s buyer.`); await load(); paint(); return;
+      }
       try { await C.api('/api/marketing', { action: 'lead.save', data: { id: l && l.id, ...v } }); }
       catch (e) { if (e.data && e.data.duplicate && confirm(e.message + ' Add it again anyway?')) await C.api('/api/marketing', { action: 'lead.save', data: { ...v, force: true } }); else throw e; }
       C.toast('Saved.'); await load(); paint();
     });
+    if (opt.walkIn) wireVia(dl);
     const dlb = $('#delLead', dl); if (dlb) dlb.onclick = async (e) => { e.preventDefault(); if (!confirm('Delete this lead?')) return; await C.api('/api/marketing', { action: 'lead.delete', data: { id: l.id } }); dl.close(); dl.remove(); await load(); paint(); };
   }
 
@@ -597,6 +614,49 @@
     };
   }
 
+  // ---------- Plan & budget: the project's channels, budgets and phases, against what was actually spent and brought ----------
+  async function plan() {
+    body('<p class="muted">Loading the plan…</p>');
+    let P; try { P = await C.api('/api/marketing?plan=' + encodeURIComponent(S.scope)); } catch (e) { return body(`<div class="err">${esc(e.message)}</div>`); }
+    const ed = D.can.edit || D.can.approve, T = P.totals, totalB = P.total_budget || P.channels.reduce((a, c) => a + (c.on && c.budget ? c.budget : 0), 0);
+    const pctB = (a, b) => (b ? `<span style="color:${a > b ? '#B42318' : a > b * 0.9 ? '#B54708' : '#067647'};font-weight:700">${Math.round((a / b) * 100)}%</span>` : '');
+    const ph = P.phases.length ? P.phases : [{ name: 'Pre-launch' }, { name: 'Launch' }, { name: 'Sustenance' }];
+    body(`<div class="mk-card" style="${P.status === 'approved' ? 'border-color:#ABEFC6;background:#F6FEF9' : ''}"><div style="display:flex;justify-content:space-between;gap:10px;flex-wrap:wrap;align-items:center">
+        <div><h3 style="margin:0">Marketing plan: ${esc(S.scope === 'company' ? 'Company & brand' : projName(+S.scope))}</h3><div class="small muted">${P.status === 'approved' ? `Approved by ${esc(P.approved.by || '')} on ${day(P.approved.at)}` : 'Draft: not approved yet'}${P.updated && P.updated.by ? ` · last changed by ${esc(P.updated.by)}, ${when(P.updated.at)}` : ''}</div></div>
+        <div class="mk-actions" style="margin:0">${ed ? '<button type="button" id="plSave">Save plan</button>' : ''}${D.can.approve && P.status !== 'approved' ? '<button type="button" class="ghost" id="plOk">Approve plan</button>' : ''}</div></div>
+      <div class="mk-kpis" style="margin:12px 0 0">
+        <div class="mk-kpi"><span>Budget</span><b>${inr(totalB || null)}</b><span>${P.channels.filter((c) => c.on).length} channels</span></div>
+        <div class="mk-kpi"><span>Spent so far</span><b>${inr(T.spend)}</b><span>${totalB ? pctB(T.spend, totalB) + ' of the budget' : ''} · incl. telecallers and partner brokerage</span></div>
+        <div class="mk-kpi"><span>Leads</span><b>${nf(T.leads)}</b><span>${nf(T.visits)} site visits</span></div>
+        <div class="mk-kpi"><span>Bookings from leads</span><b>${nf(T.bookings)}</b><span>${T.bookings && T.spend ? inr(T.spend / T.bookings) + ' per booking' : ''}</span></div>
+        <div class="mk-kpi"><span>Marketing as % of sales</span><b>${T.salesValue ? ((T.spend / T.salesValue) * 100).toFixed(2) + '%' : '–'}</b><span>${T.salesValue ? 'of ' + inr(T.salesValue) + ' booked' : 'no bookings yet'}</span></div></div></div>
+      <div class="mk-card"><h3>Channels</h3><p class="small muted" style="margin:0 0 6px">Tick the channels this project uses and give each a budget. Spent, leads, visits and bookings fill in by themselves from the ERP (ads, other spend, telecallers, partner brokerage, leads by source).</p>
+        <div style="overflow-x:auto"><table class="mk-t"><tr><th>Use</th><th>Channel</th><th class="n">Budget ₹</th><th class="n">Spent</th><th class="n">Of budget</th><th class="n">Leads</th><th class="n">Site visits</th><th class="n">Bookings</th><th class="n">Per booking</th><th>Note</th></tr>
+        ${P.channels.map((c) => `<tr data-ch="${c.key}" style="${c.on ? '' : 'opacity:.55'}"><td><input type="checkbox" data-on ${c.on ? 'checked' : ''} ${ed ? '' : 'disabled'} style="width:auto;margin:0"></td><td><b>${esc(c.label)}</b></td>
+          <td class="n"><input data-bud inputmode="decimal" value="${c.budget ?? ''}" ${ed ? '' : 'disabled'} style="width:110px;margin:0;text-align:right"></td><td class="n">${c.spend ? inr(c.spend) : '–'}</td><td class="n">${c.budget ? pctB(c.spend, c.budget) : ''}</td>
+          <td class="n">${c.leads || '–'}</td><td class="n">${c.visits || '–'}</td><td class="n">${c.bookings || '–'}</td><td class="n">${c.cpb ? inr(c.cpb) : '–'}</td><td><input data-note value="${esc(c.note)}" ${ed ? '' : 'disabled'} placeholder="Note" style="min-width:160px;margin:0"></td></tr>`).join('')}
+        <tr style="font-weight:700"><td></td><td>Total</td><td class="n" id="plTot">${inr(totalB || null)}</td><td class="n">${inr(T.spend)}</td><td class="n">${totalB ? pctB(T.spend, totalB) : ''}</td><td class="n">${nf(T.leads)}</td><td class="n">${nf(T.visits)}</td><td class="n">${nf(T.bookings)}</td><td class="n">${T.bookings ? inr(T.spend / T.bookings) : '–'}</td><td></td></tr></table></div></div>
+      <div class="mk-card"><h3>Phases</h3><p class="small muted" style="margin:0 0 6px">The project's marketing in stages, each with its dates and budget.</p>
+        <div id="plPh">${ph.map((p) => `<div class="row plph" style="grid-template-columns:1.4fr 1fr 1fr 1fr auto;align-items:end"><div><label>Phase</label><input data-pn value="${esc(p.name)}" ${ed ? '' : 'disabled'}></div><div><label>From</label><input type="date" data-pf value="${esc(p.from || '')}" ${ed ? '' : 'disabled'}></div><div><label>To</label><input type="date" data-pt value="${esc(p.to || '')}" ${ed ? '' : 'disabled'}></div><div><label>Budget ₹</label><input data-pb inputmode="decimal" value="${p.budget ?? ''}" ${ed ? '' : 'disabled'}></div>${ed ? '<button type="button" class="ghost small" data-rmph style="margin-bottom:8px">×</button>' : ''}</div>`).join('')}</div>
+        ${ed ? '<button type="button" class="ghost small" id="plAddPh">+ Add a phase</button>' : ''}
+        <label style="margin-top:10px">Note</label><textarea id="plNote" rows="2" ${ed ? '' : 'disabled'} placeholder="Target buyers, offer, key dates">${esc(P.note || '')}</textarea></div>
+      <p class="small muted">Changing a budget after the plan is approved sends it back to draft for Management to approve again.</p>`);
+    const recalc = () => { let t = 0; $$('#mkBody [data-ch]').forEach((r) => { if ($('[data-on]', r).checked) t += +String($('[data-bud]', r).value).replace(/[,₹\s]/g, '') || 0; r.style.opacity = $('[data-on]', r).checked ? '' : '.55'; }); $('#plTot').textContent = t ? inr(t) : '–'; };
+    $$('#mkBody [data-ch] input').forEach((i) => (i.oninput = i.onchange = recalc));
+    if ($('#plAddPh')) $('#plAddPh').onclick = () => $('#plPh').insertAdjacentHTML('beforeend', '<div class="row plph" style="grid-template-columns:1.4fr 1fr 1fr 1fr auto;align-items:end"><div><label>Phase</label><input data-pn></div><div><label>From</label><input type="date" data-pf></div><div><label>To</label><input type="date" data-pt></div><div><label>Budget ₹</label><input data-pb inputmode="decimal"></div><button type="button" class="ghost small" data-rmph style="margin-bottom:8px">×</button></div>');
+    $('#mkBody').addEventListener('click', (e) => { if (e.target.closest('[data-rmph]')) e.target.closest('.plph').remove(); });
+    if ($('#plSave')) $('#plSave').onclick = async () => {
+      const channels = $$('#mkBody [data-ch]').map((r) => ({ key: r.dataset.ch, on: $('[data-on]', r).checked, budget: $('[data-bud]', r).value, note: $('[data-note]', r).value }));
+      const phases = $$('#mkBody .plph').map((r) => ({ name: $('[data-pn]', r).value, from: $('[data-pf]', r).value, to: $('[data-pt]', r).value, budget: $('[data-pb]', r).value }));
+      try { const r = await C.api('/api/marketing', { action: 'plan.save', data: { scope: S.scope, channels, phases, note: $('#plNote').value } }); C.toast(r.reapprove ? 'Saved. The budget changed, so it goes to Management for approval again.' : 'Plan saved.'); S.resC = {}; plan(); } catch (e) { alert(e.message); }
+    };
+    if ($('#plOk')) $('#plOk').onclick = async () => { try { await C.api('/api/marketing', { action: 'plan.approve', data: { scope: S.scope } }); C.toast('Plan approved.'); plan(); } catch (e) { alert(e.message); } };
+  }
+
+  // ---------- telemarketing and channel partners, inside the project (public/telemarketing.js) ----------
+  function tele() { body('<div id="mkTM"></div>'); window.Telemarketing.render(C, { host: $('#mkTM'), erp: S.scope === 'company' ? null : +S.scope, tabs: ['overview', 'sheets', 'callers', 'reports', 'import'] }); }
+  function cps() { body('<div id="mkTM"></div>'); window.Telemarketing.render(C, { host: $('#mkTM'), erp: S.scope === 'company' ? null : +S.scope, tabs: ['partners', 'launches', 'lookup', 'settings'] }); }
+
   // ---------- from rupees to bookings ----------
   const PER = [['d30', 'Last 30 days'], ['fy', 'This financial year'], ['all', 'All time']];
   const mins = (a, b) => { const m = Math.round((Date.parse(b) - Date.parse(a)) / 60000); return m < 60 ? m + ' min' : m < 1440 ? Math.floor(m / 60) + ' h ' + (m % 60) + ' min' : Math.floor(m / 1440) + ' days'; };
@@ -683,10 +743,28 @@
   function calledForm(l) {
     C.dialog(`<div class="mk-dl"><h2>${esc(l.name || l.phone)}</h2><p class="small muted" style="margin:0 0 8px">${esc(l.phone || '')} · ${esc(SRC[l.source] || l.source)} · came in ${when(l.created_at)}</p>
       <label>How did the call go?</label><div class="mk-ch"><label><input type="radio" name="outcome" value="contacted" checked> Spoke / will follow up</label><label><input type="radio" name="outcome" value="visit"> Site visit fixed or done</label><label><input type="radio" name="outcome" value="lost"> Not interested</label></div>
-      <label>Note</label><input name="note" placeholder="e.g. wants 2 BHK, visit on Sunday"><label>Next call</label><input type="date" name="next"></div>`,
+      <label>Note</label><input name="note" placeholder="e.g. wants 2 BHK, visit on Sunday"><label>Next call</label><input type="date" name="next">
+      <div id="viaBox" style="display:none">${viaPick()}</div><input type="hidden" name="phone" value="${esc(l.phone || '')}"></div>`,
     async (v) => { await C.api('/api/marketing', { action: 'lead.contact', data: { id: l.id, outcome: v.outcome, note: v.note } });
-      if (v.next) await C.api('/api/marketing', { action: 'lead.save', data: { id: l.id, name: l.name, phone: l.phone, email: l.email, projectId: l.project_id || 'company', source: l.source, campaignId: l.campaign_id, status: v.outcome === 'lost' ? 'lost' : v.outcome === 'visit' ? 'visit' : 'contacted', assignedTo: l.assigned_to, nextDate: v.next, note: l.note } });
+      if (v.outcome === 'visit' && v.visited === 'yes') await C.api('/api/marketing', { action: 'lead.visit', data: { id: l.id, viaCpId: v.viaCpId || null } });
+      if (v.next) await C.api('/api/marketing', { action: 'lead.next', data: { id: l.id, nextDate: v.next } });
       C.toast('Saved.'); S.resC = {}; await load(); paint(); });
+    const cf = [...document.querySelectorAll('dialog')].pop(); wireVia(cf);
+    $$('[name=outcome]', cf).forEach((r) => (r.onchange = () => { $('#viaBox', cf).style.display = $('[name=outcome]:checked', cf).value === 'visit' ? '' : 'none'; }));
+  }
+  // "Came with a channel partner?" at the site visit: decides whose buyer it is
+  const viaPick = () => `<div style="background:#F7F7FB;border-radius:10px;padding:10px 12px;margin:8px 0"><label style="margin:0 0 4px">Did they come to the site? With a channel partner?</label>
+      <label class="check" style="margin:2px 0"><input type="checkbox" name="visited" value="yes" checked> They visited the site</label>
+      <select name="viaCpId"><option value="">Came on their own (Dream India's buyer)</option>${(D.partners || []).map((p) => `<option value="${p.id}">With ${esc(p.name)}${p.cp_code ? ' · ' + esc(p.cp_code) : ''} (the partner's buyer)</option>`).join('')}</select>
+      <div class="small" data-reg style="margin-top:6px"></div></div>`;
+  function wireVia(dl) {
+    const ph = $('[name=phone]', dl), box = $('[data-reg]', dl); if (!ph || !box) return;
+    const check = async () => { const v = ph.value.replace(/\D/g, ''); if (v.length < 10) { box.innerHTML = ''; return; }
+      try { const r = await C.api('/api/marketing?partnerOf=' + encodeURIComponent(v)); const p = r.partner;
+        box.innerHTML = p ? `<span style="color:#B54708"><b>Registered by ${esc(p.firm)}${p.cp_code ? ' (' + esc(p.cp_code) + ')' : ''}</b> on ${day(p.uploaded_on)} for ${esc(p.launch)}${p.live ? '' : ' (their period is over)'}. If the buyer came with them, choose them above; if the buyer came on their own, leave "Came on their own": the buyer stays ours.</span>` : '<span class="muted">Not registered by any partner.</span>';
+        if (p && $('[name=viaCpId]', dl) && [...$('[name=viaCpId]', dl).options].some((o) => +o.value === p.cp_id)) { /* only a hint: the site team chooses */ }
+      } catch { box.innerHTML = ''; } };
+    ph.addEventListener('change', check); ph.addEventListener('blur', check); if (ph.value) check();
   }
   // ---------- a Meta campaign: its ads, spend by day, pause / budget ----------
   async function campaignDetail(id) {

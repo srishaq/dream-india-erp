@@ -130,13 +130,14 @@ async function overview(u, scope, req) {
      where ${inScope('l.project_id')} order by l.created_at desc limit 1000`);
   const tasks = await db.q(`select t.*, a.name as assigned_name from mkt_tasks t left join users a on a.id = t.assigned_to where ${inScope('t.project_id')} and (t.done_at is null or t.done_at > now() - interval '14 days') order by t.done_at nulls first, t.due nulls last, t.id`);
   const projects = await db.q('select id, name, code from projects where active order by id');
+  const partners = await db.q("select id, cp_code, name from channel_partners where portal_status = 'approved' or (cp_code is null and portal_status is null and exists (select 1 from bookings b where b.cp_id = channel_partners.id)) order by name").catch(() => []);
   const team = await db.q("select id, name, role from users where not disabled and role in ('marketing', 'admin', 'management', 'sales', 'crm', 'head_crm') order by name");
   const social = await require('../lib/social').status();
   const top = await db.q(`select network, ext_id, account, posted_at, kind, caption, permalink, thumb is not null as has_thumb, likes, comments, shares, saves, views, reach,
        coalesce(likes, 0) + coalesce(comments, 0) + coalesce(shares, 0) + coalesce(saves, 0) as engagement
      from mkt_media where posted_at > now() - interval '30 days' order by coalesce(likes, 0) + coalesce(comments, 0) + coalesce(shares, 0) + coalesce(saves, 0) desc, views desc nulls last limit 8`);
   const per = await periods(projectId, channels.filter((c) => !c.wa && !c.ivr).map((c) => c.network));
-  return { periods: per, top, scope: projectId || 'company', projects, team, channels, posts, campaigns, leads, tasks,
+  return { periods: per, top, scope: projectId || 'company', projects, partners, team, channels, posts, campaigns, leads, tasks,
     settings: { channels: set.channels, drive: set.drive, needApproval: !!set.needApproval, share: (() => { try { return require('../lib/sheets').serviceEmail(); } catch { return null; } })(), leadUrl: canEdit(u) ? `/api/marketing?lead=${set.leadKey}` : null, ivrUrl: canEdit(u) ? `/api/marketing?ivr=${set.leadKey}` : null, exotel: await require('../lib/exotel').status(),
       follow: require('../lib/mkt-leads').follow(set), competitors: (set.competitors || []).map((c) => ({ ...c, ads: require('../lib/mkt-tools').adLibrary(c.name) })),
       canva: await require('../lib/mkt-tools').canvaStatus(), gads: await require('../lib/gads').status(), capi: await require('../lib/mkt-leads').capiStatus(), ai: require('../lib/mkt-tools').aiOn(),
@@ -541,6 +542,54 @@ async function checklist() {
   return { at: new Date().toISOString(), items: out };
 }
 
+// ---------- each project's marketing plan: channels, budgets, phases, against what was actually spent and brought ----------
+const PLAN_CH = [['meta_ads', 'Meta ads (Facebook & Instagram)'], ['google_ads', 'Google Ads'], ['portals', 'Property portals (99acres, MagicBricks, Housing.com)'], ['newspaper', 'Newspaper'],
+  ['hoarding', 'Hoardings'], ['event', 'Events & exhibitions'], ['print', 'Print (brochures, flyers)'], ['radio', 'Radio / cinema'], ['telemarketing', 'Telemarketing'], ['channel_partner', 'Channel partners'],
+  ['website', 'Website'], ['ivr', 'IVR number'], ['whatsapp', 'WhatsApp'], ['social', 'Social media (organic)'], ['agency', 'Agency, shoots & production'], ['site', 'Site branding & sales office'],
+  ['referral', 'Referrals'], ['walk_in', 'Walk-ins'], ['other', 'Other']];
+const SRC_CH = { meta_ads: 'meta_ads', instagram: 'social', facebook: 'social', youtube: 'social', google_ads: 'google_ads', website: 'website', whatsapp: 'whatsapp', ivr: 'ivr', '99acres': 'portals', magicbricks: 'portals', housing: 'portals',
+  walk_in: 'walk_in', referral: 'referral', channel_partner: 'channel_partner', telecalling: 'telemarketing', hoarding: 'hoarding', event: 'event', other: 'other' };
+const KIND_CH = { hoarding: 'hoarding', newspaper: 'newspaper', portal: 'portals', event: 'event', agency: 'agency', shoot: 'agency', influencer: 'social', print: 'print', radio: 'radio', digital: 'other', site: 'site', other: 'other' };
+async function planOf(scope) {
+  const key = pid(scope) ? String(pid(scope)) : 'company';
+  const row = await db.one('select p.*, u.name as approved_name, w.name as updated_name from mkt_plans p left join users u on u.id = p.approved_by left join users w on w.id = p.updated_by where p.scope = $1', [key]);
+  const R = await require('../lib/mkt-results').results(key, 'all');
+  const act = Object.fromEntries(PLAN_CH.map(([k]) => [k, { spend: 0, leads: 0, visits: 0, bookings: 0, value: 0 }]));
+  for (const c of R.campaigns) { const k = c.source === 'meta' ? 'meta_ads' : c.source === 'google' ? 'google_ads' : null; if (k) act[k].spend += c.spend; }
+  for (const c of R.campaigns) if (!['meta', 'google'].includes(c.source)) { const k = SRC_CH[c.source] || 'other'; act[k].spend += c.spend; }
+  for (const e of R.entries) if (!e.campaign_id) act[KIND_CH[e.kind] || (e.source && SRC_CH[e.source]) || 'other'].spend += e.amount;
+  for (const x of R.bySource) { const k = SRC_CH[x.source] || 'other'; if (x.source === 'telecalling') { act.telemarketing.spend += R.totals.teleSpend || 0; act.telemarketing.visits += x.visits; act.telemarketing.leads += x.leads; continue; } act[k].leads += x.leads; act[k].visits += x.visits; act[k].bookings += x.bookings; act[k].value += x.value; }
+  const pj = R.byProject.find((x) => String(x.id == null ? 'company' : x.id) === key) || {};
+  if (key !== 'company') { act.channel_partner.spend += pj.cp || 0; act.channel_partner.bookings = Math.max(act.channel_partner.bookings, pj.cp_bookings || 0); }
+  const saved = Object.fromEntries(((row && row.channels) || []).map((c) => [c.key, c]));
+  const channels = PLAN_CH.map(([k, label]) => { const s0 = saved[k] || {}, a = act[k]; const used = a.spend > 0 || a.leads > 0;
+    return { key: k, label, on: s0.on != null ? !!s0.on : used, budget: s0.budget == null ? null : +s0.budget, note: s0.note || '', ...a, cpb: a.bookings ? a.spend / a.bookings : null, cpl: a.leads ? a.spend / a.leads : null, used: s0.budget ? a.spend / s0.budget : null }; });
+  return { scope: key, status: row ? row.status : 'draft', approved: row && row.approved_at ? { by: row.approved_name, at: row.approved_at } : null, updated: row ? { by: row.updated_name, at: row.updated_at } : null,
+    total_budget: row && row.total_budget != null ? +row.total_budget : null, note: row ? row.note : '', phases: (row && row.phases) || [], channels,
+    totals: { spend: R.totals.spend + (key !== 'company' ? pj.cp || 0 : 0), leads: R.totals.leads, visits: R.totals.visits, bookings: R.totals.bookings, value: R.totals.value, salesValue: key !== 'company' ? pj.sales_value || 0 : R.totals.salesValue } };
+}
+
+// Was this number registered by a channel partner (uploaded on the partner portal)? Earliest registration first.
+async function partnerOf(phone) {
+  const m = phone10(phone); if (!m) return null;
+  const r = await db.one(`select l.uploaded_on, l.owner_until, c.id as cp_id, c.cp_code, c.name as firm, t.name as launch from tm_leads l join channel_partners c on c.id = l.cp_id join tm_projects t on t.id = l.tm_project_id
+     where l.mobile = $1 and l.source = 'partner' order by l.uploaded_on limit 1`, [m]).catch(() => null);
+  return r ? { ...r, uploaded_on: dstr(r.uploaded_on), owner_until: r.owner_until ? dstr(r.owner_until) : null, live: !r.owner_until || dstr(r.owner_until) >= new Date().toISOString().slice(0, 10) } : null;
+}
+// The site visit decides whose buyer it is: came with a partner = the partner's; came on their own = Dream India's.
+async function recordVisit(id, viaCpId, user) {
+  const l = await db.one('select id, phone, status from mkt_leads where id = $1', [id]); if (!l) throw fail(404, 'That lead is not there any more.');
+  const cp = viaCpId ? await db.one("select id, cp_code, name from channel_partners where id = $1", [viaCpId]) : null;
+  if (viaCpId && !cp) throw fail(400, 'Choose the partner.');
+  const reg = await partnerOf(l.phone);
+  const note = cp ? `Site visit with partner ${cp.name}${cp.cp_code ? ' (' + cp.cp_code + ')' : ''}: their buyer.` : `Site visit, came directly${reg ? ` (was registered by ${reg.firm}${reg.cp_code ? ' ' + reg.cp_code : ''} on ${reg.uploaded_on}, but came on their own)` : ''}: Dream India's buyer.`;
+  await db.q(`update mkt_leads set status = case when status = 'booked' then status else 'visit' end, visit_at = coalesce(visit_at, now()), first_contact_at = coalesce(first_contact_at, now()),
+      owner_cp_id = $2, visit_via = $3, owner_set_at = now(), sources = case when $2::int is not null and not ('channel_partner' = any(sources)) then array_append(sources, 'channel_partner') else sources end,
+      note = concat_ws(E'\\n', note, $4::text), updated_at = now() where id = $1`, [id, cp ? cp.id : null, cp ? 'partner' : 'direct', `${new Date().toLocaleString('en-IN', { day: 'numeric', month: 'short', hour: 'numeric', minute: '2-digit', timeZone: 'Asia/Kolkata' })} ${user.name}: ${note}`]);
+  await require('../lib/mkt-leads').queueStage(id, 'visit').catch(() => {});
+  return { ok: true, owner: cp ? cp.name : 'Dream India', registered: reg };
+}
+
 const handler = route({
   GET: async (req, res) => {
     const u = await auth.guard(req, res); if (!u) return;
@@ -599,6 +648,8 @@ const handler = route({
       return res.end(Buffer.isBuffer(f.file_data) ? f.file_data : Buffer.from(f.file_data));
     }
     if (q.canva != null) { if (!canEdit(u)) throw fail(403, 'Only the marketing team picks designs.'); return res.json(await require('../lib/mkt-tools').canvaDesigns({ query: str(q.q, 100), continuation: str(q.next, 500) })); }
+    if (q.plan != null) return res.json(await planOf(q.plan));
+    if (q.partnerOf) return res.json({ partner: await partnerOf(String(q.partnerOf)) });
     if (q.checklist != null) return res.json(await checklist());
     if (q.inbox != null) return res.json(await inbox());
     if (q.times != null) return res.json(await postingTimes());
@@ -782,6 +833,28 @@ const handler = route({
     if (a === 'sync') { editOnly(); return res.json({ ok: true, ...(await require('../lib/social').sync({ full: !!d.full, only: require('../lib/social').PARTS.includes(d.part) ? d.part : null })) }); }
     if (a === 'disconnect') { editOnly(); if (!['meta', 'youtube'].includes(d.net)) throw fail(400, 'Which one?'); await require('../lib/social').disconnect(d.net); await log('disconnect', 'social', d.net); return res.json({ ok: true }); }
 
+    if (a === 'plan.save') {
+      if (!canEdit(u) && !canApprove(u)) throw fail(403, 'Only the marketing team or Management plans the marketing.');
+      const key = pid(d.scope) ? String(await projectOf(d.scope)) : 'company';
+      const chans = (Array.isArray(d.channels) ? d.channels : []).filter((c) => PLAN_CH.some(([k]) => k === c.key)).map((c) => ({ key: c.key, on: !!c.on, budget: num(c.budget), note: str(c.note, 300) || null }));
+      const phases = (Array.isArray(d.phases) ? d.phases : []).slice(0, 8).map((p) => ({ name: str(p.name, 60), from: DATE.test(p.from || '') ? p.from : null, to: DATE.test(p.to || '') ? p.to : null, budget: num(p.budget) })).filter((p) => p.name);
+      const total = (d.totalBudget ? num(d.totalBudget) : null) ?? (chans.reduce((t, c) => t + (c.on && c.budget || 0), 0) || null);
+      const was = await db.one('select channels, total_budget, status from mkt_plans where scope = $1', [key]);
+      const changed = !was || JSON.stringify(was.channels.map((c) => [c.key, c.budget, c.on])) !== JSON.stringify(chans.map((c) => [c.key, c.budget, c.on])) || +was.total_budget !== +total;
+      await db.q(`insert into mkt_plans (scope, channels, phases, total_budget, note, updated_by, updated_at, status) values ($1, $2, $3, $4, $5, $6, now(), 'draft')
+         on conflict (scope) do update set channels = excluded.channels, phases = excluded.phases, total_budget = excluded.total_budget, note = excluded.note, updated_by = excluded.updated_by, updated_at = now(),
+           status = case when $7 then 'draft' else mkt_plans.status end, approved_by = case when $7 then null else mkt_plans.approved_by end, approved_at = case when $7 then null else mkt_plans.approved_at end`,
+      [key, JSON.stringify(chans), JSON.stringify(phases), total, str(d.note, 1000) || null, u.id, changed && !canApprove(u)]);
+      await log('update', 'mkt-plan', key, { total, channels: chans.filter((c) => c.on).length });
+      return res.json({ ok: true, reapprove: changed && !canApprove(u) && was && was.status === 'approved' });
+    }
+    if (a === 'plan.approve') {
+      if (!canApprove(u)) throw fail(403, 'Management approves the plan.');
+      const key = pid(d.scope) ? String(pid(d.scope)) : 'company';
+      const r = await db.one("update mkt_plans set status = 'approved', approved_by = $2, approved_at = now() where scope = $1 returning scope", [key, u.id]);
+      if (!r) throw fail(400, 'Save the plan first.');
+      await log('approve', 'mkt-plan', key, {}); return res.json({ ok: true });
+    }
     // ---------- spend (other than ads), budgets ----------
     if (a === 'spend.save') {
       editOnly();
@@ -825,6 +898,8 @@ const handler = route({
       v.follow = f; await saveSettings(v); await log('update', 'settings', 'marketing-follow', { people: Object.keys(f.people).length });
       return res.json({ ok: true });
     }
+    if (a === 'lead.next') { if (!canEdit(u) && !has(u, 'booking.create')) throw fail(403, 'Your login cannot change leads.'); if (!DATE.test(d.nextDate || '')) throw fail(400, 'The date looks wrong.'); await db.q('update mkt_leads set next_date = $2, updated_at = now() where id = $1', [intOr(d.id), d.nextDate]); return res.json({ ok: true }); }
+    if (a === 'lead.visit') { if (!canEdit(u) && !has(u, 'booking.create')) throw fail(403, 'Your login cannot change leads.'); const r = await recordVisit(intOr(d.id), intOr(d.viaCpId) || null, u); await log('site-visit', 'mkt-lead', intOr(d.id), { via: r.owner }); return res.json(r); }
     if (a === 'lead.greet') { editOnly(); return res.json({ ok: true, ...(await require('../lib/mkt-leads').greet(intOr(d.id))) }); }
     // ---------- money controls ----------
     if (a === 'change.request') { if (!canEdit(u) && !canApprove(u)) throw fail(403, 'Only the marketing team asks for changes.'); const r = await require('../lib/mkt-money').request(u, { campaignId: intOr(d.campaignId), kind: d.kind, value: d.value, reason: str(d.reason, 500) }, { canApprove: canApprove(u) }); await log('change-' + d.kind, 'mkt-campaign', intOr(d.campaignId), r); return res.json(r); }

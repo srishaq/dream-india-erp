@@ -66,7 +66,7 @@ module.exports = route({
       return res.json({ ...(await TM.analytics(pid)), projects, outcomesList: TM.OUTCOMES });
     }
     if (Q.partners) {
-      const rows = await db.q(`select c.id, c.cp_code, c.username, c.name, c.contact_person, c.designation, c.phone, c.alt_phone, c.email, c.rera_no, c.office_address, c.office_area,
+      const rows = await db.q(`select c.id, c.cp_code, c.username, c.name, (select count(distinct kind)::int from cp_docs d where d.cp_id = c.id) as docs, c.contact_person, c.designation, c.phone, c.alt_phone, c.email, c.rera_no, c.office_address, c.office_area,
           c.callers_in_team, c.portal_status, c.registered_at, c.reviewed_at, r.name as reviewed_by,
           (select count(*)::int from tm_leads l where l.cp_id = c.id) as leads,
           (select count(*)::int from tm_leads l where l.cp_id = c.id and l.owner_until >= $1::date) as active,
@@ -93,7 +93,15 @@ module.exports = route({
       return res.json({ rows: rows.map((r) => ({ ...r, joined_on: TM.iso(r.joined_on) })) });
     }
     if (Q.lookup) return res.json(await TM.lookup(Q.lookup));
-    if (Q.settings) return res.json({ settings: await TM.settings() });
+    if (Q.settings) { const D2 = require('../lib/cp-docs'); return res.json({ settings: await TM.settings(), agreement: await D2.agreementText(), defaultAgreement: D2.AGREEMENT,
+      people: await db.q("select id, name, role from users where not disabled and role in ('admin', 'management', 'sales', 'crm', 'head_crm', 'marketing') order by name") }); }
+    if (Q.docs) return res.json({ ...(await require('../lib/cp-docs').status(intOr(Q.docs))), approvers: await require('../lib/cp-docs').approvers() });
+    if (Q.cpdoc) {
+      const f = await db.one('select file_name, mime, data from cp_docs where id = $1 and data is not null', [intOr(Q.cpdoc)]);
+      if (!f) return res.status(404).json({ error: 'No file.' });
+      res.setHeader('Content-Type', f.mime); res.setHeader('Content-Disposition', `inline; filename="${String(f.file_name).replace(/[^\w.\- ]+/g, '_')}"`); res.setHeader('Cache-Control', 'private, no-store');
+      return res.end(Buffer.isBuffer(f.data) ? f.data : Buffer.from(f.data));
+    }
     throw fail(400, 'Unknown request.');
   },
 
@@ -111,6 +119,11 @@ module.exports = route({
       if (!st) throw fail(400, 'Choose a status.');
       const before = await db.one('select id, portal_status, cp_code, name from channel_partners where id = $1 and portal_status is not null', [intOr(b.id)]);
       if (!before) throw fail(404, 'Partner not found.');
+      if (st === 'approved') { // only the people named in Partner settings approve, and only once every paper is in
+        const D2 = require('../lib/cp-docs'), who2 = await D2.approvers();
+        if (who2.length && !who2.includes(u.id)) { const nm = (await db.q('select name from users where id = any($1::int[])', [who2])).map((x) => x.name).join(', '); throw fail(403, `Partners are approved by ${nm}.`); }
+        const ds = await D2.status(before.id); if (!ds.complete) throw fail(400, `${before.name} cannot be approved yet: missing ${ds.missing.join(', ')}.`);
+      }
       await db.q('update channel_partners set portal_status = $2, reviewed_by = $3, reviewed_at = now() where id = $1', [before.id, st, u.id]);
       if (st === 'blocked' || st === 'rejected') await db.q('delete from cp_sessions where cp_id = $1', [before.id]);
       await audit.record(db.q, { user: u, action: 'partner-' + st, entity: 'channel-partner', entityId: before.id, before: { status: before.portal_status }, after: { status: st }, note: str(b.note, 200) || null });
@@ -172,15 +185,19 @@ module.exports = route({
       await audit.record(db.q, { user: u, action: 'tm-import-clear', entity: 'tm-project', entityId: pid, after: { removed: r.length, left: left.n } });
       return res.json({ removed: r.length, left: left.n });
     }
+    if (a === 'doc-received') { const r = await require('../lib/cp-docs').paperReceived(intOr(b.cpId), u); await audit.record(db.q, { user: u, action: 'partner-agreement-paper', entity: 'channel-partner', entityId: intOr(b.cpId) }); return res.json(r); }
     if (a === 'settings-save') {
       const cur = await TM.settings(), s = b.settings || {};
       const next = {
+        ...cur,
         ownershipDays: Math.min(Math.max(intOr(s.ownershipDays, cur.ownershipDays), 7), 365),
         historyPolicy: s.historyPolicy === 'accept' ? 'accept' : 'reject',
-        autoApprove: !!s.autoApprove,
+        autoApprove: false, // partners are approved by hand once their papers are in
         maxAttempts: Math.min(Math.max(intOr(s.maxAttempts, cur.maxAttempts), 1), 10),
         gapDays: Math.min(Math.max(intOr(s.gapDays, cur.gapDays), 0), 30),
         waOtpTemplate: str(s.waOtpTemplate, 80), waWelcomeTemplate: str(s.waWelcomeTemplate, 80),
+        approvers: Array.isArray(s.approvers) ? s.approvers.map(intOr).filter(Boolean).slice(0, 5) : cur.approvers || [],
+        agreementText: s.agreementText != null ? (String(s.agreementText).trim().slice(0, 20000) || null) : cur.agreementText || null,
       };
       await db.q("insert into settings (key, value) values ('tm', $1) on conflict (key) do update set value = excluded.value", [next]);
       await audit.record(db.q, { user: u, action: 'tm-settings', entity: 'settings', entityId: 'tm', before: cur, after: next });

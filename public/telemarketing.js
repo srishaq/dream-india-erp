@@ -47,9 +47,23 @@
     return all;
   }
 
-  async function render(ctx) {
-    C = ctx;
+  // opt (inside Sales & Marketing): { host, erp: ERP project id, tabs: [keys] } — no heading, only those tabs, that project chosen
+  let O = {};
+  async function render(ctx, opt) {
+    C = ctx; O = opt || {}; if (O.tabs && !O.tabs.includes(tab)) tab = O.tabs[0];
     if (!$('#tm-css')) { const st = document.createElement('style'); st.id = 'tm-css'; st.textContent = css; document.head.appendChild(st); }
+    if (O.host) {
+      if (O.erp !== undefined && O._for !== O.erp) { O._for = O.erp; const pr = (await C.api('/api/tm?projects=1').catch(() => ({ rows: [] }))).rows; const mine = pr.filter((p) => O.erp && p.project_id === O.erp);
+        proj = O.erp ? String((mine.find((p) => !p.history) || mine[0] || { id: '' }).id) : ''; rproj = (mine.find((p) => p.history) || mine[0] || pr[0] || {}).id || null; O.linked = mine; }
+      const T = tabs().filter((t) => !O.tabs || O.tabs.includes(t[0]));
+      O.host.innerHTML = `<div class="tm">${O.erp && !(O.linked || []).length ? '<div class="tm-own">This project has no partner launch yet. Open one under Channel partners → Projects ("Add a project", linked to this ERP project) so partners can upload clients for it.</div>' : ''}
+        ${T.length > 1 ? `<div class="mk-chips">${T.map(([k, l]) => `<button type="button" data-t="${k}" aria-pressed="${k === tab}">${esc(l)}</button>`).join('')}</div>` : ''}
+        <div id="tmBody"><p class="muted">Loading…</p></div></div>`;
+      $$('[data-t]', O.host).forEach((b) => (b.onclick = () => { tab = b.dataset.t; render(C, O); }));
+      try { await ({ overview, reports, partners, launches, sheets, lookup, callers, import: importTab, settings })[tab](); }
+      catch (e) { $('#tmBody').innerHTML = `<div class="err">${esc(e.message)}</div>`; }
+      return;
+    }
     const T = tabs();
     $('#page').innerHTML = `<div class="tm">
       <div class="tm-hero"><div class="tm-eb">Management</div><h1>Partner &amp; Telemarketing</h1>
@@ -110,7 +124,7 @@
       $('#tmPT').innerHTML = rows.map((r) => { const s = PST[r.portal_status] || ['', 'grey'];
         return `<tr><td>${esc(r.cp_code)}</td><td><a href="#" data-pv="${r.id}">${esc(r.name)}</a><span class="tm-cd">@${esc(r.username)}</span></td><td>${esc(r.contact_person)}${r.designation ? `<span class="tm-cd">${esc(r.designation)}</span>` : ''}</td>
           <td>${esc(r.phone)}</td><td>${esc(r.rera_no)}</td><td>${esc(r.office_area)}</td><td class="num">${nf(r.leads)}</td><td class="num">${nf(r.active)}</td><td class="num">${r.bookings}</td>
-          <td><span class="pill ${s[1]}">${s[0]}</span></td><td class="row-acts">${can('tm.manage') ? (r.portal_status !== 'approved' ? `<button class="small" data-st="approved" data-id="${r.id}">Approve</button> ` : '') + (r.portal_status === 'pending' ? `<button class="small ghost" data-st="rejected" data-id="${r.id}">Reject</button>` : r.portal_status === 'approved' ? `<button class="small danger" data-st="blocked" data-id="${r.id}">Block</button>` : '') : ''}</td></tr>`; }).join('') || '<tr><td colspan="11" class="muted">No partners yet. Share the partner portal link with your channel partners.</td></tr>';
+          <td><span class="pill ${s[1]}">${s[0]}</span>${r.portal_status === 'pending' ? `<span class="tm-cd">${r.docs || 0} of 4 papers</span>` : ''}</td><td class="row-acts">${can('tm.manage') ? (r.portal_status !== 'approved' ? `<button class="small" data-st="approved" data-id="${r.id}">Approve</button> ` : '') + (r.portal_status === 'pending' ? `<button class="small ghost" data-st="rejected" data-id="${r.id}">Reject</button>` : r.portal_status === 'approved' ? `<button class="small danger" data-st="blocked" data-id="${r.id}">Block</button>` : '') : ''}</td></tr>`; }).join('') || '<tr><td colspan="11" class="muted">No partners yet. Share the partner portal link with your channel partners.</td></tr>';
       $$('[data-st]').forEach((b) => (b.onclick = async () => {
         const r = d.rows.find((x) => x.id === +b.dataset.id), st = b.dataset.st;
         if (st !== 'approved' && !confirm(`${st === 'blocked' ? 'Block' : 'Reject'} ${r.name}? They will not be able to sign in.`)) return;
@@ -128,8 +142,17 @@
       ${row('Username', r.username)}${row('Point of contact', [r.contact_person, r.designation].filter(Boolean).join(', '))}${row('Mobile (verified)', r.phone)}${row('Other number', r.alt_phone)}
       ${row('Email', r.email)}${row('MahaRERA no.', r.rera_no)}${row('Office', r.office_address)}${row('Area', r.office_area)}${row('Callers in their team', r.callers_in_team)}
       ${row('Registered', dd(r.registered_at))}${row('Reviewed', r.reviewed_at ? dd(r.reviewed_at) + (r.reviewed_by ? ' by ' + r.reviewed_by : '') : '')}${row('Last upload', r.last_upload ? dd(r.last_upload) : 'none yet')}
-      ${row('Clients registered', r.leads)}${row('Still theirs (inside the ownership period)', r.active)}${row('Bookings credited', r.bookings)}</table>`, async () => {});
+      ${row('Clients registered', r.leads)}${row('Still theirs (inside the ownership period)', r.active)}${row('Bookings credited', r.bookings)}</table>
+      <h3 style="margin-top:14px">Documents for approval</h3><div id="tmDocs"><p class="muted">Loading…</p></div>`, async () => {});
     $('[value=save]', dl).remove();
+    const paint = async () => {
+      const d = await C.api('/api/tm?docs=' + r.id);
+      $('#tmDocs', dl).innerHTML = `<table>${d.docs.map((x) => `<tr><th>${esc(x.label)}</th><td>${x.done ? `<span class="pill good">In</span> ${esc(x.number || '')} ${x.file ? `<a href="/api/tm?cpdoc=${x.id}" target="_blank" rel="noopener">open</a>` : ''}${x.how && x.kind === 'agreement' ? `<span class="tm-cd">${esc(x.how)}${x.signedName ? ' by ' + esc(x.signedName) : ''}${x.at ? ', ' + dd(x.at) : ''}</span>` : ''}` : '<span class="pill warn">Missing</span>'}
+        ${x.kind === 'agreement' && !x.done && can('tm.manage') ? ' <button type="button" class="small ghost" id="tmPaper">Signed copy received at the office</button>' : ''}</td></tr>`).join('')}</table>
+        <p class="small ${d.complete ? '' : 'muted'}">${d.complete ? 'All papers are in: the partner can be approved.' : 'Approval opens once all four are in.'}</p>`;
+      const pb = $('#tmPaper', dl); if (pb) pb.onclick = async () => { await C.api('/api/tm', { action: 'doc-received', cpId: r.id }); paint(); };
+    };
+    paint().catch((e) => { $('#tmDocs', dl).innerHTML = `<div class="err">${esc(e.message)}</div>`; });
   }
 
   // ---------- Launches ----------
@@ -328,19 +351,23 @@
   }
 
   // ---------- Settings ----------
+  let PEOPLE = [], AGR = '';
   async function settings() {
-    const { settings: s } = await C.api('/api/tm?settings=1');
+    const { settings: s, people, agreement } = await C.api('/api/tm?settings=1'); PEOPLE = people; AGR = agreement;
     body(`<div class="panel"><h2>Rules</h2><form id="tmS">
       <div class="row"><div><label>A partner keeps a client for (days)</label><input type="number" name="ownershipDays" value="${s.ownershipDays}" min="7" max="365"><p class="muted small">A site visit booked on a call starts the period again.</p></div>
       <div><label>Numbers we already called earlier</label><select name="historyPolicy"><option value="reject" ${s.historyPolicy !== 'accept' ? 'selected' : ''}>Stay with Dream India (partner is told)</option><option value="accept" ${s.historyPolicy === 'accept' ? 'selected' : ''}>Go to the partner who uploads them</option></select></div></div>
       <div class="row"><div><label>Tries for a number not reachable</label><input type="number" name="maxAttempts" value="${s.maxAttempts}" min="1" max="10"></div><div><label>Days between tries</label><input type="number" name="gapDays" value="${s.gapDays}" min="0" max="30"></div></div>
-      <label class="check"><input type="checkbox" name="autoApprove" ${s.autoApprove ? 'checked' : ''}> Approve new partners automatically (otherwise someone with Management access approves each one)</label>
+      <h3>Who approves partners</h3><p class="muted small">Only these people can approve a new partner, and only once PAN, GST, the MahaRERA certificate and the signed agreement are in.</p>
+      <div class="tm-legend">${(PEOPLE || []).map((p) => `<label class="check" style="margin:0"><input type="checkbox" name="approver" value="${p.id}" ${(s.approvers || []).includes(p.id) ? 'checked' : ''}> ${esc(p.name)}</label>`).join('')}</div>
+      <h3>Partner agreement</h3><p class="muted small">The text partners accept online or sign on paper. Have it checked by your lawyer before partners sign. Changing it makes a new version; partners who signed earlier stay on theirs.</p>
+      <textarea name="agreementText" rows="10" style="font-size:12.5px">${esc(AGR || '')}</textarea>
       <h3>WhatsApp messages to partners</h3><p class="muted small">Approved template names in Click Connect. Until these are set, codes and the CP ID go by email.</p>
       <div class="row"><div><label>Verification code template (1 value: the code)</label><input name="waOtpTemplate" value="${esc(s.waOtpTemplate)}"></div><div><label>Welcome template (2 values: name, CP ID)</label><input name="waWelcomeTemplate" value="${esc(s.waWelcomeTemplate)}"></div></div>
       <div class="actions"><button>Save</button></div><div id="tmSM"></div></form></div>`);
     $('#tmS').onsubmit = async (e) => {
-      e.preventDefault(); const x = Object.fromEntries(new FormData(e.target));
-      try { await C.api('/api/tm', { action: 'settings-save', settings: { ...x, autoApprove: x.autoApprove === 'on' } }); $('#tmSM').innerHTML = '<div class="ok">Saved.</div>'; }
+      e.preventDefault(); const x = Object.fromEntries(new FormData(e.target)); x.approvers = $$('[name=approver]:checked', e.target).map((i) => +i.value); delete x.approver;
+      try { await C.api('/api/tm', { action: 'settings-save', settings: x }); $('#tmSM').innerHTML = '<div class="ok">Saved.</div>'; }
       catch (er) { $('#tmSM').innerHTML = `<div class="err">${esc(er.message)}</div>`; }
     };
   }
