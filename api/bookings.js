@@ -95,8 +95,18 @@ module.exports = route({
   GET: async (req, res) => {
     const u = await auth.guard(req, res); if (!u) return;
     if (!has(u, 'inventory.view') && !has(u, 'ledger.view')) return res.status(403).json({ error: 'Your role does not allow this.' });
-    if (req.query.id) return res.json(await detail(u, intOr(req.query.id)));
-    return res.json({ rows: await list(needProject(u, intOr(req.query.project))) });
+    if (req.query.id) {
+      const d = await detail(u, intOr(req.query.id));
+      if (!has(u, 'ledger.view')) { // Sales: the booking and buyers, not the money received or owed
+        d.receipts = []; d.balance = null; d.demands = d.demands.map((x) => ({ id: x.id, stage_name: x.stage_name, demand_date: x.demand_date, status: x.status }));
+        if (d.cancellation) d.cancellation = { id: d.cancellation.id, cancel_date: d.cancellation.cancel_date, refund_status: d.cancellation.refund_status, cancelled_by_name: d.cancellation.cancelled_by_name };
+        d.history = d.history.filter((h) => h.entity === 'booking').map((h) => ({ ...h, after: null }));
+      }
+      return res.json(d);
+    }
+    const rows = await list(needProject(u, intOr(req.query.project)));
+    if (!has(u, 'ledger.view')) for (const r of rows) r.demanded = r.credit_av = r.outstanding = r.overdue = null; // Sales: the flats, not the money
+    return res.json({ rows });
   },
   POST: async (req, res, b) => {
     const u = await auth.guard(req, res); if (!u) return;

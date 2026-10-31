@@ -58,7 +58,7 @@ module.exports = route({
       if (!ROLES[role]) throw fail(400, 'Choose a role.');
       const name = str(b.name, 80) || before.name;
       await db.tx(async (t) => {
-        await t.q('update users set name = $2, role = $3, all_projects = $4, phone = $5, designation = $6, email = $7, session_version = session_version + 1 where id = $1', [id, name, role, !!b.allProjects, str(b.phone, 20) || null, str(b.designation, 80) || null, emailOrNull(b.email)]);
+        await t.q('update users set name = $2, role = $3, all_projects = $4, phone = $5, designation = $6, email = $7, session_version = session_version + 1, portal_role = case when role = $3 then portal_role end, portal_access = case when role = $3 then portal_access end where id = $1', [id, name, role, !!b.allProjects, str(b.phone, 20) || null, str(b.designation, 80) || null, emailOrNull(b.email)]);
         await setProjects(t, id, cleanIds(b.projects));
         await audit.record(t.q, { user: me, action: 'update', entity: 'user', entityId: id, before, after: { name, role, allProjects: !!b.allProjects, projects: cleanIds(b.projects) } });
       });

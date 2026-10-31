@@ -7,7 +7,7 @@
   },
   "headers": [
     {
-      "source": "/((?!dashboard|ca$|ca\\.html|accounts$|accounts\\.html|site$|site\\.html|purchase$|purchase\\.html|drawings$|drawings\\.html|contracts$|contracts\\.html|hr$|hr\\.html|chat$|chat\\.html).*)",
+      "source": "/((?!site$|site\\.html|purchase$|purchase\\.html|drawings$|drawings\\.html|contracts$|contracts\\.html|hr$|hr\\.html|chat$|chat\\.html).*)",
       "headers": [
         {
           "key": "X-Frame-Options",
@@ -36,7 +36,7 @@
       ]
     },
     {
-      "source": "/(dashboard|ca|accounts|site|purchase|drawings|contracts|hr)(.html)?",
+      "source": "/(site|purchase|drawings|contracts|hr)(.html)?",
       "headers": [
         {
           "key": "X-Frame-Options",
@@ -111,6 +111,10 @@
     {
       "path": "/api/cron?job=morning",
       "schedule": "30 3 * * *"
+    },
+    {
+      "path": "/api/cron?job=mkt",
+      "schedule": "45 3 * * *"
     },
     {
       "path": "/api/cron?job=summary",

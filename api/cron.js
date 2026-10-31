@@ -23,7 +23,9 @@ module.exports = route({
     const job = (req.query || {}).job;
     const secret = process.env.CRON_SECRET;
     if (secret) { if (req.headers.authorization !== `Bearer ${secret}`) throw fail(401, 'Not allowed.'); }
-    else if (job !== 'mail' && !(job === 'bank' && istHour() === 15) && !((job === 'pdc' || job === 'morning') && istHour() === 9) && !(job === 'summary' && istHour() === 10) && !(job === 'evening' && istHour() === 20) && !(job === 'dpr' && istHour() === 18)) throw fail(403, 'Not the time for this job.');
+    // No CRON_SECRET in Vercel yet: only Vercel's own scheduler, and only at each job's hour (a stopgap; add CRON_SECRET)
+    else if (!/^vercel-cron\//.test(String(req.headers['user-agent'] || ''))) throw fail(403, 'Not allowed.');
+    else if (job !== 'mail' && !(job === 'mkt' && istHour() === 9) && !(job === 'bank' && istHour() === 15) && !((job === 'pdc' || job === 'morning') && istHour() === 9) && !(job === 'summary' && istHour() === 10) && !(job === 'evening' && istHour() === 20) && !(job === 'dpr' && istHour() === 18)) throw fail(403, 'Not the time for this job.');
     const st = await status();
     if (st.pending.length && st.applied.length) await migrate(); // a new release deployed overnight: its tables first
     if (job === 'bank') {
@@ -36,17 +38,21 @@ module.exports = route({
       out.reminders = await require('../lib/letters').reminders().catch((e) => ({ error: e.message }));
       out.caPack = await require('../lib/ca-pack').morning().catch((e) => ({ error: e.message }));
       out.cheques = await require('../lib/cheque-match').run({ trigger: 'morning' }).catch((e) => ({ error: e.message }));
+      for (const dept of ['accounts', 'crm']) {
+        if (!secret && await dt.ranToday(dept)) { out[dept] = 'already ran'; continue; }
+        const r = await dt.run(dept, { trigger: 'schedule' });
+        out[dept] = { found: r.found.length, error: r.run.error, mail: r.run.mail };
+      }
+      return res.json({ ok: true, ...out });
+    }
+    if (job === 'mkt') { // the marketing syncs, on their own run so a slow Exotel or Meta day never stops the 9 am To-Do
+      const out = {};
       out.exotel = await require('../lib/exotel').sync({}).catch((e) => ({ error: e.message })); // yesterday's IVR calls (and the 12-month history, part by part)
       out.social = await require('../lib/social').sync({}).catch((e) => ({ error: e.message })); // yesterday's Instagram, Facebook, Meta Ads and YouTube figures
       out.gads = await require('../lib/gads').sync({}).catch((e) => ({ error: e.message })); // Google Ads, when connected
       out.website = await require('./marketing').webAggregate().catch((e) => ({ error: e.message })); // website visits into the daily and monthly figures
       out.mktAlerts = await require('../lib/mkt-money').alerts({}).catch((e) => ({ error: e.message })); // over budget, cost per lead up, tiring ads
       out.mktDigest = await require('../lib/mkt-money').digest({}).catch((e) => ({ error: e.message })); // Mondays: last week in Marketing
-      for (const dept of ['accounts', 'crm']) {
-        if (!secret && await dt.ranToday(dept)) { out[dept] = 'already ran'; continue; }
-        const r = await dt.run(dept, { trigger: 'schedule' });
-        out[dept] = { found: r.found.length, error: r.run.error, mail: r.run.mail };
-      }
       return res.json({ ok: true, ...out });
     }
     if (job === 'dpr') return res.json({ ok: true, ...(await require('../lib/staff-alerts').dprReminder()) });
