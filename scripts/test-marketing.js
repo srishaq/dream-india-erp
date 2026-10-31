@@ -99,6 +99,22 @@ let n = 0; const step = async (name, fn) => { await fn(); n++; console.log('  âœ
     assert.equal((await rupali('/api/marketing?scope=company')).posts.length, 1);
   });
 
+  await step('Designs: the Canva export is attached to the post, sent for approval, sent back with a comment, then approved', async () => {
+    const png = Buffer.from('89504e470d0a1a0a0000000d4948445200000001000000010806000000', 'hex').toString('base64');
+    assert.equal((await M(rupali, 'post.file', { postId, name: 'reel.png', mime: 'image/png', data: png })).ok, true);
+    assert.equal((await M(rupali, 'post.file', { postId, name: 'x.exe', mime: 'application/x-msdownload', data: png })).status, 400);
+    assert.equal((await M(sameer, 'post.file', { postId, name: 'a.png', mime: 'image/png', data: png })).status, 403);
+    const p = (await rupali('/api/marketing?scope=company')).posts.find((x) => x.id === postId);
+    assert.equal(p.files.length, 1); assert.equal(p.files[0].mime, 'image/png');
+    const img = await fetch(BASE + '/api/marketing?pfile=' + p.files[0].id); assert.equal(img.status, 401); // only signed in
+    const sent = await M(rupali, 'post.send', { id: postId }); assert.equal(sent.ok, true); assert.ok(sent.mail.skipped);
+    assert.equal((await M(rupali, 'post.sendback', { id: postId, note: 'Bigger logo' })).status, 403);
+    assert.equal((await M(sameer, 'post.sendback', { id: postId, note: 'Bigger logo' })).ok, true);
+    const b = (await rupali('/api/marketing?scope=company')).posts.find((x) => x.id === postId); assert.equal(b.status, 'draft'); assert.match(b.review_note, /Bigger logo/);
+    await M(rupali, 'post.send', { id: postId }); assert.equal((await M(sameer, 'post.status', { id: postId, status: 'approved' })).ok, true);
+    const c = (await rupali('/api/marketing?scope=company')).posts.find((x) => x.id === postId); assert.equal(c.status, 'approved'); assert.equal(c.review_note, null);
+  });
+
   await step('Leads: typed in, a duplicate number warned, tagged to a campaign; a buyer in the CRM is recognised', async () => {
     const c = await M(rupali, 'campaign.save', { name: 'Diwali drive', channel: 'instagram', budget: '1,50,000', spent: '90000', projectId: sig.id });
     assert.equal(c.ok, true);

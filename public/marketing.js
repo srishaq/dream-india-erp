@@ -67,6 +67,11 @@
   .mk .mk-chart{width:100%;overflow:visible}.mk .mk-chart text{font-size:11px;fill:#667085}.mk .mk-chart .v{fill:#10114e;font-weight:700}
   .mk .mk-legend{display:flex;gap:14px;flex-wrap:wrap;font-size:12px;color:var(--mut);margin:0 0 6px}.mk .mk-legend i{display:inline-block;width:10px;height:10px;border-radius:3px;margin-right:5px;vertical-align:-1px}
   .mk .mk-scroll{overflow-x:auto}.mk table.mk-t th[data-sort]{cursor:pointer;white-space:nowrap}.mk table.mk-t td.n,.mk table.mk-t th.n{text-align:right;white-space:nowrap}.mk .mk-tip{position:fixed;pointer-events:none;background:#10114e;color:#fff;font-size:12px;padding:6px 8px;border-radius:8px;z-index:70;white-space:nowrap}
+  .mk .mk-appr{display:grid;grid-template-columns:repeat(auto-fill,minmax(180px,1fr));gap:12px}.mk .mk-ap{all:unset;cursor:pointer;display:block;background:#fff;border:1px solid var(--line);border-radius:14px;overflow:hidden}.mk .mk-ap:hover{border-color:#DC6803}
+  .mk .mk-ap .th{aspect-ratio:1;background:var(--soft);display:flex;align-items:center;justify-content:center;color:var(--mut);font-size:12px;font-weight:700}.mk .mk-ap .th img{width:100%;height:100%;object-fit:cover}.mk .mk-ap b{display:block;padding:8px 10px 0;font-size:13px;color:var(--ink)}.mk .mk-ap small{display:block;padding:2px 10px 10px;font-size:11px;color:var(--mut)}.mk .mk-ap small .mk-ic{width:14px;height:14px}
+  .mk-dl .mk-files{display:flex;gap:10px;flex-wrap:wrap;margin:6px 0}.mk-dl .mk-file{width:150px;display:flex;flex-direction:column;gap:4px}.mk-dl .mk-file img,.mk-dl .mk-file video{width:150px;height:150px;object-fit:cover;border-radius:10px;border:1px solid #EAECF0;background:#F7F7FB}
+  .mk-dl .mk-file .pdf{width:150px;height:150px;border-radius:10px;border:1px solid #EAECF0;background:#FEF3F2;color:#B42318;font-weight:800;display:flex;flex-direction:column;align-items:center;justify-content:center;text-decoration:none;font-size:20px}.mk-dl .mk-file .pdf small{font-size:11px;font-weight:400;padding:4px 8px;text-align:center;word-break:break-all}
+  .mk-dl .mk-back{background:#FEF3F2;border:1px solid #FDA29B;border-radius:10px;padding:8px 10px;font-size:13px;color:#912018}.mk-dl .mk-design{margin-top:10px}
   .mk button.mk-fig{all:unset;cursor:pointer;display:block;border-radius:8px}.mk button.mk-fig:hover b{color:#7A5AF8}.mk .mk-chan .fig button.mk-fig b{display:block;font-size:20px;color:var(--ink)}.mk .mk-chan .fig button.mk-fig span{font-size:12px;color:var(--mut)}
   .mk button.mk-kpi{display:block;width:100%;text-align:left;font:inherit;font-weight:400;cursor:pointer;color:inherit;transition:border-color .15s,box-shadow .15s}.mk button.mk-kpi:hover{background:#fff;border-color:#7A5AF8;box-shadow:0 4px 14px #7A5AF822}
   .mk-dlg{position:fixed;inset:0;background:#10114e66;z-index:80;display:flex;align-items:flex-start;justify-content:center;padding:40px 16px}.mk-dlg .box{background:#fff;border-radius:18px;width:min(1200px,100%);max-height:calc(100vh - 80px);display:flex;flex-direction:column;box-shadow:0 20px 60px #10182855}
@@ -155,6 +160,7 @@
         <button type="button" class="mk-kpi" data-md="leads"><span>Leads, last 30 days</span><b>${nf(recent.length)}</b>${delta(recent.length, prevL.length)}</button>
         <button type="button" class="mk-kpi" data-md="cpl"><span>Cost per lead (campaigns)</span><b>${(campLeads || allLeads) && spent ? inr(spent / (campLeads || allLeads)) : '–'}</b><span>${inr(spent)} spent</span></button></div>
       <div class="mk-chans">${ch.map(chanCard).join('') || `<div class="mk-empty">No channels yet. Add Instagram, Facebook, YouTube and the website under Set-up.</div>`}</div>
+      ${D.can.approve && D.posts.some((p) => p.status === 'review') ? `<div class="mk-card" style="border-color:#FEC84B;background:#FFFCF5"><h3>Waiting for your approval (${D.posts.filter((p) => p.status === 'review').length})</h3>${apprGrid(D.posts.filter((p) => p.status === 'review'))}</div>` : ''}
       ${D.top.length ? `<div class="mk-card"><h3>Best posts, last 30 days</h3><div class="mk-posts">${D.top.map(postTile).join('')}</div></div>` : ''}
       <div class="mk-grid2"><div class="mk-card"><h3>Coming up</h3>${up.map(postRow).join('') || '<p class="muted small" style="margin:0">Nothing planned for the next days. Plan posts in the Content calendar.</p>'}</div>
         <div class="mk-card"><h3>Leads: from enquiry to booking</h3><div class="mk-funnel"><div><b>${allLeads}</b><span>Leads</span></div><div><b>${f('contacted')}</b><span>Contacted</span></div><div><b>${f('visit')}</b><span>Site visit</span></div><div><b>${f('booked')}</b><span>Booked</span></div></div>
@@ -192,6 +198,9 @@
         : `<div class="fig"><div style="grid-column:1/-1"><span>${['instagram', 'facebook', 'youtube'].includes(c.network) ? 'Connect this channel under Set-up; its figures come in straight away.' : 'Type this channel\'s figures under Set-up.'}</span></div></div>`}
       <div class="foot"><span>${c.updated ? 'Updated ' + day(c.updated) : 'No figures yet'}</span>${c.url ? `<a href="${esc(c.url)}" target="_blank" rel="noopener">Open ↗</a>` : ''}</div></div>`;
   }
+  // posts waiting for approval, with their design, so Management can look and decide
+  const apprGrid = (list) => `<div class="mk-appr">${list.map((p) => { const f = (p.files || []).find((x) => /^image\//.test(x.mime)) || (p.files || [])[0];
+    return `<button type="button" class="mk-ap" data-post="${p.id}"><div class="th">${f && /^image\//.test(f.mime) ? `<img src="/api/marketing?pfile=${f.id}" alt="" loading="lazy">` : f ? `<span>${/video/.test(f.mime) ? 'Video' : 'PDF'}</span>` : '<span>No design attached</span>'}</div><b>${esc(p.title)}</b><small>${when(p.publish_at)} · ${chanDots(p)}${(p.files || []).length > 1 ? ` · ${p.files.length} files` : ''}</small></button>`; }).join('')}</div>`;
   function postTile(m) {
     const N = NET[m.network] || NET.website;
     return `<a class="mk-post" href="${esc(m.permalink || '#')}" target="_blank" rel="noopener"><div class="th">${m.has_thumb ? `<img loading="lazy" alt="" src="/api/marketing?img=${encodeURIComponent(m.network + ':' + m.ext_id)}" onerror="this.remove()">` : ''}<span class="net" style="background:${N.c}">${ic(m.network, 'mk-ic', '#fff')}</span>${m.kind && m.kind !== 'post' ? `<span class="kd">${esc(m.kind)}</span>` : ''}</div>
@@ -296,7 +305,7 @@
     const review = D.posts.filter((p) => p.status === 'review');
     body(`<div class="mk-actions">${D.can.edit ? '<button id="newPost">+ Plan a post</button>' : ''}<button class="ghost" id="prevM">‹</button><b style="min-width:150px;text-align:center">${m.toLocaleDateString('en-IN', { month: 'long', year: 'numeric' })}</b><button class="ghost" id="nextM">›</button><button class="ghost" id="todayM">Today</button>
         <span class="muted small" style="margin-left:auto">${Object.entries(ST).map(([, [l, c]]) => `<span class="mk-pill"><span class="mk-dot" style="background:${c}"></span>${l}</span>`).join(' ')}</span></div>
-      ${review.length ? `<div class="mk-card" style="border-color:#FEC84B;background:#FFFCF5"><h3>Waiting for approval (${review.length})</h3>${review.map(postRow).join('')}</div>` : ''}
+      ${review.length ? `<div class="mk-card" style="border-color:#FEC84B;background:#FFFCF5"><h3>Waiting for approval (${review.length})</h3>${apprGrid(review)}</div>` : ''}
       <div class="mk-cal">${['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'].map((d) => `<div class="h">${d}</div>`).join('')}
         ${days.map((d) => { const k = iso(d), ps = byDay[k] || []; return `<div class="d ${d.getMonth() !== m.getMonth() ? 'o' : ''} ${k === iso(now) ? 't' : ''} ${ps.length ? '' : 'e'}" data-day="${k}"><span class="n">${d.getDate()} <span class="muted" style="font-weight:400">${d.toLocaleDateString('en-IN', { weekday: 'short' })}</span></span>${ps.map((p) => `<span class="chip" data-post="${p.id}" style="background:${(NET[(p.channels || [])[0]] || { c: ST[p.status][1] }).c};${p.status === 'published' ? '' : 'opacity:.85;outline:2px dashed #fff8;outline-offset:-3px'}" title="${esc(p.title)} · ${ST[p.status][0]}">${esc(p.title)}</span>`).join('')}</div>`; }).join('')}</div>
       ${undated.length ? `<div class="mk-card" style="margin-top:14px"><h3>Ideas and drafts without a date</h3>${undated.map(postRow).join('')}</div>` : ''}`);
@@ -322,14 +331,31 @@
       <label>Canva design link</label><div style="display:flex;gap:8px"><input name="canvaUrl" value="${esc(pr.canva_url)}" placeholder="https://www.canva.com/design/…" style="flex:1">${pr.canva_url ? `<a class="button ghost" href="${esc(pr.canva_url)}" target="_blank" rel="noopener">Open in Canva ↗</a>` : '<a class="button ghost" href="https://www.canva.com/" target="_blank" rel="noopener">Canva ↗</a>'}</div>
       <div class="row"><div><label>File or video link (Drive)</label><input name="assetUrl" value="${esc(pr.asset_url)}" placeholder="https://drive.google.com/…"></div><div><label>Link to the published post</label><input name="postUrl" value="${esc(pr.post_url)}" placeholder="https://www.instagram.com/p/…"></div></div>
       <div class="row"><div><label>Campaign</label><select name="campaignId"><option value="">—</option>${D.campaigns.map((c) => `<option value="${c.id}" ${pr.campaign_id === c.id ? 'selected' : ''}>${esc(c.name)}</option>`).join('')}</select></div><div><label>Note</label><input name="note" value="${esc(pr.note)}"></div></div>
-      ${p && p.status === 'review' && D.can.approve ? '<p><button type="button" id="apprPost">Approve this post</button></p>' : ''}
+      <div class="mk-design"><label>Design for approval <span class="muted small" style="font-weight:400">· from Canva: Share → Download (PNG, JPG, PDF or MP4, up to 3 MB each)</span></label>
+        <div class="mk-files">${(pr.files || []).map((f) => `<div class="mk-file">${/^image\//.test(f.mime) ? `<a href="/api/marketing?pfile=${f.id}" target="_blank" rel="noopener"><img src="/api/marketing?pfile=${f.id}" alt=""></a>` : /^video\//.test(f.mime) ? `<video src="/api/marketing?pfile=${f.id}" controls preload="metadata"></video>` : `<a class="pdf" href="/api/marketing?pfile=${f.id}" target="_blank" rel="noopener">PDF<small>${esc(f.name)}</small></a>`}${D.can.edit ? `<button type="button" class="ghost small" data-rmf="${f.id}">Remove</button>` : ''}</div>`).join('') || (ro ? '<p class="small muted" style="margin:0">No design attached.</p>' : '')}</div>
+        ${ro ? '' : '<input type="file" id="pfIn" multiple accept="image/png,image/jpeg,image/webp,image/gif,application/pdf,video/mp4">'}</div>
+      ${pr.review_note ? `<p class="mk-back"><b>Sent back:</b> ${esc(pr.review_note)}</p>` : ''}
+      <input type="hidden" name="send" value="">
+      ${D.can.edit && (!p || !['review', 'published'].includes(p.status)) ? '<p style="margin:10px 0 0"><button type="button" id="sendPost">Save and send for approval</button> <span class="small muted">Management gets an email with the design.</span></p>' : ''}
+      ${p && p.status === 'review' && D.can.approve ? '<p style="margin:10px 0 0"><button type="button" id="apprPost">Approve this post</button> <button type="button" class="ghost" id="backPost">Send back with a comment</button></p>' : ''}
       ${p && p.approved_name ? `<p class="small muted">Approved by ${esc(p.approved_name)}.</p>` : ''}${p ? `<p class="small muted">Planned by ${esc(p.created_name || '')}. ${D.can.edit ? '<a href="#" id="delPost" style="color:#B42318">Delete</a>' : ''}</p>` : ''}</div>`,
     async (x) => {
       if (ro) return;
+      const send = x.send === '1'; delete x.send;
       const r = await C.api('/api/marketing', { action: 'post.save', data: { id: p && p.id, ...x, channels: $$('.mk-dl [name=ch]:checked').map((i) => i.value), publishAt: x.publishAt ? new Date(x.publishAt).toISOString() : null } });
-      if (r.status === 'review' && x.status !== 'review') C.toast('Saved. It goes out once Management approves it.'); else C.toast('Saved.');
+      const files = $('#pfIn', dl) ? [...$('#pfIn', dl).files] : [];
+      for (const f of files) {
+        if (f.size > 3 * 1024 * 1024) { alert(`${f.name} is larger than 3 MB. Put a long video's Google Drive link in "File or video link" instead.`); continue; }
+        const data = await new Promise((ok, no) => { const fr = new FileReader(); fr.onload = () => ok(String(fr.result).split(',')[1] || ''); fr.onerror = () => no(new Error('Could not read ' + f.name)); fr.readAsDataURL(f); });
+        await C.api('/api/marketing', { action: 'post.file', data: { postId: r.id, name: f.name, mime: f.type, data } });
+      }
+      if (send) { const s2 = await C.api('/api/marketing', { action: 'post.send', data: { id: r.id } }); C.toast(s2.mail && s2.mail.to ? 'Sent for approval. Management has been emailed.' : 'Sent for approval.'); }
+      else if (r.status === 'review' && x.status !== 'review') C.toast('Saved. It goes out once Management approves it.'); else C.toast('Saved.');
       await load(); paint();
     });
+    const sp = $('#sendPost', dl); if (sp) sp.onclick = () => { $('[name=send]', dl).value = '1'; $('form', dl).requestSubmit(); };
+    const bp = $('#backPost', dl); if (bp) bp.onclick = async () => { const note = prompt('What should change?'); if (!note || !note.trim()) return; await C.api('/api/marketing', { action: 'post.sendback', data: { id: p.id, note } }); dl.close(); dl.remove(); C.toast('Sent back to the marketing team.'); await load(); paint(); };
+    $$('[data-rmf]', dl).forEach((b) => (b.onclick = async () => { if (!confirm('Remove this file?')) return; await C.api('/api/marketing', { action: 'post.file.delete', data: { id: +b.dataset.rmf } }); b.closest('.mk-file').remove(); await load(); }));
     const ap = $('#apprPost', dl); if (ap) ap.onclick = async () => { await C.api('/api/marketing', { action: 'post.status', data: { id: p.id, status: 'approved' } }); dl.close(); dl.remove(); C.toast('Approved.'); await load(); paint(); };
     const dp = $('#delPost', dl); if (dp) dp.onclick = async (e) => { e.preventDefault(); if (!confirm('Delete this post from the calendar?')) return; await C.api('/api/marketing', { action: 'post.delete', data: { id: p.id } }); dl.close(); dl.remove(); await load(); paint(); };
   }

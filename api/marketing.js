@@ -74,7 +74,9 @@ async function overview(u, scope, req) {
   const waCh = chans.find((c) => c.network === 'whatsapp') || { network: 'whatsapp', handle: '', url: null, projectId: null };
   const fbAt = channels.findIndex((c) => c.network === 'facebook');
   channels.splice(fbAt >= 0 ? fbAt + 1 : channels.length, 0, { ...waCh, wa: { ...wa, spend: +wa.spend, leads30: wl.d30, leads: wl.total } });
-  const posts = await db.q(`select p.*, array_to_json(p.channels) as channels, c.name as created_name, a.name as approved_name from mkt_posts p left join users c on c.id = p.created_by left join users a on a.id = p.approved_by
+  const posts = await db.q(`select p.*, array_to_json(p.channels) as channels, c.name as created_name, a.name as approved_name,
+       (select coalesce(json_agg(json_build_object('id', f.id, 'name', f.name, 'mime', f.mime, 'size', f.size) order by f.id), '[]') from mkt_post_files f where f.post_id = p.id) as files
+     from mkt_posts p left join users c on c.id = p.created_by left join users a on a.id = p.approved_by
      where ${inScope('p.project_id')} and (p.publish_at is null or p.publish_at > now() - interval '120 days') order by p.publish_at nulls first, p.id`);
   const campaigns = await db.q(`select c.*, (select count(*)::int from mkt_leads l where l.campaign_id = c.id) as leads,
        (select count(*)::int from mkt_leads l where l.campaign_id = c.id and l.status = 'visit') as visit_leads,
@@ -127,6 +129,33 @@ async function report(scope) {
      from mkt_media where posted_at >= $1 group by 1, 2, 3 order by 2`, [from]);
   return { months, organic, campaigns: camps, adMonths, leadMonths, top, media };
 }
+// The email to Management when a post is sent for approval (test address only until the ERP is live).
+async function approvalMail(p, by, req) {
+  const mailer = require('../lib/mailer');
+  if (!mailer.configured()) return { skipped: 'The sending email account is not connected.' };
+  const { ROLES } = require('../lib/roles');
+  const roles = Object.entries(ROLES).filter(([, r]) => (r.perms || []).includes('marketing.approve')).map(([k]) => k);
+  const ok = (e) => /^[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}$/.test(e);
+  const people = (await db.q('select email from users where not disabled and role = any($1) and coalesce(email, \'\') <> \'\'', [roles])).flatMap((x) => String(x.email).split(/[,;\s]+/)).filter(ok);
+  const live = process.env.ERP_LIVE === '1';
+  const letters = (await db.one("select value from settings where key = 'letters'"))?.value || {};
+  const to = live ? [...new Set(people)] : String(letters.testEmail || '').split(/[\/,;\s]+/).filter(ok).slice(0, 1);
+  if (!to.length) return { skipped: live ? 'No Management login has an email address.' : 'No test email address in Letter settings.' };
+  const host = (process.env.ERP_URL || `https://${req.headers.host}`).replace(/\/+$/, '');
+  const files = await db.q('select id, name, mime from mkt_post_files where post_id = $1 order by id', [p.id]);
+  const e = (x) => String(x ?? '').replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+  const when = p.publish_at ? new Date(p.publish_at).toLocaleString('en-IN', { day: 'numeric', month: 'short', hour: 'numeric', minute: '2-digit', timeZone: 'Asia/Kolkata' }) : 'no date yet';
+  const html = `<div style="font-family:Arial,sans-serif;font-size:14px;color:#10114e">${live ? '' : '<p style="font-size:12px;color:#B54708">Test version: once the ERP is live this goes to Management.</p>'}
+    <p>${e(by.name)} has sent a post for your approval.</p><p><b>${e(p.title)}</b><br>${e((p.channels || []).join(', '))} · goes out ${e(when)}</p>
+    ${p.caption ? `<p style="white-space:pre-wrap;background:#F7F7FB;padding:10px;border-radius:8px">${e(String(p.caption).slice(0, 1500))}</p>` : ''}
+    <p>${files.length ? `${files.length} design file${files.length > 1 ? 's' : ''} attached in the ERP.` : 'No design file attached.'}${p.canva_url ? ` <a href="${e(p.canva_url)}">Open the design in Canva</a>.` : ''}</p>
+    <p><a href="${host}/#/marketing" style="display:inline-block;background:#140C59;color:#fff;padding:10px 16px;border-radius:8px;text-decoration:none">Open Marketing to approve</a></p></div>`;
+  const conn = await mailer.connect();
+  try { await conn.send({ to, subject: (live ? '' : '[TEST] ') + `For your approval: ${p.title}`, html, text: `${by.name} has sent "${p.title}" for your approval. Open ${host}/#/marketing`, fromName: 'Dream India ERP' }); }
+  finally { await conn.close().catch(() => {}); }
+  return { to, test: !live };
+}
+
 // The rows behind a box on the Overview: followers, views, reach, content, leads, cost per lead (last 30 days).
 async function mdrill(key, scope) {
   const projectId = pid(scope), set = await settings();
@@ -231,6 +260,13 @@ const handler = route({
       res.setHeader('Content-Type', type); res.setHeader('Cache-Control', 'private, max-age=86400');
       return res.end(buf);
     }
+    if (q.pfile) {
+      const f = await db.one('select name, mime, data from mkt_post_files where id = $1', [intOr(q.pfile)]);
+      if (!f) return res.status(404).json({ error: 'That file is not there any more.' });
+      res.setHeader('Content-Type', f.mime); res.setHeader('Cache-Control', 'private, max-age=86400');
+      res.setHeader('Content-Disposition', `${q.dl ? 'attachment' : 'inline'}; filename="${String(f.name).replace(/[^\w.\- ]+/g, '_')}"`);
+      return res.end(Buffer.isBuffer(f.data) ? f.data : Buffer.from(f.data));
+    }
     if (q.report != null) return res.json(await report(q.report));
     if (q.mdrill) return res.json(await mdrill(String(q.mdrill), q.scope));
     if (q.thumb) {
@@ -277,9 +313,39 @@ const handler = route({
     if (a === 'post.status') {
       const id = intOr(d.id), st = d.status;
       if (!STATUSES.includes(st)) throw fail(400, 'Unknown status.');
-      if (st === 'approved') { if (!canApprove(u)) throw fail(403, 'Management approves posts.'); await db.q("update mkt_posts set status = 'approved', approved_by = $2, approved_at = now(), updated_at = now() where id = $1", [id, u.id]); }
+      if (st === 'approved') { if (!canApprove(u)) throw fail(403, 'Management approves posts.'); await db.q("update mkt_posts set status = 'approved', approved_by = $2, approved_at = now(), review_note = null, updated_at = now() where id = $1", [id, u.id]); }
       else { editOnly(); await db.q('update mkt_posts set status = $2, post_url = coalesce($3, post_url), updated_by = $4, updated_at = now() where id = $1', [id, st, url(d.postUrl), u.id]); }
       await log('status', 'mkt-post', id, { status: st });
+      return res.json({ ok: true });
+    }
+    // the finished design: an image, PDF or short video exported from Canva (up to 3 MB; a longer video goes as a Drive link)
+    if (a === 'post.file') {
+      editOnly();
+      const post = await db.one('select id from mkt_posts where id = $1', [intOr(d.postId)]); if (!post) throw fail(404, 'Save the post first.');
+      const mime = String(d.mime || ''), buf = Buffer.from(String(d.data || ''), 'base64');
+      if (!/^(image\/(png|jpeg|webp|gif)|application\/pdf|video\/mp4)$/.test(mime)) throw fail(400, 'Attach a PNG, JPG, WEBP, GIF, PDF or MP4 file (in Canva: Share → Download).');
+      if (!buf.length || buf.length > 3 * 1024 * 1024) throw fail(400, 'The file must be under 3 MB. For a longer video, put its Google Drive link in "File or video link".');
+      const r = await db.one('insert into mkt_post_files (post_id, name, mime, size, data, created_by) values ($1, $2, $3, $4, $5, $6) returning id', [post.id, str(d.name, 120) || 'design', mime, buf.length, buf, u.id]);
+      await log('attach', 'mkt-post', post.id, { file: str(d.name, 120) });
+      return res.json({ ok: true, id: r.id });
+    }
+    if (a === 'post.file.delete') { editOnly(); await db.q('delete from mkt_post_files where id = $1', [intOr(d.id)]); return res.json({ ok: true }); }
+    // Rupali sends a post for approval: Management is emailed with the design
+    if (a === 'post.send') {
+      editOnly();
+      const p = await db.one("update mkt_posts set status = 'review', sent_at = now(), sent_by = $2, review_note = null, updated_at = now() where id = $1 and status <> 'published' returning *", [intOr(d.id), u.id]);
+      if (!p) throw fail(404, 'That post is not there any more.');
+      await log('send-for-approval', 'mkt-post', p.id, { title: p.title });
+      const mail = await approvalMail(p, u, req).catch((e) => ({ error: e.message }));
+      return res.json({ ok: true, mail });
+    }
+    // Management sends it back with a comment
+    if (a === 'post.sendback') {
+      if (!canApprove(u)) throw fail(403, 'Management approves posts.');
+      const note = str(d.note, 1000); if (!note) throw fail(400, 'Write what should change.');
+      const p = await db.one("update mkt_posts set status = 'draft', review_note = $2, approved_by = null, approved_at = null, updated_at = now() where id = $1 returning id, title", [intOr(d.id), `${u.name}: ${note}`]);
+      if (!p) throw fail(404, 'That post is not there any more.');
+      await log('send-back', 'mkt-post', p.id, { note });
       return res.json({ ok: true });
     }
     if (a === 'post.delete') { editOnly(); await db.q('delete from mkt_posts where id = $1', [intOr(d.id)]); await log('delete', 'mkt-post', d.id); return res.json({ ok: true }); }
