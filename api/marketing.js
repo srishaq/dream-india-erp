@@ -7,7 +7,9 @@
 //      ?thumb=<driveFileId> → a file's preview picture
 // POST {action}: post.save | post.status | post.delete | campaign.save | campaign.delete | lead.save | lead.delete |
 //      task.save | task.done | task.delete | stats.save (typed figures) | settings | sync (pull now) | disconnect
-// POST ?lead=<key> (from the website form, Meta lead ads through a connector, a portal…): a new lead, no login.
+// POST ?lead=<webKey> (the website's enquiry forms, through /t.js or the form in Set-up): a new lead, no login.
+//      ?hit=<webKey> (the website tracker /t.js) · ?ivr=<ivrKey> (Exotel or any IVR; the key is secret, Admin only).
+//      The old single key (leadKey) still opens all three until the Admin retires it in Set-up.
 // Rupali (role Marketing) works here; Management sees everything and approves posts sent for review.
 const crypto = require('crypto');
 const db = require('../lib/db');
@@ -27,19 +29,29 @@ const DATE = /^\d{4}-\d{2}-\d{2}$/;
 const URLX = /^https?:\/\/[^\s]{3,500}$/i;
 const num = (v) => { const n = Number(String(v ?? '').replace(/[,₹\s]/g, '')); return Number.isFinite(n) ? n : null; };
 const url = (v) => { const s = str(v, 500); return s && URLX.test(s) ? s : null; };
-const phone10 = (v) => { const d = String(v || '').replace(/\D/g, ''); return d.length >= 10 ? d.slice(-10) : d || null; };
+const { phone10 } = require('../lib/mkt-leads'); // the last 10 digits, or null
 const pid = (v) => (v === 'company' || v == null || v === '' ? null : intOr(v));
 
 async function settings() {
   const r = await db.one("select value from settings where key = 'marketing'");
   const v = r ? r.value : {};
   let changed = false;
-  if (!v.leadKey) { v.leadKey = crypto.randomBytes(12).toString('hex'); changed = true; }
+  // webKey: public (in the website's tracker line and form); ivrKey: secret (the IVR link). leadKey: the old single key,
+  // kept working until the Admin retires it, so the live website and Exotel do not stop.
+  if (!v.webKey) { v.webKey = newKey(); changed = true; }
+  if (!v.ivrKey) { v.ivrKey = newKey(); changed = true; }
   // the channels Dream India has today (company-wide; a channel can also belong to one project)
   if (!Array.isArray(v.channels)) { v.channels = [{ network: 'instagram', handle: 'dreamindiarealty', url: 'https://www.instagram.com/dreamindiarealty/', projectId: null }]; changed = true; }
   if (changed) await saveSettings(v);
   return { channels: [], drive: {}, needApproval: false, ...v };
 }
+const newKey = () => crypto.randomBytes(12).toString('hex');
+const keyIs = (k, want) => !!want && typeof k === 'string' && k.length === String(want).length && crypto.timingSafeEqual(Buffer.from(k), Buffer.from(String(want)));
+// which key opened the link: 'web', 'ivr', 'legacy' (the old single key) or null
+const keyOf = (set, k) => (keyIs(k, set.webKey) ? 'web' : keyIs(k, set.ivrKey) ? 'ivr' : keyIs(k, set.leadKey) ? 'legacy' : null);
+// rate limits on the public links (settings.marketing.limits can change them)
+const LIMITS = { leadIpHour: 5, leadPhoneDay: 3, hitIpHour: 300 };
+const limits = (set) => ({ ...LIMITS, ...(set.limits || {}) });
 async function saveSettings(v) { await db.q("insert into settings (key, value) values ('marketing', $1) on conflict (key) do update set value = excluded.value", [v]); }
 const canView = (u) => has(u, 'marketing.view');
 const canEdit = (u) => has(u, 'marketing.edit') || u.role === 'admin';
@@ -74,7 +86,7 @@ async function periods(projectId, nets) {
   const was = await db.q(`select distinct on (network) network, (metrics->>'followers')::numeric as f from mkt_stats where network = any($1) and metrics ? 'followers' and day <= current_date - 30 order by network, day desc`, [nets]);
   const f30 = { f: was.reduce((a, r) => a + +r.f, 0), n: was.length, now: was.reduce((a, r) => a + (nowBy[r.network] || 0), 0) };
   const ad30 = await db.one(`select coalesce(sum(cd.spend), 0) as spend, coalesce(sum(cd.leads), 0)::int as leads, coalesce(sum(cd.messages), 0)::int as chats from mkt_campaign_days cd join mkt_campaigns c on c.id = cd.campaign_id where cd.day > current_date - 30 ${pj('c.project_id')}`);
-  const man30 = await db.one(`select coalesce(sum(spent), 0) as spent from mkt_campaigns c where source = 'manual' and coalesce(start_on, created_at::date) > current_date - 30 ${pj('c.project_id')}`);
+  const R = require('../lib/mkt-results'), sp30 = await R.spendTotals(projectId || 'company', 'd30'), spY = await R.spendTotals(projectId || 'company', 'fy');
   const l30 = await db.one(`select count(*)::int as n from mkt_leads where created_at > now() - interval '30 days' ${pj('project_id')}`);
   // the financial year: month-by-month figures
   const y = await db.one(`select coalesce(sum((metrics->>'views')::numeric), 0) as views, coalesce(sum((metrics->>'reach')::numeric), 0) as reach, coalesce(sum((metrics->>'posts')::numeric), 0) as posts
@@ -82,11 +94,11 @@ async function periods(projectId, nets) {
   const wasY = await db.q(`select distinct on (network) network, (metrics->>'followers')::numeric as f from mkt_stats_month where network = any($1) and metrics ? 'followers' and month >= $2::date order by network, month`, [nets, fy]);
   const fFy = { f: wasY.reduce((a, r) => a + +r.f, 0), n: wasY.length, now: wasY.reduce((a, r) => a + (nowBy[r.network] || 0), 0) };
   const adY = await db.one(`select coalesce(sum(m.spend), 0) as spend, coalesce(sum(m.leads), 0)::int as leads, coalesce(sum(m.messages), 0)::int as chats from mkt_campaign_months m join mkt_campaigns c on c.id = m.campaign_id where m.month >= $1::date ${pj('c.project_id')}`, [fy]);
-  const manY = await db.one(`select coalesce(sum(spent), 0) as spent from mkt_campaigns c where source = 'manual' and coalesce(start_on, created_at::date) >= $1::date ${pj('c.project_id')}`, [fy]);
   const lY = await db.one(`select count(*)::int as n from mkt_leads where created_at >= $1::date ${pj('project_id')}`, [fy]);
-  const mk = (v, fb, ad, man, leads) => { const spend = num(ad.spend) + num(man.spent), best = Math.max(leads.n, ad.leads);
+  // spend: everything Results counts (ads, campaigns typed in, hoardings / portals / other entries, telecallers)
+  const mk = (v, fb, ad, sp, leads) => { const spend = sp.spend, best = Math.max(leads.n, ad.leads);
     return { views: num(v.views), reach: num(v.reach), posts: num(v.posts), followers: num(fNow.f), followersBefore: fb.n ? fb.f : null, followersCmp: fb.n ? fb.now : null, leads: leads.n, adLeads: ad.leads, chats: ad.chats, spend, cpl: best ? spend / best : null }; };
-  return { fy, d30: mk(d, f30, ad30, man30, l30), ytd: mk(y, fFy, adY, manY, lY) };
+  return { fy, d30: mk(d, f30, ad30, sp30, l30), ytd: mk(y, fFy, adY, spY, lY) };
 }
 
 async function overview(u, scope, req) {
@@ -111,7 +123,7 @@ async function overview(u, scope, req) {
   const ivl = await db.one(`select count(*) filter (where created_at > now() - interval '30 days')::int as d30 from mkt_leads where source = 'ivr' ${projectId ? 'and project_id = ' + +projectId : ''}`);
   channels.splice(channels.findIndex((c) => c.wa) + 1, 0, { network: 'ivr', handle: '', ivr: { ...iv, leads30: ivl.d30 } });
   // the website, once its tracker sends visits (or when a website channel is set up)
-  { const wf = await webFigures(30); const at = channels.findIndex((c) => c.network === 'website'); const wl = await db.one("select count(*) filter (where created_at > now() - interval '30 days')::int as d30 from mkt_leads where source = 'website' or 'website' = any(sources)");
+  { const wf = await webFigures(30); const at = channels.findIndex((c) => c.network === 'website'); const wl = await db.one(`select count(*) filter (where created_at > now() - interval '30 days')::int as d30 from mkt_leads where (source = 'website' or 'website' = any(sources)) ${projectId ? 'and project_id = ' + +projectId : ''}`);
     if (wf.ever || at >= 0) { const base = at >= 0 ? channels.splice(at, 1)[0] : { network: 'website', handle: 'dreamindiarealty.com', url: 'https://dreamindiarealty.com', projectId: null }; channels.push({ ...base, web: { ...wf, leads30: wl.d30 } }); } }
   const posts = await db.q(`select p.*, array_to_json(p.channels) as channels, c.name as created_name, a.name as approved_name,
        (select coalesce(json_agg(json_build_object('id', f.id, 'name', f.name, 'mime', f.mime, 'size', f.size) order by f.id), '[]') from mkt_post_files f where f.post_id = p.id) as files
@@ -138,7 +150,8 @@ async function overview(u, scope, req) {
      from mkt_media where posted_at > now() - interval '30 days' order by coalesce(likes, 0) + coalesce(comments, 0) + coalesce(shares, 0) + coalesce(saves, 0) desc, views desc nulls last limit 8`);
   const per = await periods(projectId, channels.filter((c) => !c.wa && !c.ivr).map((c) => c.network));
   return { periods: per, top, scope: projectId || 'company', projects, partners, team, channels, posts, campaigns, leads, tasks,
-    settings: { channels: set.channels, drive: set.drive, needApproval: !!set.needApproval, share: (() => { try { return require('../lib/sheets').serviceEmail(); } catch { return null; } })(), leadUrl: canEdit(u) ? `/api/marketing?lead=${set.leadKey}` : null, ivrUrl: canEdit(u) ? `/api/marketing?ivr=${set.leadKey}` : null, exotel: await require('../lib/exotel').status(),
+    settings: { channels: set.channels, drive: set.drive, needApproval: !!set.needApproval, portalForwarders: set.portalForwarders || [], share: (() => { try { return require('../lib/sheets').serviceEmail(); } catch { return null; } })(), leadUrl: canEdit(u) ? `/api/marketing?lead=${set.webKey}` : null, webKey: canEdit(u) ? set.webKey : null,
+      ivrUrl: u.role === 'admin' ? `/api/marketing?ivr=${set.ivrKey}` : null, oldKey: u.role === 'admin' ? !!set.leadKey : null, exotel: await require('../lib/exotel').status(),
       follow: require('../lib/mkt-leads').follow(set), competitors: (set.competitors || []).map((c) => ({ ...c, ads: require('../lib/mkt-tools').adLibrary(c.name) })),
       canva: await require('../lib/mkt-tools').canvaStatus(), gads: await require('../lib/gads').status(), capi: await require('../lib/mkt-leads').capiStatus(), ai: require('../lib/mkt-tools').aiOn(),
       whatsapp: (() => { try { return require('../lib/whatsapp').provider(); } catch { return null; } })() },
@@ -175,31 +188,19 @@ async function report(scope) {
      from mkt_media where posted_at >= $1 group by 1, 2, 3 order by 2`, [from]);
   return { months, organic, campaigns: camps, adMonths, leadMonths, top, media };
 }
-// The email to Management when a post is sent for approval (test address only until the ERP is live).
+// The email to Management when a post is sent for approval (the marketing mail rule: test address until the ERP is live).
 async function approvalMail(p, by, req) {
-  const mailer = require('../lib/mailer');
-  if (!mailer.configured()) return { skipped: 'The sending email account is not connected.' };
-  const { ROLES } = require('../lib/roles');
-  const roles = Object.entries(ROLES).filter(([, r]) => (r.perms || []).includes('marketing.approve')).map(([k]) => k);
-  const ok = (e) => /^[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}$/.test(e);
-  const people = (await db.q('select email from users where not disabled and role = any($1) and coalesce(email, \'\') <> \'\'', [roles])).flatMap((x) => String(x.email).split(/[,;\s]+/)).filter(ok);
-  const live = process.env.ERP_LIVE === '1';
-  const letters = (await db.one("select value from settings where key = 'letters'"))?.value || {};
-  const to = live ? [...new Set(people)] : String(letters.testEmail || '').split(/[\/,;\s]+/).filter(ok).slice(0, 1);
-  if (!to.length) return { skipped: live ? 'No Management login has an email address.' : 'No test email address in Letter settings.' };
+  const F = require('../lib/mkt-flow');
+  const people = (await F.approvers()).flatMap((x) => String(x.email).split(/[,;\s]+/));
   const host = (process.env.ERP_URL || `https://${req.headers.host}`).replace(/\/+$/, '');
   const files = await db.q('select id, name, mime from mkt_post_files where post_id = $1 order by id', [p.id]);
   const e = (x) => String(x ?? '').replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
   const when = p.publish_at ? new Date(p.publish_at).toLocaleString('en-IN', { day: 'numeric', month: 'short', hour: 'numeric', minute: '2-digit', timeZone: 'Asia/Kolkata' }) : 'no date yet';
-  const html = `<div style="font-family:Arial,sans-serif;font-size:14px;color:#10114e">${live ? '' : '<p style="font-size:12px;color:#B54708">Test version: once the ERP is live this goes to Management.</p>'}
-    <p>${e(by.name)} has sent a post for your approval.</p><p><b>${e(p.title)}</b><br>${e((p.channels || []).join(', '))} · goes out ${e(when)}</p>
+  const html = `<p>${e(by.name)} has sent a post for your approval.</p><p><b>${e(p.title)}</b><br>${e((Array.isArray(p.channels) ? p.channels : String(p.channels || '').replace(/[{}"]/g, '').split(',')).filter(Boolean).join(', '))} · goes out ${e(when)}</p>
     ${p.caption ? `<p style="white-space:pre-wrap;background:#F7F7FB;padding:10px;border-radius:8px">${e(String(p.caption).slice(0, 1500))}</p>` : ''}
     <p>${files.length ? `${files.length} design file${files.length > 1 ? 's' : ''} attached in the ERP.` : 'No design file attached.'}${p.canva_url ? ` <a href="${e(p.canva_url)}">Open the design in Canva</a>.` : ''}</p>
-    <p><a href="${host}/#/marketing" style="display:inline-block;background:#140C59;color:#fff;padding:10px 16px;border-radius:8px;text-decoration:none">Open Marketing to approve</a></p></div>`;
-  const conn = await mailer.connect();
-  try { await conn.send({ to, subject: (live ? '' : '[TEST] ') + `For your approval: ${p.title}`, html, text: `${by.name} has sent "${p.title}" for your approval. Open ${host}/#/marketing`, fromName: 'Dream India ERP' }); }
-  finally { await conn.close().catch(() => {}); }
-  return { to, test: !live };
+    <p><a href="${host}/#/marketing" style="display:inline-block;background:#140C59;color:#fff;padding:10px 16px;border-radius:8px;text-decoration:none">Open Marketing to approve</a></p>`;
+  return F.send(people, `For your approval: ${p.title}`, html, { text: `${by.name} has sent "${p.title}" for your approval. Open ${host}/#/marketing`, skipped: 'No Management login has an email address.' });
 }
 
 // Active campaigns: everything running now and what it is spending (Meta Ads by day and month, the rest as typed in).
@@ -215,15 +216,17 @@ async function activeCampaigns(scope) {
        coalesce((select sum(d.leads) from mkt_campaign_days d where d.campaign_id = c.id and d.day > current_date - 30), 0)::int as leads30,
        coalesce((select sum(d.messages) from mkt_campaign_days d where d.campaign_id = c.id and d.day > current_date - 30), 0)::int as chats30,
        (select count(*)::int from mkt_leads l where l.campaign_id = c.id and l.created_at > now() - interval '30 days') as crm30,
-       coalesce(c.spent, 0) as spent
+       coalesce(c.spent, 0) as spent, (c.start_on is not null and c.start_on > current_date - 30) as in30, (c.start_on is not null and c.start_on >= $1::date) as in_fy
      from mkt_campaigns c left join projects p on p.id = c.project_id
      where (upper(coalesce(c.ext_status, '')) = 'ACTIVE' or (c.source not in ('meta', 'google') and (c.status = 'active' or c.plan_status = 'approved') and (c.end_on is null or c.end_on >= current_date))
             or exists (select 1 from mkt_campaign_days d where d.campaign_id = c.id and d.day > current_date - 7 and d.spend > 0)) ${projectId ? 'and c.project_id = ' + +projectId : ''}
      order by spend30 desc, c.name`, [fy]);
   const n = (v) => Number(v) || 0;
-  const list = rows.map((r) => { const meta = ['meta', 'google'].includes(r.source), s30 = meta ? n(r.spend30) : n(r.spent), l = Math.max(r.leads30, r.crm30);
-    return { ...r, spend30: s30, spend7: n(r.spend7), yesterday: n(r.yesterday), month: meta ? n(r.month) : null, fy: meta ? n(r.fy) : n(r.spent), daily_budget: r.daily_budget == null ? null : n(r.daily_budget), monthly_budget: r.monthly_budget == null ? null : n(r.monthly_budget),
-      leads30: l, cpl30: l ? s30 / l : null, pace: r.monthly_budget && meta ? n(r.month) / n(r.monthly_budget) : null }; });
+  // a campaign typed in has only its total spent: it counts for the last 30 days / this year only when it started then
+  // (otherwise blank, shown as "—"); its total stays in "spent"
+  const list = rows.map((r) => { const meta = ['meta', 'google'].includes(r.source), s30 = meta ? n(r.spend30) : r.in30 ? n(r.spent) : null, l = Math.max(r.leads30, r.crm30);
+    return { ...r, spend30: s30, spent: n(r.spent), spend7: meta ? n(r.spend7) : null, yesterday: meta ? n(r.yesterday) : null, month: meta ? n(r.month) : null, fy: meta ? n(r.fy) : r.in_fy ? n(r.spent) : null, daily_budget: r.daily_budget == null ? null : n(r.daily_budget), monthly_budget: r.monthly_budget == null ? null : n(r.monthly_budget),
+      leads30: l, cpl30: l && s30 != null ? s30 / l : null, pace: r.monthly_budget && meta ? n(r.month) / n(r.monthly_budget) : null }; });
   const sum = (k) => list.reduce((a, r) => a + (n(r[k]) || 0), 0);
   return { rows: list, totals: { campaigns: list.length, spend30: sum('spend30'), yesterday: sum('yesterday'), month: sum('month'), fy: sum('fy'), leads30: sum('leads30'), chats30: sum('chats30'), daily: sum('daily_budget') } };
 }
@@ -259,7 +262,11 @@ async function mdrill(key, scope, period) {
           from mkt_campaigns c left join projects p on p.id = c.project_id join mkt_campaign_days d on d.campaign_id = c.id and d.day > current_date - 30 where true ${pj('c.project_id')} group by c.id, p.name
           union all select c.name, p.name, 'typed in', c.source, coalesce(c.spent, 0), 0, 0, 0, 0 from mkt_campaigns c left join projects p on p.id = c.project_id where c.source = 'manual' and coalesce(c.start_on, c.created_at::date) > current_date - 30 ${pj('c.project_id')}
           order by 5 desc`);
-    return { title: `Amount spent by campaign (${ytd ? FYT : 'last 30 days'})`, columns: [['name', 'Campaign'], ['project', 'For'], ['ext_status', 'Status'], ['spend', 'Spent', 'inr'], ['seen', 'Seen', 'n'], ['clicks', 'Clicks', 'n'], ['leads', 'Leads (Meta)', 'n'], ['chats', 'Chats', 'n'], ['cpl', 'Per lead', 'inr']],
+    const R = require('../lib/mkt-results'), from = ytd ? fy : R.range('d30').from;
+    for (const x of await db.q(`select coalesce(s.vendor, s.kind) as name, p.name as project, s.kind, s.amount from mkt_spend s left join projects p on p.id = s.project_id where s.spent_on >= $1::date ${pj('s.project_id')} order by s.spent_on desc`, [from]))
+      rows.push({ name: x.name, project: x.project, ext_status: 'spend entry', source: x.kind, spend: +x.amount, leads: 0, chats: 0, seen: 0, clicks: 0 });
+    { const t = await R.teleCost(projectId, from); if (t.cost) rows.push({ name: `Telecallers (${t.days} caller-days)`, project: null, ext_status: 'telecalling', source: 'telecalling', spend: t.cost, leads: 0, chats: 0, seen: 0, clicks: 0 }); }
+    return { title: `Amount spent (${ytd ? FYT : 'last 30 days'})`, columns: [['name', 'Campaign'], ['project', 'For'], ['ext_status', 'Status'], ['spend', 'Spent', 'inr'], ['seen', 'Seen', 'n'], ['clicks', 'Clicks', 'n'], ['leads', 'Leads (Meta)', 'n'], ['chats', 'Chats', 'n'], ['cpl', 'Per lead', 'inr']],
       rows: rows.map((r) => ({ ...r, ext_status: r.ext_status ? String(r.ext_status).replace(/_/g, ' ').toLowerCase() : '', cpl: +r.leads ? Math.round(+r.spend / +r.leads) : null })) };
   }
   if (key === 'views' || key === 'reach') {
@@ -334,21 +341,27 @@ async function mdrill(key, scope, period) {
   throw fail(400, 'Unknown figure.');
 }
 
-// A lead from outside (website form, Meta lead ads via a connector, a property portal): checked by the key in the link.
+// A lead from the website's forms (or a connector given the link): checked by the key in the link, limited per address
+// and per number. These leads are not sent the WhatsApp welcome by themselves (anyone can fill a form with someone
+// else's number); the sales person is given and told of them as usual.
 async function leadHook(req, res) {
   res.setHeader('Cache-Control', 'no-store');
   if (req.method !== 'POST') return res.status(405).json({ error: 'POST a lead as JSON.' });
   const set = await settings();
-  const k = String(req.query.lead || '');
-  if (k.length !== set.leadKey.length || !crypto.timingSafeEqual(Buffer.from(k), Buffer.from(set.leadKey))) return res.status(403).json({ error: 'Wrong key.' });
+  const kind = keyOf(set, String(req.query.lead || ''));
+  if (kind !== 'web' && kind !== 'legacy') return res.status(403).json({ error: 'Wrong key.' });
+  const RL = require('../lib/mkt-rate'), lim = limits(set);
+  if (!(await RL.allow('lead-ip', RL.ipOf(req), lim.leadIpHour, 'hour'))) return res.status(429).json({ error: 'Too many enquiries from here. Please call us instead.' });
   let b = req.body; if (Buffer.isBuffer(b)) b = b.toString('utf8'); if (typeof b === 'string') { try { b = JSON.parse(b); } catch { b = Object.fromEntries(new URLSearchParams(b)); } }
   b = b || {};
   const name = str(b.name || b.full_name || [b.first_name, b.last_name].filter(Boolean).join(' '), 120), phone = phone10(b.phone || b.phone_number || b.mobile), email = str(b.email, 160);
-  if (!phone && !email) return res.status(400).json({ error: 'A lead needs a phone number or an email.' });
-  const projects = await db.q('select id, name, code from projects where active');
+  if (!phone && !email) return res.status(400).json({ error: 'A lead needs a 10-digit phone number or an email.' });
+  if (!(await RL.allow('lead-phone', phone || String(email).toLowerCase(), lim.leadPhoneDay, 'day'))) return res.status(429).json({ error: 'We already have this enquiry. Our team will call you.' });
+  const projects = await db.q('select id, name, code from projects where active order by id');
   const said = `${b.project || ''} ${b.page || ''}`.toLowerCase();
   const words = (n) => String(n).toLowerCase().replace(/^dream\s+(india\s+)?/, '').split(/\W+/).filter((w) => w.length > 3);
-  const pj = projects.find((p) => String(p.id) === String(b.project)) || projects.find((p) => b.project && new RegExp(String(b.project).replace(/[^a-z0-9 ]/gi, ''), 'i').test(p.name))
+  const hint = String(b.project || '').replace(/[^a-z0-9 ]/gi, '').trim(); // a title in another script leaves nothing to match on
+  const pj = projects.find((p) => String(p.id) === String(b.project)) || (hint ? projects.find((p) => new RegExp(hint, 'i').test(p.name)) : null)
     || projects.find((p) => words(p.name).length && words(p.name).every((w) => said.includes(w))) || projects.find((p) => p.code === 'SIGNATURE') || null;
   const source = SOURCES.includes(String(b.source || '').toLowerCase()) ? String(b.source).toLowerCase() : 'website';
   const ext = str(b.id || b.leadgen_id, 120) || null;
@@ -362,7 +375,7 @@ async function leadHook(req, res) {
   const camp = utm.utm_campaign ? await db.one("select id, project_id, source from mkt_campaigns where lower(name) = lower($1) or ext_id = $2 or ext_id = $3 order by id desc limit 1", [utm.utm_campaign, 'meta:' + utm.utm_campaign, 'gads:' + utm.utm_campaign]) : null;
   const paid = /cpc|paid|ads?$|ppc|display/i.test(utm.utm_medium || '') || utm.gclid || utm.first_channel === 'Google Ads' || utm.first_channel === 'Meta Ads';
   const src = source === 'website' && camp && camp.source === 'meta' ? 'meta_ads' : source === 'website' && camp && camp.source === 'google' ? 'google_ads' : source === 'website' && (utm.gclid || (/google/i.test(utm.utm_source || '') && paid)) ? 'google_ads' : source === 'website' && /facebook|instagram|meta|fb|ig/i.test(utm.utm_source || '') && (paid || utm.fbclid) ? 'meta_ads' : source;
-  const r = await require('../lib/mkt-leads').add({ name, phone, email, source: src, projectId: (camp && camp.project_id) || (pj && pj.id), campaignId: camp && camp.id, note: str(b.message || b.note, 1000) || null, ext, utm: Object.keys(utm).length ? utm : null });
+  const r = await require('../lib/mkt-leads').add({ name, phone, email, source: src, projectId: (camp && camp.project_id) || (pj && pj.id), campaignId: camp && camp.id, note: str(b.message || b.note, 1000) || null, ext, utm: Object.keys(utm).length ? utm : null, welcome: false });
   return res.json({ ok: true, id: r.id, duplicate: !!r.duplicate });
 }
 
@@ -375,24 +388,24 @@ async function recordIvrCall({ sid, caller, ivrNo, at, status, duration, rec, di
        recording_url = coalesce(excluded.recording_url, mkt_ivr_calls.recording_url), raw = excluded.raw returning id, lead_id, (xmax = 0) as fresh`,
   [sid || `ivr-${caller}-${at.getTime()}`, caller, ivrNo, at, status, duration, rec, digits, proj, raw || {}]);
   if (!call.lead_id) {
+    // the caller is a lead like any other: one number = one lead (any time), given to sales in turn
     const when = at.toLocaleString('en-IN', { day: 'numeric', month: 'short', hour: 'numeric', minute: '2-digit', timeZone: 'Asia/Kolkata' });
-    const dup = await db.one(`select id from mkt_leads where phone = $1 ${backfill ? '' : "and created_at > now() - interval '30 days'"} order by id desc limit 1`, [caller]);
-    let leadId;
-    if (dup) { leadId = dup.id; await db.q("update mkt_leads set note = concat_ws(E'\\n', note, $2::text), updated_at = now() where id = $1", [dup.id, `Called the IVR again on ${when}`]); }
-    else leadId = (await db.one("insert into mkt_leads (project_id, phone, source, note, ext_id, created_at) values ($1, $2, 'ivr', $3, $4, $5) on conflict (ext_id) where ext_id is not null do update set updated_at = now() returning id", [proj, caller, `Called the IVR${ivrNo ? ' (' + ivrNo + ')' : ''} on ${when}`, 'ivr:' + (sid || caller + at.getTime()), at])).id;
-    await db.q('update mkt_ivr_calls set lead_id = $2 where id = $1', [call.id, leadId]);
+    try {
+      const r = await require('../lib/mkt-leads').add({ phone: caller, source: 'ivr', projectId: proj, note: `Called the IVR${ivrNo ? ' (' + ivrNo + ')' : ''} on ${when}`, ext: 'ivr:' + (sid || caller + at.getTime()), at });
+      await db.q('update mkt_ivr_calls set lead_id = $2 where id = $1', [call.id, r.id]);
+    } catch (x) { console.error('ivr lead', x.message); }
   }
   return call.id;
 }
 
 // A call to the IVR number (Exotel Passthru / status callback, or any IVR that can call a link): GET or POST, checked by the
-// key in the link. Every call is kept; a new number becomes a lead (source IVR), a number already a lead in the last
-// 30 days gets a note. Answers plain 200 "OK" at once, as Exotel expects.
+// key in the link (the IVR key, secret). Every call is kept; a new number becomes a lead (source IVR), a number already a
+// lead gets a note. Answers plain 200 "OK" at once, as Exotel expects.
 async function ivrHook(req, res) {
   res.setHeader('Cache-Control', 'no-store');
   const set = await settings();
-  const k = String((req.query || {}).ivr || '');
-  if (k.length !== set.leadKey.length || !crypto.timingSafeEqual(Buffer.from(k), Buffer.from(set.leadKey))) return res.status(403).end('Wrong key');
+  const kind = keyOf(set, String((req.query || {}).ivr || ''));
+  if (kind !== 'ivr' && kind !== 'legacy') return res.status(403).end('Wrong key');
   let b = req.body; if (Buffer.isBuffer(b)) b = b.toString('utf8'); if (typeof b === 'string') { try { b = JSON.parse(b); } catch { b = Object.fromEntries(new URLSearchParams(b)); } }
   const P = { ...(req.query || {}), ...(b && typeof b === 'object' ? b : {}) };
   const g = (...names) => { for (const n of names) for (const key of Object.keys(P)) if (key.toLowerCase() === n.toLowerCase() && P[key] != null && P[key] !== '') return String(P[key]); return ''; };
@@ -470,8 +483,9 @@ function webChannel({ source, medium, referrer, gclid, fbclid }) {
 async function hitHook(req, res) {
   res.setHeader('Access-Control-Allow-Origin', '*'); res.setHeader('Cache-Control', 'no-store');
   if (req.method === 'OPTIONS') { res.statusCode = 204; return res.end(); }
-  const set = await settings(), k = String((req.query || {}).hit || '');
-  if (k.length !== set.leadKey.length || !crypto.timingSafeEqual(Buffer.from(k), Buffer.from(set.leadKey))) { res.statusCode = 403; return res.end(); }
+  const set = await settings(), by = keyOf(set, String((req.query || {}).hit || ''));
+  if (by !== 'web' && by !== 'legacy') { res.statusCode = 403; return res.end(); }
+  { const RL = require('../lib/mkt-rate'); if (!(await RL.allow('hit-ip', RL.ipOf(req), limits(set).hitIpHour, 'hour'))) { res.statusCode = 429; return res.end(); } }
   let b = req.body; if (Buffer.isBuffer(b)) b = b.toString('utf8'); if (typeof b === 'string') { if (b.length > 6000) { res.statusCode = 413; return res.end(); } try { b = JSON.parse(b); } catch { b = {}; } }
   b = b && typeof b === 'object' ? b : {};
   if (/bot|crawl|spider|slurp|headless|lighthouse|preview|monitor/i.test(String(req.headers['user-agent'] || ''))) { res.statusCode = 204; return res.end(); }
@@ -700,12 +714,20 @@ const handler = route({
       return res.json({ ok: true, id, status });
     }
     if (a === 'post.status') {
-      const id = intOr(d.id), st = d.status;
+      const id = intOr(d.id); let st = d.status;
       if (!STATUSES.includes(st)) throw fail(400, 'Unknown status.');
       if (st === 'approved') { if (!canApprove(u)) throw fail(403, 'Management approves posts.'); await db.q("update mkt_posts set status = 'approved', approved_by = $2, approved_at = now(), review_note = null, updated_at = now() where id = $1", [id, u.id]); }
-      else { editOnly(); await db.q('update mkt_posts set status = $2, post_url = coalesce($3, post_url), updated_by = $4, updated_at = now() where id = $1', [id, st, url(d.postUrl), u.id]); }
+      else {
+        editOnly();
+        // with approvals on, a post not approved yet goes for review instead of to the calendar (as when it is saved)
+        if ((await settings()).needApproval && ['scheduled', 'published'].includes(st) && !canApprove(u)) {
+          const cur = await db.one('select approved_at from mkt_posts where id = $1', [id]);
+          if (!cur || !cur.approved_at) st = 'review';
+        }
+        await db.q('update mkt_posts set status = $2, post_url = coalesce($3, post_url), updated_by = $4, updated_at = now() where id = $1', [id, st, url(d.postUrl), u.id]);
+      }
       await log('status', 'mkt-post', id, { status: st });
-      return res.json({ ok: true });
+      return res.json({ ok: true, status: st });
     }
     // the finished design: an image, PDF or short video exported from Canva (up to 3 MB; a longer video goes as a Drive link)
     if (a === 'post.file') {
@@ -776,7 +798,17 @@ const handler = route({
     }
     if (a === 'ivr.sync') { editOnly(); return res.json({ ok: true, ...(await require('../lib/exotel').sync({ full: !!d.full })) }); }
     if (a === 'post.publish') { editOnly(); return res.json(await require('../lib/mkt-flow').publishDue({ limit: 5 })); }
-    if (a === 'campaign.delete') { editOnly(); await db.q('update mkt_leads set campaign_id = null where campaign_id = $1', [intOr(d.id)]); await db.q('delete from mkt_campaigns where id = $1', [intOr(d.id)]); return res.json({ ok: true }); }
+    if (a === 'campaign.delete') {
+      editOnly(); const id = intOr(d.id);
+      const sch = await db.one("select count(*)::int as n from mkt_posts where campaign_id = $1 and status = 'scheduled'", [id]);
+      if (sch.n) throw fail(409, `This campaign has ${sch.n} scheduled post${sch.n > 1 ? 's' : ''}. Move ${sch.n > 1 ? 'them' : 'it'} back to draft or delete ${sch.n > 1 ? 'them' : 'it'} first.`);
+      await db.tx(async (t) => {
+        await t.q('update mkt_leads set campaign_id = null where campaign_id = $1', [id]);
+        await t.q('update mkt_posts set campaign_id = null where campaign_id = $1', [id]);
+        await t.q('delete from mkt_campaigns where id = $1', [id]);
+      });
+      await log('delete', 'mkt-campaign', id); return res.json({ ok: true });
+    }
 
     if (a === 'lead.save') {
       if (!canEdit(u) && !has(u, 'booking.create')) throw fail(403, 'Your login cannot change leads.');
@@ -786,12 +818,13 @@ const handler = route({
       const v = [await projectOf(d.projectId), str(d.name, 120) || null, phone, email || null, SOURCES.includes(d.source) ? d.source : 'other', intOr(d.campaignId) || null, LEAD_ST.includes(d.status) ? d.status : 'new', intOr(d.assignedTo) || null, d.nextDate || null, str(d.note, 2000) || null];
       let id;
       const L = require('../lib/mkt-leads');
+      // one number, one lead: a number another lead already has is refused (open that lead instead)
+      const other = phone ? await db.one('select id, name from mkt_leads where phone = $1 and id <> $2 limit 1', [phone, intOr(d.id) || 0]) : null;
+      if (other) throw Object.assign(fail(409, `This number is already a lead${other.name ? ' (' + other.name + ')' : ''}.`), { duplicate: other.id });
       if (d.id) { id = intOr(d.id); const was = await db.one('select status from mkt_leads where id = $1', [id]); await db.q('update mkt_leads set project_id=$1, name=$2, phone=$3, email=$4, source=$5, campaign_id=$6, status=$7, assigned_to=$8, next_date=$9, note=$10, updated_at=now() where id=$11', [...v, id]);
         if (was) await L.statusChanged(id, was.status, v[6]);
         if (d.bookingId !== undefined) await db.q('update mkt_leads set booking_id = $2 where id = $1', [id, intOr(d.bookingId) || null]); }
       else {
-        const dup = phone ? await db.one('select id, name from mkt_leads where phone = $1', [phone]) : null;
-        if (dup && !d.force) throw Object.assign(fail(409, `This number is already a lead${dup.name ? ' (' + dup.name + ')' : ''}.`), { duplicate: dup.id });
         id = (await db.one('insert into mkt_leads (project_id, name, phone, email, source, sources, campaign_id, status, assigned_to, next_date, note, created_by) values ($1,$2,$3,$4,$5,array[$5],$6,$7,$8,$9,$10,$11) returning id', [...v, u.id])).id;
         await L.statusChanged(id, 'new', v[6]);
         if (!v[7]) await L.route(id).catch(() => {});
@@ -826,7 +859,14 @@ const handler = route({
       if (Array.isArray(d.channels)) v.channels = d.channels.slice(0, 20).map((c) => ({ network: NETWORKS.includes(c.network) ? c.network : 'website', handle: str(c.handle, 80), url: url(c.url), projectId: pid(c.projectId) })).filter((c) => c.handle || c.url);
       if (d.drive && typeof d.drive === 'object') { v.drive = {}; for (const [k, f] of Object.entries(d.drive)) { const m = String(f || '').match(/(?:folders\/|id=)?([A-Za-z0-9_-]{20,80})/); if (m && (k === 'company' || intOr(k))) v.drive[k] = m[1]; } }
       if (d.needApproval != null) v.needApproval = !!d.needApproval;
-      if (d.newLeadKey && u.role === 'admin') v.leadKey = crypto.randomBytes(12).toString('hex');
+      // addresses that forward portal lead emails to the ERP mailbox (besides the portals' own)
+      if (d.portalForwarders != null) v.portalForwarders = String(Array.isArray(d.portalForwarders) ? d.portalForwarders.join(' ') : d.portalForwarders).toLowerCase().split(/[\s,;]+/).filter((x) => /^[^@\s]+@[^@\s]+\.[a-z]{2,}$/.test(x)).slice(0, 10);
+      // the Admin makes a new key (the old link stops at once) or retires the old single key
+      if (d.rotate) {
+        if (u.role !== 'admin') throw fail(403, 'Only the Admin changes the keys.');
+        if (d.rotate === 'web') v.webKey = newKey(); else if (d.rotate === 'ivr') v.ivrKey = newKey(); else if (d.rotate === 'old') delete v.leadKey; else throw fail(400, 'Which key?');
+        await log('rotate-key', 'settings', 'marketing', { key: d.rotate });
+      }
       await saveSettings(v); await log('update', 'settings', 'marketing', { channels: v.channels.length, drive: Object.keys(v.drive) });
       return res.json({ ok: true });
     }
@@ -945,10 +985,11 @@ const handler = route({
   },
 });
 
-// A design file for Instagram / Facebook to fetch when posting (a signed link; only designs of approved posts).
+// A design file for Instagram / Facebook to fetch when posting (a signed link; only designs of approved, scheduled or
+// published posts). The approval email's pictures carry a preview link that also shows a post in review, for 14 days.
 async function publicFile(req, res) {
   const t = await require('../lib/mkt-flow').verify((req.query || {}).pub);
-  const f = t && t.f ? await db.one("select f.mime, f.data from mkt_post_files f join mkt_posts p on p.id = f.post_id where f.id = $1 and (p.status in ('approved', 'scheduled', 'published') or p.status = 'review')", [t.f]) : null;
+  const f = t && t.f ? await db.one("select f.mime, f.data from mkt_post_files f join mkt_posts p on p.id = f.post_id where f.id = $1 and (p.status in ('approved', 'scheduled', 'published') or ($2 and p.status = 'review'))", [t.f, !!(t.v && t.e)]) : null;
   if (!f) { res.statusCode = 404; return res.end('Not found'); }
   res.setHeader('Content-Type', f.mime); res.setHeader('Cache-Control', 'public, max-age=3600');
   return res.end(Buffer.isBuffer(f.data) ? f.data : Buffer.from(f.data));
@@ -957,7 +998,7 @@ module.exports = (req, res) => ((req.query || {}).approve ? require('../lib/mkt-
   : (req.query || {}).pub ? publicFile(req, res).catch(() => { res.statusCode = 404; res.end('Not found'); })
   : (req.query || {}).hit ? hitHook(req, res).catch((e) => { console.error('hit', e.message); res.statusCode = 204; res.end(); })
   : (req.query || {}).ivr ? ivrHook(req, res).catch((e) => { console.error(e); res.statusCode = 200; res.end('OK'); })
-  : (req.query || {}).lead ? leadHook(req, res).catch((e) => { console.error(e); res.status(500).json({ error: 'Could not save the lead.' }); }) : handler(req, res));
+  : (req.query || {}).lead ? leadHook(req, res).catch((e) => { if (e.status && e.status < 500) return res.status(e.status).json({ error: e.message }); console.error(e); res.status(500).json({ error: 'Could not save the lead.' }); }) : handler(req, res));
 module.exports.settings = settings;
 module.exports.recordIvrCall = recordIvrCall;
 module.exports.webAggregate = webAggregate;

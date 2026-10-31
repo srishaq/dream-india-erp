@@ -263,7 +263,7 @@
       <div class="card"><h3>How it works</h3><ul class="muted" style="margin:0;padding-left:18px">
         <li>Every number is checked against all partners and Dream India's own records.</li>
         <li>If you are the first to register a client, the client is credited to your CP ID for the period Dream India sets; a site visit extends it.</li>
-        <li>Numbers already with another partner, existing Dream India customers, or numbers that asked not to be called are not registered, and you see the reason for each.</li></ul></div>${SECURE}`;
+        <li>Numbers that cannot be registered to you (invalid, repeated, already uploaded by you, asked not to be called, or not open for registration) are listed with the reason.</li></ul></div>${SECURE}`;
     $('#pj').onchange = (e) => { U.projectId = +e.target.value; };
     $('#tpl').onclick = () => download('dream-india-client-upload.csv', [['Mobile', 'Name', 'Configuration', 'Locality', 'Budget', 'Purpose'], ['98XXXXXX10', 'Client name', '2 BHK', 'Andheri West', '1.5 Cr', 'Self use']]);
     const pick = async (f) => {

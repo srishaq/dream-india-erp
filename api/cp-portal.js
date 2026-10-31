@@ -41,7 +41,7 @@ module.exports = route({
       const projects = (await TM.openProjects()).map((p) => ({ id: p.id, name: p.name, location: p.location, rera: p.rera_no, until: TM.iso(p.upload_until) }));
       const docs = await require('../lib/cp-docs').status(c.id);
       return res.json({ docs, profile: profile(c), projects, stats: { leads, active, uploads: uploads.length, bookings: bk.c, status },
-        uploads: uploads.map((u) => ({ id: u.id, at: u.created_at, file: u.file_name, received: u.received, accepted: u.accepted, project: u.project })), areas: AREAS, maxRows: TM.MAX_ROWS });
+        uploads: uploads.map((u) => ({ id: u.id, at: u.created_at, file: u.file_name, received: u.received, accepted: u.accepted, project: u.project })), areas: AREAS, maxRows: Math.min(TM.MAX_ROWS, +(await TM.settings()).partnerDailyRows || TM.PARTNER_DAILY_ROWS) });
     }
     if (Q.docs) { const D2 = require('../lib/cp-docs'); const text = await D2.agreementText(); return res.json({ ...(await D2.status(c.id)), agreement: text, fingerprint: D2.fingerprint(text), rera: c.rera_no, pan: c.pan, gstin: c.gstin }); }
     if (Q.leads) {
@@ -54,7 +54,7 @@ module.exports = route({
     }
     if (Q.issues) {
       const rows = await db.q(`select i.row_no, i.name, i.mobile, i.reason from tm_upload_issues i join tm_uploads u on u.id = i.upload_id where u.id = $1 and u.cp_id = $2 order by i.row_no`, [intOr(Q.issues), c.id]);
-      return res.json({ rows: rows.map((r) => ({ row: r.row_no, name: r.name, mobile: TM.mask(r.mobile), reason: r.reason })) });
+      return res.json({ rows: rows.map((r) => ({ row: r.row_no, name: r.name, mobile: TM.mask(r.mobile), reason: TM.partnerReason(r.reason) })) });
     }
     throw fail(400, 'Unknown request.');
   },
@@ -79,7 +79,7 @@ module.exports = route({
       if (await db.one('select 1 from channel_partners where username is not null and upper(rera_no) = $1', [f.rera])) throw fail(409, 'This MahaRERA number is already registered. Please sign in or contact the Dream India office.');
       const ex = await db.one('select username from channel_partners where name_key = $1', [keyOf(f.firm)]);
       if (ex && ex.username) throw fail(409, 'A firm with this name is already registered. Please sign in or contact the Dream India office.');
-      const r = await CA.newCode({ purpose: 'register', mobile: f.mobile, email: f.email, payload: { ...f, pwHash: CA.hash(b.password) } });
+      const r = await CA.newCode({ purpose: 'register', mobile: f.mobile, email: f.email, ip: CA.ipOf(req), payload: { ...f, pwHash: CA.hash(b.password) } });
       return res.json(r);
     }
     if (a === 'register-verify') {
@@ -90,16 +90,16 @@ module.exports = route({
       const cp = await db.tx(async (t) => {
         if (await t.one('select 1 from channel_partners where lower(username) = $1', [f.username])) throw fail(409, 'This account already exists. Please sign in.');
         const k = keyOf(f.firm);
-        const ex = await t.one('select id, username from channel_partners where name_key = $1 for update', [k]);
+        const ex = await t.one('select id, name, username from channel_partners where name_key = $1 for update', [k]);
         if (ex && ex.username) throw fail(409, 'A firm with this name is already registered.');
-        const vals = [f.username, f.pwHash, f.address, f.area, f.contact, f.designation, f.mobile, f.alt || null, f.email, f.rera, f.callers, status];
-        const sets = `username = $1, pw_hash = $2, office_address = $3, office_area = $4, contact_person = $5, designation = $6, phone = $7, alt_phone = $8, email = $9,
-          rera_no = $10, callers_in_team = $11, portal_status = $12, mobile_verified_at = now(), registered_at = now(),
-          cp_code = coalesce(cp_code, 'DI-CP-' || lpad(nextval('cp_code_seq')::text, 4, '0'))`;
-        const row = ex
-          ? await t.one(`update channel_partners set ${sets} where id = $13 returning *`, [...vals, ex.id])
-          : await t.one('insert into channel_partners (name, name_key) values ($1, $2) returning id', [f.firm, k]).then((x) => t.one(`update channel_partners set ${sets} where id = $13 returning *`, [...vals, x.id]));
-        await audit.record(t.q, { user: null, action: 'partner-register', entity: 'channel-partner', entityId: row.id, after: { cp_code: row.cp_code, firm: row.name, existing_firm: !!ex } });
+        // always a new firm of its own, pending: a firm already in the ERP under the same name (from bookings or brokerage)
+        // is never taken over by whoever registers that name; staff see the possible match and decide
+        const note = ex ? `Possible match: "${ex.name}" (partner #${ex.id}) is already in the ERP. Check that it is the same firm before approving; the two are not joined.` : null;
+        const row = await t.one(`insert into channel_partners (name, name_key, note, username, pw_hash, office_address, office_area, contact_person, designation, phone, alt_phone, email,
+            rera_no, callers_in_team, portal_status, mobile_verified_at, registered_at, cp_code)
+          values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, now(), now(), 'DI-CP-' || lpad(nextval('cp_code_seq')::text, 4, '0')) returning *`,
+        [f.firm, ex ? `${k} [portal ${f.username}]` : k, note, f.username, f.pwHash, f.address, f.area, f.contact, f.designation, f.mobile, f.alt || null, f.email, f.rera, f.callers, status]);
+        await audit.record(t.q, { user: null, action: 'partner-register', entity: 'channel-partner', entityId: row.id, after: { cp_code: row.cp_code, firm: row.name, possible_match: ex ? ex.id : null } });
         return row;
       });
       let sentTo = '';
@@ -123,7 +123,7 @@ module.exports = route({
     if (a === 'forgot-start') {
       const c = await findBy(b.username);
       if (!c) return res.json({ token: 'none', sentTo: 'your registered mobile or email' });
-      return res.json(await CA.newCode({ purpose: 'reset', mobile: TM.mobile(c.phone), email: c.email, payload: { cpId: c.id } }));
+      return res.json(await CA.newCode({ purpose: 'reset', mobile: TM.mobile(c.phone), email: c.email, ip: CA.ipOf(req), payload: { cpId: c.id } }));
     }
     if (a === 'forgot-verify') {
       const pp = CA.passwordProblem(b.password); if (pp) throw fail(400, 'Password: ' + pp);
@@ -139,7 +139,7 @@ module.exports = route({
       if (c.portal_status !== 'approved') throw fail(403, 'Your account is waiting for approval by Dream India. You can upload once it is approved.');
       if (!b.consent) throw fail(400, 'Please confirm that your clients agreed to be contacted.');
       const r = await TM.upload({ cpId: c.id, projectId: intOr(b.projectId), rows: b.rows, fileName: b.fileName });
-      return res.json(r);
+      return res.json(r); // the partner's view: "Not registered" for numbers that are ours or another partner's
     }
     if (a === 'doc-upload') { const r = await require('../lib/cp-docs').upload(c, { kind: b.kind, number: b.number, file: b.file }); await audit.record(db.q, { user: null, action: 'partner-doc', entity: 'channel-partner', entityId: c.id, after: { kind: b.kind } }); return res.json(r); }
     if (a === 'agreement-sign') { const r = await require('../lib/cp-docs').signOnline(c, { name: b.name, agree: !!b.agree, ip: String(req.headers['x-forwarded-for'] || '').split(',')[0] }); await audit.record(db.q, { user: null, action: 'partner-agreement-online', entity: 'channel-partner', entityId: c.id, after: { name: str(b.name, 120) } }); return res.json(r); }

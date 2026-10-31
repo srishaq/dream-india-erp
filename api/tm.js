@@ -71,7 +71,7 @@ module.exports = route({
           (select count(*)::int from tm_leads l where l.cp_id = c.id) as leads,
           (select count(*)::int from tm_leads l where l.cp_id = c.id and l.owner_until >= $1::date) as active,
           (select max(u.created_at) from tm_uploads u where u.cp_id = c.id) as last_upload,
-          (select count(*)::int from bookings b where b.cp_id = c.id and b.status = 'active') as bookings
+          (select count(*)::int from bookings b where b.cp_id = c.id and b.status = 'active') as bookings, c.note
         from channel_partners c left join users r on r.id = c.reviewed_by where c.portal_status is not null
         order by case c.portal_status when 'pending' then 0 when 'approved' then 1 else 2 end, c.registered_at desc`, [TM.istToday()]);
       return res.json({ rows });
@@ -145,7 +145,7 @@ module.exports = route({
     if (a === 'caller-save') {
       const name = str(b.name, 80);
       if (!name) throw fail(400, 'Enter the caller\'s name.');
-      const vals = [name, TM.mobile(b.mobile) || null, Number(b.dailyRate) >= 0 ? Number(b.dailyRate) : 1000, b.active !== false, DATE.test(b.joinedOn || '') ? b.joinedOn : null];
+      const vals = [name, TM.mobile(b.mobile) || null, Number(b.dailyRate) >= 0 ? Number(b.dailyRate) : TM.DEFAULT_RATE, b.active !== false, DATE.test(b.joinedOn || '') ? b.joinedOn : null];
       const r = b.id
         ? await db.one('update tm_callers set name = $1, mobile = $2, daily_rate = $3, active = $4, joined_on = coalesce($5, joined_on) where id = $6 returning id', [...vals, intOr(b.id)])
         : await db.one('insert into tm_callers (name, mobile, daily_rate, active, joined_on) values ($1, $2, $3, $4, coalesce($5::date, current_date)) returning id', vals);
