@@ -156,9 +156,11 @@ module.exports = route({
         throw fail(409, 'Money has been received on this booking. Approve it and then cancel it, so the refund goes to the Cancelled flats register, or reverse the receipts first.');
       await db.tx(async (t) => {
         if (b.action === 'approve') {
-          await t.q("update bookings set status = 'active', approved_by = $2, approved_at = now() where id = $1", [bk.id, u.id]);
+          const ok = await t.one("update bookings set status = 'active', approved_by = $2, approved_at = now() where id = $1 and status = 'pending' returning id", [bk.id, u.id]);
+          if (!ok) throw fail(409, 'Someone else has just dealt with this booking. Refresh the page.');
           await t.q("update units set status = 'booked' where id = $1", [bk.unit_id]);
           const first = await t.one('select name from plan_stages where plan_id = $1 order by seq limit 1', [bk.plan_id]);
+          if (!first) throw fail(400, 'The payment plan of this booking has no stages. Add them under Set-up → Payment plans first.');
           const days = await daysToPay(t);
           const d = await raise(t, { bookingId: bk.id, stageName: first.name, demandDate: bk.booking_date, dueDate: addDays(bk.booking_date, days) });
           // A late booking also owes every construction stage already completed in its building.
@@ -169,7 +171,8 @@ module.exports = route({
           for (const s of done) await raise(t, { bookingId: bk.id, stageName: s.name, demandDate: now, dueDate: addDays(now, days) });
           await log(t, 'approve', { status: 'active', demand: d, catchUp: done.map((s) => s.name) });
         } else {
-          await t.q("update bookings set status = 'rejected', approved_by = $2, approved_at = now() where id = $1", [bk.id, u.id]);
+          const ok = await t.one("update bookings set status = 'rejected', approved_by = $2, approved_at = now() where id = $1 and status = 'pending' returning id", [bk.id, u.id]);
+          if (!ok) throw fail(409, 'Someone else has just dealt with this booking. Refresh the page.');
           await t.q("update units set status = 'available' where id = $1", [bk.unit_id]);
           await log(t, 'reject', { status: 'rejected' }, str(b.reason, 300) || null);
         }
@@ -350,6 +353,7 @@ module.exports = route({
         // demands on the new flat: the booking stage, and every construction stage already completed in its building
         const days = await daysToPay(t), d0 = old.transfer_date || today();
         const first = await t.one('select name from plan_stages where plan_id = $1 order by seq limit 1', [old.plan_id]);
+        if (!first) throw fail(400, 'The payment plan of this booking has no stages. Add them under Set-up → Payment plans first.');
         await raise(t, { bookingId: newId, stageName: first.name, demandDate: d0, dueDate: addDays(d0, days) });
         const done = await t.q(`select s.name from stage_completions c join plan_stages s on s.name = c.stage_name and s.plan_id = $2 where c.building_id = $1 and s.construction_linked order by s.seq`, [to.building_id, old.plan_id]);
         for (const st of done) await raise(t, { bookingId: newId, stageName: st.name, demandDate: today(), dueDate: addDays(today(), days) });
@@ -378,6 +382,7 @@ module.exports = route({
       need('cancellation.approve');
       if (!bk.cancel_requested_at || bk.status !== 'active') throw fail(409, 'No cancellation is waiting for approval.');
       notOwn(u, bk.cancel_requested_by);
+      if (b.action === 'cancel-approve') { const pend = await db.one("select count(*)::int as n from receipts where booking_id = $1 and status = 'pending'", [bk.id]); if (pend.n) throw fail(409, `${pend.n} receipt${pend.n > 1 ? 's are' : ' is'} still waiting for approval on this flat. Approve or reject ${pend.n > 1 ? 'them' : 'it'} first, so the refund is right.`); }
       await db.tx(async (t) => {
         if (b.action === 'cancel-approve') {
           await t.q("update bookings set status = 'cancelled', cancelled_by = $2, cancelled_at = now() where id = $1", [bk.id, u.id]);

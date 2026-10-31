@@ -207,8 +207,10 @@ module.exports = route({
       if (r.status !== 'pending') throw fail(409, 'This receipt is not waiting for approval.');
       notOwn(u, r.created_by);
       const status = b.action === 'approve' ? 'approved' : 'rejected';
+      if (status === 'approved') { const st = await db.one('select status from bookings where id = $1', [r.booking_id]); if (!st || !['active', 'pending'].includes(st.status)) throw fail(409, `This flat's booking is ${st ? st.status : 'gone'}: the receipt cannot be approved on it. Reject it, or record it against the refund in Accounts.`); }
       await db.tx(async (t) => {
-        await t.q('update receipts set status = $2, approved_by = $3, approved_at = now(), reverse_reason = $4 where id = $1', [r.id, status, u.id, b.action === 'reject' ? str(b.reason, 300) || null : null]);
+        const done = await t.one("update receipts set status = $2, approved_by = $3, approved_at = now(), reverse_reason = $4 where id = $1 and status = 'pending' returning id", [r.id, status, u.id, b.action === 'reject' ? str(b.reason, 300) || null : null]);
+        if (!done) throw fail(409, 'Someone else has just dealt with this receipt. Refresh the page.');
         await audit.record(t.q, { user: u, action: b.action, entity: 'receipt', entityId: r.id, projectId: r.project_id, before: { status: r.status }, after: { status }, note: str(b.reason, 300) || null });
       });
       // the buyer gets a WhatsApp thank-you once the payment is approved (payment_received template)
@@ -236,7 +238,8 @@ module.exports = route({
       if (r.status !== 'bounced') throw fail(409, 'This receipt is not marked bounced.');
       const reason = str(b.reason, 300); if (!reason) throw fail(400, 'Say why the cheque did not bounce.');
       await db.tx(async (t) => {
-        await t.q("update receipts set status = 'approved', reverse_reason = null, bank_status = case when bank_status = 'bounced' then null else bank_status end where id = $1", [r.id]);
+        // kept by hand: the bank check no longer links or bounces this receipt on its own
+        await t.q("update receipts set status = 'approved', reverse_reason = null, bank_status = 'cleared', bank_acc_id = null, bank_match = 'kept by hand' where id = $1", [r.id]);
         await audit.record(t.q, { user: u, action: 'unbounce', entity: 'receipt', entityId: r.id, projectId: r.project_id, before: { status: 'bounced', reason: r.reverse_reason }, after: { status: 'approved' }, note: reason });
       });
       return res.json({ ok: true });

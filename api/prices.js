@@ -23,7 +23,7 @@ module.exports = route({
       const unit = await db.one(`select u.*, bl.name as building, p.name as project, p.rera_no from units u join buildings bl on bl.id = u.building_id join projects p on p.id = u.project_id where u.id = $1`, [intOr(q.unit)]);
       if (!unit) throw fail(404, 'Unit not found.');
       needProject(u, unit.project_id);
-      const pl = await db.one(`select * from price_lists where project_id = $1 and active and ($2::int is null or id = $2) order by effective_from desc, id desc limit 1`, [unit.project_id, intOr(q.list)]);
+      const pl = await db.one(`select * from price_lists where project_id = $1 and active and ($2::int is not null and id = $2 or $2::int is null and effective_from <= (now() + interval '330 minutes')::date) order by effective_from desc, id desc limit 1`, [unit.project_id, intOr(q.list)]);
       if (!pl) throw fail(400, 'There is no price list for this project yet. Head CRM or Management can add one on the Price list page.');
       const plan = await db.q('select s.seq, s.name, s.pct from plan_stages s join payment_plans p on p.id = s.plan_id where p.project_id = $1 and p.active order by s.seq', [unit.project_id]);
       const cs = costsheet.fromPriceList(pl, unit, { parking: intOr(q.parking, 0), woman: q.woman === '1', discount: num(q.discount) || 0 }, plan);
@@ -33,7 +33,7 @@ module.exports = route({
     }
     const projectId = needProject(u, intOr(q.project));
     if (q.unsold) {
-      const pl = await db.one('select * from price_lists where project_id = $1 and active order by effective_from desc, id desc limit 1', [projectId]);
+      const pl = await db.one("select * from price_lists where project_id = $1 and active and effective_from <= (now() + interval '330 minutes')::date order by effective_from desc, id desc limit 1", [projectId]);
       if (!pl) return res.json({ priceList: null, rows: [] });
       const units = await db.q(`select u.id, u.unit_no, u.floor, u.typology, u.carpet_sqft, u.status, u.sheet_status, u.hold_note, bl.code as wing
         from units u join buildings bl on bl.id = u.building_id where u.project_id = $1 and not u.sample and u.status in ('available', 'blocked', 'held') and coalesce(bl.kind, '') <> 'rehab'
