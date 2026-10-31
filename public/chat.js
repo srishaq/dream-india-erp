@@ -701,7 +701,7 @@
         </div>
         <button class="go" id="go" title="Voice note">${I.mic}</button>
       </div>
-      <input type="file" id="fPhoto" accept="image/*,video/*" multiple hidden>
+      <input type="file" id="fPhoto" accept="image/*" multiple hidden>
       <input type="file" id="fCam" accept="image/*" capture="environment" hidden>
       <input type="file" id="fDoc" multiple hidden>`;
     const ta = $('#ta'), goBtn = $('#go');
@@ -718,7 +718,7 @@
     autosize(ta); sync();
     goBtn.onclick = () => (ta.value.trim() || S.edit ? send() : record());
     if ($('#rqX')) $('#rqX').onclick = () => { if (S.edit) ta.value = ''; S.reply = null; S.edit = null; renderComposer(); };
-    $('#att').onclick = () => sheet(actions([['🖼️', 'Photos and videos', 'photo'], ['📄', 'Document (PDF, Excel, drawing…)', 'doc'], ['📷', 'Camera', 'cam'], ['📊', 'Poll', 'poll']]), (el, close) => bindActions(el, close, { photo: () => $('#fPhoto').click(), doc: () => $('#fDoc').click(), cam: () => $('#fCam').click(), poll: pollSheet }));
+    $('#att').onclick = () => sheet(actions([['🖼️', 'Photos', 'photo'], ['📄', 'Document (PDF, Excel, drawing…)', 'doc'], ['📷', 'Camera', 'cam'], ['📊', 'Poll', 'poll']]), (el, close) => bindActions(el, close, { photo: () => $('#fPhoto').click(), doc: () => $('#fDoc').click(), cam: () => $('#fCam').click(), poll: pollSheet }));
     $('#cam').onclick = () => $('#fCam').click();
     ['#fPhoto', '#fCam', '#fDoc'].forEach((s) => ($(s).onchange = (e) => { const files = [...e.target.files]; e.target.value = ''; sendFiles(files, s === '#fDoc'); }));
     if (!mobile()) ta.focus();
@@ -805,6 +805,7 @@
     let caption = '';
     if (!asDoc && files.length === 1 && /^image\//.test(files[0].type)) caption = (prompt('Add a caption (optional)') || '').trim();
     for (const file of files.slice(0, 10)) {
+      if (/^video\//.test(file.type) || /\.(mp4|mov|3gp|webm|mkv|avi)$/i.test(file.name)) { toast('Videos cannot be sent on DreamComm. Send photos instead.', 4000); continue; }
       try {
         const s = asDoc ? { blob: file } : await shrink(file);
         if (s.blob.size > MAX) { toast(`${file.name} is too big (${size(s.blob.size)}). Files can be up to 3 MB${/^video/.test(file.type) ? ': send a shorter clip' : ''}.`, 5000); continue; }

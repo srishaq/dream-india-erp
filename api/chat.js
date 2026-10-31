@@ -293,6 +293,7 @@ module.exports = route({
         kind = 'poll'; body = question; card = { question, options, multi: !!b.poll.multi };
       } else if (b.file) {
         const f = b.file, mime = str(f.mime, 100).toLowerCase() || 'application/octet-stream';
+        if (/^video\//.test(mime)) throw fail(400, 'Videos cannot be sent on DreamComm. Send photos instead.');
         if (!ALLOWED.test(mime)) throw fail(400, 'That kind of file cannot be sent. Send photos, videos, voice notes, PDFs, Word, Excel, drawings or zip files.');
         const buf = Buffer.from(String(f.data || ''), 'base64');
         if (!buf.length) throw fail(400, 'The file is empty.');

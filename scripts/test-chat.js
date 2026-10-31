@@ -171,6 +171,7 @@ function phone() {
     assert.equal(part.status, 206); assert.equal(part.headers.get('content-range'), `bytes 0-3/${png.length}`);
     assert.equal((await C.ravi(`/api/chat?file=${img}`, null, { raw: true })).status, 404);
     assert.equal((await C.neha('/api/chat', { action: 'send', room: dm, file: { name: 'x.html', mime: 'text/html', data: 'PGI+' } })).status, 400);
+    assert.match((await C.neha('/api/chat', { action: 'send', room: dm, file: { name: 'slab.mp4', mime: 'video/mp4', data: 'AAAA' } })).error, /Videos cannot be sent/);
     assert.equal((await C.neha('/api/chat', { action: 'send', room: dm, file: { name: 'big.pdf', mime: 'application/pdf', data: Buffer.alloc(3.2 * 1024 * 1024).toString('base64') } })).status, 413);
     const v = await C.neha('/api/chat', { action: 'send', room: dm, file: { name: 'Voice note', mime: 'audio/webm', data: Buffer.from('voice').toString('base64'), sec: 4.2, voice: true, said: 'kal site pe cement aayega' } });
     assert.equal(v.msg.kind, 'voice'); assert.equal(v.msg.file.text, 'kal site pe cement aayega'); // no Claude key: kept as the phone wrote it
