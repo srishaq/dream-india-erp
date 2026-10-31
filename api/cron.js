@@ -38,6 +38,9 @@ module.exports = route({
       out.cheques = await require('../lib/cheque-match').run({ trigger: 'morning' }).catch((e) => ({ error: e.message }));
       out.exotel = await require('../lib/exotel').sync({}).catch((e) => ({ error: e.message })); // yesterday's IVR calls (and the 12-month history, part by part)
       out.social = await require('../lib/social').sync({}).catch((e) => ({ error: e.message })); // yesterday's Instagram, Facebook, Meta Ads and YouTube figures
+      out.gads = await require('../lib/gads').sync({}).catch((e) => ({ error: e.message })); // Google Ads, when connected
+      out.mktAlerts = await require('../lib/mkt-money').alerts({}).catch((e) => ({ error: e.message })); // over budget, cost per lead up, tiring ads
+      out.mktDigest = await require('../lib/mkt-money').digest({}).catch((e) => ({ error: e.message })); // Mondays: last week in Marketing
       for (const dept of ['accounts', 'crm']) {
         if (!secret && await dt.ranToday(dept)) { out[dept] = 'already ran'; continue; }
         const r = await dt.run(dept, { trigger: 'schedule' });
@@ -57,6 +60,8 @@ module.exports = route({
       r.autoLetters = await require('../lib/letters').sendPendingAuto().catch((e) => ({ error: e.message }));
       r.approvals = await require('../lib/staff-alerts').runApprovals().catch((e) => ({ error: e.message }));
       r.socialPosts = await require('../lib/mkt-flow').publishDue().catch((e) => ({ error: e.message })); // approved posts that are due: Instagram and Facebook
+      r.leadsOverdue = await require('../lib/mkt-leads').overdue({}).catch((e) => ({ error: e.message })); // new leads nobody called for 2 hours
+      r.leadStages = await require('../lib/mkt-leads').capi({}).catch((e) => ({ error: e.message })); // lead stages back to Meta
       // Click Connect: once the key is in Vercel, point its webhook at the ERP by itself (once; again if the key changes)
       r.whatsappHook = await (async () => {
         const wa = require('../lib/whatsapp'); if (!wa.ccm()) return null;

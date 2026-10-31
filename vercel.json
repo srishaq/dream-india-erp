@@ -105,6 +105,10 @@
       "destination": "/api/marketing?oauth=meta"
     },
     {
+      "source": "/oauth/canva",
+      "destination": "/api/marketing?oauth=canva"
+    },
+    {
       "source": "/api/me",
       "destination": "/api/portal"
     },

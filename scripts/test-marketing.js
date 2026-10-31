@@ -34,12 +34,34 @@ const fake = http.createServer(async (req, res) => {
     if (q.get('dimensions') === 'day') return J({ columnHeaders: [{ name: 'day' }, ...h.map((name) => ({ name }))], rows: [2, 1, 0].map((k) => [iso(k), 100, 300, 5, 1, 10, 2, 1]) });
     return J({ columnHeaders: [{ name: 'month' }, ...h.map((name) => ({ name }))], rows: [2, 1, 0].map((k) => [mon(k).slice(0, 7), 3000, 9000, 40, 4, 200, 20, 10]) });
   }
+  // Canva, Claude (captions), Google Ads, and Meta's Conversions API
+  if (P === '/canva/oauth/token') { const f = new URLSearchParams(body); if (req.headers.authorization !== 'Basic ' + Buffer.from('cv1:cvs').toString('base64')) return J({ error: 'invalid_client' }, 401); return J(f.get('grant_type') === 'authorization_code' && !f.get('code_verifier') ? { error: 'pkce' } : { access_token: 'CA', refresh_token: 'CR', expires_in: 3600 }); }
+  if (P.startsWith('/canva/') && req.headers.authorization !== 'Bearer CA') return J({ message: 'unauthorised' }, 401);
+  if (P === '/canva/users/me/profile') return J({ profile: { display_name: 'Rupali' } });
+  if (P === '/canva/designs') return J({ items: [{ id: 'D1', title: 'Signature Diwali post', thumbnail: { url: 'http://127.0.0.1:2539/pic.jpg' }, urls: { edit_url: 'https://www.canva.com/design/D1/edit' }, updated_at: 1761900000, page_count: 1 }] });
+  if (P === '/canva/exports' && req.method === 'POST') { global.canvaExport = JSON.parse(body); return J({ job: { id: 'E1', status: 'in_progress' } }); }
+  if (P === '/canva/exports/E1') return J({ job: { id: 'E1', status: 'success', urls: ['http://127.0.0.1:2539/pic.jpg'] } });
+  if (P === '/claude/v1/messages') { global.claudeAsk = JSON.parse(body); return J({ content: [{ type: 'text', text: 'Here you go: ' + JSON.stringify({ options: ['Wake up to the skyline. Book a site visit today. MahaRERA No.: P51800012345 | maharera.maharashtra.gov.in', 'Two', 'Three'] }) }] }); }
+  if (P.startsWith('/gads/v21/customers/1234567890/googleAds:search')) {
+    if (req.headers['developer-token'] !== 'devtok' || req.headers.authorization !== 'Bearer YT2') return J({ error: { message: 'denied' } }, 401);
+    return J({ results: [1, 2, 50].map((k) => ({ campaign: { id: '77', name: 'Signature search', status: 'ENABLED', advertisingChannelType: 'SEARCH', startDate: iso(60) }, segments: { date: iso(k) }, metrics: { costMicros: '1500000000', impressions: '1000', clicks: '50', conversions: '3' } })) });
+  }
+  if (P === '/graph/DS1/events') { global.capi = JSON.parse(body); return J({ events_received: global.capi.data.length }); }
   if (!P.startsWith('/graph')) return J({ error: { message: 'unknown' } }, 404);
   const g = P.slice(6), tok = q.get('access_token');
   if (g === '/oauth/access_token') return J(q.get('fb_exchange_token') ? { access_token: 'LONG', expires_in: 5184000 } : q.get('code') === 'good' ? { access_token: 'SHORT' } : { error: { message: 'bad code' } }, q.get('fb_exchange_token') || q.get('code') === 'good' ? 200 : 400);
   if (!tok || !q.get('appsecret_proof')) return J({ error: { message: 'token missing' } }, 400);
   const series = (val) => { const out = []; for (let d = q.get('since'); d < q.get('until'); d = new Date(Date.parse(d) + 864e5).toISOString().slice(0, 10)) out.push({ value: val, end_time: new Date(Date.parse(d) + 864e5).toISOString().slice(0, 10) + 'T07:00:00+0000' }); return out; };
   if (g === '/me') return J({ id: 'u1', name: 'Rafi' });
+  if (g === '/act_9/insights' && q.get('level') === 'ad') return J({ data: [1, 2, 3, 4, 5, 6, 10, 12, 14].flatMap((k) => [
+    { ad_id: 'a1', ad_name: 'Rooftop pool ad', adset_name: 'Mumbai 25-45', campaign_id: 'c1', spend: '600', impressions: '4000', reach: '900', frequency: k < 7 ? '4.4' : '1.5', clicks: k < 7 ? '8' : '60', actions: [{ action_type: 'lead', value: '1' }], date_start: iso(k) },
+    { ad_id: 'a2', ad_name: 'Sample flat ad', adset_name: 'Mumbai 25-45', campaign_id: 'c1', spend: '400', impressions: '2000', reach: '1500', frequency: '1.3', clicks: '40', actions: [{ action_type: 'lead', value: '3' }], date_start: iso(k) }]) });
+  if (g === '/' && q.get('ids')) return J(Object.fromEntries(q.get('ids').split(',').map((id) => [id, { id, name: id === 'a1' ? 'Rooftop pool ad' : 'Sample flat ad', effective_status: 'ACTIVE', adset: { name: 'Mumbai 25-45' }, creative: { image_url: 'http://127.0.0.1:2539/pic.jpg', body: 'Live above the clouds' } }])));
+  if (g === '/m1/comments') return J({ data: [{ id: 'cm1', text: 'Price for 2 BHK please? 9822211111', username: 'rohan', timestamp: iso(1) + 'T10:00:00+0000' }, { id: 'cm2', text: 'Thank you!', username: 'dreamindiarealty', timestamp: iso(1) + 'T11:00:00+0000' }] });
+  if (g === '/p1_1/comments') return J({ data: [{ id: 'fc1', message: 'Nice project', from: { id: 'u9', name: 'Neha' }, created_time: iso(2) + 'T10:00:00+0000' }] });
+  if (req.method === 'POST' && g === '/cm1/replies') { global.replied = q.get('message'); return J({ id: 'r1' }); }
+  if (g === '/c1' && req.method === 'POST') { global.metaChange = (global.metaChange || []).concat([Object.fromEntries([...q].filter(([k]) => ['status', 'daily_budget'].includes(k)))]); return J({ success: true }); }
+  if (g === '/c1') return J({ id: 'c1', daily_budget: '200000' });
   if (req.method === 'POST' && g === '/p1/photos') { global.posted = (global.posted || []).concat([{ fb: q.get('url'), caption: q.get('caption') }]); return J({ id: 'ph1', post_id: 'p1_99' }); }
   if (req.method === 'POST' && g === '/ig1/media') { global.posted = (global.posted || []).concat([{ ig: q.get('image_url') }]); return J({ id: 'cont1' }); }
   if (req.method === 'POST' && g === '/ig1/media_publish') return J({ id: 'igm9' });
@@ -218,7 +240,7 @@ let n = 0; const step = async (name, fn) => { await fn(); n++; console.log('  âœ
     assert.equal(camp.project_id, sig.id); assert.equal(+camp.spent, 30001.5); assert.equal(camp.ad_leads, 120); assert.equal(camp.messages, 36); assert.equal(+camp.reach, 45000);
     assert.equal((await db.one('select count(*)::int as n from mkt_campaign_months where campaign_id = $1', [camp.id])).n, 3);
     const asha = await db.one("select * from mkt_leads where phone = '9876500001'"); assert.equal(asha.source, 'meta_ads'); assert.equal(asha.campaign_id, camp.id); assert.match(asha.note, /which flat\?: 2BHK/);
-    assert.match((await db.one("select note from mkt_leads where phone = '9820000001' and name = 'Rahul'")).note, /Came again from Meta lead form/);
+    assert.match((await db.one("select note from mkt_leads where phone = '9820000001' and name = 'Rahul'")).note, /Came again from Meta ads.*Meta lead form/);
     // again: nothing doubles
     await M(rupali, 'sync', { part: 'ads' }); await M(rupali, 'sync', { part: 'leads' });
     assert.equal((await db.one("select count(*)::int as n from mkt_campaigns where ext_id = 'meta:c1'")).n, 1);
@@ -316,11 +338,165 @@ let n = 0; const step = async (name, fn) => { await fn(); n++; console.log('  âœ
     assert.equal((await rupali(`/api/marketing?mdrill=campaign&period=c${m.id}&scope=company`)).rows.length, 3);
   });
 
+  await step('Ads one by one come in with their pictures; a tiring ad is flagged; comments come into the Inbox and are answered', async () => {
+    assert.equal((await M(rupali, 'sync', { part: 'ads' })).ok, true);
+    const camp = await db.one("select id from mkt_campaigns where ext_id = 'meta:c1'");
+    const A = await rupali('/api/marketing?ads=' + camp.id);
+    assert.equal(A.ads.length, 2); const a1 = A.ads.find((a) => a.name === 'Rooftop pool ad'), a2 = A.ads.find((a) => a.name === 'Sample flat ad');
+    assert.ok(a1.has_thumb); assert.ok(a1.tiring && a1.tiring.some((w) => /seen 4\.4 times/.test(w)), JSON.stringify(a1.tiring)); assert.equal(a2.tiring, null);
+    assert.ok(a2.cpl30 < a1.cpl30); // the sample flat ad brings cheaper leads
+    const pic = await fetch(BASE + '/api/marketing?adimg=' + a1.id, { headers: {} }); assert.equal(pic.status, 401); // signed in only
+    const ctl = await rupali('/api/marketing?controls=1'); assert.ok(ctl.tiring.some((t) => t.name === 'Rooftop pool ad'));
+    assert.equal((await M(rupali, 'sync', { part: 'comments' })).ok, true);
+    const I = await rupali('/api/marketing?inbox=1');
+    assert.equal(I.rows.length, 2); assert.ok(!I.rows.some((r) => r.author === 'dreamindiarealty')); // our own replies are left out
+    const hot = I.rows.find((r) => r.ext_id === 'cm1'); assert.equal(hot.hot, true);
+    assert.equal((await M(rupali, 'comment.reply', { network: 'instagram', extId: 'cm1', text: 'Thank you Rohan, we have sent you a DM.' })).ok, true); assert.match(global.replied, /Rohan/);
+    const L = await M(rupali, 'comment.lead', { network: 'instagram', extId: 'cm1', phone: '' }); assert.equal(L.ok, true);
+    assert.equal((await db.one('select source, phone from mkt_leads where id = $1', [L.id])).phone, '9822211111');
+  });
+
+  await step('A Meta campaign is paused only after Management approves (from the email link); Management changes a budget at once', async () => {
+    const camp = await db.one("select id from mkt_campaigns where ext_id = 'meta:c1'");
+    assert.equal((await M(crm, 'change.request', { campaignId: camp.id, kind: 'pause' })).status, 403);
+    const r = await M(rupali, 'change.request', { campaignId: camp.id, kind: 'pause', reason: 'cost per lead too high' }); assert.equal(r.pending, true);
+    assert.equal(global.metaChange, undefined); // nothing on Meta yet
+    assert.equal((await rupali('/api/marketing?controls=1')).changes.filter((x) => x.status === 'pending').length, 1);
+    const F = require('../lib/mkt-flow'), sam = await db.one("select id from users where username = 'sameer'");
+    const tok = await F.sign({ r: r.id, k: 'change', u: sam.id, e: Date.now() + 864e5 });
+    assert.match(await (await fetch(BASE + '/api/marketing?approve=' + encodeURIComponent(tok))).text(), /Pause Dream Signature 2BHK leads/);
+    assert.equal(global.metaChange, undefined);
+    const ok = await fetch(BASE + '/api/marketing?approve=' + encodeURIComponent(tok), { method: 'POST', headers: { Origin: 'null' } }); assert.match(await ok.text(), /Done/);
+    assert.deepEqual(global.metaChange, [{ status: 'PAUSED' }]);
+    assert.equal((await db.one('select ext_status from mkt_campaigns where id = $1', [camp.id])).ext_status, 'PAUSED');
+    const b = await M(sameer, 'change.request', { campaignId: camp.id, kind: 'budget', value: '2,500' }); assert.equal(b.status, 'done', JSON.stringify(b));
+    assert.deepEqual(global.metaChange[1], { daily_budget: '250000' });
+    assert.equal((await M(rupali, 'change.request', { campaignId: camp.id, kind: 'budget', value: '50' })).status, 400);
+  });
+
+  await step('Results: every rupee (ads, hoardings, portals) against leads, site visits and bookings, by project, source and campaign', async () => {
+    assert.equal((await M(rupali, 'spend.save', { kind: 'hoarding', amount: '50,000', spentOn: iso(5), projectId: sig.id, vendor: 'Bright Outdoor', note: 'Link Road' })).ok, true);
+    const png = Buffer.from('%PDF-1.4 test').toString('base64');
+    const p2 = await M(rupali, 'spend.save', { kind: 'portal', source: '99acres', amount: '20000', spentOn: iso(3), projectId: sig.id, vendor: '99acres', file: { name: 'inv.pdf', mime: 'application/pdf', data: png } }); assert.equal(p2.ok, true);
+    assert.equal((await M(rupali, 'spend.save', { kind: 'hoarding', amount: '1', spentOn: 'soon' })).status, 400);
+    assert.equal((await M(crm, 'spend.save', { kind: 'hoarding', amount: '1', spentOn: iso(1) })).status, 403);
+    // a buyer who came as a lead before booking
+    const b = await db.one("select right(regexp_replace(y.phone, '\\D', '', 'g'), 10) as p, bk.booking_date, bk.agreement_value from buyers y join booking_applicants a on a.buyer_id = y.id join bookings bk on bk.id = a.booking_id where bk.status = 'active' and y.phone is not null order by bk.id limit 1");
+    await db.q('delete from mkt_leads where phone = $1', [b.p]);
+    await db.q("insert into mkt_leads (project_id, name, phone, source, sources, status, created_at) values ($1, 'Buyer lead', $2, '99acres', '{99acres}', 'contacted', $3::date - 10)", [sig.id, b.p, b.booking_date]);
+    const R = await rupali(`/api/marketing?results=company&period=all`);
+    assert.ok(R.totals.spend >= 70000 + 30001.5, R.totals.spend); assert.ok(R.totals.bookings >= 1); assert.ok(R.totals.value >= +b.agreement_value);
+    const pj = R.byProject.find((x) => x.id === sig.id); assert.ok(pj.spend >= 70000); assert.ok(pj.all_bookings >= 1); assert.ok(pj.cpb > 0);
+    const acres = R.bySource.find((x) => x.source === '99acres'); assert.equal(acres.spend, 20000); assert.equal(acres.bookings, 1); assert.equal(acres.cpb, 20000);
+    assert.ok(R.campaigns.find((c) => c.name === 'Dream Signature 2BHK leads').spend > 0);
+    assert.equal(R.entries.length, 2);
+    const D = await rupali(`/api/marketing?rdrill=bookings&scope=company&period=all`); assert.ok(D.rows.some((r) => r.name === 'Buyer lead' && r.value > 0));
+    assert.equal((await fetch(BASE + '/api/marketing?spendfile=' + p2.id)).status, 401);
+    assert.equal((await M(rupali, 'budgets.save', { budgets: { [sig.id]: '1,00,000' } })).status, 403);
+    assert.equal((await M(sameer, 'budgets.save', { budgets: { [sig.id]: '1,00,000' } })).ok, true);
+    const Y = await rupali(`/api/marketing?results=${sig.id}&period=fy`); assert.equal(Y.byProject.find((x) => x.id === sig.id).budget, 100000);
+  });
+
+  await step('One number, one lead: from any source; given to sales in turn; first call timed; chased after 2 hours; portals and WhatsApp', async () => {
+    const s1 = await db.one("insert into users (username, name, role, password_hash, email) values ('s1', 'Sales One', 'sales', 'x', 's1@x.in') returning id");
+    const s2 = await db.one("insert into users (username, name, role, password_hash, email) values ('s2', 'Sales Two', 'sales', 'x', 's2@x.in') returning id");
+    assert.equal((await M(rupali, 'follow.save', { people: { company: [s1.id, s2.id] }, alertHours: 2, template: 'T1' })).ok, true);
+    const key = (await db.one("select value from settings where key = 'marketing'")).value.leadKey;
+    const post = (b) => fetch(BASE + '/api/marketing?lead=' + key, { method: 'POST', headers: { 'Content-Type': 'application/x-www-form-urlencoded' }, body: new URLSearchParams(b).toString() }).then((r) => r.json());
+    const a = await post({ name: 'Web One', phone: '9700000001', utm_source: 'facebook', utm_campaign: 'Dream Signature 2BHK leads', page: 'https://dreamindiarealty.com/signature' });
+    const c = await post({ name: 'Web Two', phone: '9700000002' });
+    const la = await db.one('select * from mkt_leads where id = $1', [a.id]), lc = await db.one('select * from mkt_leads where id = $1', [c.id]);
+    assert.equal(la.source, 'meta_ads'); assert.ok(la.campaign_id); assert.equal(la.utm.utm_source, 'facebook');
+    assert.notEqual(la.assigned_to, lc.assigned_to); assert.ok([s1.id, s2.id].includes(la.assigned_to) && [s1.id, s2.id].includes(lc.assigned_to));
+    const again = await post({ name: 'Web One', phone: '9700000001', source: 'magicbricks' }); assert.equal(again.duplicate, true); assert.equal(again.id, a.id);
+    assert.deepEqual((await db.one('select array_to_json(sources) as s from mkt_leads where id = $1', [a.id])).s, ['meta_ads', 'magicbricks']);
+    assert.deepEqual((await rupali('/api/marketing?scope=company')).leads.find((l) => l.id === a.id).sources, ['meta_ads', 'magicbricks']);
+    await db.q("update mkt_leads set status = 'lost' where id = $1", [c.id]);
+    await post({ phone: '9700000002', source: 'ivr' }); assert.equal((await db.one('select status from mkt_leads where id = $1', [c.id])).status, 'new'); // came back: open again
+    assert.equal((await M(rupali, 'lead.contact', { id: a.id, outcome: 'visit', note: 'Sunday visit' })).status, 'visit');
+    const ac = await db.one('select first_contact_at, visit_at, note from mkt_leads where id = $1', [a.id]); assert.ok(ac.first_contact_at && ac.visit_at); assert.match(ac.note, /site visit â€” Sunday visit/);
+    await db.q("update mkt_leads set created_at = now() - interval '3 hours', alerted_at = null where id = $1", [c.id]);
+    const L = require('../lib/mkt-leads'), h = new Date(Date.now() + 5.5 * 3600e3).getUTCHours(), od = await L.overdue({});
+    if (h >= 9 && h < 21) { assert.ok(od.sent >= 1, JSON.stringify(od)); assert.ok((await db.one('select alerted_at from mkt_leads where id = $1', [c.id])).alerted_at); assert.equal((await L.overdue({})).sent, 0); } else assert.ok(od.waiting);
+    const P = L.parsePortal({ from: 'leads@99acres.com', subject: 'New response for Dream Signature', text: 'Dear Advertiser,\nName: Kavita Rao\nMobile: +91-98190 12345\nEmail: kavita@example.com\nProject: Dream Signature, Oshiwara\nMessage: Need 2 BHK' });
+    assert.deepEqual([P.portal, P.name, P.phone, P.email], ['99acres', 'Kavita Rao', '9819012345', 'kavita@example.com']);
+    const pl = await L.portalLead({ from: 'leads@99acres.com', subject: 'New response for Dream Signature', text: 'Name: Kavita Rao\nMobile: 9819012345\nProject: Dream Signature', id: '<m1@99acres>' });
+    const kv = await db.one('select source, project_id from mkt_leads where id = $1', [pl.id]); assert.equal(kv.source, '99acres'); assert.equal(kv.project_id, sig.id);
+    assert.equal(L.parsePortal({ from: 'friend@gmail.com', subject: 'Lunch?', text: 'Call me 9819012345' }), null);
+    const w = await L.whatsappIn({ phone: '919755500001', name: 'Imran', text: 'Hi, details of Signature please' }); assert.ok(w.id);
+    assert.equal((await db.one('select source, project_id from mkt_leads where id = $1', [w.id])).source, 'whatsapp');
+    const buyer = await db.one("select phone from buyers where phone is not null limit 1"); if (buyer) assert.equal(await L.whatsappIn({ phone: buyer.phone, text: 'about my demand letter' }), null);
+    const walk = await M(rupali, 'lead.save', { name: 'Walk-in Mehta', phone: '9700000009', source: 'walk_in', status: 'visit', projectId: sig.id }); assert.equal(walk.ok, true);
+    const wk = await db.one('select visit_at, first_contact_at from mkt_leads where id = $1', [walk.id]); assert.ok(wk.visit_at && wk.first_contact_at);
+  });
+
+  await step('Lead stages go back to Meta (Conversions API for CRM) once its dataset is set', async () => {
+    const L = require('../lib/mkt-leads');
+    const r = await L.add({ name: 'Form lead', phone: '9700000011', source: 'meta_ads', ext: 'meta:1234567890', at: new Date(Date.now() - 864e5) });
+    await M(rupali, 'lead.contact', { id: r.id }); await M(rupali, 'lead.contact', { id: r.id, outcome: 'visit' });
+    assert.equal((await db.one('select count(*)::int as n from mkt_capi where lead_id = $1', [r.id])).n, 2);
+    assert.ok((await L.capi({})).skipped); // not set up yet
+    Object.assign(process.env, { META_DATASET_ID: 'DS1', META_CAPI_TOKEN: 'capitok' });
+    const s = await L.capi({}); assert.equal(s.sent, 2, JSON.stringify(s));
+    assert.deepEqual(global.capi.data.map((x) => x.event_name), ['Contacted', 'Site visit']); assert.equal(global.capi.data[0].user_data.lead_id, 1234567890); assert.equal(global.capi.data[0].custom_data.event_source, 'crm'); assert.equal(global.capi.access_token, 'capitok');
+    assert.equal(global.capi.data[0].user_data.ph[0].length, 64); // hashed, never the number itself
+    assert.equal((await L.capi({})).sent, 0);
+    delete process.env.META_DATASET_ID; delete process.env.META_CAPI_TOKEN;
+  });
+
+  await step('MahaRERA: a post for a registered project is not sent or posted without the number (or "on the design")', async () => {
+    await db.q("update projects set rera_no = 'P51800012345' where id = $1", [sig.id]);
+    const p = await M(rupali, 'post.save', { title: 'Sky lounge', channels: ['instagram'], status: 'draft', projectId: sig.id, caption: 'Come home to the skyline' });
+    const no = await M(rupali, 'post.send', { id: p.id }); assert.equal(no.status, 400); assert.match(no.error, /MahaRERA number of Dream Signature/);
+    await M(rupali, 'post.save', { id: p.id, title: 'Sky lounge', channels: ['instagram'], status: 'draft', projectId: sig.id, caption: 'Come home to the skyline. MahaRERA No. P51800012345' });
+    assert.equal((await M(rupali, 'post.send', { id: p.id })).ok, true);
+    const q2 = await M(rupali, 'post.save', { title: 'Lobby', channels: ['instagram'], status: 'draft', projectId: sig.id, caption: 'Lobby', reraOnDesign: true });
+    assert.equal((await M(rupali, 'post.send', { id: q2.id })).ok, true);
+  });
+
+  await step('Canva: connected once, the team\'s designs listed, the chosen one exported and attached; captions drafted with the RERA line', async () => {
+    assert.equal((await M(rupali, 'canva.disconnect', {})).ok, true);
+    Object.assign(process.env, { CANVA_CLIENT_ID: 'cv1', CANVA_CLIENT_SECRET: 'cvs', CANVA_API: 'http://127.0.0.1:2539/canva', CANVA_AUTH: 'http://127.0.0.1:2539/cauth' });
+    const go = await rupali('/api/marketing?connect=canva'); assert.equal(go.status, 302); const to = new URL(go.location);
+    assert.equal(to.searchParams.get('code_challenge_method'), 's256', go.location); assert.equal(to.searchParams.get('redirect_uri'), BASE + '/oauth/canva');
+    const back = await rupali(`/oauth/canva?code=cc&state=${encodeURIComponent(to.searchParams.get('state'))}`); assert.match(decodeURIComponent(back.location), /Canva connected: Rupali/);
+    assert.ok(!JSON.stringify((await db.one("select value from settings where key = 'canva'")).value).includes('CR'), 'sealed');
+    const L = await rupali('/api/marketing?canva=1'); assert.equal(L.items[0].title, 'Signature Diwali post');
+    const p = await M(rupali, 'post.save', { title: 'Diwali', channels: ['instagram'], status: 'draft', projectId: sig.id });
+    const im = await M(rupali, 'canva.import', { postId: p.id, designId: 'D1', type: 'png', editUrl: 'https://www.canva.com/design/D1/edit' }); assert.equal(im.added, 1, JSON.stringify(im));
+    assert.deepEqual(global.canvaExport, { design_id: 'D1', format: { type: 'png' } });
+    assert.equal((await db.one('select count(*)::int as n from mkt_post_files where post_id = $1', [p.id])).n, 1);
+    const th = await rupali('/api/marketing?cimg=' + encodeURIComponent('https://evil.example/x.png')); assert.equal(th.status, 404);
+    assert.equal((await M(rupali, 'caption.draft', { title: 'Diwali' })).status, 409);
+    Object.assign(process.env, { ANTHROPIC_API_KEY: 'k', ANTHROPIC_API_URL: 'http://127.0.0.1:2539/claude' });
+    const cp = await M(rupali, 'caption.draft', { title: 'Sky lounge', projectId: sig.id, language: 'hinglish', channels: ['instagram'] });
+    assert.equal(cp.options.length, 3); assert.match(global.claudeAsk.messages[0].content, /MahaRERA No\.: P51800012345/); assert.match(global.claudeAsk.messages[0].content, /Hinglish/);
+    delete process.env.ANTHROPIC_API_KEY;
+  });
+
+  await step('Google Ads: connected with the Google sign-in, its campaigns come in next to Meta', async () => {
+    Object.assign(process.env, { GOOGLE_ADS_DEVELOPER_TOKEN: 'devtok', GOOGLE_ADS_CUSTOMER_ID: '123-456-7890', GOOGLE_ADS_API: 'http://127.0.0.1:2539/gads', GOOGLE_TOKEN_URL: 'http://127.0.0.1:2539/gtoken' });
+    const go = await rupali('/api/marketing?connect=gads'); const st = new URL(go.location).searchParams.get('state'); assert.match(st, /^ga\./);
+    assert.match(new URL(go.location).searchParams.get('scope'), /adwords/);
+    const back = await rupali(`/oauth/google?code=g1&state=${encodeURIComponent(st)}`); assert.match(decodeURIComponent(back.location), /Google Ads connected/);
+    const r = await M(rupali, 'gads.sync', { full: true }); assert.equal(r.campaigns, 1, JSON.stringify(r));
+    const c = await db.one("select id, source, spent, ad_leads from mkt_campaigns where ext_id = 'gads:77'"); assert.equal(c.source, 'google'); assert.equal(+c.spent, 4500); assert.equal(c.ad_leads, 9);
+    assert.equal((await db.one('select count(*)::int as n from mkt_campaign_days where campaign_id = $1', [c.id])).n, 2); // the last 40 days, day by day
+    const R = await rupali('/api/marketing?results=company&period=all'); assert.ok(R.bySource.some((x) => x.source === 'google_ads' && x.spend === 4500));
+  });
+
+  await step('Money alerts and the Monday email are worked out (sent to the test address only)', async () => {
+    const X = require('../lib/mkt-money');
+    const a = await X.alerts({ force: true }); assert.ok(a.alerts >= 1, JSON.stringify(a)); // the tiring ad at least
+    const d = await X.digest({ force: true }); assert.ok(d.mail);
+    assert.equal((await M(rupali, 'alerts.run', {})).status, 403);
+  });
+
   await step('Disconnecting keeps the figures already pulled; each part remembers its 12-month pull', async () => {
     const c = (await db.one("select value from settings where key = 'social'")).value;
     assert.equal((await M(rupali, 'disconnect', { net: 'meta' })).ok, true);
     const g = await rupali('/api/marketing?scope=company'); assert.equal(g.social.meta.connected, false); assert.equal(g.channels.find((x) => x.network === 'instagram').followers, 2040);
-    assert.ok(c.youtube.backfilled.youtube); assert.equal(c.meta.backfilled, null); // a new connection pulls its 12 months again
+    assert.ok(c.youtube.backfilled.youtube); assert.ok(c.meta.backfilled.ads); // each part remembers its first (12-month) pull
   });
 
   await step('The design library says when no Drive folder is linked, and keeps a pasted folder link as its ID', async () => {

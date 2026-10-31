@@ -21,6 +21,8 @@ const SOURCES = ['instagram', 'facebook', 'meta_ads', 'google_ads', 'youtube', '
 const KINDS = ['post', 'reel', 'story', 'video', 'carousel', 'ad', 'brochure', 'email', 'other'];
 const STATUSES = ['idea', 'draft', 'review', 'approved', 'scheduled', 'published'];
 const LEAD_ST = ['new', 'contacted', 'visit', 'booked', 'lost'];
+const SPEND_KINDS = ['hoarding', 'newspaper', 'portal', 'event', 'agency', 'shoot', 'influencer', 'print', 'radio', 'digital', 'site', 'other'];
+const SPEND_SOURCE = { hoarding: 'hoarding', event: 'event' };
 const DATE = /^\d{4}-\d{2}-\d{2}$/;
 const URLX = /^https?:\/\/[^\s]{3,500}$/i;
 const num = (v) => { const n = Number(String(v ?? '').replace(/[,₹\s]/g, '')); return Number.isFinite(n) ? n : null; };
@@ -118,7 +120,7 @@ async function overview(u, scope, req) {
        (select count(*)::int from mkt_leads l where l.campaign_id = c.id and l.status = 'booked') as booked
      from mkt_campaigns c left join users dz on dz.id = c.designs_ok_by left join users bz on bz.id = c.budget_ok_by left join users sb on sb.id = c.submitted_by
      where ${inScope('c.project_id')} order by (c.source = 'manual') desc, (c.status = 'done'), c.start_on desc nulls last, c.id desc`);
-  const leads = await db.q(`select l.*, a.name as assigned_name, c.name as campaign_name,
+  const leads = await db.q(`select l.*, array_to_json(l.sources) as sources, a.name as assigned_name, c.name as campaign_name,
        exists (select 1 from buyers y join booking_applicants ba on ba.buyer_id = y.id join bookings b on b.id = ba.booking_id join units un on un.id = b.unit_id
                where right(regexp_replace(coalesce(y.phone, ''), '\\D', '', 'g'), 10) = l.phone and b.status in ('active', 'pending') and (l.project_id is null or un.project_id = l.project_id)) as is_buyer
      from mkt_leads l left join users a on a.id = l.assigned_to left join mkt_campaigns c on c.id = l.campaign_id
@@ -132,7 +134,10 @@ async function overview(u, scope, req) {
      from mkt_media where posted_at > now() - interval '30 days' order by coalesce(likes, 0) + coalesce(comments, 0) + coalesce(shares, 0) + coalesce(saves, 0) desc, views desc nulls last limit 8`);
   const per = await periods(projectId, channels.filter((c) => !c.wa && !c.ivr).map((c) => c.network));
   return { periods: per, top, scope: projectId || 'company', projects, team, channels, posts, campaigns, leads, tasks,
-    settings: { channels: set.channels, drive: set.drive, needApproval: !!set.needApproval, share: (() => { try { return require('../lib/sheets').serviceEmail(); } catch { return null; } })(), leadUrl: canEdit(u) ? `/api/marketing?lead=${set.leadKey}` : null, ivrUrl: canEdit(u) ? `/api/marketing?ivr=${set.leadKey}` : null, exotel: await require('../lib/exotel').status() },
+    settings: { channels: set.channels, drive: set.drive, needApproval: !!set.needApproval, share: (() => { try { return require('../lib/sheets').serviceEmail(); } catch { return null; } })(), leadUrl: canEdit(u) ? `/api/marketing?lead=${set.leadKey}` : null, ivrUrl: canEdit(u) ? `/api/marketing?ivr=${set.leadKey}` : null, exotel: await require('../lib/exotel').status(),
+      follow: require('../lib/mkt-leads').follow(set), competitors: (set.competitors || []).map((c) => ({ ...c, ads: require('../lib/mkt-tools').adLibrary(c.name) })),
+      canva: await require('../lib/mkt-tools').canvaStatus(), gads: await require('../lib/gads').status(), capi: await require('../lib/mkt-leads').capiStatus(), ai: require('../lib/mkt-tools').aiOn(),
+      whatsapp: (() => { try { return require('../lib/whatsapp').provider(); } catch { return null; } })() },
     social: { ...social, metaRedirect: canEdit(u) ? require('../lib/social').metaRedirect(req) : null },
     can: { edit: canEdit(u), approve: canApprove(u), admin: u.role === 'admin' }, lists: { networks: NETWORKS, sources: SOURCES, kinds: KINDS, statuses: STATUSES, leadStatuses: LEAD_ST } };
 }
@@ -208,11 +213,11 @@ async function activeCampaigns(scope) {
        (select count(*)::int from mkt_leads l where l.campaign_id = c.id and l.created_at > now() - interval '30 days') as crm30,
        coalesce(c.spent, 0) as spent
      from mkt_campaigns c left join projects p on p.id = c.project_id
-     where (upper(coalesce(c.ext_status, '')) = 'ACTIVE' or (c.source <> 'meta' and (c.status = 'active' or c.plan_status = 'approved') and (c.end_on is null or c.end_on >= current_date))
+     where (upper(coalesce(c.ext_status, '')) = 'ACTIVE' or (c.source not in ('meta', 'google') and (c.status = 'active' or c.plan_status = 'approved') and (c.end_on is null or c.end_on >= current_date))
             or exists (select 1 from mkt_campaign_days d where d.campaign_id = c.id and d.day > current_date - 7 and d.spend > 0)) ${projectId ? 'and c.project_id = ' + +projectId : ''}
      order by spend30 desc, c.name`, [fy]);
   const n = (v) => Number(v) || 0;
-  const list = rows.map((r) => { const meta = r.source === 'meta', s30 = meta ? n(r.spend30) : n(r.spent), l = Math.max(r.leads30, r.crm30);
+  const list = rows.map((r) => { const meta = ['meta', 'google'].includes(r.source), s30 = meta ? n(r.spend30) : n(r.spent), l = Math.max(r.leads30, r.crm30);
     return { ...r, spend30: s30, spend7: n(r.spend7), yesterday: n(r.yesterday), month: meta ? n(r.month) : null, fy: meta ? n(r.fy) : n(r.spent), daily_budget: r.daily_budget == null ? null : n(r.daily_budget), monthly_budget: r.monthly_budget == null ? null : n(r.monthly_budget),
       leads30: l, cpl30: l ? s30 / l : null, pace: r.monthly_budget && meta ? n(r.month) / n(r.monthly_budget) : null }; });
   const sum = (k) => list.reduce((a, r) => a + (n(r[k]) || 0), 0);
@@ -321,11 +326,12 @@ async function leadHook(req, res) {
   const pj = projects.find((p) => String(p.id) === String(b.project) || (b.project && new RegExp(String(b.project).replace(/[^a-z0-9 ]/gi, ''), 'i').test(p.name))) || projects.find((p) => p.code === 'SIGNATURE') || null;
   const source = SOURCES.includes(String(b.source || '').toLowerCase()) ? String(b.source).toLowerCase() : 'website';
   const ext = str(b.id || b.leadgen_id, 120) || null;
-  const dup = phone ? await db.one("select id from mkt_leads where phone = $1 and created_at > now() - interval '30 days'", [phone]) : null;
-  if (dup) { await db.q("update mkt_leads set note = concat_ws(E'\\n', note, $2::text), updated_at = now() where id = $1", [dup.id, `Came again from ${source} on ${new Date().toISOString().slice(0, 10)}`]); return res.json({ ok: true, id: dup.id, duplicate: true }); }
-  const r = await db.one(`insert into mkt_leads (project_id, name, phone, email, source, note, ext_id) values ($1, $2, $3, $4, $5, $6, $7)
-     on conflict (ext_id) where ext_id is not null do update set updated_at = now() returning id`, [pj && pj.id, name || null, phone, email || null, source, str(b.message || b.note, 1000) || null, ext]);
-  return res.json({ ok: true, id: r.id });
+  // the website form sends where the visitor came from (utm_… from the ad link): kept, and the campaign found by its name
+  const utm = {}; for (const k of ['utm_source', 'utm_medium', 'utm_campaign', 'utm_content', 'utm_term', 'gclid', 'fbclid', 'page', 'referrer']) { const v = str(b[k], 300); if (v) utm[k] = v; }
+  const camp = utm.utm_campaign ? await db.one("select id, project_id from mkt_campaigns where lower(name) = lower($1) or ext_id = $2 or ext_id = $3 order by id desc limit 1", [utm.utm_campaign, 'meta:' + utm.utm_campaign, 'gads:' + utm.utm_campaign]) : null;
+  const src = source === 'website' && /google|gclid/i.test(`${utm.utm_source || ''} ${utm.gclid ? 'gclid' : ''}`) ? 'google_ads' : source === 'website' && /facebook|instagram|meta|fb|ig/i.test(utm.utm_source || '') ? 'meta_ads' : source;
+  const r = await require('../lib/mkt-leads').add({ name, phone, email, source: src, projectId: (camp && camp.project_id) || (pj && pj.id), campaignId: camp && camp.id, note: str(b.message || b.note, 1000) || null, ext, utm: Object.keys(utm).length ? utm : null });
+  return res.json({ ok: true, id: r.id, duplicate: !!r.duplicate });
 }
 
 // One IVR call into the ERP (from the live link or the Exotel call history); the caller becomes a lead.
@@ -371,13 +377,53 @@ async function ivrHook(req, res) {
   res.statusCode = 200; res.setHeader('Content-Type', 'text/plain'); return res.end('OK');
 }
 
+// A picture from Meta or Canva, served from our own address (the page allows pictures only from the ERP).
+async function proxyImg(res, src, okHost) {
+  let h = null; try { const x = new URL(src); h = x.protocol === 'https:' || (!process.env.VERCEL && x.hostname === '127.0.0.1') ? x.hostname : null; } catch { h = null; }
+  if (!h || !(okHost(h) || (!process.env.VERCEL && h === '127.0.0.1'))) return res.status(404).json({ error: 'No picture.' });
+  const r = await fetch(src, { redirect: 'follow', signal: AbortSignal.timeout(15000) }).catch(() => null);
+  const type = r && r.headers.get('content-type');
+  if (!r || !r.ok || !/^image\//.test(type || '')) return res.status(404).json({ error: 'No picture.' });
+  const buf = Buffer.from(await r.arrayBuffer()); if (buf.length > 6e6) return res.status(404).json({ error: 'Too big.' });
+  res.setHeader('Content-Type', type); res.setHeader('Cache-Control', 'private, max-age=86400'); return res.end(buf);
+}
+// The ads (designs) of one Meta campaign: last 7 and 30 days, cost per lead, and whether the ad is tiring.
+async function adsOf(campaignId) {
+  const rows = await db.q(`select a.id, a.name, a.adset, a.status, a.body, a.thumb is not null as has_thumb,
+      coalesce(sum(d.spend) filter (where d.day > current_date - 30), 0) as spend30, coalesce(sum(d.leads + d.messages) filter (where d.day > current_date - 30), 0)::int as leads30,
+      coalesce(sum(d.impressions) filter (where d.day > current_date - 30), 0) as imp30, coalesce(sum(d.clicks) filter (where d.day > current_date - 30), 0) as clk30,
+      coalesce(sum(d.spend) filter (where d.day > current_date - 7), 0) as spend7, coalesce(sum(d.leads + d.messages) filter (where d.day > current_date - 7), 0)::int as leads7,
+      max(d.frequency) filter (where d.day > current_date - 7) as freq7
+    from mkt_ads a left join mkt_ad_days d on d.ad_id = a.id where a.campaign_id = $1 group by a.id order by spend30 desc`, [campaignId]);
+  const tired = Object.fromEntries((await require('../lib/mkt-money').tiring(campaignId)).map((t) => [t.id, t.why]));
+  const crm = Object.fromEntries((await db.q("select ad_name, count(*)::int as n, count(*) filter (where status in ('visit', 'booked') or visit_at is not null)::int as v, count(*) filter (where status = 'booked')::int as b from mkt_leads where campaign_id = $1 and ad_name is not null group by ad_name", [campaignId])).map((r) => [r.ad_name, r]));
+  return { ads: rows.map((r) => ({ ...r, spend30: +r.spend30, spend7: +r.spend7, imp30: +r.imp30, clk30: +r.clk30, ctr30: +r.imp30 ? (+r.clk30 / +r.imp30) * 100 : null, cpl30: r.leads30 ? +r.spend30 / r.leads30 : null, freq7: r.freq7 == null ? null : +r.freq7,
+    tiring: tired[r.id] || null, visits: (crm[r.name] || {}).v || 0, booked: (crm[r.name] || {}).b || 0 })) };
+}
+// Comments on our posts (last 30 days), newest first: answered or not.
+async function inbox() {
+  const rows = await db.q(`select c.network, c.ext_id, c.permalink, c.author, c.text, c.at, c.reply, c.replied_at, c.done, c.lead_id, u.name as replied_name, m.caption as post
+      from mkt_comments c left join users u on u.id = c.replied_by left join mkt_media m on m.network = c.network and m.ext_id = c.media_ext where c.at > now() - interval '30 days' or (not c.done and c.reply is null) order by c.at desc nulls last limit 300`);
+  const ask = /price|rate|cost|details?|info|interested|call|contact|whats ?app|number|location|site visit|visit|available|bhk|booking|brochure|kitna|kya|plz|please/i;
+  return { rows: rows.map((r) => ({ ...r, post: String(r.post || '').slice(0, 80), hot: ask.test(r.text || '') })), connected: !!(await require('../lib/social').status()).meta.connected };
+}
+// Best times to post: average engagement of our posts by day of the week and time of day (last 12 months, IST).
+async function postingTimes() {
+  const rows = await db.q(`select extract(dow from posted_at + interval '330 minutes')::int as dow, (extract(hour from posted_at + interval '330 minutes')::int / 3) as slot, count(*)::int as n,
+      avg(coalesce(likes, 0) + coalesce(comments, 0) * 2 + coalesce(shares, 0) * 3 + coalesce(saves, 0) * 3) as eng, avg(views) as views
+    from mkt_media where posted_at > now() - interval '12 months' and network in ('instagram', 'facebook') group by 1, 2`);
+  const kinds = await db.q(`select network, kind, count(*)::int as n, avg(coalesce(likes, 0) + coalesce(comments, 0) * 2 + coalesce(shares, 0) * 3 + coalesce(saves, 0) * 3) as eng, avg(views) as views, avg(reach) as reach
+    from mkt_media where posted_at > now() - interval '12 months' group by 1, 2 having count(*) >= 2 order by eng desc`);
+  return { cells: rows.map((r) => ({ ...r, eng: +r.eng, views: r.views == null ? null : +r.views })), kinds: kinds.map((r) => ({ ...r, eng: +r.eng, views: r.views == null ? null : +r.views, reach: r.reach == null ? null : +r.reach })) };
+}
+
 const handler = route({
   GET: async (req, res) => {
     const u = await auth.guard(req, res); if (!u) return;
     if (!canView(u)) throw fail(403, 'Your login does not open Marketing.');
     const q = req.query || {};
     const social = require('../lib/social');
-    if (q.connect) {
+    if (q.connect && !['canva', 'gads'].includes(q.connect)) {
       if (!canEdit(u)) throw fail(403, 'Only the marketing team connects the channels.');
       res.statusCode = 302; res.setHeader('Location', q.connect === 'youtube' ? await social.ytAuthUrl(req, u.id) : await social.metaAuthUrl(req, u.id)); return res.end();
     }
@@ -408,6 +454,30 @@ const handler = route({
       res.setHeader('Content-Disposition', `${q.dl ? 'attachment' : 'inline'}; filename="${String(f.name).replace(/[^\w.\- ]+/g, '_')}"`);
       return res.end(Buffer.isBuffer(f.data) ? f.data : Buffer.from(f.data));
     }
+    if (q.connect === 'canva') { if (!canEdit(u)) throw fail(403, 'Only the marketing team connects Canva.'); res.statusCode = 302; res.setHeader('Location', await require('../lib/mkt-tools').canvaAuthUrl(req, u.id)); return res.end(); }
+    if (q.connect === 'gads') { if (!canEdit(u)) throw fail(403, 'Only the marketing team connects Google Ads.'); res.statusCode = 302; res.setHeader('Location', await require('../lib/gads').authUrl(req, u.id)); return res.end(); }
+    if (q.oauth === 'canva') {
+      let back; try { const r = await require('../lib/mkt-tools').canvaCallback(req, u.id); back = '/?social=' + encodeURIComponent(`Canva connected${r.name ? ': ' + r.name : ''}. "Pick from Canva" is in every post now.`) + '#/marketing'; } catch (e) { back = '/?social=' + encodeURIComponent(e.message) + '#/marketing'; }
+      res.statusCode = 302; res.setHeader('Location', back); return res.end();
+    }
+    if (q.results != null) return res.json(await require('../lib/mkt-results').results(q.results, String(q.period || 'fy')));
+    if (q.rdrill) return res.json(await require('../lib/mkt-results').drill(String(q.rdrill), q.scope, String(q.period || 'fy')));
+    if (q.ads) return res.json(await adsOf(intOr(q.ads)));
+    if (q.adimg) {
+      const a = await db.one('select thumb from mkt_ads where id = $1', [intOr(q.adimg)]);
+      return proxyImg(res, a && a.thumb, (h) => /(^|\.)(fbcdn\.net|facebook\.com|cdninstagram\.com)$/.test(h));
+    }
+    if (q.cimg) return proxyImg(res, String(q.cimg), (h) => require('../lib/mkt-tools').okCanvaImg('https://' + h + '/'));
+    if (q.spendfile) {
+      const f = await db.one('select file_name, file_mime, file_data from mkt_spend where id = $1 and file_data is not null', [intOr(q.spendfile)]);
+      if (!f) return res.status(404).json({ error: 'No invoice attached.' });
+      res.setHeader('Content-Type', f.file_mime); res.setHeader('Content-Disposition', `inline; filename="${String(f.file_name).replace(/[^\w.\- ]+/g, '_')}"`);
+      return res.end(Buffer.isBuffer(f.file_data) ? f.file_data : Buffer.from(f.file_data));
+    }
+    if (q.canva != null) { if (!canEdit(u)) throw fail(403, 'Only the marketing team picks designs.'); return res.json(await require('../lib/mkt-tools').canvaDesigns({ query: str(q.q, 100), continuation: str(q.next, 500) })); }
+    if (q.inbox != null) return res.json(await inbox());
+    if (q.times != null) return res.json(await postingTimes());
+    if (q.controls != null) return res.json({ changes: await require('../lib/mkt-money').pending(), tiring: await require('../lib/mkt-money').tiring() });
     if (q.report != null) return res.json(await report(q.report));
     if (q.active != null) return res.json(await activeCampaigns(q.scope));
     if (q.mdrill) return res.json(await mdrill(String(q.mdrill), q.scope, String(q.period || 'd30')));
@@ -449,6 +519,7 @@ const handler = route({
       let id;
       if (d.id) { id = intOr(d.id); const r = await db.one('update mkt_posts set project_id=$1, title=$2, kind=$3, channels=$4, publish_at=$5, status=$6, caption=$7, canva_url=$8, asset_url=$9, post_url=$10, note=$11, campaign_id=$12, updated_by=$13, updated_at=now() where id=$14 returning id', [...v, id]); if (!r) throw fail(404, 'That post is not there any more.'); }
       else id = (await db.one('insert into mkt_posts (project_id, title, kind, channels, publish_at, status, caption, canva_url, asset_url, post_url, note, campaign_id, created_by) values ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13) returning id', v)).id;
+      if (d.reraOnDesign != null) await db.q('update mkt_posts set rera_on_design = $2 where id = $1', [id, !!d.reraOnDesign]);
       await log(d.id ? 'update' : 'create', 'mkt-post', id, { title, status });
       return res.json({ ok: true, id, status });
     }
@@ -475,6 +546,7 @@ const handler = route({
     // Rupali sends a post for approval: Management is emailed with the design
     if (a === 'post.send') {
       editOnly();
+      { const cur = await db.one('select id, title, caption, project_id, rera_on_design from mkt_posts where id = $1', [intOr(d.id)]); const m = await require('../lib/mkt-tools').reraMissing(cur); if (m) throw fail(400, m); }
       const p = await db.one("update mkt_posts set status = 'review', sent_at = now(), sent_by = $2, review_note = null, updated_at = now() where id = $1 and status <> 'published' returning *", [intOr(d.id), u.id]);
       if (!p) throw fail(404, 'That post is not there any more.');
       await log('send-for-approval', 'mkt-post', p.id, { title: p.title });
@@ -501,7 +573,7 @@ const handler = route({
       if (d.id && !cur) throw fail(404, 'That campaign is not there any more.');
       const P = [await projectOf(d.projectId), str(d.brief, 4000) || null, chans, num(d.dailyBudget), num(d.monthlyBudget), str(d.note, 1000) || null];
       let id;
-      if (cur && cur.source === 'meta') { // a campaign from Meta Ads: its figures come from Meta; only the plan is ours
+      if (cur && ['meta', 'google'].includes(cur.source)) { // a campaign from Meta / Google Ads: its figures come from Meta; only the plan is ours
         id = cur.id; await db.q('update mkt_campaigns set project_id=$1, brief=$2, channels=$3, daily_budget=$4, monthly_budget=$5, note=$6, updated_at=now() where id=$7', [...P, id]);
       } else {
         const v = [name, chans[0] || str(d.channel, 40) || null, d.startOn || null, d.endOn || null, num(d.budget), num(d.spent), num(d.visits), ['planned', 'active', 'done'].includes(d.status) ? d.status : 'planned'];
@@ -515,7 +587,7 @@ const handler = route({
       await log(d.id ? 'update' : 'create', 'mkt-campaign', id, { name, daily: P[3], monthly: P[4] });
       return res.json({ ok: true, id });
     }
-    if (a === 'campaign.submit') { editOnly(); const r = await require('../lib/mkt-flow').submit(intOr(d.id), u); await log('send-for-approval', 'mkt-campaign', intOr(d.id), {}); return res.json(r); }
+    if (a === 'campaign.submit') { editOnly(); { const m = await require('../lib/mkt-tools').reraCampaign(intOr(d.id)); if (m) throw fail(400, m); } const r = await require('../lib/mkt-flow').submit(intOr(d.id), u); await log('send-for-approval', 'mkt-campaign', intOr(d.id), {}); return res.json(r); }
     if (a === 'campaign.approve') {
       if (!canApprove(u)) throw fail(403, 'Management approves campaigns.');
       if (!['designs', 'budget', 'both'].includes(d.kind)) throw fail(400, 'Approve what?');
@@ -537,11 +609,17 @@ const handler = route({
       if (d.nextDate && !DATE.test(d.nextDate)) throw fail(400, 'The follow-up date looks wrong.');
       const v = [await projectOf(d.projectId), str(d.name, 120) || null, phone, email || null, SOURCES.includes(d.source) ? d.source : 'other', intOr(d.campaignId) || null, LEAD_ST.includes(d.status) ? d.status : 'new', intOr(d.assignedTo) || null, d.nextDate || null, str(d.note, 2000) || null];
       let id;
-      if (d.id) { id = intOr(d.id); await db.q('update mkt_leads set project_id=$1, name=$2, phone=$3, email=$4, source=$5, campaign_id=$6, status=$7, assigned_to=$8, next_date=$9, note=$10, updated_at=now() where id=$11', [...v, id]); }
+      const L = require('../lib/mkt-leads');
+      if (d.id) { id = intOr(d.id); const was = await db.one('select status from mkt_leads where id = $1', [id]); await db.q('update mkt_leads set project_id=$1, name=$2, phone=$3, email=$4, source=$5, campaign_id=$6, status=$7, assigned_to=$8, next_date=$9, note=$10, updated_at=now() where id=$11', [...v, id]);
+        if (was) await L.statusChanged(id, was.status, v[6]);
+        if (d.bookingId !== undefined) await db.q('update mkt_leads set booking_id = $2 where id = $1', [id, intOr(d.bookingId) || null]); }
       else {
         const dup = phone ? await db.one('select id, name from mkt_leads where phone = $1', [phone]) : null;
         if (dup && !d.force) throw Object.assign(fail(409, `This number is already a lead${dup.name ? ' (' + dup.name + ')' : ''}.`), { duplicate: dup.id });
-        id = (await db.one('insert into mkt_leads (project_id, name, phone, email, source, campaign_id, status, assigned_to, next_date, note, created_by) values ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11) returning id', [...v, u.id])).id;
+        id = (await db.one('insert into mkt_leads (project_id, name, phone, email, source, sources, campaign_id, status, assigned_to, next_date, note, created_by) values ($1,$2,$3,$4,$5,array[$5],$6,$7,$8,$9,$10,$11) returning id', [...v, u.id])).id;
+        await L.statusChanged(id, 'new', v[6]);
+        if (!v[7]) await L.route(id).catch(() => {});
+        if (v[6] === 'new' && d.welcome !== false) await L.greet(id).catch(() => {});
       }
       await log(d.id ? 'update' : 'create', 'mkt-lead', id, { source: v[4], status: v[6] });
       return res.json({ ok: true, id });
@@ -578,6 +656,91 @@ const handler = route({
     }
     if (a === 'sync') { editOnly(); return res.json({ ok: true, ...(await require('../lib/social').sync({ full: !!d.full, only: require('../lib/social').PARTS.includes(d.part) ? d.part : null })) }); }
     if (a === 'disconnect') { editOnly(); if (!['meta', 'youtube'].includes(d.net)) throw fail(400, 'Which one?'); await require('../lib/social').disconnect(d.net); await log('disconnect', 'social', d.net); return res.json({ ok: true }); }
+
+    // ---------- spend (other than ads), budgets ----------
+    if (a === 'spend.save') {
+      editOnly();
+      const amount = num(d.amount); if (!(amount >= 0) || amount == null) throw fail(400, 'Enter the amount.');
+      if (!DATE.test(d.spentOn || '')) throw fail(400, 'Enter the date (or the first day it ran).');
+      if (d.until && !DATE.test(d.until)) throw fail(400, 'The end date looks wrong.');
+      const kind = SPEND_KINDS.includes(d.kind) ? d.kind : 'other', source = SOURCES.includes(d.source) ? d.source : (SPEND_SOURCE[kind] || null);
+      const v = [await projectOf(d.projectId), intOr(d.campaignId) || null, kind, source, str(d.vendor, 160) || null, amount, d.spentOn, d.until || null, str(d.note, 1000) || null];
+      let id;
+      if (d.id) { id = intOr(d.id); const r = await db.one('update mkt_spend set project_id=$1, campaign_id=$2, kind=$3, source=$4, vendor=$5, amount=$6, spent_on=$7, until=$8, note=$9, updated_at=now() where id=$10 returning id', [...v, id]); if (!r) throw fail(404, 'That entry is not there any more.'); }
+      else id = (await db.one('insert into mkt_spend (project_id, campaign_id, kind, source, vendor, amount, spent_on, until, note, created_by) values ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10) returning id', [...v, u.id])).id;
+      if (d.file && d.file.data) {
+        const mime = String(d.file.mime || ''), buf = Buffer.from(String(d.file.data), 'base64');
+        if (!/^(image\/(png|jpeg|webp)|application\/pdf)$/.test(mime)) throw fail(400, 'Attach the invoice as a PDF, PNG or JPG.');
+        if (buf.length > 3 * 1024 * 1024) throw fail(400, 'The invoice must be under 3 MB.');
+        await db.q('update mkt_spend set file_name = $2, file_mime = $3, file_data = $4 where id = $1', [id, str(d.file.name, 120) || 'invoice', mime, buf]);
+      }
+      await log(d.id ? 'update' : 'create', 'mkt-spend', id, { kind, amount });
+      return res.json({ ok: true, id });
+    }
+    if (a === 'spend.delete') { editOnly(); await db.q('delete from mkt_spend where id = $1', [intOr(d.id)]); await log('delete', 'mkt-spend', d.id); return res.json({ ok: true }); }
+    if (a === 'budgets.save') {
+      if (!canApprove(u)) throw fail(403, 'Management sets the marketing budgets.');
+      const R = require('../lib/mkt-results'); const fy = DATE.test(d.fy || '') ? d.fy : R.fyStart();
+      const b2 = await R.saveBudgets(fy, d.budgets || {}); await log('update', 'mkt-budgets', fy, b2); return res.json({ ok: true, budgets: b2 });
+    }
+    // ---------- following up leads ----------
+    if (a === 'lead.contact') {
+      if (!canEdit(u) && !has(u, 'booking.create')) throw fail(403, 'Your login cannot change leads.');
+      const r = await require('../lib/mkt-leads').contact(intOr(d.id), u, { outcome: d.outcome, note: str(d.note, 500) });
+      if (!r) throw fail(404, 'That lead is not there any more.'); return res.json({ ok: true, status: r.status });
+    }
+    if (a === 'follow.save') {
+      editOnly();
+      const v = await settings(), f = {};
+      const ids = (x) => (Array.isArray(x) ? x.map(intOr).filter(Boolean).slice(0, 20) : []);
+      f.people = {}; for (const [k, x] of Object.entries(d.people || {})) if (k === 'company' || intOr(k)) f.people[k] = ids(x);
+      f.projects = {}; for (const [k, x] of Object.entries(d.projects || {})) if (intOr(k) && x) f.projects[k] = { brochure: url(x.brochure), template: str(x.template, 80) || null, text: str(x.text, 1000) || null };
+      f.template = str(d.template, 80) || null; f.repTemplate = str(d.repTemplate, 80) || null; f.text = str(d.text, 1000) || null; f.brochure = url(d.brochure);
+      f.alertHours = Math.min(24, Math.max(1, intOr(d.alertHours) || 2)); f.welcome = d.welcome !== false;
+      v.follow = f; await saveSettings(v); await log('update', 'settings', 'marketing-follow', { people: Object.keys(f.people).length });
+      return res.json({ ok: true });
+    }
+    if (a === 'lead.greet') { editOnly(); return res.json({ ok: true, ...(await require('../lib/mkt-leads').greet(intOr(d.id))) }); }
+    // ---------- money controls ----------
+    if (a === 'change.request') { if (!canEdit(u) && !canApprove(u)) throw fail(403, 'Only the marketing team asks for changes.'); const r = await require('../lib/mkt-money').request(u, { campaignId: intOr(d.campaignId), kind: d.kind, value: d.value, reason: str(d.reason, 500) }, { canApprove: canApprove(u) }); await log('change-' + d.kind, 'mkt-campaign', intOr(d.campaignId), r); return res.json(r); }
+    if (a === 'change.decide') { if (!canApprove(u)) throw fail(403, 'Management approves changes.'); const r = await require('../lib/mkt-money').decide(intOr(d.id), !!d.approve, u); await log(d.approve ? 'approve-change' : 'reject-change', 'mkt-change', intOr(d.id), r); return res.json(r); }
+    if (a === 'alerts.run') { if (!canApprove(u) && u.role !== 'admin') throw fail(403, 'Management only.'); return res.json({ ok: true, ...(await require('../lib/mkt-money').alerts({ force: true })) }); }
+    if (a === 'digest.send') { if (!canApprove(u) && u.role !== 'admin') throw fail(403, 'Management only.'); return res.json({ ok: true, ...(await require('../lib/mkt-money').digest({ force: true })) }); }
+    if (a === 'capi.run') { editOnly(); return res.json({ ok: true, ...(await require('../lib/mkt-leads').capi({})) }); }
+    // ---------- the Inbox (comments) ----------
+    if (a === 'comment.reply') {
+      editOnly(); const text = str(d.text, 1000); if (!text) throw fail(400, 'Write the reply.');
+      const c = await db.one('select network, ext_id from mkt_comments where network = $1 and ext_id = $2', [d.network, String(d.extId || '')]); if (!c) throw fail(404, 'That comment is not there any more.');
+      await require('../lib/social').replyComment(c.network, c.ext_id, text);
+      await db.q('update mkt_comments set reply = $3, replied_at = now(), replied_by = $4, done = true where network = $1 and ext_id = $2', [c.network, c.ext_id, text, u.id]);
+      return res.json({ ok: true });
+    }
+    if (a === 'comment.done') { editOnly(); await db.q('update mkt_comments set done = $3 where network = $1 and ext_id = $2', [d.network, String(d.extId || ''), d.done !== false]); return res.json({ ok: true }); }
+    if (a === 'comment.lead') {
+      editOnly(); const c = await db.one('select * from mkt_comments where network = $1 and ext_id = $2', [d.network, String(d.extId || '')]); if (!c) throw fail(404, 'That comment is not there any more.');
+      const phone = phone10(d.phone || (String(c.text).match(/(?:\+?91[\s-]?)?[6-9]\d{4}[\s-]?\d{5}/) || [])[0]); if (!phone) throw fail(400, 'Enter their phone number (ask for it in the reply).');
+      const r = await require('../lib/mkt-leads').add({ name: str(d.name, 120) || c.author, phone, source: c.network, projectId: pid(d.projectId), note: `Comment on ${c.network}: ${String(c.text).slice(0, 300)}`, by: u.id });
+      await db.q('update mkt_comments set lead_id = $3, done = true where network = $1 and ext_id = $2', [c.network, c.ext_id, r.id]);
+      return res.json({ ok: true, id: r.id, duplicate: !!r.duplicate });
+    }
+    // ---------- Canva, captions, competitors, Google Ads ----------
+    if (a === 'canva.import') {
+      editOnly();
+      const post = await db.one('select id from mkt_posts where id = $1', [intOr(d.postId)]); if (!post) throw fail(404, 'Save the post first.');
+      const files = await require('../lib/mkt-tools').canvaExport(str(d.designId, 60), ['png', 'jpg', 'pdf', 'mp4'].includes(d.type) ? d.type : 'png');
+      if (!files.length) throw fail(502, 'Canva gave no file back.');
+      let added = 0;
+      for (const f of files) { if (f.data.length > 3 * 1024 * 1024) continue; await db.q('insert into mkt_post_files (post_id, name, mime, size, data, created_by) values ($1, $2, $3, $4, $5, $6)', [post.id, f.name, f.mime, f.data.length, f.data, u.id]); added++; }
+      if (d.editUrl && url(d.editUrl)) await db.q('update mkt_posts set canva_url = coalesce(canva_url, $2) where id = $1', [post.id, url(d.editUrl)]);
+      if (!added) throw fail(400, 'The export is over 3 MB. Export a smaller size, or put the Drive link in "File or video link".');
+      await log('attach-canva', 'mkt-post', post.id, { design: d.designId, files: added });
+      return res.json({ ok: true, added, skipped: files.length - added });
+    }
+    if (a === 'canva.disconnect') { editOnly(); await require('../lib/mkt-tools').canvaDisconnect(); return res.json({ ok: true }); }
+    if (a === 'caption.draft') { editOnly(); return res.json(await require('../lib/mkt-tools').captions({ title: str(d.title, 200), brief: str(d.brief, 2000), projectId: pid(d.projectId), kind: str(d.kind, 20), channels: Array.isArray(d.channels) ? d.channels.slice(0, 6) : [], language: str(d.language, 10) })); }
+    if (a === 'competitors.save') { editOnly(); const v = await settings(); v.competitors = (Array.isArray(d.list) ? d.list : []).map((c) => ({ name: str(c.name, 80), page: url(c.page) })).filter((c) => c.name).slice(0, 20); await saveSettings(v); return res.json({ ok: true }); }
+    if (a === 'gads.sync') { editOnly(); return res.json({ ok: true, ...(await require('../lib/gads').sync({ full: !!d.full })) }); }
+    if (a === 'gads.disconnect') { editOnly(); await require('../lib/gads').disconnect(); return res.json({ ok: true }); }
     throw fail(400, 'Unknown action.');
   },
 });

@@ -88,6 +88,10 @@
   .mk-dlg{position:fixed;inset:0;background:#10114e66;z-index:80;display:flex;align-items:flex-start;justify-content:center;padding:40px 16px}.mk-dlg .box{background:#fff;border-radius:18px;width:min(1200px,100%);max-height:calc(100vh - 80px);display:flex;flex-direction:column;box-shadow:0 20px 60px #10182855}
   .mk-dlg .hd{display:flex;gap:10px;align-items:center;flex-wrap:wrap;padding:16px 18px;border-bottom:1px solid #EAECF0}.mk-dlg .hd h2{margin:0;font-size:17px;color:#10114e;flex:1;min-width:200px}.mk-dlg .hd input{max-width:220px;margin:0}.mk-dlg .bd{overflow:auto;padding:0 18px 14px}
   .mk-dlg table.mk-t{width:100%;border-collapse:collapse;font-size:13px}.mk-dlg table.mk-t th{position:sticky;top:0;background:#fff;text-align:left;font-size:12px;color:#667085;padding:8px;border-bottom:1px solid #EAECF0;white-space:nowrap}.mk-dlg table.mk-t td{padding:7px 8px;border-bottom:1px solid #F2F4F7;vertical-align:top}
+  .mk-dlg .mk-ads{display:grid;grid-template-columns:repeat(auto-fill,minmax(240px,1fr));gap:12px;margin:0 0 12px}.mk-dlg .mk-adc{border:1px solid #EAECF0;border-radius:14px;overflow:hidden}.mk-dlg .mk-adc .th{aspect-ratio:1.2;background:#F7F7FB}.mk-dlg .mk-adc .th img{width:100%;height:100%;object-fit:cover}.mk-dlg .mk-adc .bd2{padding:10px 12px}
+  .mk-dlg .mk-lib{display:grid;grid-template-columns:repeat(auto-fill,minmax(170px,1fr));gap:12px}.mk-dlg .mk-lib a{display:block;border:1px solid #EAECF0;border-radius:12px;overflow:hidden;text-decoration:none;color:#10114e}.mk-dlg .mk-lib .th{aspect-ratio:4/3;background:#F7F7FB center/cover no-repeat}.mk-dlg .mk-lib .nm{padding:6px 8px;font-size:12px;font-weight:600}.mk-dlg .mk-lib .nm small{display:block;font-weight:400;color:#667085}
+  .mk-dlg .mk-chips{display:flex;gap:6px;flex-wrap:wrap}
+  .mk .mk-ch{display:flex;gap:8px;flex-wrap:wrap;margin:4px 0 6px}.mk .mk-ch label{display:flex;gap:6px;align-items:center;border:1px solid #EAECF0;border-radius:999px;padding:5px 10px;font-weight:500;margin:0;font-size:13px}.mk .mk-ch input{width:auto;margin:0}
   .mk-dl .mk-ch{display:flex;gap:8px;flex-wrap:wrap}.mk-dl .mk-ch label{display:flex;gap:6px;align-items:center;border:1px solid #EAECF0;border-radius:999px;padding:5px 10px;font-weight:500;margin:0}.mk-dl .mk-ch input{width:auto;margin:0}
   `;
   const $ = (s, r = document) => r.querySelector(s), $$ = (s, r = document) => [...r.querySelectorAll(s)];
@@ -119,12 +123,12 @@
     const msg = new URLSearchParams(location.search).get('social');
     if (msg) {
       history.replaceState(null, '', location.pathname + location.hash);
-      if (/^(Connected|YouTube connected)/.test(msg)) { S.tab = 'setup'; paint(); await pullAll(/^YouTube/.test(msg) ? ['youtube'] : ['facebook', 'instagram', 'ads', 'leads'], true, msg); }
+      if (/^(Connected|YouTube connected)/.test(msg)) { S.tab = 'setup'; paint(); await pullAll(/^YouTube/.test(msg) ? ['youtube'] : ['facebook', 'instagram', 'ads', 'leads', 'comments'], true, msg); }
       else alert(msg);
     }
   }
   // Pull part by part (each part in its own call), showing how far it has got.
-  const PART = { facebook: 'Facebook', instagram: 'Instagram', ads: 'Meta Ads campaigns', leads: 'Meta lead forms', youtube: 'YouTube' };
+  const PART = { facebook: 'Facebook', instagram: 'Instagram', ads: 'Meta Ads campaigns and ads', leads: 'Meta lead forms', comments: 'Comments', youtube: 'YouTube' };
   async function pullAll(parts, full, intro) {
     const box = document.createElement('div'); box.className = 'mk-pull';
     document.body.appendChild(box);
@@ -140,7 +144,7 @@
   }
   function paint() {
     const SO = D.social, sync = SO.lastSync, on = [SO.meta.connected && SO.meta.pages.some((p) => p.instagram) && 'Instagram', SO.meta.connected && 'Facebook', SO.meta.connected && SO.meta.ads.length && 'Meta Ads', SO.youtube.connected && 'YouTube'].filter(Boolean);
-    const tabs = [['overview', 'Overview'], ['campaigns', 'Campaigns & spend'], ['active', 'Active campaigns'], ['calendar', 'Content calendar'], ['leads', 'Leads'], ['library', 'Design library'], ['tasks', 'Tasks'], ['report', '12-month report'], ['setup', 'Set-up']];
+    const tabs = [['overview', 'Overview'], ['campaigns', 'Campaigns & spend'], ['active', 'Active campaigns'], ['calendar', 'Content calendar'], ['leads', 'Leads'], ['inbox', 'Inbox'], ['library', 'Design library'], ['tasks', 'Tasks'], ['report', '12-month report'], ['setup', 'Set-up']];
     $('#page').innerHTML = `<div class="mk"><div class="mk-hero"><span class="mk-eyebrow">Company-wide · by project</span><h1>Marketing & Social Media</h1><p>Every channel, post, lead and campaign in one place.</p>
       <div class="mk-sync">${on.length ? `Live from ${on.join(', ')}${sync ? ' · ' + when(sync.at) : ''}` : 'Channels not connected yet (Set-up)'}${SO.meta.error || SO.youtube.error ? '<br><b style="color:#FECDCA">A channel needs connecting again (Set-up)</b>' : ''}</div>
       <div class="mk-scope">${[['company', 'Company'], ...D.projects.map((p) => [String(p.id), p.name])].map(([k, l]) => `<button data-scope="${k}" aria-pressed="${String(S.scope) === k}">${esc(l)}</button>`).join('')}</div></div>
@@ -148,7 +152,7 @@
       <div id="mkBody"></div></div>`;
     $$('#page [data-scope]').forEach((b) => (b.onclick = async () => { S.scope = b.dataset.scope; S.lib = null; await load(); paint(); }));
     $$('#page [data-tab]').forEach((b) => (b.onclick = () => { S.tab = b.dataset.tab; paint(); }));
-    ({ overview, active, report, calendar, leads, campaigns, library, tasks, setup }[S.tab] || overview)();
+    ({ overview, active, report, calendar, leads, inbox, campaigns, library, tasks, setup }[S.tab] || overview)();
   }
   const body = (h) => ($('#mkBody').innerHTML = h);
 
@@ -174,7 +178,7 @@
     const srcs = Object.entries(bySrc).sort((a, b) => b[1] - a[1]); const mx = srcs.length ? srcs[0][1] : 1;
     const f = (s) => D.leads.filter((l) => (s === 'contacted' ? ['contacted', 'visit', 'booked'].includes(l.status) : s === 'visit' ? ['visit', 'booked'].includes(l.status) : l.status === s || (s === 'booked' && l.is_buyer))).length;
     const soc = ch.filter((c) => !c.wa && !c.ivr), bef = (k) => (soc.length && soc.every((c) => c[k + 'Before'] != null) ? sum(k + 'Before') : null); // compared only when the 30 days before were pulled
-    body(`${periodRow('d30', D.periods.d30, 'Last 30 days')}
+    body(`<div id="mkRes"><p class="muted small">Working out cost per lead, visit and booking…</p></div>${periodRow('d30', D.periods.d30, 'Last 30 days')}
       <div class="mk-chans">${ch.map(chanCard).join('') || `<div class="mk-empty">No channels yet. Add Instagram, Facebook, YouTube and the website under Set-up.</div>`}</div>
       ${D.can.approve && D.posts.some((p) => p.status === 'review') ? `<div class="mk-card" style="border-color:#FEC84B;background:#FFFCF5"><h3>Waiting for your approval (${D.posts.filter((p) => p.status === 'review').length})</h3>${apprGrid(D.posts.filter((p) => p.status === 'review'))}</div>` : ''}
       ${D.top.length ? `<div class="mk-card"><h3>Best posts, last 30 days</h3><div class="mk-posts">${D.top.map(postTile).join('')}</div></div>` : ''}
@@ -183,19 +187,20 @@
           <h3 style="margin-top:16px">Where leads come from</h3>${srcs.map(([s, n]) => `<div style="margin:0 0 8px"><div style="display:flex;justify-content:space-between;font-size:13px"><span>${esc(SRC[s] || s)}</span><b>${n}</b></div><div class="mk-bar"><i style="width:${Math.round((n / mx) * 100)}%"></i></div></div>`).join('') || '<p class="muted small" style="margin:0">No leads yet.</p>'}</div></div>`);
     $$('#mkBody [data-post]').forEach((x) => (x.onclick = () => postForm(D.posts.find((p) => p.id === +x.dataset.post))));
     $$('#mkBody [data-md]').forEach((x) => (x.onclick = () => mdrill(x.dataset.md, x.dataset.per)));
+    resultsStrip($('#mkRes'));
   }
   // the rows behind a box
-  async function mdrill(key, per) {
+  async function mdrill(key, per, kind) {
     const dl = document.createElement('div'); dl.className = 'mk-dlg';
     dl.innerHTML = `<div class="box" role="dialog" aria-modal="true"><div class="hd"><h2>Loading…</h2><input type="search" placeholder="Search"><button class="ghost small" data-csv>Download (CSV)</button><button class="ghost small" data-x>Close</button></div><div class="bd"></div></div>`;
     document.body.appendChild(dl);
     const close = () => { dl.remove(); document.removeEventListener('keydown', esc1); }, esc1 = (e) => { if (e.key === 'Escape') close(); };
     document.addEventListener('keydown', esc1); dl.onclick = (e) => { if (e.target === dl || e.target.closest('[data-x]')) close(); };
     let R;
-    try { R = await C.api(`/api/marketing?mdrill=${encodeURIComponent(key)}&scope=${encodeURIComponent(S.scope)}&period=${per || 'd30'}`); } catch (e) { $('.bd', dl).innerHTML = `<div class="err">${esc(e.message)}</div>`; return; }
+    try { R = await C.api(`/api/marketing?${kind === 'r' ? 'rdrill' : 'mdrill'}=${encodeURIComponent(key)}&scope=${encodeURIComponent(S.scope)}&period=${per || 'd30'}`); } catch (e) { $('.bd', dl).innerHTML = `<div class="err">${esc(e.message)}</div>`; return; }
     const fmt = (v, t) => (v == null || v === '' ? '–' : t === 'n' ? nf(+v) : t === 'inr' ? '₹' + Math.round(+v).toLocaleString('en-IN') : t === 'date' ? day(v) : t === 'link' ? `<a href="${esc(v)}" target="_blank" rel="noopener">Open ↗</a>` : esc(v));
     const draw = (q) => { const rows = R.rows.filter((r) => !q || Object.values(r).some((v) => String(v ?? '').toLowerCase().includes(q)));
-      $('h2', dl).textContent = `${R.title} (${rows.length})`;
+      $('h2', dl).textContent = `${R.title}${R.sub ? ' · ' + R.sub : ''} (${rows.length})`;
       $('.bd', dl).innerHTML = rows.length ? `<table class="mk-t"><tr>${R.columns.map(([, l, t]) => `<th style="${t && t !== 'date' && t !== 'link' ? 'text-align:right' : ''}">${esc(l)}</th>`).join('')}</tr>${rows.map((r) => `<tr>${R.columns.map(([k, , t]) => `<td style="${t && t !== 'date' && t !== 'link' ? 'text-align:right;white-space:nowrap' : ''}">${fmt(r[k], t)}</td>`).join('')}</tr>`).join('')}</table>` : '<p class="muted" style="padding:16px 0">Nothing here yet.</p>'; };
     draw('');
     $('input', dl).oninput = (e) => draw(e.target.value.trim().toLowerCase());
@@ -313,6 +318,7 @@
     $$('#mkBody [data-sort]').forEach((th) => (th.onclick = () => { if (S.repSort === th.dataset.sort) S.repDir = -(S.repDir || -1); else { S.repSort = th.dataset.sort; S.repDir = -1; } report(); }));
     if ($('#csvC')) $('#csvC').onclick = () => csv('campaigns-12-months.csv', [COLS.map((c) => c[1]), ...cs.map((c) => COLS.map(([k]) => (k === 'project_id' ? projName(c.project_id) : k === 'cpl' ? (cpl(c) == null ? '' : Math.round(cpl(c))) : k === 'ctr' ? (ctr(c) == null ? '' : ctr(c).toFixed(2)) : val(c, k))))]);
     $$('#mkBody [data-md]').forEach((x) => (x.onclick = () => mdrill(x.dataset.md, x.dataset.per)));
+    { const t = document.createElement('div'); t.id = 'mkTimes'; $('#mkBody').appendChild(t); timesPanel(t); }
     if ($('#csvM')) $('#csvM').onclick = () => csv('marketing-month-by-month.csv', [['Month', 'Ad spend', 'Ad leads', 'Ads seen', 'Clicks', 'Chats', ...netCols.map((c) => c[2]), 'Leads in list', 'Site visits', 'Booked'], ...months.map((x) => [x.m.slice(0, 7), Math.round(x.sp), x.ld, x.imp, x.clk, x.chats, ...netCols.map(([n, k]) => (org[n][x.m] || {})[k] ?? ''), x.crm, x.visits, x.booked])]);
     if ($('#repull')) $('#repull').onclick = () => pullAll([...(D.social.meta.connected ? ['facebook', 'instagram', 'ads', 'leads'] : []), ...(D.social.youtube.connected ? ['youtube'] : [])], true, 'Pulling 12 months again');
   }
@@ -350,12 +356,14 @@
       <label>Channels</label><div class="mk-ch">${['instagram', 'facebook', 'youtube', 'linkedin', 'whatsapp', 'website', 'google'].map((n) => `<label><input type="checkbox" name="ch" value="${n}" ${(pr.channels || []).includes(n) ? 'checked' : ''}>${ic(n, 'mk-ic', NET[n].c)}${NET[n].n}</label>`).join('')}</div>
       <div class="row"><div><label>Goes out on</label><input type="datetime-local" name="publishAt" value="${local}"></div><div><label>Status</label><select name="status">${Object.entries(ST).map(([k, [l]]) => `<option value="${k}" ${pr.status === k ? 'selected' : ''}>${l}</option>`).join('')}</select></div></div>
       <label>Caption</label><textarea name="caption" rows="4" placeholder="Caption and hashtags">${esc(pr.caption)}</textarea>
+      ${ro ? '' : `<div class="mk-actions" style="margin:4px 0 6px"><button type="button" class="ghost small" id="capAi">✨ Draft a caption</button><select id="capLang" style="width:auto;margin:0"><option value="en">English</option><option value="hinglish">Hinglish</option><option value="hi">Hindi</option><option value="mr">Marathi</option></select><span class="small muted">${D.settings.ai ? 'Written by Claude with the project\'s MahaRERA number; edit it before saving.' : 'Needs ANTHROPIC_API_KEY in Vercel.'}</span></div><div id="capOpts"></div>`}
+      <label class="check" style="margin:2px 0 8px"><input type="checkbox" name="reraOnDesign" ${pr.rera_on_design ? 'checked' : ''} ${ro ? 'disabled' : ''}> The MahaRERA number (and QR code) is on the design itself</label>
       <label>Canva design link</label><div style="display:flex;gap:8px"><input name="canvaUrl" value="${esc(pr.canva_url)}" placeholder="https://www.canva.com/design/…" style="flex:1">${pr.canva_url ? `<a class="button ghost" href="${esc(pr.canva_url)}" target="_blank" rel="noopener">Open in Canva ↗</a>` : '<a class="button ghost" href="https://www.canva.com/" target="_blank" rel="noopener">Canva ↗</a>'}</div>
       <div class="row"><div><label>File or video link (Drive)</label><input name="assetUrl" value="${esc(pr.asset_url)}" placeholder="https://drive.google.com/…"></div><div><label>Link to the published post</label><input name="postUrl" value="${esc(pr.post_url)}" placeholder="https://www.instagram.com/p/…"></div></div>
       <div class="row"><div><label>Campaign</label><select name="campaignId"><option value="">—</option>${D.campaigns.map((c) => `<option value="${c.id}" ${pr.campaign_id === c.id ? 'selected' : ''}>${esc(c.name)}</option>`).join('')}</select></div><div><label>Note</label><input name="note" value="${esc(pr.note)}"></div></div>
       <div class="mk-design"><label>Design for approval <span class="muted small" style="font-weight:400">· from Canva: Share → Download (PNG, JPG, PDF or MP4, up to 3 MB each)</span></label>
         <div class="mk-files">${(pr.files || []).map((f) => `<div class="mk-file">${/^image\//.test(f.mime) ? `<a href="/api/marketing?pfile=${f.id}" target="_blank" rel="noopener"><img src="/api/marketing?pfile=${f.id}" alt=""></a>` : /^video\//.test(f.mime) ? `<video src="/api/marketing?pfile=${f.id}" controls preload="metadata"></video>` : `<a class="pdf" href="/api/marketing?pfile=${f.id}" target="_blank" rel="noopener">PDF<small>${esc(f.name)}</small></a>`}${D.can.edit ? `<button type="button" class="ghost small" data-rmf="${f.id}">Remove</button>` : ''}</div>`).join('') || (ro ? '<p class="small muted" style="margin:0">No design attached.</p>' : '')}</div>
-        ${ro ? '' : '<input type="file" id="pfIn" multiple accept="image/png,image/jpeg,image/webp,image/gif,application/pdf,video/mp4">'}</div>
+        ${ro ? '' : `<div class="mk-actions" style="margin:6px 0"><button type="button" class="ghost small" id="pickCanva">Pick from Canva</button><span id="canvaPicked" class="small muted">${D.settings.canva && D.settings.canva.connected ? '' : 'Connect Canva in Set-up to pick designs here.'}</span></div><input type="hidden" name="canvaPick" value=""><input type="file" id="pfIn" multiple accept="image/png,image/jpeg,image/webp,image/gif,application/pdf,video/mp4">`}</div>
       ${pr.review_note ? `<p class="mk-back"><b>Sent back:</b> ${esc(pr.review_note)}</p>` : ''}
       ${pr.publish_log && Object.keys(pr.publish_log).filter((k) => k !== '_done').length ? `<div class="mk-plog"><b>Posting</b>${Object.entries(pr.publish_log).filter(([k]) => k !== '_done').map(([n, x]) => `<div>${esc((NET[n] || {}).n || n)}: ${x.id ? `posted ✓ ${x.url ? `<a href="${esc(x.url)}" target="_blank" rel="noopener">open ↗</a>` : ''}` : x.pending ? 'Instagram is preparing the video…' : x.manual ? 'post by hand (the design is above)' : `<span style="color:#B42318">not posted: ${esc(x.error)}${x.tries >= 3 ? ' (stopped after 3 tries)' : ' (will try again)'}</span>`}</div>`).join('')}</div>` : ''}
       <input type="hidden" name="send" value="">
@@ -365,7 +373,9 @@
     async (x) => {
       if (ro) return;
       const send = x.send === '1'; delete x.send;
-      const r = await C.api('/api/marketing', { action: 'post.save', data: { id: p && p.id, ...x, channels: $$('.mk-dl [name=ch]:checked').map((i) => i.value), publishAt: x.publishAt ? new Date(x.publishAt).toISOString() : null } });
+      const pick = x.canvaPick ? JSON.parse(x.canvaPick) : null; delete x.canvaPick;
+      const r = await C.api('/api/marketing', { action: 'post.save', data: { id: p && p.id, ...x, reraOnDesign: !!$('[name=reraOnDesign]', dl).checked, channels: $$('.mk-dl [name=ch]:checked').map((i) => i.value), publishAt: x.publishAt ? new Date(x.publishAt).toISOString() : null } });
+      if (pick) { C.toast('Getting the design from Canva…'); const im = await C.api('/api/marketing', { action: 'canva.import', data: { postId: r.id, designId: pick.id, type: pick.type, editUrl: pick.edit } }); if (im.skipped) alert(`${im.skipped} page(s) were over 3 MB and were left out.`); }
       const files = $('#pfIn', dl) ? [...$('#pfIn', dl).files] : [];
       for (const f of files) {
         if (f.size > 3 * 1024 * 1024) { alert(`${f.name} is larger than 3 MB. Put a long video's Google Drive link in "File or video link" instead.`); continue; }
@@ -376,6 +386,14 @@
       else if (r.status === 'review' && x.status !== 'review') C.toast('Saved. It goes out once Management approves it.'); else C.toast('Saved.');
       await load(); paint();
     });
+    const ca = $('#capAi', dl); if (ca) ca.onclick = async () => {
+      ca.disabled = true; ca.textContent = 'Writing…';
+      try { const r = await C.api('/api/marketing', { action: 'caption.draft', data: { title: $('[name=title]', dl).value, brief: $('[name=note]', dl).value || ((D.campaigns.find((c) => c.id === +$('[name=campaignId]', dl).value) || {}).brief || ''), projectId: $('[name=projectId]', dl).value, kind: $('[name=kind]', dl).value, channels: $$('.mk-dl [name=ch]:checked').map((i) => i.value), language: $('#capLang', dl).value } });
+        $('#capOpts', dl).innerHTML = r.options.map((o, i) => `<div style="border:1px solid #EAECF0;border-radius:10px;padding:8px 10px;margin:0 0 6px;font-size:13px;white-space:pre-wrap">${esc(o)}<div><button type="button" class="ghost small" data-usecap="${i}">Use this</button></div></div>`).join('');
+        $$('[data-usecap]', dl).forEach((b) => (b.onclick = () => { $('[name=caption]', dl).value = r.options[+b.dataset.usecap]; $('#capOpts', dl).innerHTML = ''; }));
+      } catch (e) { alert(e.message); } finally { ca.disabled = false; ca.textContent = '✨ Draft a caption'; }
+    };
+    const pc = $('#pickCanva', dl); if (pc) pc.onclick = () => canvaPicker((d, type) => { $('[name=canvaPick]', dl).value = JSON.stringify({ id: d.id, type, edit: d.edit }); $('#canvaPicked', dl).innerHTML = `Chosen: <b>${esc(d.title)}</b> (${type.toUpperCase()}): it is fetched from Canva when you press Save.`; if (!$('[name=canvaUrl]', dl).value && d.edit) $('[name=canvaUrl]', dl).value = d.edit; });
     const sp = $('#sendPost', dl); if (sp) sp.onclick = () => { $('[name=send]', dl).value = '1'; $('form', dl).requestSubmit(); };
     const bp = $('#backPost', dl); if (bp) bp.onclick = async () => { const note = prompt('What should change?'); if (!note || !note.trim()) return; await C.api('/api/marketing', { action: 'post.sendback', data: { id: p.id, note } }); dl.close(); dl.remove(); C.toast('Sent back to the marketing team.'); await load(); paint(); };
     $$('[data-rmf]', dl).forEach((b) => (b.onclick = async () => { if (!confirm('Remove this file?')) return; await C.api('/api/marketing', { action: 'post.file.delete', data: { id: +b.dataset.rmf } }); b.closest('.mk-file').remove(); await load(); }));
@@ -386,28 +404,31 @@
   // ---------- leads ----------
   function leads() {
     const q = S.leadQ.toLowerCase();
-    const list = D.leads.filter((l) => (S.leadF === 'all' || l.status === S.leadF || (S.leadF === 'due' && l.next_date && l.next_date.slice(0, 10) <= iso(new Date()))) && (!q || [l.name, l.phone, l.email, l.note].some((v) => String(v || '').toLowerCase().includes(q))));
+    const list = D.leads.filter((l) => (S.leadF === 'all' || l.status === S.leadF || (S.leadF === 'waiting' && l.status === 'new' && !l.first_contact_at) || (S.leadF === 'due' && l.next_date && l.next_date.slice(0, 10) <= iso(new Date()))) && (!q || [l.name, l.phone, l.email, l.note].some((v) => String(v || '').toLowerCase().includes(q))));
     const cnt = (s) => D.leads.filter((l) => l.status === s).length;
-    body(`<div class="mk-actions"><button id="newLead">+ Add a lead</button><input id="lq" placeholder="Search name, phone, email" value="${esc(S.leadQ)}" style="max-width:260px"></div>
-      <div class="mk-chips">${[['all', `All ${D.leads.length}`], ['due', 'Call today'], ...Object.entries(LST).map(([k, [l]]) => [k, `${l} ${cnt(k)}`])].map(([k, l]) => `<button data-lf="${k}" aria-pressed="${S.leadF === k}">${esc(l)}</button>`).join('')}</div>
+    const waiting = D.leads.filter((l) => l.status === 'new' && !l.first_contact_at).length;
+    body(`<div class="mk-actions"><button id="newLead">+ Add a lead</button><button class="ghost" id="walkIn">+ Walk-in at site</button><input id="lq" placeholder="Search name, phone, email" value="${esc(S.leadQ)}" style="max-width:260px"></div>
+      <div class="mk-chips">${[['all', `All ${D.leads.length}`], ['waiting', `Not called yet ${waiting}`], ['due', 'Call today'], ...Object.entries(LST).map(([k, [l]]) => [k, `${l} ${cnt(k)}`])].map(([k, l]) => `<button data-lf="${k}" aria-pressed="${S.leadF === k}">${esc(l)}</button>`).join('')}</div>
       <div class="mk-card" style="padding:6px 10px;overflow-x:auto">${list.length ? `<table class="mk-t"><tr><th>Lead</th><th>Source</th><th>For</th><th>Status</th><th>Next call</th><th>With</th><th></th></tr>${list.slice(0, 400).map((l) => `<tr><td><b>${esc(l.name || '—')}</b><div class="small muted">${esc(l.phone || '')}${l.email ? ' · ' + esc(l.email) : ''}</div></td><td><span class="mk-pill">${esc(SRC[l.source] || l.source)}</span>${l.campaign_name ? `<div class="small muted">${esc(l.campaign_name)}</div>` : ''}</td><td class="small">${esc(projName(l.project_id))}</td>
-        <td><span class="mk-pill" style="color:${LST[l.status][1]}"><span class="mk-dot" style="background:${LST[l.status][1]}"></span>${LST[l.status][0]}</span>${l.is_buyer ? ' <span class="mk-pill" style="background:#ECFDF3;color:#067647">Buyer in CRM ✓</span>' : ''}</td><td class="small">${l.next_date ? day(l.next_date) : ''}</td><td class="small">${esc(l.assigned_name || '')}</td>
-        <td style="white-space:nowrap">${l.phone ? `<a href="tel:+91${esc(l.phone)}" title="Call">📞</a> <a href="https://wa.me/91${esc(l.phone)}" target="_blank" rel="noopener" title="WhatsApp">💬</a> ` : ''}<button class="ghost small" data-lead="${l.id}">Open</button></td></tr>`).join('')}</table>` : '<div class="mk-empty">No leads here yet. Add one, or connect the website form and ad forms under Set-up.</div>'}</div>`);
+        <td><span class="mk-pill" style="color:${LST[l.status][1]}"><span class="mk-dot" style="background:${LST[l.status][1]}"></span>${LST[l.status][0]}</span>${l.is_buyer ? ' <span class="mk-pill" style="background:#ECFDF3;color:#067647">Buyer in CRM ✓</span>' : ''}${waitTag(l)}${(l.sources || []).length > 1 ? `<div class="small muted">also ${esc(l.sources.filter((x) => x !== l.source).map((x) => SRC[x] || x).join(', '))}</div>` : ''}</td><td class="small">${l.next_date ? day(l.next_date) : ''}</td><td class="small">${esc(l.assigned_name || '')}</td>
+        <td style="white-space:nowrap">${l.phone ? `<a href="tel:+91${esc(l.phone)}" title="Call">📞</a> <a href="https://wa.me/91${esc(l.phone)}" target="_blank" rel="noopener" title="WhatsApp">💬</a> ` : ''}${l.status === 'new' || l.status === 'contacted' ? `<button class="small" data-called="${l.id}">${l.status === 'new' ? 'Called' : 'Update'}</button> ` : ''}<button class="ghost small" data-lead="${l.id}">Open</button></td></tr>`).join('')}</table>` : '<div class="mk-empty">No leads here yet. Add one, or connect the website form and ad forms under Set-up.</div>'}</div>`);
     $('#newLead').onclick = () => leadForm(null);
+    $('#walkIn').onclick = () => leadForm(null, { walkIn: true });
+    $$('#mkBody [data-called]').forEach((b) => (b.onclick = () => calledForm(D.leads.find((l) => l.id === +b.dataset.called))));
     $('#lq').oninput = (e) => { S.leadQ = e.target.value; clearTimeout(S.t); S.t = setTimeout(() => { leads(); const i = $('#lq'); i.focus(); i.setSelectionRange(i.value.length, i.value.length); }, 250); };
     $$('#mkBody [data-lf]').forEach((b) => (b.onclick = () => { S.leadF = b.dataset.lf; leads(); }));
     $$('#mkBody [data-lead]').forEach((b) => (b.onclick = () => leadForm(D.leads.find((l) => l.id === +b.dataset.lead))));
   }
-  function leadForm(l) {
-    const x = l || { status: 'new', source: 'instagram', project_id: S.scope === 'company' ? (D.projects.find((p) => /signature/i.test(p.name)) || {}).id : +S.scope };
-    const dl = C.dialog(`<div class="mk-dl"><h2>${l ? 'Lead' : 'Add a lead'}</h2>
+  function leadForm(l, opt = {}) {
+    const x = l || { status: opt.walkIn ? 'visit' : 'new', source: opt.walkIn ? 'walk_in' : 'instagram', project_id: S.scope === 'company' ? (D.projects.find((p) => /signature/i.test(p.name)) || {}).id : +S.scope };
+    const dl = C.dialog(`<div class="mk-dl"><h2>${l ? 'Lead' : opt.walkIn ? 'Walk-in at site' : 'Add a lead'}</h2>${opt.walkIn ? '<p class="small muted" style="margin:0 0 8px">Someone who came to the site office. Saved as a site visit; it counts in cost per visit and booking.</p>' : ''}
       <div class="row"><div><label>Name</label><input name="name" value="${esc(x.name)}"></div><div><label>Mobile</label><input name="phone" value="${esc(x.phone)}" inputmode="tel"></div></div>
       <div class="row"><div><label>Email</label><input name="email" value="${esc(x.email)}"></div><div><label>For</label><select name="projectId"><option value="company">Company</option>${D.projects.map((p) => `<option value="${p.id}" ${x.project_id === p.id ? 'selected' : ''}>${esc(p.name)}</option>`).join('')}</select></div></div>
       <div class="row"><div><label>Came from</label><select name="source">${Object.entries(SRC).map(([k, v]) => `<option value="${k}" ${x.source === k ? 'selected' : ''}>${v}</option>`).join('')}</select></div><div><label>Campaign</label><select name="campaignId"><option value="">—</option>${D.campaigns.map((c) => `<option value="${c.id}" ${x.campaign_id === c.id ? 'selected' : ''}>${esc(c.name)}</option>`).join('')}</select></div></div>
       <div class="row"><div><label>Status</label><select name="status">${Object.entries(LST).map(([k, [v]]) => `<option value="${k}" ${x.status === k ? 'selected' : ''}>${v}</option>`).join('')}</select></div><div><label>Next call</label><input type="date" name="nextDate" value="${esc((x.next_date || '').slice(0, 10))}"></div></div>
       <label>Handled by</label><select name="assignedTo"><option value="">—</option>${D.team.map((u) => `<option value="${u.id}" ${x.assigned_to === u.id ? 'selected' : ''}>${esc(u.name)}</option>`).join('')}</select>
       <label>Notes</label><textarea name="note" rows="3">${esc(x.note)}</textarea>
-      ${l ? `<p class="small muted">Added ${day(l.created_at)}. ${D.can.edit ? '<a href="#" id="delLead" style="color:#B42318">Delete</a>' : ''}</p>` : ''}</div>`,
+      ${l ? `<p class="small muted">Came in ${when(l.created_at)}${(l.sources || []).length ? ' · from ' + esc(l.sources.map((x) => SRC[x] || x).join(', ')) : ''}${l.first_contact_at ? ' · first called ' + when(l.first_contact_at) + ' (' + mins(l.created_at, l.first_contact_at) + ' later)' : ''}${l.welcomed_at ? ' · WhatsApp welcome sent' : ''}${l.utm ? ' · ' + esc(Object.entries(l.utm).map(([k, v]) => k.replace('utm_', '') + ': ' + v).join(', ')) : ''}. ${D.can.edit ? '<a href="#" id="delLead" style="color:#B42318">Delete</a>' : ''}</p>` : ''}</div>`,
     async (v) => {
       try { await C.api('/api/marketing', { action: 'lead.save', data: { id: l && l.id, ...v } }); }
       catch (e) { if (e.data && e.data.duplicate && confirm(e.message + ' Add it again anyway?')) await C.api('/api/marketing', { action: 'lead.save', data: { ...v, force: true } }); else throw e; }
@@ -432,18 +453,19 @@
         <div class="mk-kpi"><span>Spent this month</span><b>${inr(T.month)}</b></div>
         <div class="mk-kpi"><span>Spent this financial year</span><b>${inr(T.fy)}</b></div>
         <div class="mk-kpi"><span>Leads, last 30 days</span><b>${nf(T.leads30)}</b><span>${T.leads30 && T.spend30 ? inr(T.spend30 / T.leads30) + ' per lead' : ''}${T.chats30 ? ' · ' + nf(T.chats30) + ' chats' : ''}</span></div></div>
-      <div class="mk-card"><h3>Where the money is going</h3><p class="small muted" style="margin:0 0 8px">Every campaign running now. Meta Ads figures come in by themselves each morning; others are as typed in. Click a campaign for its spend day by day.</p>
+      <div id="mkCtl"></div>      <div class="mk-card"><h3>Where the money is going</h3><p class="small muted" style="margin:0 0 8px">Every campaign running now. Meta Ads figures come in by themselves each morning; others are as typed in. Click a Meta campaign for its ads one by one, its spend day by day, and to pause it or change its budget.</p>
         ${rows.length ? `<div style="overflow-x:auto"><table class="mk-t"><tr>${COLS.map(([k, l, t]) => `<th data-as="${k}" style="cursor:pointer;white-space:nowrap;${t && t !== 'date' ? 'text-align:right' : ''}">${l}${sk === k ? (dir < 0 ? ' ▾' : ' ▴') : ''}</th>`).join('')}</tr>
-          ${rows.map((r) => `<tr data-ac="${r.id}" data-meta="${r.source === 'meta' ? 1 : ''}" style="cursor:pointer">${COLS.map(([k, , t]) => `<td style="${t && t !== 'date' ? 'text-align:right;white-space:nowrap' : ''}">${k === 'src' ? (r.source === 'meta' ? 'Meta Ads' : esc((r.channels || []).map((n) => (NET[n] || {}).n || n).join(', ') || 'Other')) : k === 'pace' && r.pace != null ? `<span style="color:${r.pace > 1 ? '#B42318' : '#067647'};font-weight:700">${f(r.pace, 'pct')}</span>` : f(r[k], t)}</td>`).join('')}</tr>`).join('')}
+          ${rows.map((r) => `<tr data-ac="${r.id}" data-meta="${r.source === 'meta' ? 1 : r.source === 'google' ? 2 : ''}" style="cursor:pointer">${COLS.map(([k, , t]) => `<td style="${t && t !== 'date' ? 'text-align:right;white-space:nowrap' : ''}">${k === 'src' ? (r.source === 'meta' ? 'Meta Ads' : r.source === 'google' ? 'Google Ads' : esc((r.channels || []).map((n) => (NET[n] || {}).n || n).join(', ') || 'Other')) : k === 'pace' && r.pace != null ? `<span style="color:${r.pace > 1 ? '#B42318' : '#067647'};font-weight:700">${f(r.pace, 'pct')}</span>` : f(r[k], t)}</td>`).join('')}</tr>`).join('')}
           <tr style="font-weight:700"><td>Total</td><td></td><td></td><td style="text-align:right">${inr(T.daily)}</td><td style="text-align:right">${inr(T.yesterday)}</td><td></td><td style="text-align:right">${inr(T.spend30)}</td><td style="text-align:right">${inr(T.month)}</td><td></td><td style="text-align:right">${inr(T.fy)}</td><td style="text-align:right">${nf(T.leads30)}</td><td></td><td style="text-align:right">${nf(T.chats30)}</td><td></td></tr></table></div>` : '<div class="mk-empty">No campaign is running right now.</div>'}</div>`);
     $$('#mkBody [data-as]').forEach((th) => (th.onclick = () => { if (S.actSort === th.dataset.as) S.actDir = -(S.actDir || -1); else { S.actSort = th.dataset.as; S.actDir = -1; } active(); }));
-    $$('#mkBody [data-ac]').forEach((tr) => (tr.onclick = () => { if (tr.dataset.meta) mdrill('campaign', 'c' + tr.dataset.ac); else campForm(D.campaigns.find((c) => c.id === +tr.dataset.ac)); }));
+    $$('#mkBody [data-ac]').forEach((tr) => (tr.onclick = () => { if (tr.dataset.meta === '2') mdrill('campaign', 'c' + tr.dataset.ac); else if (tr.dataset.meta) campaignDetail(+tr.dataset.ac); else campForm(D.campaigns.find((c) => c.id === +tr.dataset.ac)); }));
+    controlsPanel($('#mkCtl'));
   }
 
   // ---------- campaigns: plan → designs → budget → approval → calendar → posted ----------
   const PLAN = { draft: ['Being planned', '#667085'], submitted: ['Waiting for approval', '#DC6803'], partly: ['Partly approved', '#7A5AF8'], approved: ['Approved', '#12B76A'], sent_back: ['Sent back', '#B42318'] };
   function campaigns() {
-    const plans = D.campaigns.filter((c) => c.source !== 'meta'), meta = D.campaigns.filter((c) => c.source === 'meta');
+    const plans = D.campaigns.filter((c) => !['meta', 'google'].includes(c.source)), meta = D.campaigns.filter((c) => ['meta', 'google'].includes(c.source));
     const des = (c) => D.posts.filter((p) => p.campaign_id === c.id);
     const thumb = (p) => { const f = (p.files || []).find((x) => /^image\//.test(x.mime)) || (p.files || [])[0];
       return `<button type="button" class="mk-dz" data-post="${p.id}" title="${esc(p.title)}">${f && /^image\//.test(f.mime) ? `<img src="/api/marketing?pfile=${f.id}" alt="" loading="lazy">` : `<span>${f ? (/video/.test(f.mime) ? 'Video' : 'PDF') : 'No file'}</span>`}<em style="background:${ST[p.status][1]}">${ST[p.status][0]}</em><small>${p.publish_at ? day(p.publish_at) : 'no date'} ${chanDots(p)}</small></button>`; };
@@ -458,11 +480,12 @@
           ${D.can.approve && ['submitted', 'partly'].includes(c.plan_status) ? `${!c.designs_ok_at ? `<button class="small" data-ap="designs" data-c="${c.id}">Approve designs</button>` : ''}${!c.budget_ok_at ? `<button class="small" data-ap="budget" data-c="${c.id}">Approve budget</button>` : ''}<button class="ghost small" data-back="${c.id}">Send back</button>` : ''}
           ${D.can.edit && ['draft', 'sent_back'].includes(c.plan_status) ? `<button class="small" data-submit="${c.id}">Send for approval</button><p class="small muted" style="margin:4px 0 0">You get an email with approve buttons.</p>` : ''}
           ${c.plan_status === 'approved' ? '<p class="small" style="margin:4px 0 0;color:#067647">The designs are in the calendar and post on their dates.</p>' : ''}</div></div>`; };
-    body(`<div class="mk-actions">${D.can.edit ? '<button id="newCamp">+ New campaign</button>' : ''}<span class="muted small">Plan the campaign, add its Canva designs and the budget, and send it for approval. Once the designs and the budget are approved, the designs go to the calendar and post on their dates.</span></div>
+    body(`<div id="mkMoney"><p class="muted small">Working out the results…</p></div><h3 style="margin:22px 0 8px;color:#10114e;font-size:15px">Campaign plans</h3><div class="mk-actions">${D.can.edit ? '<button id="newCamp">+ New campaign</button>' : ''}<span class="muted small">Plan the campaign, add its Canva designs and the budget, and send it for approval. Once the designs and the budget are approved, the designs go to the calendar and post on their dates.</span></div>
       ${plans.length ? plans.map(card).join('') : '<div class="mk-empty">No campaigns yet. Press "+ New campaign".</div>'}
-      ${meta.length ? `<h3 style="margin:22px 0 8px;color:#10114e;font-size:15px">Running on Meta Ads</h3><div class="mk-camp">${meta.map((c) => { const ld = Math.max(+c.ad_leads || 0, c.leads || 0), sp = +c.spent || 0;
+      ${meta.length ? `<h3 style="margin:22px 0 8px;color:#10114e;font-size:15px">Running on Meta and Google Ads</h3><div class="mk-camp">${meta.map((c) => { const ld = Math.max(+c.ad_leads || 0, c.leads || 0), sp = +c.spent || 0;
         return `<div class="mk-card" style="margin:0"><div style="display:flex;justify-content:space-between;gap:8px"><h3 style="margin:0">${esc(c.name)}</h3><span class="mk-pill">${esc(String(c.ext_status || c.status).toLowerCase())}</span></div><div class="small muted">${esc(projName(c.project_id))} · ${nf(+c.impressions || 0)} seen · ${nf(+c.clicks || 0)} clicks</div>
           <div class="mk-funnel" style="margin-top:10px"><div><b>${inr(sp)}</b><span>Spent</span></div><div><b>${ld}</b><span>Leads</span></div><div><b>${ld && sp ? inr(sp / ld) : '–'}</b><span>Per lead</span></div><div><b>${nf(+c.messages || 0)}</b><span>Chats</span></div></div></div>`; }).join('')}</div>` : ''}`);
+    moneyPanel($('#mkMoney'));
     if ($('#newCamp')) $('#newCamp').onclick = () => campForm(null);
     $$('#mkBody [data-camp]').forEach((b) => (b.onclick = () => campForm(D.campaigns.find((c) => c.id === +b.dataset.camp))));
     $$('#mkBody [data-post]').forEach((b) => (b.onclick = () => postForm(D.posts.find((p) => p.id === +b.dataset.post))));
@@ -543,18 +566,20 @@
       <div class="mk-card"><h3>Design library: Google Drive folders</h3><p class="small muted" style="margin:0 0 8px">One folder per project (sub-folders like Brochures, Floor plans, Elevations, Renders, Amenities are fine). Share each folder with <b>${esc(s.share || "the ERP's Google account")}</b> as Viewer, then paste its link here.</p>
         ${[['company', 'Company (logos, corporate profile)'], ...D.projects.map((p) => [String(p.id), p.name])].map(([k, l]) => `<label>${esc(l)}<input data-drive="${k}" value="${s.drive[k] ? 'https://drive.google.com/drive/folders/' + esc(s.drive[k]) : ''}" placeholder="Paste the Drive folder link"></label>`).join('')}</div>
       <div class="mk-card"><h3>Approvals</h3><label class="check"><input type="checkbox" id="needAp" ${s.needApproval ? 'checked' : ''}> Posts need Management's approval before they are scheduled or published</label></div>
+      ${setupMore()}
       ${s.ivrUrl ? `<div class="mk-card"><h3>IVR call history (Exotel)</h3><p class="small" style="margin:0 0 8px">${s.exotel && s.exotel.configured ? `Connected. Every morning the ERP reads the last 2 days of calls from Exotel; the first pull goes back 12 months.${s.exotel.last ? ` Last pull ${when(s.exotel.last.done_at)}: ${nf(s.exotel.last.info.kept)} calls${s.exotel.last.info.next ? ' (more to come: press again)' : ''}.` : ''}` : 'To bring in every past call (12 months) and each new call every night: in Exotel, Settings → API settings, copy the Account SID, API key and API token, and add them in Vercel as EXOTEL_SID, EXOTEL_API_KEY and EXOTEL_API_TOKEN (and EXOTEL_SUBDOMAIN = api.in.exotel.com if the account is on Exotel\'s Mumbai cluster). Then press Pull below.'}</p>
         ${s.exotel && s.exotel.configured && D.can.edit ? '<button class="ghost" id="ivrPull">Pull the IVR calls now</button>' : ''}</div>
       <div class="mk-card"><h3>IVR calls as they happen (Exotel or any IVR)</h3><p class="small" style="margin:0 0 8px">Every call to the IVR number comes into the ERP and the caller becomes a lead (source IVR); missed calls are listed to call back. Whoever manages the IVR account adds this link once. In Exotel: App Bazaar → open the call flow → add a <b>Passthru</b> step at the start (and, optionally, set it as the flow's status callback) with this URL, method GET.</p><code style="user-select:all;word-break:break-all;display:block;background:#F7F7FB;padding:8px;border-radius:8px">${esc(location.origin + s.ivrUrl)}</code></div>` : ''}
-      ${s.leadUrl ? `<div class="mk-card"><h3>Leads coming in by themselves</h3><p class="small" style="margin:0 0 8px">Give this link to the website developer for the enquiry form, and use it in a Meta lead-ads or portal connector (Zapier, Make). Each enquiry (name, phone, email, source, project, message) arrives in Leads; a number already received in the last 30 days is not added twice.</p><code style="user-select:all;word-break:break-all;display:block;background:#F7F7FB;padding:8px;border-radius:8px">${esc(location.origin + s.leadUrl)}</code></div>` : ''}
+      ${s.leadUrl ? `<div class="mk-card"><h3>Leads coming in by themselves</h3><p class="small" style="margin:0 0 8px">Give this link to the website developer for the enquiry form, and use it in a Meta lead-ads or portal connector (Zapier, Make). Each enquiry (name, phone, email, source, project, message) arrives in Leads; a number already there is not added twice.</p><code style="user-select:all;word-break:break-all;display:block;background:#F7F7FB;padding:8px;border-radius:8px">${esc(location.origin + s.leadUrl)}</code></div>` : ''}
       <div class="mk-card"><h3>Type figures by hand</h3><p class="small muted" style="margin:0 0 8px">For LinkedIn, Google Business Profile or any channel not connected. One date's figures; leave a box empty if you do not have it.</p>
         <div class="row" style="grid-template-columns:repeat(4,1fr)"><div><label>Channel</label><select id="sn">${Object.entries(NET).map(([k, v]) => `<option value="${k}">${v.n}</option>`).join('')}</select></div><div><label>Date</label><input type="date" id="sd" value="${iso(new Date())}"></div><div><label>Followers</label><input id="sf" inputmode="numeric"></div><div><label>Views</label><input id="sv" inputmode="numeric"></div></div>
         <div class="row" style="grid-template-columns:repeat(4,1fr)"><div><label>Reach</label><input id="sr" inputmode="numeric"></div><div><label>Posts</label><input id="sp" inputmode="numeric"></div><div><label>Interactions</label><input id="si" inputmode="numeric"></div><div style="display:flex;align-items:end"><button class="ghost" id="saveSt">Save figures</button></div></div></div>
       ${D.can.edit ? '<div class="actions"><button id="saveSet">Save set-up</button></div>' : ''}`);
+    wireSetupMore();
     if ($('#addCh')) $('#addCh').onclick = () => $('#chs').insertAdjacentHTML('beforeend', chRow({ network: 'facebook' }));
     $('#mkBody').addEventListener('click', (e) => { if (e.target.closest('[data-rmch]')) e.target.closest('.chrow').remove(); });
     if ($('#ivrPull')) $('#ivrPull').onclick = async (e) => { e.target.disabled = true; e.target.textContent = 'Pulling…'; try { const r = await C.api('/api/marketing', { action: 'ivr.sync', data: {} }); C.toast(r.skipped || `${nf(r.kept)} calls brought in${r.more ? '; press again for the rest' : ''}.`); await load(); paint(); } catch (x) { alert(x.message); e.target.disabled = false; } };
-    if ($('#syncNow')) $('#syncNow').onclick = () => pullAll([...(SO.meta.connected ? ['facebook', 'instagram', 'ads', 'leads'] : []), ...(SO.youtube.connected ? ['youtube'] : [])], false);
+    if ($('#syncNow')) $('#syncNow').onclick = () => pullAll([...(SO.meta.connected ? ['facebook', 'instagram', 'ads', 'leads', 'comments'] : []), ...(SO.youtube.connected ? ['youtube'] : [])], false);
     $$('#mkBody [data-disc]').forEach((b) => (b.onclick = async () => { if (!confirm('Disconnect? The figures already pulled stay; nothing new comes in.')) return; await C.api('/api/marketing', { action: 'disconnect', data: { net: b.dataset.disc } }); await load(); paint(); }));
     $('#saveSt').onclick = async () => { await C.api('/api/marketing', { action: 'stats.save', data: { network: $('#sn').value, day: $('#sd').value, followers: $('#sf').value, views: $('#sv').value, reach: $('#sr').value, posts: $('#sp').value, interactions: $('#si').value } }); C.toast('Figures saved.'); await load(); };
     if ($('#saveSet')) $('#saveSet').onclick = async () => {
@@ -562,6 +587,228 @@
       await C.api('/api/marketing', { action: 'settings', data: { needApproval: $('#needAp').checked, drive, channels: $$('#chs .chrow').map((r) => ({ network: r.querySelector('[data-c=network]').value, handle: r.querySelector('[data-c=handle]').value, url: r.querySelector('[data-c=url]').value, projectId: r.querySelector('[data-c=projectId]').value || null })) } });
       C.toast('Saved.'); S.libFor = null; await load(); paint();
     };
+  }
+
+  // ---------- from rupees to bookings ----------
+  const PER = [['d30', 'Last 30 days'], ['fy', 'This financial year'], ['all', 'All time']];
+  const mins = (a, b) => { const m = Math.round((Date.parse(b) - Date.parse(a)) / 60000); return m < 60 ? m + ' min' : m < 1440 ? Math.floor(m / 60) + ' h ' + (m % 60) + ' min' : Math.floor(m / 1440) + ' days'; };
+  const waitTag = (l) => (l.status === 'new' && !l.first_contact_at ? (() => { const m = (Date.now() - Date.parse(l.created_at)) / 60000; return m > 60 * 24 * 7 ? '' : `<div class="small" style="color:${m > 120 ? '#B42318' : m > 15 ? '#B54708' : '#067647'};font-weight:700">waiting ${mins(l.created_at, new Date().toISOString())}</div>`; })() : '');
+  async function getResults(per) {
+    const k = S.scope + ':' + per; S.resC = S.resC || {};
+    if (!S.resC[k]) S.resC[k] = await C.api(`/api/marketing?results=${encodeURIComponent(S.scope)}&period=${per}`);
+    return S.resC[k];
+  }
+  const x1 = (v) => (v == null || !v ? '–' : '₹' + (v >= 100 ? nf(v) : v.toFixed(v < 10 ? 1 : 0)));
+  async function resultsStrip(el) {
+    if (!el) return;
+    const per = S.resPer || 'fy';
+    let R; try { R = await getResults(per); } catch (e) { el.innerHTML = `<div class="err">${esc(e.message)}</div>`; return; }
+    if (!document.body.contains(el)) return;
+    const T = R.totals, Q = R.respond;
+    el.innerHTML = `<div class="mk-card mk-res"><div style="display:flex;justify-content:space-between;gap:10px;flex-wrap:wrap;align-items:center"><h3 style="margin:0">From rupees to bookings</h3>
+        <div class="mk-chips" style="margin:0">${PER.map(([k, l]) => `<button type="button" data-rper="${k}" aria-pressed="${per === k}">${l}</button>`).join('')}</div></div>
+      <p class="small muted" style="margin:4px 0 12px">${esc(R.label)}: every rupee spent (Meta and Google Ads, hoardings, newspaper, portals, events, agency…) against the leads that came in and what became of them in the CRM.</p>
+      <div class="mk-kpis k7">
+        <button type="button" class="mk-kpi" data-rd="spend"><span>Marketing spend</span><b>${inr(T.spend)}</b><span>ads ${inr(T.adSpend)} · other ${inr(T.otherSpend)}</span></button>
+        <button type="button" class="mk-kpi" data-rd="leads"><span>Leads</span><b>${nf(T.leads)}</b><span>${nf(T.contacted)} called</span></button>
+        <button type="button" class="mk-kpi" data-rd="visits"><span>Site visits</span><b>${nf(T.visits)}</b><span>${T.leads ? Math.round((T.visits / T.leads) * 100) + '% of leads' : ''}</span></button>
+        <button type="button" class="mk-kpi" data-rd="bookings"><span>Bookings from leads</span><b>${nf(T.bookings)}</b><span>${T.visits ? Math.round((T.bookings / T.visits) * 100) + '% of visits' : ''}</span></button>
+        <button type="button" class="mk-kpi" data-rd="value"><span>Booking value</span><b>${inr(T.value)}</b><span>${T.roi ? x1(T.roi) + ' of sales per ₹1 spent' : ''}</span></button>
+        <button type="button" class="mk-kpi" data-rd="leads"><span>Cost per lead</span><b>${x1(T.cpl)}</b><span>per visit ${x1(T.cpv)}</span></button>
+        <button type="button" class="mk-kpi" data-rd="bookings"><span>Cost per booking</span><b>${x1(T.cpb)}</b><span>${T.cp ? '+ CP brokerage ' + inr(T.cp) : ''}</span></button></div>
+      <div class="mk-kpis" style="grid-template-columns:repeat(auto-fit,minmax(200px,1fr));margin:0">
+        <div class="mk-kpi"><span>Leads called within 15 minutes</span><b style="color:${Q.leads && Q.within15 / Q.leads < 0.5 ? '#B42318' : '#067647'}">${Q.leads ? Math.round((Q.within15 / Q.leads) * 100) + '%' : '–'}</b><span>${Q.median != null ? 'half are called within ' + (Q.median < 60 ? Q.median + ' min' : Math.round(Q.median / 60) + ' h') : 'times are kept from now on'}</span></div>
+        <button type="button" class="mk-kpi" data-rd="waiting"><span>New leads not called yet</span><b style="${Q.waiting ? 'color:#B42318' : ''}">${nf(Q.waiting)}</b><span>open to see them</span></button>
+        <div class="mk-kpi"><span>All bookings in the period</span><b>${nf(T.allBookings)}</b><span>${inr(T.salesValue)} · marketing + brokerage = ${T.salesValue ? ((T.spend + T.cp) / T.salesValue * 100).toFixed(2) + '% of sales' : '–'}</span></div></div></div>`;
+    $$('[data-rper]', el).forEach((b) => (b.onclick = () => { S.resPer = b.dataset.rper; resultsStrip(el); }));
+    $$('[data-rd]', el).forEach((b) => (b.onclick = () => (b.dataset.rd === 'spend' ? (S.tab = 'campaigns', paint()) : mdrill(b.dataset.rd, per, 'r'))));
+  }
+  const SPK = { hoarding: 'Hoarding', newspaper: 'Newspaper', portal: 'Property portal', event: 'Event / exhibition', agency: 'Agency fee', shoot: 'Shoot / video', influencer: 'Influencer', print: 'Print (brochures, flyers)', radio: 'Radio / cinema', digital: 'Other digital ads', site: 'Site branding', other: 'Other' };
+  const resTable = (rows, cols) => `<div style="overflow-x:auto"><table class="mk-t"><tr>${cols.map(([, l, t]) => `<th class="${t ? 'n' : ''}">${l}</th>`).join('')}</tr>${rows.map((r) => `<tr ${r._click || ''}>${cols.map(([k, , t, f]) => `<td class="${t ? 'n' : ''}">${f ? f(r) : t === 'inr' ? inr(r[k]) : t === 'x' ? x1(r[k]) : t === 'n' ? nf(r[k]) : esc(r[k])}</td>`).join('')}</tr>`).join('')}</table></div>`;
+  async function moneyPanel(el) {
+    if (!el) return;
+    const per = S.resPer || 'fy';
+    let R; try { R = await getResults(per); } catch (e) { el.innerHTML = `<div class="err">${esc(e.message)}</div>`; return; }
+    if (!document.body.contains(el)) return;
+    const pctCell = (r) => (r.cost_pct == null ? '–' : (r.cost_pct * 100).toFixed(2) + '%');
+    const budCell = (r) => (r.budget ? `${inr(r.budget)}${r.budget_used != null ? ` <span style="color:${r.budget_used > 1 ? '#B42318' : r.budget_used > 0.9 ? '#B54708' : '#067647'};font-weight:700">${Math.round(r.budget_used * 100)}%</span>` : ''}` : '–');
+    el.innerHTML = `<div class="mk-actions"><div class="mk-chips" style="margin:0">${PER.map(([k, l]) => `<button type="button" data-rper="${k}" aria-pressed="${per === k}">${l}</button>`).join('')}</div><span class="small muted">${esc(R.label)}</span><span style="flex:1"></span>
+        ${D.can.edit ? '<button type="button" id="addSpend">+ Add spend</button>' : ''}${D.can.approve ? '<button type="button" class="ghost" id="setBud">Marketing budgets</button>' : ''}</div>
+      <div class="mk-card"><h3>By project</h3><p class="small muted" style="margin:0 0 6px">Spend = ads + other spend for the project. Channel partner brokerage is per booking and shown apart. Click a project for its leads.</p>
+        ${resTable(R.byProject.map((r) => ({ ...r, _click: r.id ? `data-rproj="${r.id}" style="cursor:pointer"` : '' })), [['name', 'Project'], ['spend', 'Marketing spend', 'inr'], ['budget', 'Budget (year)', 'inr', budCell], ['leads', 'Leads', 'n'], ['visits', 'Site visits', 'n'], ['bookings', 'Bookings', 'n'], ['value', 'Booking value', 'inr'], ['cpl', 'Per lead', 'x'], ['cpv', 'Per visit', 'x'], ['cpb', 'Per booking', 'x'], ['cp', 'CP brokerage', 'inr'], ['all_bookings', 'All bookings', 'n'], ['cost_pct', 'Cost % of sales', 'n', pctCell]])}</div>
+      <div class="mk-grid2h"><div class="mk-card"><h3>By lead source</h3>${R.bySource.length ? resTable(R.bySource.map((r) => ({ ...r, name: SRC[r.source] || r.source })), [['name', 'Source'], ['spend', 'Spend', 'inr'], ['leads', 'Leads', 'n'], ['visits', 'Visits', 'n'], ['bookings', 'Booked', 'n'], ['cpl', 'Per lead', 'x'], ['cpb', 'Per booking', 'x']]) : '<p class="muted small">No leads in this period.</p>'}
+          <p class="small muted" style="margin:6px 0 0">Spend shows against a source when it is a Meta or Google campaign, or a spend entry tagged with that source (99acres, MagicBricks, hoarding…).</p></div>
+        <div class="mk-card"><h3>By campaign</h3>${R.campaigns.length ? resTable(R.campaigns.slice(0, 40), [['name', 'Campaign'], ['spend', 'Spend', 'inr'], ['leads', 'Leads', 'n'], ['visits', 'Visits', 'n'], ['bookings', 'Booked', 'n'], ['cpl', 'Per lead', 'x'], ['cpb', 'Per booking', 'x']]) : '<p class="muted small">No campaign spend in this period.</p>'}</div></div>
+      <div class="mk-card"><h3>Other spend (${R.entries.length})</h3><p class="small muted" style="margin:0 0 6px">Hoardings, newspaper, portals, events, agency and everything not on Meta or Google Ads. Past months can be entered too.</p>
+        ${R.entries.length ? resTable(R.entries.map((e) => ({ ...e, _click: D.can.edit ? `data-spend="${e.id}" style="cursor:pointer"` : '' })), [['spent_on', 'Date', '', (e) => day(e.spent_on) + (e.until ? ' – ' + day(e.until) : '')], ['kind', 'What', '', (e) => esc(SPK[e.kind] || e.kind)], ['vendor', 'Vendor'], ['project', 'Project', '', (e) => esc(e.project || 'Company')], ['campaign', 'Campaign'], ['source', 'Brings leads as', '', (e) => esc(e.source ? SRC[e.source] || e.source : '')], ['amount', 'Amount', 'inr'], ['file_name', 'Invoice', '', (e) => (e.file_name ? `<a href="/api/marketing?spendfile=${e.id}" target="_blank" rel="noopener" onclick="event.stopPropagation()">open ↗</a>` : '')]]) : '<div class="mk-empty">Nothing yet. Press "+ Add spend" for a hoarding, newspaper ad, portal subscription, event…</div>'}</div>
+      ${(D.settings.competitors || []).length ? `<div class="mk-card"><h3>What competitors are advertising</h3><p class="small muted" style="margin:0 0 6px">Opens Meta's public Ad Library with each one's ads running now (Meta gives no figures for property ads in India, only the ads).</p><div class="mk-chips" style="margin:0">${D.settings.competitors.map((c) => `<a class="button ghost small" href="${esc(c.ads)}" target="_blank" rel="noopener">${esc(c.name)} ↗</a>`).join('')}</div></div>` : ''}`;
+    $$('[data-rper]', el).forEach((b) => (b.onclick = () => { S.resPer = b.dataset.rper; moneyPanel(el); }));
+    if ($('#addSpend', el)) $('#addSpend', el).onclick = () => spendForm(null);
+    if ($('#setBud', el)) $('#setBud', el).onclick = () => budgetForm(R);
+    $$('[data-spend]', el).forEach((tr) => (tr.onclick = () => spendForm(R.entries.find((e) => e.id === +tr.dataset.spend))));
+    $$('[data-rproj]', el).forEach((tr) => (tr.onclick = async () => { const keep = S.scope; S.scope = tr.dataset.rproj; await mdrill('leads', per, 'r'); S.scope = keep; }));
+  }
+  const fileB64 = (f) => new Promise((ok, no) => { const fr = new FileReader(); fr.onload = () => ok(String(fr.result).split(',')[1] || ''); fr.onerror = () => no(new Error('Could not read ' + f.name)); fr.readAsDataURL(f); });
+  function spendForm(e0) {
+    const x = e0 || { kind: 'hoarding', spent_on: iso(new Date()), project_id: S.scope === 'company' ? null : +S.scope };
+    const dl = C.dialog(`<div class="mk-dl"><h2>${e0 ? 'Spend' : 'Add spend'}</h2>
+      <div class="row"><div><label>What</label><select name="kind">${Object.entries(SPK).map(([k, l]) => `<option value="${k}" ${x.kind === k ? 'selected' : ''}>${l}</option>`).join('')}</select></div><div><label>Amount ₹ (with GST)</label><input name="amount" inputmode="decimal" required value="${x.amount ?? ''}"></div></div>
+      <div class="row"><div><label>Paid / started on</label><input type="date" name="spentOn" required value="${esc(x.spent_on || '')}"></div><div><label>Ran until (optional)</label><input type="date" name="until" value="${esc(x.until || '')}"></div></div>
+      <div class="row"><div><label>For</label><select name="projectId"><option value="company">Company</option>${D.projects.map((p) => `<option value="${p.id}" ${x.project_id === p.id ? 'selected' : ''}>${esc(p.name)}</option>`).join('')}</select></div><div><label>Campaign (optional)</label><select name="campaignId"><option value="">—</option>${D.campaigns.map((c) => `<option value="${c.id}" ${x.campaign_id === c.id ? 'selected' : ''}>${esc(c.name)}</option>`).join('')}</select></div></div>
+      <div class="row"><div><label>Vendor</label><input name="vendor" value="${esc(x.vendor)}" placeholder="e.g. 99acres, Times of India, Bright Outdoor"></div><div><label>Leads from it come in as</label><select name="source"><option value="">—</option>${Object.entries(SRC).map(([k, l]) => `<option value="${k}" ${x.source === k ? 'selected' : ''}>${l}</option>`).join('')}</select></div></div>
+      <label>Note</label><input name="note" value="${esc(x.note)}" placeholder="e.g. 2 hoardings at Link Road, 3 months">
+      <label>Invoice (PDF or photo, up to 3 MB)</label><input type="file" id="spF" accept="application/pdf,image/png,image/jpeg,image/webp">${x.file_name ? `<p class="small">Attached: <a href="/api/marketing?spendfile=${x.id}" target="_blank" rel="noopener">${esc(x.file_name)}</a></p>` : ''}
+      ${e0 ? '<p class="small"><a href="#" id="delSp" style="color:#B42318">Delete this entry</a></p>' : ''}</div>`,
+    async (v) => { const f = $('#spF', dl).files[0]; const file = f ? { name: f.name, mime: f.type, data: await fileB64(f) } : null;
+      await C.api('/api/marketing', { action: 'spend.save', data: { id: e0 && e0.id, ...v, file } }); C.toast('Saved.'); S.resC = {}; paint(); });
+    const d = $('#delSp', dl); if (d) d.onclick = async (ev) => { ev.preventDefault(); if (!confirm('Delete this spend entry?')) return; await C.api('/api/marketing', { action: 'spend.delete', data: { id: e0.id } }); dl.close(); dl.remove(); S.resC = {}; paint(); };
+  }
+  function budgetForm(R) {
+    const fy = R.period === 'fy' ? R.from : null;
+    const rows = [['company', 'Company-wide'], ...D.projects.map((p) => [String(p.id), p.name])];
+    const cur = Object.fromEntries(R.byProject.map((p) => [p.id == null ? 'company' : String(p.id), p.budget]));
+    C.dialog(`<div class="mk-dl"><h2>Marketing budgets for this financial year</h2><p class="small muted" style="margin:0 0 8px">The ERP warns Management when a project passes 90% of its budget.</p>
+      ${rows.map(([k, l]) => `<div class="row"><div style="display:flex;align-items:center"><b>${esc(l)}</b></div><div><input data-bud="${k}" inputmode="decimal" placeholder="₹ for the year" value="${cur[k] || ''}"></div></div>`).join('')}</div>`,
+    async () => { const budgets = {}; $$('[data-bud]').forEach((i) => { if (i.value.trim()) budgets[i.dataset.bud] = i.value; }); await C.api('/api/marketing', { action: 'budgets.save', data: { fy, budgets } }); C.toast('Budgets saved.'); S.resC = {}; paint(); });
+  }
+  // "Called": how the call went
+  function calledForm(l) {
+    C.dialog(`<div class="mk-dl"><h2>${esc(l.name || l.phone)}</h2><p class="small muted" style="margin:0 0 8px">${esc(l.phone || '')} · ${esc(SRC[l.source] || l.source)} · came in ${when(l.created_at)}</p>
+      <label>How did the call go?</label><div class="mk-ch"><label><input type="radio" name="outcome" value="contacted" checked> Spoke / will follow up</label><label><input type="radio" name="outcome" value="visit"> Site visit fixed or done</label><label><input type="radio" name="outcome" value="lost"> Not interested</label></div>
+      <label>Note</label><input name="note" placeholder="e.g. wants 2 BHK, visit on Sunday"><label>Next call</label><input type="date" name="next"></div>`,
+    async (v) => { await C.api('/api/marketing', { action: 'lead.contact', data: { id: l.id, outcome: v.outcome, note: v.note } });
+      if (v.next) await C.api('/api/marketing', { action: 'lead.save', data: { id: l.id, name: l.name, phone: l.phone, email: l.email, projectId: l.project_id || 'company', source: l.source, campaignId: l.campaign_id, status: v.outcome === 'lost' ? 'lost' : v.outcome === 'visit' ? 'visit' : 'contacted', assignedTo: l.assigned_to, nextDate: v.next, note: l.note } });
+      C.toast('Saved.'); S.resC = {}; await load(); paint(); });
+  }
+  // ---------- a Meta campaign: its ads, spend by day, pause / budget ----------
+  async function campaignDetail(id) {
+    const c = D.campaigns.find((x) => x.id === id) || {};
+    const dl = document.createElement('div'); dl.className = 'mk-dlg';
+    dl.innerHTML = `<div class="box" role="dialog" aria-modal="true"><div class="hd"><h2>${esc(c.name || 'Campaign')}</h2><button class="ghost small" data-days>Spend day by day</button><button class="ghost small" data-x>Close</button></div><div class="bd"><p class="muted">Loading the ads…</p></div></div>`;
+    document.body.appendChild(dl);
+    const close = () => dl.remove(); dl.onclick = (e) => { if (e.target === dl || e.target.closest('[data-x]')) close(); };
+    $('[data-days]', dl).onclick = () => { close(); mdrill('campaign', 'c' + id); };
+    let A; try { A = await C.api('/api/marketing?ads=' + id); } catch (e) { $('.bd', dl).innerHTML = `<div class="err">${esc(e.message)}</div>`; return; }
+    const paused = /PAUSED/i.test(c.ext_status || '');
+    $('.bd', dl).innerHTML = `<div class="mk-actions" style="margin:12px 0">${D.can.edit || D.can.approve ? `<button class="${paused ? '' : 'ghost'} small" data-chg="${paused ? 'resume' : 'pause'}">${paused ? 'Start it again' : 'Pause this campaign'}</button><button class="ghost small" data-chg="budget">Change the daily budget</button>` : ''}
+        <span class="small muted">${c.ext_daily_budget ? 'Daily budget on Meta ' + inr(c.ext_daily_budget) + '. ' : ''}${D.can.approve ? 'Done on Meta at once.' : 'Management approves it first (email), then the ERP does it on Meta.'}</span></div>
+      ${A.ads.length ? `<div class="mk-ads">${A.ads.map((a) => `<div class="mk-adc"><div class="th">${a.has_thumb ? `<img src="/api/marketing?adimg=${a.id}" alt="" loading="lazy" onerror="this.remove()">` : ''}</div><div class="bd2"><b>${esc(a.name || 'Ad')}</b><div class="small muted">${esc(a.adset || '')} · ${esc(String(a.status || '').toLowerCase())}</div>
+          ${a.tiring ? `<div class="small" style="color:#B42318;font-weight:700;margin:4px 0">Tiring: ${esc(a.tiring.join(', '))}</div>` : ''}
+          <table class="mk-t" style="font-size:12px;margin-top:6px"><tr><td>Spent, 30 days</td><td class="n">${inr(a.spend30)}</td></tr><tr><td>Leads + chats</td><td class="n">${nf(a.leads30)}</td></tr><tr><td>Per lead</td><td class="n"><b>${x1(a.cpl30)}</b></td></tr><tr><td>Click rate</td><td class="n">${a.ctr30 == null ? '–' : a.ctr30.toFixed(2) + '%'}</td></tr><tr><td>Seen per person (7 days)</td><td class="n">${a.freq7 == null ? '–' : a.freq7.toFixed(1)}</td></tr><tr><td>Visits / booked</td><td class="n">${a.visits} / ${a.booked}</td></tr></table>
+          ${a.body ? `<p class="small muted" style="margin:6px 0 0;max-height:60px;overflow:hidden">${esc(a.body)}</p>` : ''}</div></div>`).join('')}</div>` : '<div class="mk-empty">The ads one by one come in with the next morning pull (or press "Pull the figures now" in Set-up).</div>'}`;
+    $$('[data-chg]', dl).forEach((b) => (b.onclick = () => { close(); changeForm(c, b.dataset.chg); }));
+  }
+  function changeForm(c, kind) {
+    C.dialog(`<div class="mk-dl"><h2>${kind === 'pause' ? 'Pause' : kind === 'resume' ? 'Start again' : 'Change the daily budget'}: ${esc(c.name)}</h2>
+      ${kind === 'budget' ? `<label>New daily budget ₹</label><input name="value" inputmode="decimal" required value="${c.ext_daily_budget || ''}">` : ''}
+      <label>Why</label><input name="reason" placeholder="${kind === 'pause' ? 'e.g. cost per lead too high' : 'e.g. good leads, spend more this week'}"></div>`,
+    async (v) => { const r = await C.api('/api/marketing', { action: 'change.request', data: { campaignId: c.id, kind, ...v } });
+      if (r.pending) C.toast('Sent to Management for approval.'); else if (r.ok) C.toast('Done on Meta.'); else alert('Meta did not take it: ' + (r.error || ''));
+      await load(); paint(); });
+  }
+  async function controlsPanel(el) {
+    if (!el) return;
+    let X; try { X = await C.api('/api/marketing?controls=1'); } catch { return; }
+    if (!document.body.contains(el)) return;
+    const pend = X.changes.filter((x) => x.status === 'pending'), done = X.changes.filter((x) => x.status !== 'pending').slice(0, 5);
+    const what = (x) => `${x.kind === 'pause' ? 'Pause' : x.kind === 'resume' ? 'Start again' : 'Daily budget to ' + inr(x.value)}: <b>${esc(x.campaign)}</b>`;
+    el.innerHTML = `${pend.length ? `<div class="mk-card" style="border-color:#FEC84B;background:#FFFCF5"><h3>Waiting for approval (${pend.length})</h3>${pend.map((x) => `<div class="mk-row"><div style="flex:1">${what(x)}<div class="small muted">${esc(x.requested_name || '')}, ${when(x.requested_at)}${x.reason ? ' · ' + esc(x.reason) : ''}</div></div>${D.can.approve ? `<button class="small" data-dec="${x.id}" data-ok="1">Approve</button><button class="ghost small" data-dec="${x.id}">Refuse</button>` : ''}</div>`).join('')}</div>` : ''}
+      ${X.tiring.length ? `<div class="mk-card" style="border-color:#FDA29B"><h3>Ads that are tiring (${X.tiring.length})</h3><p class="small muted" style="margin:0 0 6px">People have seen them too often, or click them much less than before: time for a fresh design.</p>${X.tiring.map((a) => `<div class="mk-row"><div style="flex:1"><b>${esc(a.name)}</b><div class="small muted">${esc(a.campaign)} · ${esc(a.why.join(', '))}</div></div><button class="ghost small" data-tc="${a.campaign_id}">Open</button></div>`).join('')}</div>` : ''}
+      ${done.length ? `<p class="small muted">Recent changes: ${done.map((x) => `${what(x)} (${x.status === 'done' ? 'done' : x.status === 'failed' ? 'failed: ' + esc(x.result || '') : 'refused'})`).join(' · ')}</p>` : ''}`;
+    $$('[data-dec]', el).forEach((b) => (b.onclick = async () => { const r = await C.api('/api/marketing', { action: 'change.decide', data: { id: +b.dataset.dec, approve: !!b.dataset.ok } }); if (r.ok === false) alert('Meta did not take it: ' + r.error); else C.toast(b.dataset.ok ? 'Done on Meta.' : 'Refused.'); await load(); paint(); }));
+    $$('[data-tc]', el).forEach((b) => (b.onclick = () => campaignDetail(+b.dataset.tc)));
+  }
+  // ---------- Canva ----------
+  function canvaPicker(onPick) {
+    if (!(D.settings.canva && D.settings.canva.connected)) { alert(D.settings.canva && D.settings.canva.configured ? 'Connect Canva first: Set-up → Canva → Connect.' : 'Canva is not set up yet (Set-up → Canva shows how).'); return; }
+    const dl = document.createElement('div'); dl.className = 'mk-dlg';
+    dl.innerHTML = `<div class="box" role="dialog" aria-modal="true"><div class="hd"><h2>Pick a design from Canva</h2><input type="search" placeholder="Search designs"><select style="width:auto;margin:0" data-type><option value="png">PNG</option><option value="jpg">JPG</option><option value="mp4">MP4 video</option><option value="pdf">PDF</option></select><button class="ghost small" data-x>Close</button></div><div class="bd"><p class="muted">Loading your Canva designs…</p></div></div>`;
+    document.body.appendChild(dl);
+    const close = () => dl.remove(); dl.onclick = (e) => { if (e.target === dl || e.target.closest('[data-x]')) close(); };
+    let items = [], next = null;
+    const draw = () => { $('.bd', dl).innerHTML = items.length ? `<div class="mk-lib" style="margin-top:12px">${items.map((d, i) => `<a href="#" data-pick="${i}"><div class="th" ${d.thumb ? `style="background-image:url('/api/marketing?cimg=${encodeURIComponent(d.thumb)}')"` : ''}></div><div class="nm">${esc(d.title)}<small>${d.updated ? day(d.updated) : ''}${d.pages ? ' · ' + d.pages + ' page' + (d.pages > 1 ? 's' : '') : ''}</small></div></a>`).join('')}</div>${next ? '<p><button class="ghost small" data-more>More</button></p>' : ''}` : '<p class="muted">No designs found.</p>';
+      $$('[data-pick]', dl).forEach((a) => (a.onclick = (e) => { e.preventDefault(); onPick(items[+a.dataset.pick], $('[data-type]', dl).value); close(); }));
+      const m = $('[data-more]', dl); if (m) m.onclick = () => get($('input', dl).value, true); };
+    const get = async (q, more) => { try { const r = await C.api(`/api/marketing?canva=1&q=${encodeURIComponent(q || '')}${more && next ? '&next=' + encodeURIComponent(next) : ''}`); items = more ? items.concat(r.items) : r.items; next = r.next; draw(); } catch (e) { $('.bd', dl).innerHTML = `<div class="err">${esc(e.message)}</div>`; } };
+    $('input', dl).oninput = (e) => { clearTimeout(S.ct); S.ct = setTimeout(() => get(e.target.value), 400); };
+    get('');
+  }
+  // ---------- the Inbox: comments on our posts ----------
+  async function inbox() {
+    body('<p class="muted">Loading comments…</p>');
+    let I; try { I = await C.api('/api/marketing?inbox=1'); } catch (e) { return body(`<div class="err">${esc(e.message)}</div>`); }
+    const f = S.inF || 'open', rows = I.rows.filter((r) => (f === 'all' ? true : f === 'hot' ? r.hot && !r.done : !r.done && !r.reply));
+    body(`<div class="mk-actions"><div class="mk-chips" style="margin:0">${[['open', `To answer ${I.rows.filter((r) => !r.done && !r.reply).length}`], ['hot', `Asking about price / visit ${I.rows.filter((r) => r.hot && !r.done).length}`], ['all', `All ${I.rows.length}`]].map(([k, l]) => `<button data-if="${k}" aria-pressed="${f === k}">${l}</button>`).join('')}</div>
+        <span class="small muted">Comments on our Instagram and Facebook posts of the last 30 days, pulled every morning (and with "Pull the figures now"). Reply here; it posts as Dream India.</span></div>
+      ${!I.connected && !I.rows.length ? '<div class="mk-empty">Connect Facebook and Instagram in Set-up first.</div>' : rows.length ? rows.map((r) => `<div class="mk-card" style="padding:12px 14px"><div style="display:flex;gap:10px;align-items:flex-start"><span style="color:${(NET[r.network] || NET.website).c}">${ic(r.network)}</span>
+          <div style="flex:1;min-width:0"><b>${esc(r.author || 'Someone')}</b> <span class="small muted">${when(r.at)}${r.post ? ' · on "' + esc(r.post) + '"' : ''}</span>${r.hot ? ' <span class="mk-pill" style="color:#B54708">possible buyer</span>' : ''}${r.lead_id ? ' <span class="mk-pill" style="color:#067647">in Leads ✓</span>' : ''}
+            <div style="margin:4px 0;white-space:pre-wrap">${esc(r.text)}</div>${r.reply ? `<div class="small" style="background:#F7F7FB;border-radius:8px;padding:6px 8px">Replied${r.replied_name ? ' by ' + esc(r.replied_name) : ''}: ${esc(r.reply)}</div>` : ''}
+            ${D.can.edit && !r.reply ? `<div class="mk-actions" style="margin:6px 0 0"><input data-rt="${esc(r.ext_id)}" placeholder="Reply…" style="flex:1;min-width:200px;margin:0"><button class="small" data-rep="${esc(r.ext_id)}" data-net="${r.network}">Reply</button>${r.lead_id ? '' : `<button class="ghost small" data-mklead="${esc(r.ext_id)}" data-net="${r.network}">Make a lead</button>`}<button class="ghost small" data-cdone="${esc(r.ext_id)}" data-net="${r.network}">No reply needed</button>${r.permalink ? `<a class="small" href="${esc(r.permalink)}" target="_blank" rel="noopener">Open post ↗</a>` : ''}</div>` : ''}</div></div></div>`).join('') : '<div class="mk-empty">Nothing to answer.</div>'}`);
+    $$('#mkBody [data-if]').forEach((b) => (b.onclick = () => { S.inF = b.dataset.if; inbox(); }));
+    $$('#mkBody [data-rep]').forEach((b) => (b.onclick = async () => { const t = $(`[data-rt="${CSS.escape(b.dataset.rep)}"]`).value.trim(); if (!t) return; try { await C.api('/api/marketing', { action: 'comment.reply', data: { network: b.dataset.net, extId: b.dataset.rep, text: t } }); C.toast('Replied.'); inbox(); } catch (e) { alert(e.message); } }));
+    $$('#mkBody [data-cdone]').forEach((b) => (b.onclick = async () => { await C.api('/api/marketing', { action: 'comment.done', data: { network: b.dataset.net, extId: b.dataset.cdone } }); inbox(); }));
+    $$('#mkBody [data-mklead]').forEach((b) => (b.onclick = async () => { const ph = prompt('Their mobile number (if it is not in the comment):', ''); if (ph === null) return; try { const r = await C.api('/api/marketing', { action: 'comment.lead', data: { network: b.dataset.net, extId: b.dataset.mklead, phone: ph, projectId: S.scope } }); C.toast(r.duplicate ? 'Already a lead: note added.' : 'Added to Leads.'); await load(); inbox(); } catch (e) { alert(e.message); } }));
+  }
+  // ---------- best times to post ----------
+  async function timesPanel(el) {
+    let T; try { T = await C.api('/api/marketing?times=1'); } catch { return; }
+    if (!document.body.contains(el) || !T.cells.length) return;
+    const DAYS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'], SLOTS = ['12–3 am', '3–6 am', '6–9 am', '9 am–12', '12–3 pm', '3–6 pm', '6–9 pm', '9 pm–12'];
+    const mx = Math.max(...T.cells.map((c) => c.eng), 1), cell = (d, s) => T.cells.find((c) => c.dow === d && c.slot === s);
+    el.innerHTML = `<div class="mk-grid2h" style="margin-top:14px"><div class="mk-card"><h3>Best times to post</h3><p class="small muted" style="margin:0 0 8px">Average engagement of our Instagram and Facebook posts by day and time (IST), last 12 months. Darker is better; the number is how many posts went out then.</p>
+        <div style="overflow-x:auto"><table class="mk-t" style="font-size:12px"><tr><th></th>${SLOTS.slice(2).map((l) => `<th style="text-align:center">${l}</th>`).join('')}</tr>${[1, 2, 3, 4, 5, 6, 0].map((d) => `<tr><td><b>${DAYS[d]}</b></td>${[2, 3, 4, 5, 6, 7].map((s) => { const c = cell(d, s); const a = c ? c.eng / mx : 0; return `<td style="text-align:center;background:rgba(122,90,248,${(a * 0.85).toFixed(2)});color:${a > 0.5 ? '#fff' : '#10114e'}" title="${c ? Math.round(c.eng) + ' average engagement' : 'no posts'}">${c ? c.n : ''}</td>`; }).join('')}</tr>`).join('')}</table></div></div>
+      <div class="mk-card"><h3>What works best</h3><p class="small muted" style="margin:0 0 8px">Average per post, last 12 months.</p>${resTable(T.kinds.map((k) => ({ ...k, what: `${(NET[k.network] || {}).n || k.network} ${k.kind || 'post'}` })), [['what', 'Type'], ['n', 'Posts', 'n'], ['eng', 'Engagement', 'n'], ['views', 'Views', 'n'], ['reach', 'Reach', 'n']])}</div></div>`;
+  }
+  // ---------- set-up: follow-up, sources, tools ----------
+  function setupMore() {
+    const s = D.settings, F = s.follow || {}, can = D.can.edit;
+    const reps = D.team.filter((u) => ['sales', 'admin', 'management', 'crm', 'head_crm', 'marketing'].includes(u.role));
+    const pick = (k) => `<div class="mk-ch">${reps.map((u) => `<label><input type="checkbox" data-fp="${k}" value="${u.id}" ${((F.people || {})[k] || []).includes(u.id) ? 'checked' : ''} ${can ? '' : 'disabled'}>${esc(u.name)}</label>`).join('') || '<span class="small muted">No sales logins yet.</span>'}</div>`;
+    const form = `<form id="erpLead"><input name="name" placeholder="Name" required><input name="phone" placeholder="Mobile" required><input name="email" placeholder="Email"><input type="hidden" name="project" value="Dream Signature"><button>Send</button></form>
+<script>(function(){var f=document.getElementById('erpLead'),q=new URLSearchParams(location.search);f.onsubmit=function(e){e.preventDefault();var d=new URLSearchParams(new FormData(f));['utm_source','utm_medium','utm_campaign','utm_content','gclid','fbclid'].forEach(function(k){if(q.get(k))d.set(k,q.get(k))});d.set('page',location.href);d.set('source','website');
+fetch('${location.origin + (s.leadUrl || '')}',{method:'POST',mode:'no-cors',body:d}).then(function(){f.innerHTML='Thank you, we will call you shortly.'})}})();</script>`;
+    return `<div class="mk-card"><h3>Lead follow-up</h3><p class="small muted" style="margin:0 0 8px">Each new lead (from any source) is given to the next person below, in turn, by project. They get an email at once; if nobody marks it "Called" within the hours below, they and Management are emailed (9 am to 9 pm).</p>
+        <label><b>Company-wide / any project</b></label>${pick('company')}
+        ${D.projects.map((p) => `<label style="margin-top:8px"><b>${esc(p.name)}</b> <span class="small muted" style="font-weight:400">(empty: the company-wide list)</span></label>${pick(String(p.id))}
+          <div class="row"><div><label class="small">Brochure link for ${esc(p.name)}</label><input data-fb="${p.id}" value="${esc(((F.projects || {})[p.id] || {}).brochure || '')}" placeholder="https://drive.google.com/…" ${can ? '' : 'disabled'}></div></div>`).join('')}
+        <div class="row"><div><label>Chase after (hours)</label><input id="fAlert" inputmode="numeric" value="${F.alertHours || 2}" ${can ? '' : 'disabled'}></div><div><label class="check" style="margin-top:26px"><input type="checkbox" id="fWel" ${F.welcome !== false ? 'checked' : ''} ${can ? '' : 'disabled'}> Send every new lead a WhatsApp at once</label></div></div>
+        <div class="row"><div><label>WhatsApp welcome template ID (Click Connect)</label><input id="fTpl" value="${esc(F.template || '')}" placeholder="template with {{1}} name, {{2}} project, {{3}} brochure link" ${can ? '' : 'disabled'}></div><div><label>Template to tell the sales person (optional)</label><input id="fRep" value="${esc(F.repTemplate || '')}" placeholder="{{1}} rep, {{2}} lead, {{3}} mobile, {{4}} source" ${can ? '' : 'disabled'}></div></div>
+        <label>Reply to someone who WhatsApps us first (free text; {name}, {project}, {brochure})</label><textarea id="fText" rows="2" ${can ? '' : 'disabled'}>${esc(F.text || 'Hi {name}, thank you for your interest in {project}. Here is the brochure: {brochure}. Our team will call you shortly.')}</textarea>
+        <p class="small muted" style="margin:4px 0 0">WhatsApp: ${s.whatsapp ? 'connected through ' + esc(s.whatsapp) : 'not connected yet'}. Outside a 24-hour chat WhatsApp allows only an approved template: create one in the Click Connect panel and paste its ID above. Until the ERP is live, these go only to the test mobile.</p>
+        ${can ? '<p><button type="button" id="saveFollow">Save lead follow-up</button></p>' : ''}</div>
+      <div class="mk-card"><h3>Lead sources</h3>
+        <p class="small" style="margin:0 0 6px"><b>One number, one lead.</b> A number that comes again from any source is the same lead: the new source is added to it, with a note. A lost lead that comes back is opened again.</p>
+        <p class="small" style="margin:8px 0 4px"><b>Website enquiry form.</b> Give this to the website developer: it sends the enquiry with the ad it came from (utm tags), so the website lead is counted for the right campaign.</p>
+        <textarea readonly rows="6" style="font-family:monospace;font-size:11px">${esc(form)}</textarea>
+        <p class="small" style="margin:8px 0 4px"><b>99acres, MagicBricks, Housing.com.</b> In each portal's settings, send lead emails to the ERP's mailbox (or have them forwarded there). Every 5 minutes the ERP reads them and adds the lead with its project.</p>
+        <p class="small" style="margin:8px 0 4px"><b>WhatsApp.</b> A message from a number that is not a buyer, staff or partner becomes a lead (source WhatsApp) with the welcome reply.</p>
+        <p class="small" style="margin:8px 0 4px"><b>Walk-ins.</b> The site team presses "+ Walk-in at site" in Leads (their login needs Marketing).</p>
+        <p class="small" style="margin:8px 0 0"><b>IVR.</b> See the IVR cards below.</p></div>
+      <div class="mk-card"><h3>Lead quality back to Meta</h3><p class="small" style="margin:0 0 6px">When a lead from a Meta form is called, comes for a site visit or books, the ERP tells Meta (Conversions API for CRM). Meta then looks for more people like the ones who visit and book, not just anyone who fills a form.</p>
+        <p class="small" style="margin:0">${s.capi && s.capi.on ? `On. ${nf(s.capi.sent)} stages sent${s.capi.last ? ', last ' + when(s.capi.last) : ''}${s.capi.waiting ? ', ' + nf(s.capi.waiting) + ' waiting' : ''}.${s.capi.error ? ` <b style="color:#B42318">Last error: ${esc(s.capi.error)}</b>` : ''}` : `<b>To switch on (once):</b> in Meta Events Manager → Connect data → CRM, create a CRM dataset for the Dream India lead forms. Copy its Dataset ID, and under Settings → Conversions API → Generate access token. Add them in Vercel yourself as <b>META_DATASET_ID</b> and <b>META_CAPI_TOKEN</b>. Stages already reached are queued and go as soon as it is on (${nf((s.capi || {}).waiting || 0)} waiting).`}</p>
+        ${s.capi && s.capi.on && can ? '<p><button type="button" class="ghost small" id="capiRun">Send now</button></p>' : ''}</div>
+      <div class="mk-card"><h3>Canva</h3><p class="small" style="margin:0 0 6px">${s.canva.connected ? `Connected${s.canva.name ? ' (' + esc(s.canva.name) + ')' : ''} on ${day(s.canva.at)}. In any post, "Pick from Canva" lists the team's designs; the chosen one is exported and attached for approval.` : s.canva.configured ? 'Ready: press Connect and sign in with the Canva account that has the Dream India designs.' : `To set up (once, by whoever has the Canva login): on canva.com/developers → Your integrations → Create an integration (Private). Scopes: <b>design:meta:read</b> and <b>design:content:read</b>. Return URL: <code style="user-select:all">${esc(location.origin)}/oauth/canva</code>. Copy the Client ID and generate a secret; add them in Vercel yourself as <b>CANVA_CLIENT_ID</b> and <b>CANVA_CLIENT_SECRET</b>.`}${s.canva.error ? ` <b style="color:#B42318">${esc(s.canva.error)}</b>` : ''}</p>
+        ${can && s.canva.configured ? `<a class="btn ${s.canva.connected ? 'ghost' : ''} small" href="/api/marketing?connect=canva">${s.canva.connected ? 'Connect again' : 'Connect Canva'}</a>${s.canva.connected ? ' <button type="button" class="ghost small" id="canvaOff">Disconnect</button>' : ''}` : ''}</div>
+      <div class="mk-card"><h3>Google Ads</h3><p class="small" style="margin:0 0 6px">${s.gads.connected ? `Connected on ${day(s.gads.at)}. Every Google Ads campaign comes in each morning with spend, clicks and conversions, next to Meta.${s.gads.last ? ' Last pull ' + when(s.gads.last) + '.' : ''}` : s.gads.configured ? 'Ready: press Connect and sign in with the Google account that runs the ads.' : 'To set up: in Google Ads → Tools → API Center (needs a manager account), apply for a developer token (Google approves it, usually in a few days). Then add in Vercel yourself: <b>GOOGLE_ADS_DEVELOPER_TOKEN</b>, <b>GOOGLE_ADS_CUSTOMER_ID</b> (the ad account number) and, if it sits under a manager account, <b>GOOGLE_ADS_LOGIN_CUSTOMER_ID</b>. In Google Cloud, turn on the Google Ads API for the ERP\'s project.'}${s.gads.error ? ` <b style="color:#B42318">${esc(s.gads.error)}</b>` : ''}</p>
+        ${can && s.gads.configured ? `<a class="btn ${s.gads.connected ? 'ghost' : ''} small" href="/api/marketing?connect=gads">${s.gads.connected ? 'Connect again' : 'Connect Google Ads'}</a>${s.gads.connected ? ' <button type="button" class="ghost small" id="gadsPull">Pull now</button> <button type="button" class="ghost small" id="gadsOff">Disconnect</button>' : ''}` : ''}
+        <p class="small muted" style="margin:8px 0 0">LinkedIn gives page and ad figures only to apps it approves (weeks). Until then type LinkedIn figures below and add LinkedIn ad spend under Campaigns & spend → Add spend.</p></div>
+      <div class="mk-card"><h3>Competitors</h3><p class="small muted" style="margin:0 0 6px">One name per line (as on their Facebook page). Their running ads open from Campaigns & spend.</p><textarea id="compList" rows="3" ${can ? '' : 'disabled'}>${esc((s.competitors || []).map((c) => c.name).join('\n'))}</textarea>${can ? '<p><button type="button" class="ghost small" id="saveComp">Save competitors</button></p>' : ''}</div>
+      ${D.can.approve ? '<div class="mk-card"><h3>Emails to Management</h3><p class="small muted" style="margin:0 0 6px">Each morning: anything over budget, cost per lead up by more than 30%, a project past 90% of its yearly budget, tiring ads. Every Monday: last week in one email.</p><button type="button" class="ghost small" id="runAlerts">Send the alerts now</button> <button type="button" class="ghost small" id="runDigest">Send the Monday email now</button></div>' : ''}`;
+  }
+  function wireSetupMore() {
+    const sf = $('#saveFollow'); if (sf) sf.onclick = async () => {
+      const people = {}; $$('[data-fp]').forEach((i) => { if (i.checked) (people[i.dataset.fp] = people[i.dataset.fp] || []).push(+i.value); });
+      const projects = {}; $$('[data-fb]').forEach((i) => { if (i.value.trim()) projects[i.dataset.fb] = { brochure: i.value.trim() }; });
+      await C.api('/api/marketing', { action: 'follow.save', data: { people, projects, alertHours: $('#fAlert').value, welcome: $('#fWel').checked, template: $('#fTpl').value, repTemplate: $('#fRep').value, text: $('#fText').value } });
+      C.toast('Lead follow-up saved.'); await load(); paint();
+    };
+    const cr = $('#capiRun'); if (cr) cr.onclick = async () => { const r = await C.api('/api/marketing', { action: 'capi.run', data: {} }); C.toast(r.error ? 'Meta: ' + r.error : `${r.sent || 0} sent to Meta.`); };
+    const co = $('#canvaOff'); if (co) co.onclick = async () => { await C.api('/api/marketing', { action: 'canva.disconnect', data: {} }); await load(); paint(); };
+    const gp = $('#gadsPull'); if (gp) gp.onclick = async () => { gp.disabled = true; try { const r = await C.api('/api/marketing', { action: 'gads.sync', data: {} }); C.toast(r.skipped || `${r.campaigns} Google Ads campaigns pulled.`); await load(); paint(); } catch (e) { alert(e.message); gp.disabled = false; } };
+    const go = $('#gadsOff'); if (go) go.onclick = async () => { await C.api('/api/marketing', { action: 'gads.disconnect', data: {} }); await load(); paint(); };
+    const sc = $('#saveComp'); if (sc) sc.onclick = async () => { await C.api('/api/marketing', { action: 'competitors.save', data: { list: $('#compList').value.split('\n').map((x) => ({ name: x.trim() })).filter((x) => x.name) } }); C.toast('Saved.'); await load(); };
+    const ra = $('#runAlerts'); if (ra) ra.onclick = async () => { const r = await C.api('/api/marketing', { action: 'alerts.run', data: {} }); C.toast(r.alerts ? `${r.alerts} alert(s) emailed.` : 'Nothing to warn about right now.'); };
+    const rd = $('#runDigest'); if (rd) rd.onclick = async () => { const r = await C.api('/api/marketing', { action: 'digest.send', data: {} }); C.toast(r.mail && r.mail.to ? 'Monday email sent.' : 'Sent (check the test address).'); };
   }
 
   window.Marketing = { render };
