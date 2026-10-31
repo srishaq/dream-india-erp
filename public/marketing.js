@@ -26,6 +26,9 @@
   .mk .mk-hero{background:radial-gradient(1200px 400px at 85% -60%,#7A5AF8 0,transparent 60%),radial-gradient(800px 300px at 0% 120%,#E1306C33 0,transparent 60%),linear-gradient(135deg,#140C59,#2A1E7A);color:#fff;border-radius:20px;padding:22px 24px 18px;margin:0 0 16px;position:relative;overflow:hidden}
   .mk .mk-hero h1{color:#fff;margin:2px 0 4px;font-size:26px;letter-spacing:-.01em}.mk .mk-hero p{margin:0;color:#D9D6FE;font-size:14px}
   .mk .mk-eyebrow{font-size:12px;letter-spacing:.08em;text-transform:uppercase;color:#BDB4FE;font-weight:700}
+  .mk .mk-pick{display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-top:14px}.mk .mk-pick label{color:#D9D6FE;font-weight:700;font-size:13px;margin:0}.mk .mk-pick select{width:auto;min-width:240px;margin:0;background:#fff;color:#140C59;font-weight:700;border-radius:10px;padding:8px 12px}
+  .mk .mk-gear{background:#ffffff1f;color:#fff;border:1px solid #ffffff33;border-radius:999px;padding:7px 14px;font-weight:600;font-size:13px;cursor:pointer}.mk .mk-gear[aria-pressed=true]{background:#fff;color:#140C59}
+  .mk .ff-tabs.mk-main{flex-wrap:wrap;overflow:visible}.mk .mk-subs{margin:-4px 0 14px}
   .mk .mk-scope{display:flex;gap:8px;flex-wrap:wrap;margin-top:14px}.mk .mk-scope button{background:#ffffff1f;color:#fff;border:1px solid #ffffff33;border-radius:999px;padding:7px 14px;font-weight:600;font-size:13px;cursor:pointer}
   .mk .mk-scope button[aria-pressed=true]{background:#fff;color:#140C59;border-color:#fff}
   .mk .mk-sync{position:absolute;right:20px;top:18px;font-size:12px;color:#D9D6FE;text-align:right}
@@ -149,14 +152,24 @@
   function paint() {
     const SO = D.social, sync = SO.lastSync, on = [SO.meta.connected && SO.meta.pages.some((p) => p.instagram) && 'Instagram', SO.meta.connected && 'Facebook', SO.meta.connected && SO.meta.ads.length && 'Meta Ads', SO.youtube.connected && 'YouTube'].filter(Boolean);
     const tmOk = ['tm.view', 'tm.manage', 'tm.entry'].some((p) => (C.me.perms || []).includes(p));
-    const tabs = [['overview', 'Overview'], ['plan', 'Plan & budget'], ['campaigns', 'Campaigns & spend'], ['active', 'Active campaigns'], ['calendar', 'Content calendar'], ['leads', 'Leads'],
-      ...(tmOk ? [['tele', 'Telemarketing'], ['cps', 'Channel partners']] : []), ['inbox', 'Inbox'], ['library', 'Design library'], ['tasks', 'Tasks'], ['report', '12-month report'], ['setup', 'Set-up']];
-    $('#page').innerHTML = `<div class="mk"><div class="mk-hero"><span class="mk-eyebrow">${S.scope === 'company' ? 'Company & brand' : 'Project · ' + esc(projName(+S.scope))}</span><h1>Sales &amp; Marketing</h1><p>Every channel of the project in one place: ads, portals, print, website, IVR, telemarketing and channel partners, from lead to booking.</p>
+    // eight tabs; the ones with several parts show them as small buttons underneath
+    const GROUPS = [['overview', 'Overview', [['overview', 'Overview']]], ['plan', 'Plan & budget', [['plan', 'Plan & budget']]],
+      ['campaigns', 'Campaigns', [['campaigns', 'Plans & spend'], ['active', 'Running now']]],
+      ['content', 'Content', [['calendar', 'Calendar'], ['library', 'Design library'], ['inbox', 'Comments'], ['tasks', 'Tasks']]],
+      ['leads', 'Leads', [['leads', 'Leads']]],
+      ...(tmOk ? [['tele', 'Telemarketing', [['tele', 'Telemarketing']]], ['cps', 'Channel partners', [['cps', 'Channel partners']]]] : []),
+      ['report', 'Reports', [['report', '12-month report']]]];
+    if (S.tab === 'setup') { /* Set-up opens from the button at the top */ } else if (!GROUPS.some((g) => g[2].some(([k]) => k === S.tab))) S.tab = 'overview';
+    const G = GROUPS.find((g) => g[2].some(([k]) => k === S.tab));
+    const projOpt = [...D.projects.map((p) => [String(p.id), p.name]), ['company', 'All projects (company-wide)']];
+    $('#page').innerHTML = `<div class="mk"><div class="mk-hero"><span class="mk-eyebrow">${S.scope === 'company' ? 'All projects' : 'Project'}</span><h1>Sales &amp; Marketing</h1><p>Every channel of the project in one place: ads, portals, print, website, IVR, telemarketing and channel partners, from lead to booking.</p>
       <div class="mk-sync">${on.length ? `Live from ${on.join(', ')}${sync ? ' · ' + when(sync.at) : ''}` : 'Channels not connected yet (Set-up)'}${SO.meta.error || SO.youtube.error ? '<br><b style="color:#FECDCA">A channel needs connecting again (Set-up)</b>' : ''}</div>
-      <div class="mk-scope">${[...D.projects.map((p) => [String(p.id), p.name]), ['company', 'Company & brand']].map(([k, l]) => `<button data-scope="${k}" aria-pressed="${String(S.scope) === k}">${esc(l)}</button>`).join('')}</div></div>
-      <nav class="ff-tabs no-print" role="tablist">${tabs.map(([k, l]) => `<button type="button" role="tab" data-tab="${k}" aria-selected="${S.tab === k}">${l}</button>`).join('')}</nav>
+      <div class="mk-pick"><label for="mkProj">Project</label><select id="mkProj">${projOpt.map(([k, l]) => `<option value="${k}" ${String(S.scope) === k ? 'selected' : ''}>${esc(l)}</option>`).join('')}${D.can.admin ? '<option value="__add">+ Add a project…</option>' : ''}</select>
+        <button type="button" class="mk-gear" data-tab="setup" aria-pressed="${S.tab === 'setup'}">⚙ Set-up</button></div></div>
+      <nav class="ff-tabs no-print mk-main" role="tablist">${GROUPS.map(([k, l, subs]) => `<button type="button" role="tab" data-tab="${subs[0][0]}" aria-selected="${G && G[0] === k}">${l}</button>`).join('')}</nav>
+      ${G && G[2].length > 1 ? `<div class="mk-chips mk-subs">${G[2].map(([k, l]) => `<button type="button" data-tab="${k}" aria-pressed="${S.tab === k}">${l}</button>`).join('')}</div>` : ''}
       <div id="mkBody"></div></div>`;
-    $$('#page [data-scope]').forEach((b) => (b.onclick = async () => { S.scope = b.dataset.scope; S.lib = null; await load(); paint(); }));
+    $('#mkProj').onchange = async (e) => { if (e.target.value === '__add') { location.hash = '#/projects'; return; } S.scope = e.target.value; S.lib = null; await load(); paint(); };
     $$('#page [data-tab]').forEach((b) => (b.onclick = () => { S.tab = b.dataset.tab; paint(); }));
     ({ overview, plan, active, report, calendar, leads, tele, cps, inbox, campaigns, library, tasks, setup }[S.tab] || overview)();
   }
