@@ -140,7 +140,7 @@
   }
   function paint() {
     const SO = D.social, sync = SO.lastSync, on = [SO.meta.connected && SO.meta.pages.some((p) => p.instagram) && 'Instagram', SO.meta.connected && 'Facebook', SO.meta.connected && SO.meta.ads.length && 'Meta Ads', SO.youtube.connected && 'YouTube'].filter(Boolean);
-    const tabs = [['overview', 'Overview'], ['active', 'Active campaigns'], ['report', '12-month report'], ['calendar', 'Content calendar'], ['leads', 'Leads'], ['campaigns', 'Campaigns & spend'], ['library', 'Design library'], ['tasks', 'Tasks'], ['setup', 'Set-up']];
+    const tabs = [['overview', 'Overview'], ['campaigns', 'Campaigns & spend'], ['active', 'Active campaigns'], ['calendar', 'Content calendar'], ['leads', 'Leads'], ['library', 'Design library'], ['tasks', 'Tasks'], ['report', '12-month report'], ['setup', 'Set-up']];
     $('#page').innerHTML = `<div class="mk"><div class="mk-hero"><span class="mk-eyebrow">Company-wide · by project</span><h1>Marketing & Social Media</h1><p>Every channel, post, lead and campaign in one place.</p>
       <div class="mk-sync">${on.length ? `Live from ${on.join(', ')}${sync ? ' · ' + when(sync.at) : ''}` : 'Channels not connected yet (Set-up)'}${SO.meta.error || SO.youtube.error ? '<br><b style="color:#FECDCA">A channel needs connecting again (Set-up)</b>' : ''}</div>
       <div class="mk-scope">${[['company', 'Company'], ...D.projects.map((p) => [String(p.id), p.name])].map(([k, l]) => `<button data-scope="${k}" aria-pressed="${String(S.scope) === k}">${esc(l)}</button>`).join('')}</div></div>
