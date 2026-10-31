@@ -506,6 +506,41 @@ async function webAggregate() {
   return { days: days.length };
 }
 
+// Set-up checklist: what the marketing team has done of the set-up, worked out from the ERP itself.
+async function checklist() {
+  const social = require('../lib/social'), SO = await social.status(), out = [];
+  const need = { 'Meta form leads': ['leads_retrieval', 'pages_manage_ads'], 'Auto-posting': ['pages_manage_posts', 'instagram_content_publish'], 'Pause / budget changes': ['ads_management'], 'Comments inbox': ['instagram_manage_comments', 'pages_read_user_content', 'pages_manage_engagement'], 'Insights': ['read_insights', 'instagram_manage_insights'] };
+  let granted = null, permErr = null;
+  if (SO.meta.connected) granted = await social.permissions().catch((e) => { permErr = e.message; return null; });
+  const missing = granted ? [...new Set(Object.values(need).flat())].filter((p) => !granted.includes(p)) : null;
+  out.push({ key: 'meta', task: 'Facebook permissions, then Connect again', done: !!(SO.meta.connected && missing && !missing.length),
+    detail: !SO.meta.connected ? 'Facebook is not connected.' : permErr ? 'Could not read the permissions: ' + permErr : missing.length ? `Connected on ${String(SO.meta.at || '').slice(0, 10)}, but still missing: ${missing.join(', ')}. Not working yet: ${Object.entries(need).filter(([, ps]) => ps.some((p) => missing.includes(p))).map(([k]) => k).join(', ')}.` : `All permissions given (connected ${String(SO.meta.at || '').slice(0, 10)}).` });
+  const capi = await require('../lib/mkt-leads').capiStatus();
+  out.push({ key: 'capi', task: 'Lead quality to Meta: CRM dataset and token', done: capi.on, detail: capi.on ? `On. ${capi.sent} stages sent.` : `Not set up: META_DATASET_ID and META_CAPI_TOKEN are not in Vercel yet. ${capi.waiting} stages waiting.` });
+  const cv = await require('../lib/mkt-tools').canvaStatus();
+  out.push({ key: 'canva', task: 'Canva integration', done: cv.connected, detail: cv.connected ? `Connected${cv.name ? ' (' + cv.name + ')' : ''}.` : cv.configured ? 'Keys are in; press Connect Canva in Set-up.' : 'CANVA_CLIENT_ID and CANVA_CLIENT_SECRET are not in Vercel yet.' });
+  out.push({ key: 'youtube', task: 'YouTube APIs, "In production", Connect YouTube', done: SO.youtube.connected && !SO.youtube.error, detail: SO.youtube.connected ? (SO.youtube.error ? 'Connected but failing: ' + SO.youtube.error : `Connected: ${SO.youtube.title || ''}.`) : 'Not connected.' });
+  const ga = await require('../lib/gads').status();
+  out.push({ key: 'gads', task: 'Google Ads developer token', done: ga.connected, detail: ga.connected ? 'Connected.' : ga.configured ? 'Keys are in; press Connect Google Ads.' : 'No developer token in Vercel yet.' });
+  const portal = await db.one("select count(*)::int as n, max(created_at) as last from mkt_leads where source in ('99acres', 'magicbricks', 'housing') or sources && array['99acres', 'magicbricks', 'housing']");
+  out.push({ key: 'portals', task: 'Portal lead emails to the ERP mailbox', done: portal.n > 0, detail: portal.n ? `${portal.n} portal leads in, last ${String(portal.last.toISOString ? portal.last.toISOString() : portal.last).slice(0, 10)}.` : 'No portal lead has come in yet.' });
+  const sp = await db.one('select count(*)::int as n, coalesce(sum(amount), 0) as a, count(*) filter (where file_data is not null)::int as inv from mkt_spend');
+  out.push({ key: 'spend', task: 'Past spend entered, with invoices', done: sp.n > 0, detail: sp.n ? `${sp.n} entries, ₹${Math.round(+sp.a).toLocaleString('en-IN')}, ${sp.inv} with an invoice.` : 'Nothing entered yet.' });
+  const set = await settings();
+  out.push({ key: 'competitors', task: 'Competitors added', done: (set.competitors || []).length > 0, detail: (set.competitors || []).length ? (set.competitors || []).map((c) => c.name).join(', ') : 'None yet.' });
+  const rera = await db.one("select count(*) filter (where status in ('review', 'approved', 'scheduled', 'published'))::int as n from mkt_posts where updated_at > now() - interval '7 days'");
+  out.push({ key: 'rera', task: 'MahaRERA number on every post', done: null, detail: 'Checked by the ERP on every post sent for approval or posting.' + (rera.n ? ` ${rera.n} posts went through in the last 7 days.` : '') });
+  out.push({ key: 'captions', task: 'Caption drafts tried', done: require('../lib/mkt-tools').aiOn() ? null : false, detail: require('../lib/mkt-tools').aiOn() ? 'Available.' : 'Not available: ANTHROPIC_API_KEY is not in Vercel.' });
+  const L = await db.one("select count(*)::int as n, count(*) filter (where first_contact_at is not null)::int as called, count(*) filter (where first_contact_at - created_at <= interval '15 minutes')::int as fast from mkt_leads where created_at > now() - interval '7 days'");
+  const routed = Object.values((set.follow || {}).people || {}).some((x) => (x || []).length);
+  out.push({ key: 'leads', task: 'Leads called within 15 minutes and marked Called', done: L.n ? L.fast / L.n >= 0.8 : null, detail: `${L.n} leads in the last 7 days: ${L.called} marked called, ${L.fast} within 15 minutes.${routed ? '' : ' Nobody is set to receive new leads yet (Set-up → Lead follow-up).'}` });
+  const web = await db.one('select count(*)::int as n, max(at) as last from mkt_web_hits');
+  out.push({ key: 'website', task: 'Website tracker line on dreamindiarealty.com', done: web.n > 0, detail: web.n ? `Counting: ${web.n} hits, last ${new Date(web.last).toLocaleString('en-IN', { timeZone: 'Asia/Kolkata' })}.` : 'No visit has come in yet.' });
+  const ex = await require('../lib/exotel').status();
+  out.push({ key: 'ivr', task: 'Exotel IVR', done: !!(ex.configured || (await db.one('select count(*)::int as n from mkt_ivr_calls')).n), detail: ex.configured ? 'History connected.' : 'Exotel keys not in Vercel yet.' });
+  return { at: new Date().toISOString(), items: out };
+}
+
 const handler = route({
   GET: async (req, res) => {
     const u = await auth.guard(req, res); if (!u) return;
@@ -564,6 +599,7 @@ const handler = route({
       return res.end(Buffer.isBuffer(f.file_data) ? f.file_data : Buffer.from(f.file_data));
     }
     if (q.canva != null) { if (!canEdit(u)) throw fail(403, 'Only the marketing team picks designs.'); return res.json(await require('../lib/mkt-tools').canvaDesigns({ query: str(q.q, 100), continuation: str(q.next, 500) })); }
+    if (q.checklist != null) return res.json(await checklist());
     if (q.inbox != null) return res.json(await inbox());
     if (q.times != null) return res.json(await postingTimes());
     if (q.controls != null) return res.json({ changes: await require('../lib/mkt-money').pending(), tiring: await require('../lib/mkt-money').tiring() });

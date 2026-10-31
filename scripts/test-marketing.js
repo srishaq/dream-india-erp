@@ -52,6 +52,7 @@ const fake = http.createServer(async (req, res) => {
   if (g === '/oauth/access_token') return J(q.get('fb_exchange_token') ? { access_token: 'LONG', expires_in: 5184000 } : q.get('code') === 'good' ? { access_token: 'SHORT' } : { error: { message: 'bad code' } }, q.get('fb_exchange_token') || q.get('code') === 'good' ? 200 : 400);
   if (!tok || !q.get('appsecret_proof')) return J({ error: { message: 'token missing' } }, 400);
   const series = (val) => { const out = []; for (let d = q.get('since'); d < q.get('until'); d = new Date(Date.parse(d) + 864e5).toISOString().slice(0, 10)) out.push({ value: val, end_time: new Date(Date.parse(d) + 864e5).toISOString().slice(0, 10) + 'T07:00:00+0000' }); return out; };
+  if (g === '/me/permissions') return J({ data: [{ permission: 'leads_retrieval', status: 'granted' }, { permission: 'pages_manage_ads', status: 'granted' }, { permission: 'ads_management', status: 'declined' }] });
   if (g === '/me') return J({ id: 'u1', name: 'Rafi' });
   if (g === '/act_9/insights' && q.get('level') === 'ad') return J({ data: [1, 2, 3, 4, 5, 6, 10, 12, 14].flatMap((k) => [
     { ad_id: 'a1', ad_name: 'Rooftop pool ad', adset_name: 'Mumbai 25-45', campaign_id: 'c1', spend: '600', impressions: '4000', reach: '900', frequency: k < 7 ? '4.4' : '1.5', clicks: k < 7 ? '8' : '60', actions: [{ action_type: 'lead', value: '1' }], date_start: iso(k) },
@@ -514,6 +515,12 @@ let n = 0; const step = async (name, fn) => { await fn(); n++; console.log('  âœ
     const S = await rupali('/api/marketing?mdrill=websources&scope=company'); const mr = S.rows.find((x) => x.channel === 'Meta Ads'); assert.equal(mr.views, 2); assert.equal(mr.clicks, 1);
     assert.equal((await rupali('/api/marketing?mdrill=webpages&scope=company')).rows.length, 3);
     const js = await fetch(BASE + '/t.js'); assert.equal(js.status, 200); assert.match(js.headers.get('content-type'), /javascript/);
+  });
+
+  await step('The set-up checklist shows what is done, from the ERP itself (permissions given, keys in, spend entered, website counting)', async () => {
+    const K = await sameer('/api/marketing?checklist=1'), by = Object.fromEntries(K.items.map((x) => [x.key, x]));
+    assert.equal(by.meta.done, false); assert.match(by.meta.detail, /ads_management/); assert.match(by.meta.detail, /Pause \/ budget changes/); assert.doesNotMatch(by.meta.detail, /leads_retrieval/);
+    assert.equal(by.spend.done, true); assert.equal(by.website.done, true); assert.equal(by.portals.done, true); assert.equal(by.canva.done, true); assert.equal(by.capi.done, false);
   });
 
   await step('Disconnecting keeps the figures already pulled; each part remembers its 12-month pull', async () => {
