@@ -40,6 +40,15 @@ The person who enters something can never approve it.
 - **Daily report:** 6 pm email to the site team if today's report is not in (cron `job=dpr`, 12:30 UTC); "no report yesterday" on the dashboard; speak instead of typing (English, or Hindi turned into English when `ANTHROPIC_API_KEY` is set).
 - **Contractor bills** (`/contracts`, from Purchase): work orders (items, rates, retention, TDS, advance and its recovery, allowed RMC/steel wastage) and RA bills (previous, this bill, cumulative; slab items suggested from slabs cast; material recovery suggested from the site's design vs used quantities). Purchase enters, Management approves (not the person who entered it), Accounts pay. Site logins have no access.
 
+## DreamComm (company chat, `/chat`)
+- Installable on phones and computers (Install / Add to Home Screen). Staff sign in with their ERP username and password and stay signed in for 30 days; that sign-in opens DreamComm only, never the rest of the ERP. Switching a login off ends it at once.
+- One-to-one chats, groups anyone makes, a group per department (Sales, CRM, Accounts, Site, Purchase, Management) kept in step with each login's role (Management is not put in the other teams' groups), and Announcements (only Management posts). Consultants and the CA are guests: they see only the groups they are added to.
+- Photos, videos, documents and voice notes (up to 3 MB each, photos made smaller on the phone), replies, reactions, read ticks, @mentions, pins, saved messages, polls, search, mute, status and Do not disturb. Edit within 15 minutes, delete for everyone within 2 hours; deleted messages stay for the Admin's review (each review is in the audit log).
+- Phone notifications through Web Push (`lib/webpush.js`, no outside packages; the key pair is made once and kept in settings).
+- ERP updates in the department groups: purchase requests (Management, with an Approve button for the approvers), slab cast (Site and CRM), cheque returned (Accounts), daily report missing (Site). `/flat A-1203` shows a flat to the person asking only.
+- With `ANTHROPIC_API_KEY`: "Catch me up" summaries, and voice notes written out in English.
+- `chat.dreamindiarealty.com` opens DreamComm directly once the domain is added to the Vercel project.
+
 ## Technology
 - No outside packages. `lib/pg.js` is a small PostgreSQL client (TLS, SCRAM-SHA-256, parameterised queries).
 - Database: Postgres (Neon, added from Vercel → Storage). Its address arrives as `DATABASE_URL`.

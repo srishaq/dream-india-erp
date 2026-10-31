@@ -587,3 +587,10 @@ td.row-acts button, td.row-acts .btn { display: flex; width: 100%; justify-conte
 h2.ff-sec { font-size: 13px; letter-spacing: .1em; text-transform: uppercase; color: var(--muted, #5E6480); margin: 0 0 10px; padding-top: 6px; border-top: 2px solid var(--brand-tint, #ECEBF6); }
 /* phone: filter buttons in one row you swipe sideways, instead of a tall stack */
 @media (max-width: 820px) { .chips { flex-wrap: nowrap; overflow-x: auto; -webkit-overflow-scrolling: touch; padding-bottom: 4px; scrollbar-width: none; } .chips::-webkit-scrollbar { display: none; } .chips .chip { flex: 0 0 auto; } }
+
+/* DreamComm (company chat) button */
+.dcomm { position: relative; background: linear-gradient(120deg, #2563EB, #1E3A8A); border-color: #1E3A8A; }
+.dcomm .chatn, .mdcomm .chatn { position: absolute; top: -7px; right: -7px; min-width: 19px; height: 19px; border-radius: 10px; background: #1d7a4f; color: #fff; font-size: 11px; font-weight: 700; display: grid; place-items: center; padding: 0 5px; }
+.mdcomm { display: none; position: relative; }
+.mdcomm img { display: block; border-radius: 7px; }
+@media (max-width: 820px) { .mdcomm { display: block; } .top .dcomm { display: none; } }

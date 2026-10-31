@@ -228,6 +228,7 @@
     const initials = String(me.name || '?').split(/\s+/).filter(Boolean).map((w) => w[0]).slice(0, 2).join('').toUpperCase();
     app.innerHTML = `<header class="mbar no-print"><a class="mlogo" href="#/home" aria-label="Home">${wordmark}</a><a class="mhome" href="#/home"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 10.5 12 3l9 7.5V20a1 1 0 0 1-1 1h-5v-6H9v6H4a1 1 0 0 1-1-1z"/></svg>Home</a>
       <button type="button" class="mmenu" id="mMenu" aria-label="Menu" aria-expanded="false"><svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M4 7h16M4 12h16M4 17h16"/></svg></button>
+      <a class="mdcomm" href="/chat" aria-label="DreamComm" title="DreamComm"><img src="/dreamcomm-192.png?v=1" alt="" width="28" height="28"><span class="chatn" id="dcommM" hidden></span></a>
       <button type="button" class="mav" id="mAv" aria-label="Your account">${esc(initials)}</button></header>
       <div class="macct no-print" id="mAcct" hidden><b>${esc(me.name)}</b><span class="small muted">${esc(me.roleLabel)}${projectList.length === 1 ? ' · ' + esc(projectList[0]?.name || '') : ''}</span>
         <button class="ghost" data-m="cpw">Change password</button><button class="ghost" data-m="out">Sign out</button></div>
@@ -240,6 +241,7 @@
       <div class="main">
         <div class="top no-print"><div class="who">${projectList.length > 1 ? `<select id="proj" class="proj">${projectList.map((p) => `<option value="${p.id}" ${p.id === proj ? 'selected' : ''}>${esc(p.name)}</option>`).join('')}</select>` : `<b>${esc(projectList[0]?.name || '')}</b>`}</div>
           <div class="who"><span><b>${esc(me.name)}</b> · ${esc(me.roleLabel)}</span>
+            <a class="btn small dcomm" href="/chat" target="dreamcomm" id="dcomm" title="DreamComm: the company chat">💬 DreamComm<span class="chatn" id="dcommN" hidden></span></a>
             ${installButton()}<button class="ghost small" id="cpw">Change password</button><button class="ghost small" id="out">Sign out</button></div></div>
         ${(() => { const g = groupOf(DETAIL[page] && arg ? DETAIL[page] : cur.key), dest = { CRM: [`#/project/${proj}/crm`, 'Sales & CRM'], 'CRM tools': [`#/project/${proj}/crm`, 'Sales & CRM'], Accounts: [`#/project/${proj}/accounts`, 'Accounts'], 'Site & purchase': [`#/project/${proj}/construction`, 'Construction'], 'Set-up': ['#/home', 'Home'] }[g];
           return dest && proj && !['home', 'project'].includes(page || 'home') ? `<div class="crumb no-print"><a href="${dest[0]}">← ${esc(dest[1])}</a>${dest[0] === '#/home' ? '' : '<a href="#/home">Home</a>'}</div>` : ''; })()}
@@ -257,6 +259,7 @@
       window.addEventListener('hashchange', close, { once: true }); }
     document.querySelectorAll('[data-hub]').forEach((b) => (b.onclick = () => go('#/' + b.dataset.hub)));
     chat.mount();
+    dcommBadge();
     if (anyOf('accounts.enter', 'receipt.approve')) api('/api/receipts?todeposit=1').then((r) => { if (r.n && $('.top .who:last-child')) $('.top .who:last-child').insertAdjacentHTML('afterbegin', `<a class="mbadge dep" href="#/receipts?t=cheques" title="Cheques the CRM has entered that are not deposited yet">🏦 ${r.n} cheque${r.n === 1 ? '' : 's'} to deposit</a>`); }).catch(() => {});
     if (can('ledger.view')) mailWatch.paint();
     $('#out').onclick = signOut;
@@ -267,6 +270,14 @@
     const fn = { stages: () => demands(true), home, mgmt, marketing: () => window.Marketing.render({ api, dialog, toast, me }, (/^\d+$/.test(location.hash.split('/')[2] || '') ? location.hash.split('/')[2] : null) || store.get('erp_mkt_scope') || null), telemarketing: () => window.Telemarketing.render({ api, dialog, toast, me }), ca: caPage, accdash, collections, flats, custdocs, comms, team: teamPage, accteam: teamPage, sdr: sdrPage, cp: cpPage, project: projectHome, crmtodo: () => dailyTodo('crm'), acctodo: () => dailyTodo('accounts'), training, projects, plans, users, audit, units, bookings, demands, receipts, ledgers, letters, followups, verify, prices, partners, balances: accBalances, bankauto: bankAuto, bookscrm: booksCrm, accreports: accReports, checks: accChecks, accsetup: accSetup, import: importPage, booking: bookingPage, statement: statementPage, run: runPage };
     const key = DETAIL[page] && arg ? page : cur.key;
     try { await fn[key](arg ? +arg : undefined); } catch (e) { $('#page').innerHTML = `<div class="err">${esc(e.message)}</div>`; }
+  }
+  // DreamComm, the company chat: the button shows how many messages are not read yet (checked every minute)
+  let dcommT = null;
+  function dcommBadge() {
+    clearTimeout(dcommT);
+    const paint = (n) => ['#dcommN', '#dcommM'].forEach((s) => { const el = $(s); if (el) { el.hidden = !n; el.textContent = n > 99 ? '99+' : n; } });
+    api('/api/chat?poll=1').then((r) => paint(r.unread || 0)).catch(() => {});
+    dcommT = setTimeout(dcommBadge, document.hidden ? 300000 : 60000);
   }
   const go = (h) => { if (location.hash === h) shell(); else location.hash = h; };
   window.addEventListener('hashchange', () => { if (me) shell(); });

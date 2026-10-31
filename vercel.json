@@ -7,7 +7,7 @@
   },
   "headers": [
     {
-      "source": "/((?!dashboard|ca$|ca\\.html|accounts$|accounts\\.html|site$|site\\.html|purchase$|purchase\\.html|drawings$|drawings\\.html|contracts$|contracts\\.html|hr$|hr\\.html).*)",
+      "source": "/((?!dashboard|ca$|ca\\.html|accounts$|accounts\\.html|site$|site\\.html|purchase$|purchase\\.html|drawings$|drawings\\.html|contracts$|contracts\\.html|hr$|hr\\.html|chat$|chat\\.html).*)",
       "headers": [
         {
           "key": "X-Frame-Options",
@@ -63,6 +63,48 @@
           "value": "default-src 'self'; img-src 'self' data:; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src https://fonts.gstatic.com; script-src 'self' https://cdnjs.cloudflare.com; connect-src 'self'; frame-ancestors 'none'; base-uri 'none'; form-action 'self'"
         }
       ]
+    },
+    {
+      "source": "/chat(.html)?",
+      "headers": [
+        {
+          "key": "X-Frame-Options",
+          "value": "DENY"
+        },
+        {
+          "key": "X-Content-Type-Options",
+          "value": "nosniff"
+        },
+        {
+          "key": "Referrer-Policy",
+          "value": "no-referrer"
+        },
+        {
+          "key": "X-Robots-Tag",
+          "value": "noindex, nofollow"
+        },
+        {
+          "key": "Strict-Transport-Security",
+          "value": "max-age=31536000"
+        },
+        {
+          "key": "Permissions-Policy",
+          "value": "microphone=(self), camera=(self), geolocation=()"
+        },
+        {
+          "key": "Content-Security-Policy",
+          "value": "default-src 'self'; img-src 'self' data: blob:; media-src 'self' blob:; style-src 'self' 'unsafe-inline'; script-src 'self'; connect-src 'self'; frame-ancestors 'none'; base-uri 'none'; form-action 'self'"
+        }
+      ]
+    },
+    {
+      "source": "/chat.webmanifest",
+      "headers": [
+        {
+          "key": "Content-Type",
+          "value": "application/manifest+json"
+        }
+      ]
     }
   ],
   "crons": [
@@ -96,6 +138,16 @@
     }
   ],
   "rewrites": [
+    {
+      "source": "/",
+      "has": [
+        {
+          "type": "host",
+          "value": "chat.dreamindiarealty.com"
+        }
+      ],
+      "destination": "/chat"
+    },
     {
       "source": "/oauth/google",
       "destination": "/api/custdocs?oauth=callback"
