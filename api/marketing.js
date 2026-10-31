@@ -590,7 +590,7 @@ async function publicFile(req, res) {
   res.setHeader('Content-Type', f.mime); res.setHeader('Cache-Control', 'public, max-age=3600');
   return res.end(Buffer.isBuffer(f.data) ? f.data : Buffer.from(f.data));
 }
-module.exports = (req, res) => ((req.query || {}).approve ? require('../lib/mkt-flow').linkPage(req, res).catch((e) => { console.error(e); res.statusCode = 500; res.end('Something went wrong.'); })
+module.exports = (req, res) => ((req.query || {}).approve ? require('../lib/mkt-flow').linkPage(req, res).catch((e) => { console.error('approval link', e); if (res.headersSent) return; res.statusCode = 500; res.setHeader('Content-Type', 'text/html; charset=utf-8'); res.end(`<!doctype html><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Dream India ERP</title><body style="font-family:Arial,sans-serif;background:#F7F7FB;padding:24px;color:#10114e"><div style="max-width:560px;margin:0 auto;background:#fff;border-radius:16px;padding:24px"><h2>That did not go through</h2><p>${String(e.message || 'Unknown error').replace(/[<>&]/g, '')}</p><p>Approve it from Marketing in the ERP instead.</p></div></body>`); })
   : (req.query || {}).pub ? publicFile(req, res).catch(() => { res.statusCode = 404; res.end('Not found'); })
   : (req.query || {}).ivr ? ivrHook(req, res).catch((e) => { console.error(e); res.statusCode = 200; res.end('OK'); })
   : (req.query || {}).lead ? leadHook(req, res).catch((e) => { console.error(e); res.status(500).json({ error: 'Could not save the lead.' }); }) : handler(req, res));

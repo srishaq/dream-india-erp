@@ -284,6 +284,17 @@ let n = 0; const step = async (name, fn) => { await fn(); n++; console.log('  �
     const ok = await fetch(BASE + '/api/marketing?approve=' + encodeURIComponent(tok), { method: 'POST', headers: { 'Content-Type': 'application/x-www-form-urlencoded', Origin: BASE }, body: '' });
     assert.match(await ok.text(), /Approved/);
     assert.match(await (await fetch(BASE + '/api/marketing?approve=' + encodeURIComponent(tok.slice(0, -2) + 'xx'))).text(), /expired/);
+    { // "Approve both" from a mail app or app window: it sends Origin: null and no body
+      const c2 = await M(rupali, 'campaign.save', { name: 'Both at once', channels: ['instagram'], dailyBudget: '500', monthlyBudget: '15000' });
+      const p2 = await M(rupali, 'post.save', { title: 'Both', channels: ['instagram'], status: 'draft', campaignId: c2.id, publishAt: new Date(Date.now() + 864e5).toISOString() });
+      await M(rupali, 'post.file', { postId: p2.id, name: 'b.png', mime: 'image/png', data: png });
+      assert.equal((await M(rupali, 'campaign.submit', { id: c2.id })).ok, true);
+      const t2 = await F.sign({ c: c2.id, k: 'both', u: sam.id, e: Date.now() + 864e5 });
+      const r2 = await fetch(BASE + '/api/marketing?approve=' + encodeURIComponent(t2), { method: 'POST', headers: { Origin: 'null' } });
+      const tx = await r2.text(); assert.equal(r2.status, 200, tx); assert.match(tx, /designs approved ✓ · budget approved ✓/);
+      const r3 = await fetch(BASE + '/api/marketing?approve=' + encodeURIComponent(t2), { method: 'POST', headers: { Origin: 'https://evil.example' } }); assert.match(await r3.text(), /Not allowed/);
+      await M(sameer, 'campaign.delete', { id: c2.id });
+    }
     g = await rupali('/api/marketing?scope=company'); assert.equal(g.campaigns.find((x) => x.id === c.id).plan_status, 'partly');
     // nothing is posted until the budget is approved too
     assert.equal((await F.publishDue()).posted, 0);
