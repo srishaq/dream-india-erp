@@ -510,7 +510,7 @@ async function webAggregate() {
 // Set-up checklist: what the marketing team has done of the set-up, worked out from the ERP itself.
 async function checklist() {
   const social = require('../lib/social'), SO = await social.status(), out = [];
-  const need = { 'Meta form leads': ['leads_retrieval', 'pages_manage_ads'], 'Auto-posting': ['pages_manage_posts', 'instagram_content_publish'], 'Pause / budget changes': ['ads_management'], 'Comments inbox': ['instagram_manage_comments', 'pages_read_user_content', 'pages_manage_engagement'], 'Insights': ['read_insights', 'instagram_manage_insights'] };
+  const need = { 'Meta form leads': ['leads_retrieval', 'pages_manage_ads'], 'Auto-posting': ['pages_manage_posts', 'instagram_content_publish'], 'Pause / budget changes': ['ads_management'], 'Comments inbox': ['instagram_manage_comments', 'pages_read_user_content', 'pages_manage_engagement'], 'Instagram insights': ['instagram_manage_insights'] };
   let granted = null, permErr = null;
   if (SO.meta.connected) granted = await social.permissions().catch((e) => { permErr = e.message; return null; });
   const missing = granted ? [...new Set(Object.values(need).flat())].filter((p) => !granted.includes(p)) : null;
