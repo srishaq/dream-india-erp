@@ -152,6 +152,17 @@
   }
   const body = (h) => ($('#mkBody').innerHTML = h);
 
+  // a row of clickable boxes for one period (last 30 days on Overview, financial year on the 12-month report)
+  function periodRow(k, x, label) {
+    return `<div class="mk-prow"><h3>${esc(label)}</h3><div class="mk-kpis k7">
+        <button type="button" class="mk-kpi" data-md="followers" data-per="${k}"><span>Followers, all channels</span><b>${nf(x.followers)}</b>${x.followersBefore ? `${delta(x.followersCmp, x.followersBefore)} <span>${k === 'ytd' ? 'this year' : 'in 30 days'}</span>` : ''}</button>
+        <button type="button" class="mk-kpi" data-md="views" data-per="${k}"><span>Views</span><b>${nf(x.views)}</b></button>
+        <button type="button" class="mk-kpi" data-md="reach" data-per="${k}"><span>Reach</span><b>${nf(x.reach)}</b></button>
+        <button type="button" class="mk-kpi" data-md="posts" data-per="${k}"><span>Content published</span><b>${nf(x.posts)}</b></button>
+        <button type="button" class="mk-kpi" data-md="leads" data-per="${k}"><span>Leads</span><b>${nf(x.leads)}</b>${x.adLeads ? `<span>Meta reports ${nf(x.adLeads)} form leads</span>` : ''}</button>
+        <button type="button" class="mk-kpi" data-md="spend" data-per="${k}"><span>Amount spent</span><b>${inr(x.spend)}</b>${x.chats ? `<span>${nf(x.chats)} WhatsApp chats</span>` : ''}</button>
+        <button type="button" class="mk-kpi" data-md="spend" data-per="${k}"><span>Cost per lead</span><b>${x.cpl != null ? inr(x.cpl) : '–'}</b></button></div></div>`;
+  }
   // ---------- overview ----------
   function overview() {
     const ch = D.channels, sum = (k) => ch.reduce((a, c) => a + (+c[k] || 0), 0);
@@ -163,16 +174,7 @@
     const srcs = Object.entries(bySrc).sort((a, b) => b[1] - a[1]); const mx = srcs.length ? srcs[0][1] : 1;
     const f = (s) => D.leads.filter((l) => (s === 'contacted' ? ['contacted', 'visit', 'booked'].includes(l.status) : s === 'visit' ? ['visit', 'booked'].includes(l.status) : l.status === s || (s === 'booked' && l.is_buyer))).length;
     const soc = ch.filter((c) => !c.wa && !c.ivr), bef = (k) => (soc.length && soc.every((c) => c[k + 'Before'] != null) ? sum(k + 'Before') : null); // compared only when the 30 days before were pulled
-    const P = D.periods, fyLabel = `This financial year · since 1 Apr ${P.fy.slice(0, 4)}`;
-    const row = (k, x, label) => `<div class="mk-prow"><h3>${esc(label)}</h3><div class="mk-kpis k7">
-        <button type="button" class="mk-kpi" data-md="followers" data-per="${k}"><span>Followers, all channels</span><b>${nf(x.followers)}</b>${x.followersBefore ? `${delta(x.followersCmp, x.followersBefore)} <span>${k === 'ytd' ? 'this year' : 'in 30 days'}</span>` : ''}</button>
-        <button type="button" class="mk-kpi" data-md="views" data-per="${k}"><span>Views</span><b>${nf(x.views)}</b></button>
-        <button type="button" class="mk-kpi" data-md="reach" data-per="${k}"><span>Reach</span><b>${nf(x.reach)}</b></button>
-        <button type="button" class="mk-kpi" data-md="posts" data-per="${k}"><span>Content published</span><b>${nf(x.posts)}</b></button>
-        <button type="button" class="mk-kpi" data-md="leads" data-per="${k}"><span>Leads</span><b>${nf(x.leads)}</b>${x.adLeads ? `<span>Meta reports ${nf(x.adLeads)} form leads</span>` : ''}</button>
-        <button type="button" class="mk-kpi" data-md="spend" data-per="${k}"><span>Amount spent</span><b>${inr(x.spend)}</b>${x.chats ? `<span>${nf(x.chats)} WhatsApp chats</span>` : ''}</button>
-        <button type="button" class="mk-kpi" data-md="spend" data-per="${k}"><span>Cost per lead</span><b>${x.cpl != null ? inr(x.cpl) : '–'}</b></button></div></div>`;
-    body(`${row('d30', P.d30, 'Last 30 days')}${row('ytd', P.ytd, fyLabel)}
+    body(`${periodRow('d30', D.periods.d30, 'Last 30 days')}
       <div class="mk-chans">${ch.map(chanCard).join('') || `<div class="mk-empty">No channels yet. Add Instagram, Facebook, YouTube and the website under Set-up.</div>`}</div>
       ${D.can.approve && D.posts.some((p) => p.status === 'review') ? `<div class="mk-card" style="border-color:#FEC84B;background:#FFFCF5"><h3>Waiting for your approval (${D.posts.filter((p) => p.status === 'review').length})</h3>${apprGrid(D.posts.filter((p) => p.status === 'review'))}</div>` : ''}
       ${D.top.length ? `<div class="mk-card"><h3>Best posts, last 30 days</h3><div class="mk-posts">${D.top.map(postTile).join('')}</div></div>` : ''}
@@ -289,6 +291,7 @@
     const srcT = {}; for (const r of R.leadMonths) { const x = (srcT[r.source] = srcT[r.source] || { n: 0, visits: 0, booked: 0 }); x.n += r.n; x.visits += r.visits; x.booked += r.booked; }
     body(`<div class="mk-actions"><b style="font-size:15px">${MONY(M[0])} – ${MONY(M[M.length - 1])}</b><span class="muted small">${S.scope === 'company' ? 'Company-wide' : esc(projName(+S.scope))} · social figures are company-wide</span><span style="flex:1"></span>
         <button class="ghost small" id="csvM">Download month by month (CSV)</button><button class="ghost small" id="csvC">Download campaigns (CSV)</button>${D.can.edit && (D.social.meta.connected || D.social.youtube.connected) ? '<button class="ghost small" id="repull">Pull 12 months again</button>' : ''}</div>
+      ${D.periods ? periodRow('ytd', D.periods.ytd, `This financial year · since 1 Apr ${D.periods.fy.slice(0, 4)}`) : ''}
       ${empty ? `<div class="mk-empty">Nothing yet. Connect Instagram, Facebook, Meta Ads and YouTube under Set-up: the last 12 months come in at once.</div>` : `
       <div class="mk-kpis">
         <div class="mk-kpi"><span>Ad spend</span><b>${inr(spend)}</b><span>${camps.length} campaign${camps.length === 1 ? '' : 's'}</span></div>
@@ -309,6 +312,7 @@
     tips($('#mkBody'));
     $$('#mkBody [data-sort]').forEach((th) => (th.onclick = () => { if (S.repSort === th.dataset.sort) S.repDir = -(S.repDir || -1); else { S.repSort = th.dataset.sort; S.repDir = -1; } report(); }));
     if ($('#csvC')) $('#csvC').onclick = () => csv('campaigns-12-months.csv', [COLS.map((c) => c[1]), ...cs.map((c) => COLS.map(([k]) => (k === 'project_id' ? projName(c.project_id) : k === 'cpl' ? (cpl(c) == null ? '' : Math.round(cpl(c))) : k === 'ctr' ? (ctr(c) == null ? '' : ctr(c).toFixed(2)) : val(c, k))))]);
+    $$('#mkBody [data-md]').forEach((x) => (x.onclick = () => mdrill(x.dataset.md, x.dataset.per)));
     if ($('#csvM')) $('#csvM').onclick = () => csv('marketing-month-by-month.csv', [['Month', 'Ad spend', 'Ad leads', 'Ads seen', 'Clicks', 'Chats', ...netCols.map((c) => c[2]), 'Leads in list', 'Site visits', 'Booked'], ...months.map((x) => [x.m.slice(0, 7), Math.round(x.sp), x.ld, x.imp, x.clk, x.chats, ...netCols.map(([n, k]) => (org[n][x.m] || {})[k] ?? ''), x.crm, x.visits, x.booked])]);
     if ($('#repull')) $('#repull').onclick = () => pullAll([...(D.social.meta.connected ? ['facebook', 'instagram', 'ads', 'leads'] : []), ...(D.social.youtube.connected ? ['youtube'] : [])], true, 'Pulling 12 months again');
   }
