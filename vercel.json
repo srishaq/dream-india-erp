@@ -143,6 +143,16 @@
   ],
   "rewrites": [
     {
+      "source": "/((?!api/cp-portal|partner\\.css|partner\\.js|icon\\.svg|logo-dark\\.svg|favicon\\.ico).*)",
+      "has": [
+        {
+          "type": "host",
+          "value": "partners.dreamindiarealty.com"
+        }
+      ],
+      "destination": "/partner"
+    },
+    {
       "source": "/",
       "has": [
         {

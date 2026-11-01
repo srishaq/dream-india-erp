@@ -11,7 +11,7 @@
   const can = (p) => C.me.perms.includes(p);
   const today = () => new Date(Date.now() + 330 * 60000).toISOString().slice(0, 10);
   const dd = (d) => (d ? new Date(String(d).slice(0, 10) + 'T00:00:00').toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' }) : '');
-  const PORTAL = location.origin + '/partner';
+  const PORTAL = /^erp\.dreamindiarealty\.com$/.test(location.hostname) ? 'https://partners.dreamindiarealty.com' : location.origin + '/partner';
   const CODES = { 1: 'Interested', 2: 'Site visit booked', 3: 'Call back', 4: 'Not interested', 5: 'Not reachable', 6: 'Wrong number', 7: 'Bought elsewhere', 8: 'Do not call' };
   const PST = { pending: ['Pending review', 'warn'], approved: ['Approved', 'good'], rejected: ['Rejected', 'bad'], blocked: ['Blocked', 'bad'] };
 
