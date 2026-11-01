@@ -195,7 +195,7 @@ module.exports = route({
         autoApprove: false, // partners are approved by hand once their papers are in
         maxAttempts: Math.min(Math.max(intOr(s.maxAttempts, cur.maxAttempts), 1), 10),
         gapDays: Math.min(Math.max(intOr(s.gapDays, cur.gapDays), 0), 30),
-        waOtpTemplate: str(s.waOtpTemplate, 80), waWelcomeTemplate: str(s.waWelcomeTemplate, 80),
+        waOtpTemplate: str(s.waOtpTemplate, 80), waWelcomeTemplate: str(s.waWelcomeTemplate, 80), waInviteTemplate: str(s.waInviteTemplate != null ? s.waInviteTemplate : cur.waInviteTemplate, 80),
         approvers: Array.isArray(s.approvers) ? s.approvers.map(intOr).filter(Boolean).slice(0, 5) : cur.approvers || [],
         agreementText: s.agreementText != null ? (String(s.agreementText).trim().slice(0, 20000) || null) : cur.agreementText || null,
       };

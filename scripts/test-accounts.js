@@ -189,7 +189,7 @@ let n = 0; const step = async (name, fn) => { await fn(); n++; console.log('  âœ
   await step('month close: entries in a closed month need Head Accounts and a reason, kept in the audit log', async () => {
     const s = client(); await s('/api/session', { action: 'login', username: 'acc1', password: 'accounts-password-1' });
     assert.equal((await s('/api/accounts', { action: 'close-month', month: '2026-09' })).status, 403);
-    assert.equal((await admin('/api/accounts', { action: 'close-month', month: '2026-10' })).status, 400); // not ended yet
+    assert.equal((await admin('/api/accounts', { action: 'close-month', month: new Date(Date.now() + 330 * 60000).toISOString().slice(0, 7) })).status, 400); // this month: not ended yet
     assert.equal((await admin('/api/accounts', { action: 'close-month', month: '2026-09' })).ok, true);
     const row = { txn_date: '2026-09-20', bank: 'Yes RERA Collection 100% (0700)', amount: '500', head: 'RMC', payee: 'Y' };
     assert.equal((await s('/api/accounts', { action: 'save', reg: 'payments', data: row })).status, 403);
