@@ -1,5 +1,6 @@
 // End-to-end test against a real, EMPTY Postgres database.
 // DATABASE_URL=postgres://... node scripts/test.js
+require('./login-code-helper'); // staff sign-in: password, then the code (ERP_TEST_OTP)
 const assert = require('assert/strict');
 process.env.PORT = process.env.PORT || '3999';
 const server = require('./dev-server');

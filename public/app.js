@@ -76,18 +76,62 @@
     };
   }
 
-  function login() {
+  // sign-in posts go straight to the server: a wrong password (401) must show its message, not reload the card
+  async function post(body) {
+    const r = await fetch('/api/session', { method: 'POST', credentials: 'same-origin', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+    let j = {}; try { j = await r.json(); } catch {}
+    if (!r.ok) throw Object.assign(new Error(j.error || 'Something went wrong.'), { data: j });
+    return j;
+  }
+  function login(username) {
     app.innerHTML = `<div class="center"><form class="card" id="f">
       ${brand()}
       <h1>Sign in</h1>
-      <label>Username</label><input name="username" autocomplete="username" required autofocus>
+      <label>Username</label><input name="username" autocomplete="username" required autofocus value="${esc(username || '')}">
       <label>Password</label><input name="password" type="password" autocomplete="current-password" required>
       <div class="actions"><button>Sign in</button></div>
     </form></div>`;
     $('#f').onsubmit = async (ev) => {
       ev.preventDefault();
-      const f = ev.target;
-      try { await api('/api/session', { action: 'login', ...Object.fromEntries(new FormData(f)) }); start(); } catch (e) { showErr(f, e); }
+      const f = ev.target, d = Object.fromEntries(new FormData(f)), btn = f.querySelector('button');
+      btn.disabled = true;
+      try { const r = await post({ action: 'login', ...d }); if (r.otp) return codeStep(r, d.username); start(); } catch (e) { btn.disabled = false; showErr(f, e); }
+    };
+  }
+  // the second step: the 6-digit code sent to the person's WhatsApp (or email)
+  function codeStep(o, username) {
+    let token = o.token, timer = null;
+    app.innerHTML = `<div class="center"><form class="card" id="f" autocomplete="off">
+      ${brand()}
+      <h1>Enter your code</h1>
+      <p class="muted" id="sentTo"></p>
+      <label for="code">6-digit code</label><input id="code" name="code" inputmode="numeric" autocomplete="one-time-code" pattern="[0-9]{6}" maxlength="6" required autofocus class="otp">
+      <label class="check"><input type="checkbox" name="remember" checked> Remember this device for 30 days</label>
+      <div class="actions"><button>Verify</button><button type="button" class="ghost" id="again" disabled>Send again</button><button type="button" class="ghost" id="back">Back</button></div>
+      <p class="small" id="byMail" hidden><a href="#" id="mailIt">Email me the code instead</a></p>
+    </form></div>`;
+    const f = $('#f'), again = $('#again');
+    const show = (x) => {
+      $('#sentTo').textContent = `Enter the 6-digit code sent to ${x.sentTo}. It expires in ${Math.round((x.expiresIn || 600) / 60)} minutes.`;
+      $('#byMail').hidden = !x.canEmail;
+      let left = x.resendAfter || 30; clearInterval(timer); again.disabled = true; again.textContent = `Send again (${left})`;
+      timer = setInterval(() => { if (!again.isConnected) return clearInterval(timer); left--; if (left <= 0) { clearInterval(timer); again.disabled = false; again.textContent = 'Send again'; } else again.textContent = `Send again (${left})`; }, 1000);
+    };
+    show(o);
+    const fail = (e) => { showErr(f, e); if (e.data && e.data.restart) { $('#code').disabled = true; f.querySelector('button').disabled = true; again.disabled = true; clearInterval(timer); } };
+    const resend = async (email) => {
+      again.disabled = true;
+      try { const r = await post({ action: 'login-resend', token, email: !!email }); token = r.token; show(r); const box = $('.err', f); if (box) box.remove(); $('#code').value = ''; $('#code').focus(); }
+      catch (e) { fail(e); if (!(e.data && e.data.restart)) again.disabled = false; }
+    };
+    again.onclick = () => resend(false);
+    $('#mailIt').onclick = (e) => { e.preventDefault(); resend(true); };
+    $('#back').onclick = () => { clearInterval(timer); login(username); };
+    f.onsubmit = async (ev) => {
+      ev.preventDefault();
+      const btn = f.querySelector('button'); btn.disabled = true;
+      try { await post({ action: 'login-otp', token, code: $('#code').value.trim(), remember: f.remember.checked }); clearInterval(timer); start(); }
+      catch (e) { btn.disabled = false; fail(e); }
     };
   }
 
@@ -111,6 +155,19 @@
     };
     if ($('#out')) $('#out').onclick = signOut;
     if ($('#cancel')) $('#cancel').onclick = () => start();
+    if (!forced) myDevices();
+  }
+  // devices that skip the sign-in code ("Remember this device for 30 days"): the person can remove any of them
+  async function myDevices() {
+    const wrap = $('.center'); if (!wrap) return;
+    const box = document.createElement('div'); box.className = 'card'; box.style.marginTop = '14px';
+    wrap.appendChild(box);
+    const paint = (list) => {
+      box.innerHTML = `<h2>Remembered devices</h2><p class="muted small">These browsers sign in without a code until the date shown. Changing your password signs them all out.</p>
+        ${list.length ? `<div class="table-wrap"><table><tr><th>Device</th><th>Last used</th><th>Until</th><th></th></tr>${list.map((d) => `<tr><td>${esc(d.label || 'Device')}${d.current ? ' <span class="pill good">this one</span>' : ''}</td><td>${esc(fmtDate(d.last_used_at || d.created_at))}</td><td>${esc(fmtDate(d.expires_at))}</td><td><button type="button" class="ghost small" data-dev="${+d.id}">Remove</button></td></tr>`).join('')}</table></div>` : '<p class="muted small">None.</p>'}`;
+      box.querySelectorAll('[data-dev]').forEach((b) => (b.onclick = async () => { b.disabled = true; try { paint((await api('/api/session', { action: 'device-remove', id: +b.dataset.dev })).devices); } catch (e) { alert(e.message); b.disabled = false; } }));
+    };
+    try { paint((await api('/api/session', { action: 'devices' })).devices); } catch (e) { box.innerHTML = `<p class="err">${esc(e.message)}</p>`; }
   }
   async function signOut() { await api('/api/session', { action: 'logout' }).catch(() => {}); chat.unmount(); me = null; location.hash = ''; start(); }
 
@@ -552,19 +609,26 @@
         <td>${u.role === 'admin' || u.all_projects ? 'All projects' : esc(u.projects.map(pname).join(', ') || 'None')}</td>
         <td>${u.disabled ? '<span class="pill bad">disabled</span>' : u.must_change ? '<span class="pill grey">awaiting first sign-in</span>' : '<span class="pill good">active</span>'}</td>
         <td class="num" style="white-space:nowrap"><button class="ghost small" data-edit="${u.id}">Edit</button> <button class="ghost small" data-reset="${u.id}">Reset password</button>
-          ${u.id === me.id ? '' : `<button class="${u.disabled ? 'ghost' : 'danger'} small" data-toggle="${u.id}">${u.disabled ? 'Enable' : 'Disable'}</button>`}</td></tr>`).join('')}</table></div><div class="panel" id="dayRep"><h2>8 pm day reports</h2><p class="muted small">Loading…</p></div><div class="panel" id="bkPanel"><h2>Backups</h2><p class="muted small">Loading…</p></div>`;
+          ${u.id === me.id ? '' : `<button class="${u.disabled ? 'ghost' : 'danger'} small" data-toggle="${u.id}">${u.disabled ? 'Enable' : 'Disable'}</button>`}
+          ${me.role === 'admin' && !u.disabled ? ` <button class="ghost small" data-signout="${u.id}">Sign out all devices</button>` : ''}</td></tr>`).join('')}</table></div>${me.role === 'admin' ? '<div class="panel" id="loginSec"><h2>Login security</h2><p class="muted small">Loading…</p></div>' : ''}<div class="panel" id="dayRep"><h2>8 pm day reports</h2><p class="muted small">Loading…</p></div><div class="panel" id="bkPanel"><h2>Backups</h2><p class="muted small">Loading…</p></div>`;
     dayReportPanel($('#dayRep')); backupPanel($('#bkPanel'));
+    if ($('#loginSec')) loginSecurityPanel($('#loginSec'));
+    document.querySelectorAll('[data-signout]').forEach((b) => (b.onclick = async () => {
+      const u = d.users.find((x) => x.id === +b.dataset.signout);
+      if (!confirm(`Sign ${u.name} out everywhere? Every session ends and every remembered device will need a code again.`)) return;
+      try { const r = await api('/api/users', { action: 'devices-revoke', id: u.id }); toast(`${u.name} is signed out everywhere (${r.revoked} remembered device${r.revoked === 1 ? '' : 's'}).`); if (u.id === me.id) start(); else loginSecurityPanel($('#loginSec')); } catch (e) { alert(e.message); }
+    }));
     const form = (u) => `<h2>${u ? 'Edit login' : 'Add login'}</h2>
       <div class="row"><div><label>Name</label><input name="name" value="${esc(u?.name)}" required></div>
       <div><label>Username</label><input name="username" value="${esc(u?.username)}" ${u ? 'disabled' : 'required'} placeholder="e.g. firstname.lastname"></div></div>
       <div class="row"><div><label>Role</label><select name="role">${d.roles.map((r) => `<option value="${r.key}" ${u?.role === r.key ? 'selected' : ''}>${esc(r.label)}</option>`).join('')}</select></div>
-      <div><label>Mobile (WhatsApp approvals and alerts; OTP later)</label><input name="phone" value="${esc(u?.phone)}"></div></div>
-      <label>Own email (approval links, daily summaries, buyers' replies)</label><input name="email" type="email" value="${esc(u?.email)}" maxlength="120" placeholder="e.g. ayesha@dreamindiagroup.com">
+      <div><label>Mobile (sign-in codes on WhatsApp, approvals and alerts)</label><input name="phone" inputmode="tel" value="${esc(u?.phone)}" ${u && u.id === me.id && u.phone ? 'disabled title="Another Admin changes your own mobile"' : ''}></div></div>
+      <label>Own email (sign-in codes when WhatsApp cannot be used, approval links, daily summaries, buyers' replies)</label><input name="email" type="email" value="${esc(u?.email)}" maxlength="120" placeholder="e.g. ayesha@dreamindiagroup.com" ${u && u.id === me.id && u.email ? 'disabled title="Another Admin changes your own email"' : ''}>
       <label>Designation (shown under the name in emails to buyers)</label><input name="designation" value="${esc(u?.designation)}" maxlength="80" placeholder="e.g. Senior Executive – Customer Relations">
       <label>Projects</label>
       <label class="check"><input type="checkbox" name="allProjects" ${u?.all_projects ? 'checked' : ''}> All projects, including future ones</label>
       ${d.projects.map((p) => `<label class="check"><input type="checkbox" name="p${p.id}" ${u?.projects.includes(p.id) ? 'checked' : ''}> ${esc(p.name)}</label>`).join('')}`;
-    const pick = (x) => ({ name: x.name, username: x.username, role: x.role, phone: x.phone, designation: x.designation, email: x.email, allProjects: x.allProjects === 'on', projects: d.projects.filter((p) => x['p' + p.id] === 'on').map((p) => p.id) });
+    const pick = (x, u) => ({ name: x.name, username: x.username, role: x.role, phone: x.phone ?? u?.phone, designation: x.designation, email: x.email ?? u?.email, allProjects: x.allProjects === 'on', projects: d.projects.filter((p) => x['p' + p.id] === 'on').map((p) => p.id) });
     const showTemp = (r) => {
       const dl = document.createElement('dialog');
       dl.innerHTML = `<form method="dialog"><h2>Temporary password for ${esc(r.username)}</h2><p>Give this to the person. It is shown only once; they must choose their own password when they first sign in.</p>
@@ -572,10 +636,28 @@
       document.body.appendChild(dl); dl.addEventListener('close', () => dl.remove()); dl.showModal();
     };
     $('#add').onclick = () => dialog(form(null), async (x) => { const r = await api('/api/users', { action: 'create', ...pick(x) }); users(r); showTemp(r); });
-    document.querySelectorAll('[data-edit]').forEach((b) => (b.onclick = () => { const u = d.users.find((x) => x.id === +b.dataset.edit); dialog(form(u), async (x) => users(await api('/api/users', { action: 'update', id: u.id, ...pick(x) }))); }));
+    document.querySelectorAll('[data-edit]').forEach((b) => (b.onclick = () => { const u = d.users.find((x) => x.id === +b.dataset.edit); dialog(form(u), async (x) => users(await api('/api/users', { action: 'update', id: u.id, ...pick(x, u) }))); }));
     document.querySelectorAll('[data-reset]').forEach((b) => (b.onclick = async () => { const u = d.users.find((x) => x.id === +b.dataset.reset); if (!confirm(`Reset the password for ${u.name}? They will be signed out.`)) return; const r = await api('/api/users', { action: 'reset', id: u.id }); users(r); showTemp(r); }));
     document.querySelectorAll('[data-toggle]').forEach((b) => (b.onclick = async () => { const u = d.users.find((x) => x.id === +b.dataset.toggle); if (!u.disabled && !confirm(`Disable ${u.name}? They will be signed out at once.`)) return; users(await api('/api/users', { action: u.disabled ? 'enable' : 'disable', id: u.id })); }));
     if (me.role === 'admin') portalCopyPanel();
+  }
+  // Login security (Admin): codes at sign-in, the WhatsApp template, and the logins a code cannot reach yet.
+  async function loginSecurityPanel(box) {
+    if (!box) return;
+    let S; try { S = await api('/api/users?security=1'); } catch (e) { box.innerHTML = `<h2>Login security</h2><p class="err">${esc(e.message)}</p>`; return; }
+    const who = (list, none) => (list.length ? `<div class="table-wrap"><table><tr><th>Name</th><th>Username</th><th>Mobile</th><th>Email</th></tr>${list.map((u) => `<tr><td>${esc(u.name)}</td><td>${esc(u.username)}</td><td>${u.mobile ? esc(u.mobile) : '<span class="bad-t">none</span>'}</td><td>${u.email ? esc(u.email) : '<span class="bad-t">none</span>'}</td></tr>`).join('')}</table></div>` : `<p class="ok">${esc(none)}</p>`);
+    box.innerHTML = `<h2>Login security</h2>
+      <p class="small muted" style="margin:0 0 8px">After the password, every sign-in to the ERP and DreamComm asks for a 6-digit code sent to the person's own WhatsApp (the mobile on their login, or a username that is a mobile), or to their email when there is no mobile or WhatsApp fails. A browser can be remembered for 30 days. WhatsApp: ${S.whatsapp ? 'connected' : '<b>not connected</b>'} · Email: ${S.mail ? 'set up' : '<b>not set up</b>'}.</p>
+      <div class="row" style="grid-template-columns:1fr auto;align-items:end"><div><label>WhatsApp login template ID (Click Connect, one variable: the code)</label><input id="lsTpl" value="${esc(S.settings.waOtpTemplate)}" maxlength="120"></div>
+      <label class="check" style="margin:0 0 10px"><input type="checkbox" id="lsOn" ${S.settings.enforce ? 'checked' : ''}> Require the code</label></div>
+      <p class="small muted">When "Require the code" is off, a login that no code can reach signs in with the password alone (written in the audit log). Keep it on.</p>
+      <div class="actions"><button class="ghost" id="lsSave">Save</button></div>
+      <h3>Logins with no usable mobile (${S.noMobile.length})</h3>${who(S.noMobile, 'Every active login has a mobile.')}
+      <h3>Logins no code can reach now (${S.unreachable.length})</h3><p class="small muted">They cannot sign in while the code is required: add a mobile (and keep the template set) or an email.</p>${who(S.unreachable, 'Every active login can get a code.')}`;
+    $('#lsSave', box).onclick = async () => {
+      if (!$('#lsOn', box).checked && !confirm('Allow sign-in without a code for logins no code can reach?')) return;
+      try { await api('/api/users', { action: 'security', enforce: $('#lsOn', box).checked, waOtpTemplate: $('#lsTpl', box).value }); toast('Saved.'); loginSecurityPanel(box); } catch (e) { alert(e.message); }
+    };
   }
   // Copy from the staff portal: logins (same usernames and passwords), HR & Admin, Purchase and Construction.
   async function portalCopyPanel() {

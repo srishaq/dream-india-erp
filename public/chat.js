@@ -104,8 +104,55 @@
       e.preventDefault();
       const f = new FormData(e.target), b = e.target.querySelector('button');
       b.disabled = true; b.textContent = 'Signing in…';
-      try { await api('', { action: 'login', username: f.get('username'), password: f.get('password') }); await boot(); }
+      try { const r = await post({ action: 'login', username: f.get('username'), password: f.get('password') }); if (r.otp) return showCode(r); await boot(); }
       catch (x) { const el = $('#le'); if (el) { el.hidden = false; el.textContent = x.message; } b.disabled = false; b.textContent = 'Sign in'; }
+    };
+  }
+  // sign-in posts: a wrong password (401) shows its message instead of reloading the card
+  async function post(body) {
+    const r = await fetch('/api/chat', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body), credentials: 'same-origin' });
+    let j = {}; try { j = await r.json(); } catch {}
+    if (!r.ok) throw Object.assign(new Error(j.error || 'Something went wrong. Check the internet and try again.'), { data: j });
+    return j;
+  }
+  // the second step: the 6-digit code sent to the person's WhatsApp (or email)
+  function showCode(o) {
+    let token = o.token, timer = null;
+    app.innerHTML = `<div class="login">
+      <img src="/dreamcomm-512.png?v=1" alt="">
+      <h1><span style="color:#1E3A8A">Dream</span><span style="color:#2563EB">Comm</span></h1><p id="sentTo"></p>
+      <form id="cf" autocomplete="off">
+        <label class="field"><span>6-digit code</span><input name="code" id="code" inputmode="numeric" autocomplete="one-time-code" pattern="[0-9]{6}" maxlength="6" required class="otp"></label>
+        <label class="remember"><input type="checkbox" name="remember" checked> Remember this phone for 30 days</label>
+        <div class="err" hidden id="le"></div>
+        <button class="btn" id="verify">Verify</button>
+        <div class="otp-actions"><button type="button" class="btn ghost" id="again" disabled>Send again</button><button type="button" class="btn ghost" id="back">Back</button></div>
+        <p class="small" id="byMail" hidden><a href="#" id="mailIt">Email me the code instead</a></p>
+      </form>
+    </div>`;
+    const f = $('#cf'), again = $('#again'), le = $('#le'), code = $('#code');
+    const say = (m) => { le.hidden = !m; le.textContent = m || ''; };
+    const show = (x) => {
+      $('#sentTo').textContent = `Enter the 6-digit code sent to ${x.sentTo}. It expires in ${Math.round((x.expiresIn || 600) / 60)} minutes.`;
+      $('#byMail').hidden = !x.canEmail;
+      let left = x.resendAfter || 30; clearInterval(timer); again.disabled = true; again.textContent = `Send again (${left})`;
+      timer = setInterval(() => { if (!again.isConnected) return clearInterval(timer); left--; if (left <= 0) { clearInterval(timer); again.disabled = false; again.textContent = 'Send again'; } else again.textContent = `Send again (${left})`; }, 1000);
+    };
+    show(o); code.focus();
+    const fail = (x) => { say(x.message); if (x.data && x.data.restart) { code.disabled = true; $('#verify').disabled = true; again.disabled = true; clearInterval(timer); } };
+    const resend = async (email) => {
+      again.disabled = true;
+      try { const r = await post({ action: 'login-resend', token, email: !!email }); token = r.token; show(r); say(''); code.value = ''; code.focus(); }
+      catch (x) { fail(x); if (!(x.data && x.data.restart)) again.disabled = false; }
+    };
+    again.onclick = () => resend(false);
+    $('#mailIt').onclick = (e) => { e.preventDefault(); resend(true); };
+    $('#back').onclick = () => { clearInterval(timer); showLogin(); };
+    f.onsubmit = async (e) => {
+      e.preventDefault();
+      const b = $('#verify'); b.disabled = true; b.textContent = 'Checking…';
+      try { await post({ action: 'login-otp', token, code: code.value.trim(), remember: f.remember.checked }); clearInterval(timer); await boot(); }
+      catch (x) { b.disabled = false; b.textContent = 'Verify'; fail(x); }
     };
   }
   const standalone = () => window.matchMedia('(display-mode: standalone)').matches || navigator.standalone;

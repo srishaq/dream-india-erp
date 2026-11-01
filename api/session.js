@@ -1,8 +1,10 @@
 // GET  /api/session            → where setup stands, and the signed-in user
-// POST /api/session {action}   → setup (first Admin), login, logout, password
+// POST /api/session {action}   → setup (first Admin), login (password) → login-otp (the code; login-resend), logout,
+//                                password, devices / device-remove (own remembered devices)
 const db = require('../lib/db');
 const auth = require('../lib/auth');
 const audit = require('../lib/audit');
+const OTP = require('../lib/staff-otp');
 const { migrate, status } = require('../lib/migrate');
 const { route, fail, str } = require('../lib/http');
 
@@ -51,8 +53,26 @@ module.exports = route({
       case 'login': {
         const r = await auth.authenticate(b.username, b.password, req);
         if (r.error) throw fail(401, r.error);
-        await auth.issue(req, res, r.user);
-        return res.json({ ok: true, user: auth.publicUser(r.user) });
+        // the session starts only after the code (or on a remembered device, or the break-glass Admin reset)
+        return res.json(await OTP.afterPassword(req, res, r, 'erp', auth.issue));
+      }
+      case 'login-otp': {
+        const u = await OTP.afterCode(req, res, b, 'erp', auth.issue);
+        return res.json({ ok: true, user: auth.publicUser(u) });
+      }
+      case 'login-resend':
+        return res.json(await OTP.resend(b.token, req, 'erp', b.email ? 'email' : 'auto'));
+      case 'devices': {
+        const u = await auth.guard(req, res, 'self'); if (!u) return;
+        return res.json({ devices: await OTP.devices(u.id, req) });
+      }
+      case 'device-remove': {
+        const u = await auth.guard(req, res, 'self'); if (!u) return;
+        await db.tx(async (t) => {
+          if (!(await OTP.removeDevice(t.q, u.id, +b.id || 0))) throw fail(404, 'That device is not remembered.');
+          await audit.record(t.q, { user: u, action: 'device-remove', entity: 'user', entityId: u.id, note: 'Removed one of own remembered devices' });
+        });
+        return res.json({ ok: true, devices: await OTP.devices(u.id, req) });
       }
       case 'logout':
         auth.clear(req, res);
@@ -65,7 +85,8 @@ module.exports = route({
         if (b.next === b.current) throw fail(400, 'Choose a password different from the current one.');
         const updated = await db.tx(async (t) => {
           const r = await t.one('update users set password_hash = $2, must_change = false, session_version = session_version + 1 where id = $1 returning id, session_version', [u.id, auth.hashPassword(b.next)]);
-          await audit.record(t.q, { user: u, action: 'password', entity: 'user', entityId: u.id, note: 'Changed own password' });
+          const n = await OTP.revokeAll(t.q, u.id);
+          await audit.record(t.q, { user: u, action: 'password', entity: 'user', entityId: u.id, note: 'Changed own password' + (n ? `; ${n} remembered device${n === 1 ? '' : 's'} signed out` : '') });
           return r;
         });
         await auth.issue(req, res, updated);

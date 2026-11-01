@@ -1,6 +1,7 @@
 // Construction, second set: a payment-stage slab cast tells Head CRM, the pour log and cube tests (failures on the
 // Management dashboard), the 6 pm daily-report reminder, and contractor work orders with RA bills.
 // DATABASE_URL=postgres://... (EMPTY database) node scripts/test-construction.js
+require('./login-code-helper'); // staff sign-in: password, then the code (ERP_TEST_OTP)
 const assert = require('assert/strict');
 process.env.PORT = process.env.PORT || '3996';
 const server = require('./dev-server');

@@ -1,4 +1,5 @@
 // Importer unit test against a slice of the real CRM sheet. node scripts/test-import.js
+require('./login-code-helper'); // staff sign-in: password, then the code (ERP_TEST_OTP)
 const assert = require('assert/strict');
 const { parse, toDate, toNum } = require('../lib/import-crm');
 const tabs = require('./fixtures/crm-sample');

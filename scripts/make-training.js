@@ -4,6 +4,7 @@
 //   DATABASE_URL=postgres://…/empty_db node scripts/make-training.js [module ...]
 // Needs Playwright (Chromium) and ffmpeg. For the voice: PIPER=/path/to/piper PIPER_VOICE=/path/to/voice.onnx
 // (Piper and its voices: github.com/rhasspy/piper releases, e.g. v0.0.2 voice-en-us-lessac-medium).
+require('./login-code-helper'); // staff sign-in: password, then the code (ERP_TEST_OTP)
 const fs = require('fs');
 const path = require('path');
 const { execFileSync } = require('child_process');

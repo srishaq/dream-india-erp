@@ -1,5 +1,6 @@
 // Daily To-Do, the 9 am audit and training progress.
 // DATABASE_URL=postgres://... node scripts/test-tasks.js   (an empty database)
+require('./login-code-helper'); // staff sign-in: password, then the code (ERP_TEST_OTP)
 const assert = require('assert/strict');
 process.env.PORT = process.env.PORT || '3997';
 require('./dev-server');

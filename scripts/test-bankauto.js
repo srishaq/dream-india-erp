@@ -1,5 +1,6 @@
 // Bank Auto Check (statements matched to Receipts / Payments Out), PDC reminders, the CA page and the cron guard.
 // DATABASE_URL=postgres://... node scripts/test-bankauto.js   (a fresh database)
+require('./login-code-helper'); // staff sign-in: password, then the code (ERP_TEST_OTP)
 const assert = require('assert/strict');
 const path = require('path');
 const zlib = require('zlib');

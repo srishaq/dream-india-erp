@@ -12,6 +12,7 @@
 const db = require('../lib/db');
 const auth = require('../lib/auth');
 const audit = require('../lib/audit');
+const OTP = require('../lib/staff-otp');
 const { has } = require('../lib/roles');
 const C = require('../lib/chat');
 const AI = require('../lib/chat-ai');
@@ -268,9 +269,11 @@ module.exports = route({
       const r = await auth.authenticate(b.username, b.password, req);
       if (r.error) throw fail(401, r.error);
       if (r.user.must_change) throw fail(403, 'Set a new password first: open the ERP once and sign in there, then come back.');
-      await auth.issueChat(req, res, r.user);
-      return res.json({ ok: true });
+      const o = await OTP.afterPassword(req, res, r, 'chat', auth.issueChat); // the chat cookie only after the code
+      return res.json(o.otp ? o : { ok: true });
     }
+    if (a === 'login-otp') { await OTP.afterCode(req, res, b, 'chat', auth.issueChat); return res.json({ ok: true }); }
+    if (a === 'login-resend') return res.json(await OTP.resend(b.token, req, 'chat', b.email ? 'email' : 'auto'));
     if (a === 'logout') {
       const u = await auth.chatSession(req);
       if (u && b.endpoint) await db.q('delete from chat_push where user_id = $1 and endpoint = $2', [u.id, str(b.endpoint, 1000)]);

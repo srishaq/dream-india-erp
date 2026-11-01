@@ -7,6 +7,7 @@ Blueprint: booking-to-collection, contractor billing, project costing, RERA trac
 
 ## What is built (foundation)
 - Logins with roles, a temporary password on first sign-in, lock-out after 10 wrong passwords, sign-out everywhere on reset or disable.
+- Two-step sign-in (ERP and DreamComm): after the password, a 6-digit code on the person's own WhatsApp (Click Connect template in Manage users → Login security; the mobile on the login, or a username that is a mobile), or by email when there is no mobile or WhatsApp fails. "Remember this device for 30 days"; a password change or reset, disabling, a new role or the Admin's "Sign out all devices" ends remembered devices. The break-glass Admin reset (ERP_ADMIN_RESET_USER / ERP_ADMIN_RESET_PASSWORD in Vercel) still signs in without a code.
 - Companies, projects, buildings and payment plans. Dream Signature (Prime Realtors) comes pre-loaded with A Wing, B Wing, Rehab Tower and its 15-stage plan.
 - Audit log of every change: who, when, before and after.
 - Database structure for Module 1 (units, buyers, bookings, demands, receipts), ready for the screens that come next.

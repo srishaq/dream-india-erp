@@ -1,5 +1,6 @@
 // Import end-to-end against an EMPTY database, using the sheet slice in scripts/fixtures.
 // DATABASE_URL=postgres://... node scripts/test-importdb.js
+require('./login-code-helper'); // staff sign-in: password, then the code (ERP_TEST_OTP)
 const assert = require('assert/strict');
 const path = require('path');
 process.env.PORT = process.env.PORT || '3997';
