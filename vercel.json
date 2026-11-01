@@ -139,6 +139,10 @@
     {
       "path": "/api/cron?job=mail",
       "schedule": "*/5 * * * *"
+    },
+    {
+      "path": "/api/cron?job=backup",
+      "schedule": "30 20 * * *"
     }
   ],
   "rewrites": [

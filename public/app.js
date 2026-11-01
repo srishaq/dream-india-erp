@@ -504,6 +504,19 @@
       })).join('') || '<p class="muted">No payment plans yet.</p>'}`;
   }
 
+  // Backups: every night to the owner's Google Drive (7 daily, 5 weekly, 12 monthly); the last ones, and "Back up now"
+  async function backupPanel(box) {
+    if (!box) return;
+    let S; try { S = await api('/api/backup'); } catch (e) { box.innerHTML = `<h2>Backups</h2><p class="bad-t small">${esc(e.message)}</p>`; return; }
+    const mb = (n) => (n / 1048576).toFixed(n < 1048576 ? 2 : 1) + ' MB';
+    box.innerHTML = `<h2>Backups</h2><p class="small muted" style="margin:0 0 8px">Every night at about 2 am the whole ERP database is saved to your Google Drive${S.folder ? ` (<a href="${esc(S.folder)}" target="_blank" rel="noopener">${esc(S.folderName)}</a>)` : ` (the folder “${esc(S.folderName)}” is made on the first backup)`}. Kept: the last ${S.keep.daily} daily, ${S.keep.weekly} weekly (Sundays) and ${S.keep.monthly} monthly (the 1st). Older ones go to the Drive bin.</p>
+      ${S.error ? `<p class="bad-t small"><b>The last backup failed</b> (${esc(S.error.day || '')}): ${esc(S.error.error)}</p>` : ''}
+      ${S.last.length ? `<div class="table-wrap"><table><tr><th>Day</th><th>File</th><th class="num">Size</th><th class="num">Rows</th><th>Taken</th></tr>${S.last.map((b) => `<tr><td>${fmtD(b.day)}</td><td class="small">${esc(b.file)}</td><td class="num">${mb(b.bytes || 0)}</td><td class="num">${(b.rows || 0).toLocaleString('en-IN')}</td><td class="small">${esc(b.trigger === 'manual' ? 'by hand' : 'nightly')}</td></tr>`).join('')}</table></div>` : '<p class="muted small">No backup yet.</p>'}
+      <div class="actions"><button id="bkNow">Back up now</button></div>`;
+    $('#bkNow').onclick = async (e) => { e.target.disabled = true; e.target.textContent = 'Backing up…';
+      try { const r = await api('/api/backup', { action: 'run' }); toast(`Saved ${r.file} (${mb(r.bytes)}).`); } catch (x) { toast(x.message, 8000); } backupPanel(box); };
+  }
+
   // The 8 pm day reports: see today's so far (the same email the head gets at 8 pm)
   async function dayReport(which) {
     const r = await api('/api/tasks?report=' + encodeURIComponent(which || 'x'));
@@ -539,8 +552,8 @@
         <td>${u.role === 'admin' || u.all_projects ? 'All projects' : esc(u.projects.map(pname).join(', ') || 'None')}</td>
         <td>${u.disabled ? '<span class="pill bad">disabled</span>' : u.must_change ? '<span class="pill grey">awaiting first sign-in</span>' : '<span class="pill good">active</span>'}</td>
         <td class="num" style="white-space:nowrap"><button class="ghost small" data-edit="${u.id}">Edit</button> <button class="ghost small" data-reset="${u.id}">Reset password</button>
-          ${u.id === me.id ? '' : `<button class="${u.disabled ? 'ghost' : 'danger'} small" data-toggle="${u.id}">${u.disabled ? 'Enable' : 'Disable'}</button>`}</td></tr>`).join('')}</table></div><div class="panel" id="dayRep"><h2>8 pm day reports</h2><p class="muted small">Loading…</p></div>`;
-    dayReportPanel($('#dayRep'));
+          ${u.id === me.id ? '' : `<button class="${u.disabled ? 'ghost' : 'danger'} small" data-toggle="${u.id}">${u.disabled ? 'Enable' : 'Disable'}</button>`}</td></tr>`).join('')}</table></div><div class="panel" id="dayRep"><h2>8 pm day reports</h2><p class="muted small">Loading…</p></div><div class="panel" id="bkPanel"><h2>Backups</h2><p class="muted small">Loading…</p></div>`;
+    dayReportPanel($('#dayRep')); backupPanel($('#bkPanel'));
     const form = (u) => `<h2>${u ? 'Edit login' : 'Add login'}</h2>
       <div class="row"><div><label>Name</label><input name="name" value="${esc(u?.name)}" required></div>
       <div><label>Username</label><input name="username" value="${esc(u?.username)}" ${u ? 'disabled' : 'required'} placeholder="e.g. firstname.lastname"></div></div>

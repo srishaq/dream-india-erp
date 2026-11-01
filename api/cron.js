@@ -25,7 +25,7 @@ module.exports = route({
     if (secret) { if (req.headers.authorization !== `Bearer ${secret}`) throw fail(401, 'Not allowed.'); }
     // No CRON_SECRET in Vercel yet: only Vercel's own scheduler, and only at each job's hour (a stopgap; add CRON_SECRET)
     else if (!/^vercel-cron\//.test(String(req.headers['user-agent'] || ''))) throw fail(403, 'Not allowed.');
-    else if (job !== 'mail' && !(job === 'mkt' && istHour() === 9) && !(job === 'bank' && istHour() === 15) && !((job === 'pdc' || job === 'morning') && istHour() === 9) && !(job === 'summary' && istHour() === 10) && !(job === 'evening' && istHour() === 20) && !(job === 'dpr' && istHour() === 18)) throw fail(403, 'Not the time for this job.');
+    else if (job !== 'mail' && !(job === 'mkt' && istHour() === 9) && !(job === 'backup' && istHour() === 2) && !(job === 'bank' && istHour() === 15) && !((job === 'pdc' || job === 'morning') && istHour() === 9) && !(job === 'summary' && istHour() === 10) && !(job === 'evening' && istHour() === 20) && !(job === 'dpr' && istHour() === 18)) throw fail(403, 'Not the time for this job.');
     const st = await status();
     if (st.pending.length && st.applied.length) await migrate(); // a new release deployed overnight: its tables first
     if (job === 'bank') {
@@ -55,6 +55,7 @@ module.exports = route({
       out.mktDigest = await require('../lib/mkt-money').digest({}).catch((e) => ({ error: e.message })); // Mondays: last week in Marketing
       return res.json({ ok: true, ...out });
     }
+    if (job === 'backup') return res.json({ ok: true, ...(await require('../lib/backup').run({ trigger: 'schedule' })) }); // the nightly backup to Google Drive
     if (job === 'dpr') return res.json({ ok: true, ...(await require('../lib/staff-alerts').dprReminder()) });
     if (job === 'summary') return res.json({ ok: true, ...(await require('../lib/staff-alerts').sendSummary({ trigger: 'schedule' })) });
     if (job === 'evening') return res.json({ ok: true, ...(await require('../lib/day-report').send({})) });
