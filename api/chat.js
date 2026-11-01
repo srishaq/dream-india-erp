@@ -274,6 +274,7 @@ module.exports = route({
     }
     if (a === 'login-otp') { await OTP.afterCode(req, res, b, 'chat', auth.issueChat); return res.json({ ok: true }); }
     if (a === 'login-resend') return res.json(await OTP.resend(b.token, req, 'chat', b.email ? 'email' : 'auto'));
+    if (a === 'login-email-add') return res.json(await OTP.addEmail(b.token, b.email, req, 'chat'));
     if (a === 'logout') {
       const u = await auth.chatSession(req);
       if (u && b.endpoint) await db.q('delete from chat_push where user_id = $1 and endpoint = $2', [u.id, str(b.endpoint, 1000)]);

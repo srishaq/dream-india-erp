@@ -1,6 +1,7 @@
 // GET  /api/session            → where setup stands, and the signed-in user
 // POST /api/session {action}   → setup (first Admin), login (password) → login-otp (the code; login-resend), logout,
-//                                password, devices / device-remove (own remembered devices)
+//                                login-email-add, password, devices / device-remove (own remembered devices),
+//                                app / app-begin / app-confirm / app-email / app-remove (own sign-in app)
 const db = require('../lib/db');
 const auth = require('../lib/auth');
 const audit = require('../lib/audit');
@@ -62,6 +63,17 @@ module.exports = route({
       }
       case 'login-resend':
         return res.json(await OTP.resend(b.token, req, 'erp', b.email ? 'email' : 'auto'));
+      case 'login-email-add': // no email and no sign-in app yet: the code goes to the email typed, saved once it is right
+        return res.json(await OTP.addEmail(b.token, b.email, req, 'erp'));
+      // the sign-in app (authenticator): status, set up (QR code and secret), confirm with a code, email code, remove
+      case 'app': case 'app-begin': case 'app-confirm': case 'app-email': case 'app-remove': {
+        const u = await auth.guard(req, res, 'self'); if (!u) return;
+        if (b.action === 'app') return res.json(await OTP.appStatus(u.id));
+        if (b.action === 'app-begin') return res.json(await OTP.appBegin(u));
+        if (b.action === 'app-confirm') return res.json({ ok: true, ...(await OTP.appConfirm(u, b.code)) });
+        if (b.action === 'app-email') return res.json(await OTP.appEmail(u, req));
+        return res.json({ ok: true, ...(await OTP.appRemove(u, { token: b.token, code: b.code })) });
+      }
       case 'devices': {
         const u = await auth.guard(req, res, 'self'); if (!u) return;
         return res.json({ devices: await OTP.devices(u.id, req) });

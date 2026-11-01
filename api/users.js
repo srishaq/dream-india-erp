@@ -75,6 +75,7 @@ module.exports = route({
         const { phone: bp, email: be, ...rest } = before;
         await audit.record(t.q, { user: me, action: 'update', entity: 'user', entityId: id, before: rest, after: { name, role, allProjects: !!b.allProjects, projects: cleanIds(b.projects) } });
         if (phoneChanged) await audit.record(t.q, { user: me, action: 'phone', entity: 'user', entityId: id, before: { phone: before.phone }, after: { phone }, note: `Mobile for sign-in codes changed for ${before.username}: ${before.phone || 'none'} → ${phone || 'none'}` });
+        if (emailChanged) await t.q('update users set email_verified_at = null where id = $1', [id]);
         if (emailChanged) await audit.record(t.q, { user: me, action: 'email', entity: 'user', entityId: id, before: { email: before.email }, after: { email }, note: `Email for sign-in codes changed for ${before.username}: ${before.email || 'none'} → ${email || 'none'}` });
         if (role !== before.role) { const n = await OTP.revokeAll(t.q, id); if (n) await audit.record(t.q, { user: me, action: 'devices-revoke', entity: 'user', entityId: id, note: `New role: ${n} remembered device(s) of ${before.username} signed out` }); }
       });
@@ -97,6 +98,12 @@ module.exports = route({
         await audit.record(t.q, { user: me, action: b.action, entity: 'user', entityId: id, note: n ? `${n} remembered device(s) signed out` : null });
       });
       return res.json({ ok: true, ...(await list()) });
+    }
+    if (b.action === 'app-reset') { // "Reset sign-in app": the person signs in with an email code until they set one up again
+      if (me.role !== 'admin') throw fail(403, 'Only the Admin can do this.');
+      let n = 0;
+      await db.tx(async (t) => { n = await OTP.appReset(me, t.q, id, before.username); });
+      return res.json({ ok: true, reset: n, ...(await OTP.status()) });
     }
     if (b.action === 'devices-revoke') { // "Sign out all devices": every session and every remembered device of that login
       if (me.role !== 'admin') throw fail(403, 'Only the Admin can do this.');

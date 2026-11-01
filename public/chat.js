@@ -115,8 +115,9 @@
     if (!r.ok) throw Object.assign(new Error(j.error || 'Something went wrong. Check the internet and try again.'), { data: j });
     return j;
   }
-  // the second step: the 6-digit code sent to the person's WhatsApp (or email)
+  // the second step: the code from the sign-in app, a code sent by WhatsApp or email, or "Add your email" first
   function showCode(o) {
+    if (o.method === 'add-email') return showAddEmail(o);
     let token = o.token, timer = null;
     app.innerHTML = `<div class="login">
       <img src="/dreamcomm-512.png?v=1" alt="">
@@ -127,15 +128,18 @@
         <div class="err" hidden id="le"></div>
         <button class="btn" id="verify">Verify</button>
         <div class="otp-actions"><button type="button" class="btn ghost" id="again" disabled>Send again</button><button type="button" class="btn ghost" id="back">Back</button></div>
-        <p class="small" id="byMail" hidden><a href="#" id="mailIt">Email me the code instead</a></p>
+        <p class="small" id="byMail" hidden><a href="#" id="mailIt">Email me a code instead</a></p>
       </form>
     </div>`;
     const f = $('#cf'), again = $('#again'), le = $('#le'), code = $('#code');
     const say = (m) => { le.hidden = !m; le.textContent = m || ''; };
     const show = (x) => {
-      $('#sentTo').textContent = `Enter the 6-digit code sent to ${x.sentTo}. It expires in ${Math.round((x.expiresIn || 600) / 60)} minutes.`;
+      $('#sentTo').textContent = x.method === 'app' ? 'Enter the 6-digit code from your authenticator app.'
+        : `Enter the 6-digit code sent to ${x.sentTo}. It expires in ${Math.round((x.expiresIn || 600) / 60)} minutes.${x.adding ? ' Your email is saved on your login once the code is right.' : ''}`;
       $('#byMail').hidden = !x.canEmail;
-      let left = x.resendAfter || 30; clearInterval(timer); again.disabled = true; again.textContent = `Send again (${left})`;
+      clearInterval(timer); again.hidden = x.method === 'app';
+      if (x.method === 'app') return;
+      let left = x.resendAfter || 30; again.disabled = true; again.textContent = `Send again (${left})`;
       timer = setInterval(() => { if (!again.isConnected) return clearInterval(timer); left--; if (left <= 0) { clearInterval(timer); again.disabled = false; again.textContent = 'Send again'; } else again.textContent = `Send again (${left})`; }, 1000);
     };
     show(o); code.focus();
@@ -153,6 +157,27 @@
       const b = $('#verify'); b.disabled = true; b.textContent = 'Checking…';
       try { await post({ action: 'login-otp', token, code: code.value.trim(), remember: f.remember.checked }); clearInterval(timer); await boot(); }
       catch (x) { b.disabled = false; b.textContent = 'Verify'; fail(x); }
+    };
+  }
+  // no email and no sign-in app on the login yet: the person adds their own email, which takes the code
+  function showAddEmail(o) {
+    app.innerHTML = `<div class="login">
+      <img src="/dreamcomm-512.png?v=1" alt="">
+      <h1>Add your email</h1><p>Your login has no email yet. Type your own email: we send a 6-digit code there, and it is saved on your login once you type the code.</p>
+      <form id="ef">
+        <label class="field"><span>Your email</span><input name="email" id="em" type="email" inputmode="email" autocomplete="email" autocapitalize="none" maxlength="120" required></label>
+        <div class="err" hidden id="le"></div>
+        <button class="btn" id="send">Send the code</button>
+        <div class="otp-actions"><button type="button" class="btn ghost" id="back">Back</button></div>
+      </form>
+    </div>`;
+    $('#back').onclick = () => showLogin();
+    $('#em').focus();
+    $('#ef').onsubmit = async (e) => {
+      e.preventDefault();
+      const b = $('#send'); b.disabled = true;
+      try { showCode(await post({ action: 'login-email-add', token: o.token, email: $('#em').value.trim() })); }
+      catch (x) { const le = $('#le'); le.hidden = false; le.textContent = x.message; b.disabled = false; if (x.data && x.data.restart) setTimeout(() => showLogin(), 2500); }
     };
   }
   const standalone = () => window.matchMedia('(display-mode: standalone)').matches || navigator.standalone;

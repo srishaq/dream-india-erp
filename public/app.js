@@ -98,8 +98,9 @@
       try { const r = await post({ action: 'login', ...d }); if (r.otp) return codeStep(r, d.username); start(); } catch (e) { btn.disabled = false; showErr(f, e); }
     };
   }
-  // the second step: the 6-digit code sent to the person's WhatsApp (or email)
+  // the second step: the code from the sign-in app, a code sent by WhatsApp or email, or "Add your email" first
   function codeStep(o, username) {
+    if (o.method === 'add-email') return addEmailStep(o, username);
     let token = o.token, timer = null;
     app.innerHTML = `<div class="center"><form class="card" id="f" autocomplete="off">
       ${brand()}
@@ -108,13 +109,16 @@
       <label for="code">6-digit code</label><input id="code" name="code" inputmode="numeric" autocomplete="one-time-code" pattern="[0-9]{6}" maxlength="6" required autofocus class="otp">
       <label class="check"><input type="checkbox" name="remember" checked> Remember this device for 30 days</label>
       <div class="actions"><button>Verify</button><button type="button" class="ghost" id="again" disabled>Send again</button><button type="button" class="ghost" id="back">Back</button></div>
-      <p class="small" id="byMail" hidden><a href="#" id="mailIt">Email me the code instead</a></p>
+      <p class="small" id="byMail" hidden><a href="#" id="mailIt">Email me a code instead</a></p>
     </form></div>`;
     const f = $('#f'), again = $('#again');
     const show = (x) => {
-      $('#sentTo').textContent = `Enter the 6-digit code sent to ${x.sentTo}. It expires in ${Math.round((x.expiresIn || 600) / 60)} minutes.`;
+      $('#sentTo').textContent = x.method === 'app' ? 'Enter the 6-digit code from your authenticator app.'
+        : `Enter the 6-digit code sent to ${x.sentTo}. It expires in ${Math.round((x.expiresIn || 600) / 60)} minutes.${x.adding ? ' Your email is saved on your login once the code is right.' : ''}`;
       $('#byMail').hidden = !x.canEmail;
-      let left = x.resendAfter || 30; clearInterval(timer); again.disabled = true; again.textContent = `Send again (${left})`;
+      clearInterval(timer); again.hidden = x.method === 'app';
+      if (x.method === 'app') return;
+      let left = x.resendAfter || 30; again.disabled = true; again.textContent = `Send again (${left})`;
       timer = setInterval(() => { if (!again.isConnected) return clearInterval(timer); left--; if (left <= 0) { clearInterval(timer); again.disabled = false; again.textContent = 'Send again'; } else again.textContent = `Send again (${left})`; }, 1000);
     };
     show(o);
@@ -130,9 +134,84 @@
     f.onsubmit = async (ev) => {
       ev.preventDefault();
       const btn = f.querySelector('button'); btn.disabled = true;
-      try { await post({ action: 'login-otp', token, code: $('#code').value.trim(), remember: f.remember.checked }); clearInterval(timer); start(); }
-      catch (e) { btn.disabled = false; fail(e); }
+      try {
+        const r = await post({ action: 'login-otp', token, code: $('#code').value.trim(), remember: f.remember.checked }); clearInterval(timer);
+        if (r.user && !r.user.hasApp && !r.user.mustChange) return appOffer(r.user);
+        start();
+      } catch (e) { btn.disabled = false; fail(e); }
     };
+  }
+  // no email and no sign-in app on the login yet: the person adds their own email, which takes the code
+  function addEmailStep(o, username) {
+    app.innerHTML = `<div class="center"><form class="card" id="f">
+      ${brand()}
+      <h1>Add your email</h1>
+      <p class="muted">Your login has no email yet. Type your own email: we send a 6-digit code there, and once you type it the email is saved on your login for your next sign-ins.</p>
+      <label for="em">Your email</label><input id="em" name="email" type="email" inputmode="email" autocomplete="email" autocapitalize="none" maxlength="120" required autofocus placeholder="name@dreamindiagroup.com">
+      <div class="actions"><button>Send the code</button><button type="button" class="ghost" id="back">Back</button></div>
+    </form></div>`;
+    const f = $('#f');
+    $('#back').onclick = () => login(username);
+    f.onsubmit = async (ev) => {
+      ev.preventDefault();
+      const btn = f.querySelector('button'); btn.disabled = true;
+      try { codeStep(await post({ action: 'login-email-add', token: o.token, email: $('#em').value.trim() }), username); }
+      catch (e) { btn.disabled = false; showErr(f, e); if (e.data && e.data.restart) setTimeout(() => login(username), 2500); }
+    };
+  }
+  // right after a sign-in with a code: offer the sign-in app ("Later" goes on to the ERP)
+  function appOffer(user) {
+    app.innerHTML = `<div class="center"><div class="card" id="offer">
+      ${brand(user.name)}
+      <h1>Set up a sign-in app?</h1>
+      <p class="muted">With an authenticator app on your phone (Google Authenticator, Microsoft Authenticator or similar), you type the code it shows instead of waiting for an email. It takes a minute.</p>
+      <div class="actions"><button id="now">Set up now</button><button class="ghost" id="later">Later</button></div>
+      <div id="setup"></div>
+    </div></div>`;
+    $('#later').onclick = () => start();
+    $('#now').onclick = () => { $('#now').hidden = true; $('#later').textContent = 'Not now'; appSetup($('#setup'), () => { toast('Sign-in app set up. Next time, type the code it shows.'); start(); }); };
+  }
+  // the set-up: QR code and the secret written out, then a code from the app to confirm
+  async function appSetup(box, done) {
+    let s; try { s = await api('/api/session', { action: 'app-begin' }); } catch (e) { box.innerHTML = `<p class="err">${esc(e.message)}</p>`; return; }
+    box.innerHTML = `<form class="appsetup">
+      <ol class="small"><li>Open your authenticator app and add an account (the <b>+</b>).</li><li>Scan this code, or type the key below by hand (account: ${esc(s.account)}, time-based).</li><li>Type the 6-digit code the app shows.</li></ol>
+      <img class="qr" src="${esc(s.qr)}" alt="QR code for the sign-in app" width="220" height="220">
+      <p class="small muted">Key: <code class="secret">${esc(s.secret)}</code></p>
+      <label>Code from the app</label><input name="code" inputmode="numeric" autocomplete="one-time-code" pattern="[0-9]{6}" maxlength="6" required class="otp">
+      <div class="actions"><button>Confirm</button></div>
+    </form>`;
+    const f = $('form', box);
+    f.onsubmit = async (ev) => {
+      ev.preventDefault(); const btn = $('button', f); btn.disabled = true;
+      try { await api('/api/session', { action: 'app-confirm', code: f.code.value.trim() }); done(); } catch (e) { btn.disabled = false; showErr(f, e); }
+    };
+  }
+  // Change password page: the person's own sign-in app (set up, or remove with a code from it or an email code)
+  async function myApp() {
+    const wrap = $('.center'); if (!wrap) return;
+    const box = document.createElement('div'); box.className = 'card'; box.style.marginTop = '14px';
+    wrap.appendChild(box);
+    const paint = async () => {
+      let st; try { st = await api('/api/session', { action: 'app' }); } catch (e) { box.innerHTML = `<p class="err">${esc(e.message)}</p>`; return; }
+      if (!st.hasApp) {
+        box.innerHTML = `<h2>Sign-in app</h2><p class="muted small">Not set up. With an authenticator app you type the code it shows at sign-in instead of waiting for an email.</p><div class="actions"><button type="button" id="appGo">Set up a sign-in app</button></div><div id="appBox"></div>`;
+        $('#appGo', box).onclick = () => { $('#appGo', box).hidden = true; appSetup($('#appBox', box), () => { toast('Sign-in app set up.'); paint(); }); };
+        return;
+      }
+      let token = null;
+      box.innerHTML = `<h2>Sign-in app</h2><p class="muted small">Set up on ${esc(fmtDate(st.since))}. To remove it (for a new phone), type a code from the app${st.canEmail ? ' or ask for an email code' : ''}.</p>
+        <form id="appRm"><label>Code</label><input name="code" inputmode="numeric" autocomplete="one-time-code" pattern="[0-9]{6}" maxlength="6" required class="otp">
+        <div class="actions"><button class="danger">Remove the sign-in app</button>${st.canEmail ? '<button type="button" class="ghost" id="appMail">Email me a code</button>' : ''}</div><p class="small muted" id="appHint"></p></form>`;
+      const f = $('#appRm', box);
+      if ($('#appMail', box)) $('#appMail', box).onclick = async (e) => { e.target.disabled = true; try { const r = await api('/api/session', { action: 'app-email' }); token = r.token; $('#appHint', box).textContent = `Type the code sent to ${r.sentTo}.`; } catch (x) { showErr(f, x); } e.target.disabled = false; };
+      f.onsubmit = async (ev) => {
+        ev.preventDefault();
+        if (!confirm('Remove your sign-in app? You will sign in with an email code until you set one up again.')) return;
+        try { await api('/api/session', { action: 'app-remove', code: f.code.value.trim(), token }); toast('Sign-in app removed.'); paint(); } catch (e) { showErr(f, e); }
+      };
+    };
+    paint();
   }
 
   function changePassword(forced) {
@@ -155,7 +234,7 @@
     };
     if ($('#out')) $('#out').onclick = signOut;
     if ($('#cancel')) $('#cancel').onclick = () => start();
-    if (!forced) myDevices();
+    if (!forced) { myApp(); myDevices(); }
   }
   // devices that skip the sign-in code ("Remember this device for 30 days"): the person can remove any of them
   async function myDevices() {
@@ -645,19 +724,25 @@
   async function loginSecurityPanel(box) {
     if (!box) return;
     let S; try { S = await api('/api/users?security=1'); } catch (e) { box.innerHTML = `<h2>Login security</h2><p class="err">${esc(e.message)}</p>`; return; }
-    const who = (list, none) => (list.length ? `<div class="table-wrap"><table><tr><th>Name</th><th>Username</th><th>Mobile</th><th>Email</th></tr>${list.map((u) => `<tr><td>${esc(u.name)}</td><td>${esc(u.username)}</td><td>${u.mobile ? esc(u.mobile) : '<span class="bad-t">none</span>'}</td><td>${u.email ? esc(u.email) : '<span class="bad-t">none</span>'}</td></tr>`).join('')}</table></div>` : `<p class="ok">${esc(none)}</p>`);
     box.innerHTML = `<h2>Login security</h2>
-      <p class="small muted" style="margin:0 0 8px">After the password, every sign-in to the ERP and DreamComm asks for a 6-digit code sent to the person's own WhatsApp (the mobile on their login, or a username that is a mobile), or to their email when there is no mobile or WhatsApp fails. A browser can be remembered for 30 days. WhatsApp: ${S.whatsapp ? 'connected' : '<b>not connected</b>'} · Email: ${S.mail ? 'set up' : '<b>not set up</b>'}.</p>
-      <div class="row" style="grid-template-columns:1fr auto;align-items:end"><div><label>WhatsApp login template ID (Click Connect, one variable: the code)</label><input id="lsTpl" value="${esc(S.settings.waOtpTemplate)}" maxlength="120"></div>
+      <p class="small muted" style="margin:0 0 8px">After the password, every sign-in to the ERP and DreamComm asks for a second step: the code from the person's sign-in app (authenticator) if they set one up, otherwise a 6-digit code by email${S.settings.waOtpTemplate ? ' or WhatsApp' : ''}. A login with no email and no app adds its own email at sign-in (it takes a code there). A browser can be remembered for 30 days. Email: ${S.mail ? 'set up' : '<b>not set up</b>'} · WhatsApp codes: ${S.settings.waOtpTemplate ? (S.whatsapp ? 'on' : '<b>WhatsApp not connected</b>') : 'off'}.</p>
+      <div class="row" style="grid-template-columns:1fr auto;align-items:end"><div><label>WhatsApp login template ID (Click Connect, one variable: the code; empty = no WhatsApp codes)</label><input id="lsTpl" value="${esc(S.settings.waOtpTemplate)}" maxlength="120" placeholder="none"></div>
       <label class="check" style="margin:0 0 10px"><input type="checkbox" id="lsOn" ${S.settings.enforce ? 'checked' : ''}> Require the code</label></div>
-      <p class="small muted">When "Require the code" is off, a login that no code can reach signs in with the password alone (written in the audit log). Keep it on.</p>
+      <p class="small muted">While "Require the code" is off, a login that no code can reach signs in with the password alone (written in the audit log). When it is on, such a login is refused; the Admin reset in Vercel always works.</p>
       <div class="actions"><button class="ghost" id="lsSave">Save</button></div>
-      <h3>Logins with no usable mobile (${S.noMobile.length})</h3>${who(S.noMobile, 'Every active login has a mobile.')}
-      <h3>Logins no code can reach now (${S.unreachable.length})</h3><p class="small muted">They cannot sign in while the code is required: add a mobile (and keep the template set) or an email.</p>${who(S.unreachable, 'Every active login can get a code.')}`;
+      <h3>Active logins (${S.logins.length}): ${S.logins.filter((u) => u.app).length} with a sign-in app, ${S.logins.filter((u) => u.email).length} with an email, ${S.neither.length} with neither</h3>
+      <div class="table-wrap"><table><tr><th>Name</th><th>Username</th><th>Sign-in app</th><th>Email</th><th>Mobile</th><th class="num">Remembered</th><th></th></tr>
+      ${S.logins.map((u) => `<tr><td>${esc(u.name)}</td><td>${esc(u.username)}</td><td>${u.app ? '<span class="pill good">yes</span>' : '<span class="muted">no</span>'}</td>
+        <td>${u.email ? esc(u.email) + (u.emailVerified ? ' <span class="pill good">verified</span>' : '') : '<span class="bad-t">none</span>'}</td><td>${u.mobile ? esc(u.mobile) : '<span class="muted">none</span>'}</td><td class="num">${u.devices || ''}</td>
+        <td class="num" style="white-space:nowrap">${u.app ? `<button class="ghost small" data-appreset="${u.id}">Reset sign-in app</button>` : ''}</td></tr>`).join('')}</table></div>`;
     $('#lsSave', box).onclick = async () => {
-      if (!$('#lsOn', box).checked && !confirm('Allow sign-in without a code for logins no code can reach?')) return;
       try { await api('/api/users', { action: 'security', enforce: $('#lsOn', box).checked, waOtpTemplate: $('#lsTpl', box).value }); toast('Saved.'); loginSecurityPanel(box); } catch (e) { alert(e.message); }
     };
+    box.querySelectorAll('[data-appreset]').forEach((b) => (b.onclick = async () => {
+      const u = S.logins.find((x) => x.id === +b.dataset.appreset);
+      if (!confirm(`Reset the sign-in app of ${u.name}? They sign in with an email code until they set one up again.`)) return;
+      try { await api('/api/users', { action: 'app-reset', id: u.id }); toast('Sign-in app reset.'); loginSecurityPanel(box); } catch (e) { alert(e.message); }
+    }));
   }
   // Copy from the staff portal: logins (same usernames and passwords), HR & Admin, Purchase and Construction.
   async function portalCopyPanel() {

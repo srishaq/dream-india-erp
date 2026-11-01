@@ -45,6 +45,9 @@ const wa = http.createServer((req, res) => {
 Object.assign(process.env, { SMTP_HOST: '127.0.0.1', SMTP_PORT: String(MAIL_PORT), SMTP_TLS: '0', SMTP_USER: 'erp@test.local', SMTP_PASS: 'x',
   CCM_API_KEY: 'test-key', CCM_SENDER: '919811100000', CCM_API: 'http://127.0.0.1:' + WA_PORT });
 const db = require('../lib/db');
+const OTP = require('../lib/staff-otp');
+const TPL = 'erp_login_code_test_tpl'; // a WhatsApp template the Admin has entered
+let nocontactPw = null;
 
 // a browser: keeps every cookie (session, chat, remembered device)
 function client() {
@@ -67,6 +70,12 @@ let passed = 0;
 const step = async (name, fn) => { await fn(); passed++; console.log('  ✓', name); };
 
 (async () => {
+  await step('TOTP matches the RFC 6238 test values (SHA-1), and base32 round-trips', async () => {
+    const key = Buffer.from('12345678901234567890');
+    assert.equal(OTP.hotp(key, Math.floor(59 / 30)), '287082'); assert.equal(OTP.hotp(key, Math.floor(1111111109 / 30)), '081804');
+    assert.equal(OTP.hotp(key, Math.floor(1234567890 / 30)), '005924'); assert.equal(OTP.hotp(key, Math.floor(2000000000 / 30)), '279037');
+    assert.equal(OTP.b32encode(key), 'GEZDGNBVGY3TQOJQGEZDGNBVGY3TQOJQ'); assert.deepEqual(OTP.b32decode('GEZDGNBVGY3TQOJQGEZDGNBVGY3TQOJQ'), key);
+  });
   const admin = client();
   let temp, neha = client();
   await step('setup; the Admin adds a login with a mobile and an email', async () => {
@@ -74,8 +83,8 @@ const step = async (name, fn) => { await fn(); passed++; console.log('  ✓', na
     const r = await admin('/api/users', { action: 'create', name: 'Neha CRM', username: 'neha', role: 'crm', phone: '+91 98200 11122', email: 'Neha@Example.com' });
     assert.equal(r.ok, true); temp = r.tempPassword;
     const sec = await admin('/api/users?security=1');
-    assert.equal(sec.settings.enforce, false); assert.equal(sec.settings.waOtpTemplate, 'erp_login_code_m4rahd8855pzg1ov'); // off until the Admin turns it on
-    assert.equal((await admin('/api/users', { action: 'security', enforce: true, waOtpTemplate: 'erp_login_code_m4rahd8855pzg1ov' })).ok, true);
+    assert.equal(sec.settings.enforce, false); assert.equal(sec.settings.waOtpTemplate, ''); // off until the Admin turns it on; WhatsApp codes off until a template is set
+    assert.equal((await admin('/api/users', { action: 'security', enforce: true, waOtpTemplate: TPL })).ok, true);
     assert.ok(sec.noMobile.some((u) => u.username === 'rafi')); assert.ok(!sec.noMobile.some((u) => u.username === 'neha'));
   });
   let first;
@@ -85,7 +94,7 @@ const step = async (name, fn) => { await fn(); passed++; console.log('  ✓', na
     assert.match(first.sentTo, /^WhatsApp ••••1122$/); assert.equal(first.canEmail, true);
     assert.ok(!neha.jar.erp_session); assert.equal((await neha('/api/session')).user, null);
     const m = was[was.length - 1];
-    assert.equal(m.to, '919820011122'); assert.equal(m.template_id, 'erp_login_code_m4rahd8855pzg1ov'); assert.equal(m.message_type, 'template');
+    assert.equal(m.to, '919820011122'); assert.equal(m.template_id, TPL); assert.equal(m.message_type, 'template');
     assert.deepEqual(Object.keys(m.sample), ['bodyvar']); assert.match(m.sample.bodyvar[0], /^\d{6}$/);
     const row = await db.one('select code_hash, token_hash from staff_otps order by id desc limit 1');
     assert.ok(!row.code_hash.includes(m.sample.bodyvar[0]) && row.token_hash !== first.token); // only hashes kept
@@ -149,26 +158,6 @@ const step = async (name, fn) => { await fn(); passed++; console.log('  ✓', na
     const lim = await c('/api/session', { action: 'login', username: 'neha', password: 'neha-password-2' }); assert.equal(lim.status, 429, JSON.stringify(lim));
     await fresh();
   });
-  await step('a username that is a mobile gets the code there; no mobile and no email is refused', async () => {
-    let r = await admin('/api/users', { action: 'create', name: 'Imran Staff', username: '9876543210', role: 'staff' }); const t1 = r.tempPassword;
-    r = await client()('/api/session', { action: 'login', username: '9876543210', password: t1 });
-    assert.equal(r.sentTo, 'WhatsApp ••••3210'); assert.equal(was[was.length - 1].to, '919876543210'); assert.equal(r.canEmail, false);
-    r = await admin('/api/users', { action: 'create', name: 'No Contact', username: 'nocontact', role: 'staff' }); const t2 = r.tempPassword;
-    r = await client()('/api/session', { action: 'login', username: 'nocontact', password: t2 });
-    assert.equal(r.status, 403); assert.equal(r.error, 'No mobile number on your login — ask the Admin to add it in Manage users.');
-    assert.equal((await client()('/api/chat', { action: 'login', username: 'nocontact', password: t2 })).status, 403);
-    const sec = await admin('/api/users?security=1'); assert.ok(sec.unreachable.some((u) => u.username === 'nocontact'));
-  });
-  await step('only while "Require the code" is off may a login no code can reach sign in without one (audited)', async () => {
-    assert.equal((await admin('/api/users', { action: 'security', enforce: false, waOtpTemplate: 'erp_login_code_m4rahd8855pzg1ov' })).ok, true);
-    const c = client(); const r = await c('/api/session', { action: 'login', username: 'nocontact', password: (await (async () => { const x = await admin('/api/users', { action: 'reset', id: (await db.one("select id from users where username = 'nocontact'")).id }); return x.tempPassword; })()) });
-    assert.equal(r.ok, true); assert.ok(c.jar.erp_session);
-    assert.ok(await db.one("select 1 from audit_log where action = 'login-no-code'"));
-    assert.ok(await db.one("select 1 from audit_log where action = 'login-security'"));
-    // a login that has a mobile still gets a code
-    assert.equal((await client()('/api/session', { action: 'login', username: 'neha', password: 'neha-password-2' })).otp, true);
-    await admin('/api/users', { action: 'security', enforce: true, waOtpTemplate: 'erp_login_code_m4rahd8855pzg1ov' });
-  });
   await step('DreamComm asks for the code too, and gives only the chat cookie', async () => {
     await fresh();
     const c = client(); const r = await c('/api/chat', { action: 'login', username: 'neha', password: 'neha-password-2' });
@@ -189,6 +178,114 @@ const step = async (name, fn) => { await fn(); passed++; console.log('  ✓', na
     assert.equal((await admin('/api/session', { action: 'login-otp', token: l.token, code: lastWaCode() })).ok, true);
     const r = await admin('/api/users', { action: 'update', id: me, name: 'Syed Rafi Ishaq', role: 'admin', allProjects: true, phone: '9000000000' });
     assert.equal(r.status, 403); assert.match(r.error, /cannot change your own mobile/);
+  });
+  await step('a username that is a mobile gets the code there; no email and no app, with no mailbox, is refused', async () => {
+    let r = await admin('/api/users', { action: 'create', name: 'Imran Staff', username: '9876543210', role: 'staff' }); const t1 = r.tempPassword;
+    r = await client()('/api/session', { action: 'login', username: '9876543210', password: t1 });
+    assert.equal(r.sentTo, 'WhatsApp ••••3210'); assert.equal(was[was.length - 1].to, '919876543210'); assert.equal(r.canEmail, false);
+    r = await admin('/api/users', { action: 'create', name: 'No Contact', username: 'nocontact', role: 'staff' }); nocontactPw = r.tempPassword;
+    const smtpUser = process.env.SMTP_USER; delete process.env.SMTP_USER; // no ERP mailbox: an email cannot be added either
+    r = await client()('/api/session', { action: 'login', username: 'nocontact', password: nocontactPw });
+    assert.equal(r.status, 403); assert.equal(r.error, 'No email on your login — ask the Admin to add it in Manage users.');
+    assert.equal((await client()('/api/chat', { action: 'login', username: 'nocontact', password: nocontactPw })).status, 403);
+    const sec = await admin('/api/users?security=1'); assert.ok(sec.unreachable.some((u) => u.username === 'nocontact')); assert.ok(sec.neither.some((u) => u.username === 'nocontact'));
+    // only while "Require the code" is off does such a login sign in without one (audited)
+    assert.equal((await admin('/api/users', { action: 'security', enforce: false, waOtpTemplate: TPL })).ok, true);
+    const c = client(); r = await c('/api/session', { action: 'login', username: 'nocontact', password: nocontactPw });
+    assert.equal(r.ok, true); assert.ok(c.jar.erp_session);
+    assert.ok(await db.one("select 1 from audit_log where action = 'login-no-code'"));
+    assert.ok(await db.one("select 1 from audit_log where action = 'login-security'"));
+    assert.equal((await client()('/api/session', { action: 'login', username: 'neha', password: 'neha-password-2' })).otp, true); // a login with a mobile still gets a code
+    await admin('/api/users', { action: 'security', enforce: true, waOtpTemplate: TPL });
+    process.env.SMTP_USER = smtpUser;
+  });
+  await step('"Add your email": no email and no app → the email typed takes a code, is saved as verified (even while codes are required)', async () => {
+    await fresh();
+    const c = client(); let r = await c('/api/session', { action: 'login', username: 'nocontact', password: nocontactPw });
+    assert.equal(r.otp, true); assert.equal(r.method, 'add-email'); assert.ok(!c.jar.erp_session);
+    assert.equal((await c('/api/session', { action: 'login-otp', token: r.token, code: '123456' })).status, 400); // the email first
+    assert.equal((await c('/api/session', { action: 'login-email-add', token: r.token, email: 'not-an-email' })).status, 400);
+    const taken = await c('/api/session', { action: 'login-email-add', token: r.token, email: 'NEHA@example.com' });
+    assert.equal(taken.status, 409); assert.match(taken.error, /another login/);
+    const before = mails.length;
+    const m = await c('/api/session', { action: 'login-email-add', token: r.token, email: 'No.Contact@Example.com' });
+    assert.equal(m.method, 'code'); assert.equal(m.adding, true); assert.equal(m.sentTo, 'email n***@example.com');
+    assert.equal(mails.length, before + 1); assert.deepEqual(mails[mails.length - 1].to, ['no.contact@example.com']);
+    assert.equal((await db.one("select email from users where username = 'nocontact'")).email, null); // not saved before the code
+    r = await c('/api/session', { action: 'login-otp', token: r.token, code: lastMailCode(), remember: true });
+    assert.equal(r.ok, true, JSON.stringify(r)); assert.equal(r.user.hasApp, false); assert.ok(c.jar.erp_session && c.jar.erp_device);
+    const u = await db.one("select email, email_verified_at from users where username = 'nocontact'");
+    assert.equal(u.email, 'no.contact@example.com'); assert.ok(u.email_verified_at);
+    assert.match((await db.one("select note from audit_log where action = 'email-add' order by id desc limit 1")).note, /Email added at sign-in: no\.contact@example\.com/);
+    // next time: an ordinary email code (no "Add your email" again)
+    r = await client()('/api/session', { action: 'login', username: 'nocontact', password: nocontactPw });
+    assert.equal(r.method, 'code'); assert.equal(r.sentTo, 'email n***@example.com');
+    const sec = await admin('/api/users?security=1'); const row = sec.logins.find((x) => x.username === 'nocontact');
+    assert.equal(row.emailVerified, true); assert.equal(row.app, false);
+  });
+  let nehaApp = null;
+  const signedIn = async () => { await fresh(); const c = client(); const r = await c('/api/session', { action: 'login', username: 'neha', password: 'neha-password-2' }); assert.equal((await c('/api/session', { action: 'login-otp', token: r.token, code: r.method === 'app' ? appCode() : lastWaCode() })).ok, true); return c; };
+  const appCode = (d = 0) => OTP.hotp(OTP.b32decode(nehaApp), Math.floor(Date.now() / 30000) + d);
+  await step('sign-in app: the QR code and the key, confirmed with a code from the app; the secret is sealed', async () => {
+    await db.q("update users set totp_last_step = null"); await fresh(); waMode = 'ok';
+    const c = await signedIn();
+    assert.equal((await c('/api/session', { action: 'app' })).hasApp, false);
+    const b = await c('/api/session', { action: 'app-begin' });
+    assert.match(b.secret, /^[A-Z2-7]{4}( [A-Z2-7]{4}){7}$/); nehaApp = b.secret.replace(/ /g, '');
+    assert.equal(b.uri, `otpauth://totp/Dream%20India%20ERP:neha?secret=${nehaApp}&issuer=Dream%20India%20ERP`);
+    assert.match(b.qr, /^data:image\/svg\+xml;base64,/); assert.match(Buffer.from(b.qr.split(',')[1], 'base64').toString(), /^<svg [^>]*><rect/);
+    assert.equal((await c('/api/session', { action: 'app-confirm', code: appCode(-5) })).status, 400);
+    const ok = await c('/api/session', { action: 'app-confirm', code: appCode() }); assert.equal(ok.ok, true); assert.equal(ok.hasApp, true);
+    const row = await db.one("select totp_secret, totp_pending from users where username = 'neha'");
+    assert.ok(/^[ks]1\./.test(row.totp_secret) && !row.totp_secret.includes(nehaApp) && !row.totp_pending);
+    assert.equal(await OTP.open(row.totp_secret), nehaApp); // read back from the database with the same key
+    assert.equal((await c('/api/session', { action: 'app-begin' })).status, 409); // remove it first
+    assert.ok(await db.one("select 1 from audit_log where action = 'app-set'"));
+    await db.q("update users set totp_last_step = null where username = 'neha'");
+  });
+  await step('sign-in with the app: nothing is sent; an old step is refused; a code works once; "Email me a code instead"', async () => {
+    await fresh();
+    const sent = was.length + mails.length;
+    const c = client(); let r = await c('/api/session', { action: 'login', username: 'neha', password: 'neha-password-2' });
+    assert.equal(r.method, 'app'); assert.equal(r.canEmail, true); assert.ok(!r.sentTo); assert.equal(was.length + mails.length, sent);
+    assert.equal((await c('/api/session', { action: 'login-otp', token: r.token, code: appCode(-3) })).status, 400); // 90 s old
+    const code = appCode();
+    r = await c('/api/session', { action: 'login-otp', token: r.token, code, remember: false }); assert.equal(r.ok, true); assert.equal(r.user.hasApp, true);
+    assert.match((await db.one("select note from audit_log where action = 'login' order by id desc limit 1")).note, /sign-in app/);
+    const c2 = client(); r = await c2('/api/session', { action: 'login', username: 'neha', password: 'neha-password-2' });
+    const again = await c2('/api/session', { action: 'login-otp', token: r.token, code });
+    assert.equal(again.status, 400); assert.match(again.error, /used already/);
+    assert.equal((await c2('/api/session', { action: 'login-otp', token: r.token, code: appCode(1) })).ok, true); // the next step is fine
+    // "Email me a code instead"
+    const c3 = client(); r = await c3('/api/session', { action: 'login', username: 'neha', password: 'neha-password-2' });
+    const m = await c3('/api/session', { action: 'login-resend', token: r.token, email: true });
+    assert.equal(m.method, 'code'); assert.equal(m.sentTo, 'email n***@example.com'); assert.deepEqual(mails[mails.length - 1].to, ['neha@example.com']);
+    assert.equal((await c3('/api/session', { action: 'login-otp', token: r.token, code: lastMailCode(), remember: true })).ok, true);
+    // a remembered device skips the app too
+    await c3('/api/session', { action: 'logout' });
+    r = await c3('/api/session', { action: 'login', username: 'neha', password: 'neha-password-2' }); assert.equal(r.ok, true); assert.ok(!r.otp);
+    // DreamComm asks for the app's code as well
+    await db.q("update users set totp_last_step = null where username = 'neha'");
+    const ch = client(); r = await ch('/api/chat', { action: 'login', username: 'neha', password: 'neha-password-2' }); assert.equal(r.method, 'app');
+    assert.equal((await ch('/api/chat', { action: 'login-otp', token: r.token, code: appCode() })).ok, true);
+  });
+  await step('the person removes their app with an email code; the Admin can reset it (audited)', async () => {
+    await db.q("update users set totp_last_step = null where username = 'neha'");
+    const c = await signedIn();
+    assert.equal((await c('/api/session', { action: 'app-remove', code: '000000' })).status, 400);
+    const e = await c('/api/session', { action: 'app-email' }); assert.equal(e.sentTo, 'email n***@example.com');
+    let r = await c('/api/session', { action: 'app-remove', token: e.token, code: lastMailCode() }); assert.equal(r.ok, true); assert.equal(r.hasApp, false);
+    assert.ok(await db.one("select 1 from audit_log where action = 'app-remove'"));
+    const b = await c('/api/session', { action: 'app-begin' }); nehaApp = b.secret.replace(/ /g, '');
+    assert.equal((await c('/api/session', { action: 'app-confirm', code: appCode() })).ok, true);
+    const id = (await db.one("select id from users where username = 'neha'")).id;
+    let sec = await admin('/api/users?security=1'); assert.equal(sec.logins.find((x) => x.id === id).app, true);
+    r = await admin('/api/users', { action: 'app-reset', id }); assert.equal(r.ok, true); assert.equal(r.reset, 1);
+    assert.equal(r.logins.find((x) => x.id === id).app, false);
+    assert.match((await db.one("select note from audit_log where action = 'app-reset' order by id desc limit 1")).note, /Reset the sign-in app of neha/);
+    await fresh();
+    r = await client()('/api/session', { action: 'login', username: 'neha', password: 'neha-password-2' }); assert.equal(r.method, 'code'); // back to codes
+    await db.q('update staff_devices set revoked_at = now() where revoked_at is null'); // a clean start for the next step
   });
   await step('Sign out all devices, a role change, a reset and disabling all end remembered devices', async () => {
     const id = (await db.one("select id from users where username = 'neha'")).id;
