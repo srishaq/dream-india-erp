@@ -1,4 +1,6 @@
-// Dream India Realty · Partner Portal. Sign in, register (with mobile OTP), upload clients, see own clients (masked).
+// Dream India Realty · Partner Portal. Sign in, register (with mobile OTP), or accept an invitation (?invite=…) sent to
+// a firm already in Dream India's records; upload clients, see own clients (masked); approved partners also see their
+// bookings & brokerage (never anything about the buyer) and send their brokerage bills. Pending partners: documents.
 (function () {
   const $ = (s, r = document) => r.querySelector(s);
   const $$ = (s, r = document) => [...r.querySelectorAll(s)];
@@ -19,7 +21,11 @@
     out: `<svg ${SV}><path d="M15 4h4v16h-4M10 8l-4 4 4 4M6 12h11"/></svg>`,
     menu: `<svg ${SV}><path d="M4 7h16M4 12h16M4 17h16"/></svg>`,
     file: `<svg ${SV}><path d="M14 3H6a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V9z"/><path d="M14 3v6h6M8 13h8M8 17h5"/></svg>`,
+    rupee: `<svg ${SV}><path d="M7 5h10M7 9h10M9 5c5 0 5 8 0 8H7l7 7"/></svg>`,
+    bill: `<svg ${SV}><path d="M6 3h12v18l-3-2-3 2-3-2-3 2z"/><path d="M9 8h6M9 12h6M9 16h3"/></svg>`,
   };
+  const rs = (v) => '₹' + (Math.round(Number(v) || 0)).toLocaleString('en-IN');
+  const cr = (v) => { const x = Number(v) || 0; return x >= 1e7 ? `₹${(x / 1e7).toFixed(2)} Cr` : x >= 1e5 ? `₹${(x / 1e5).toFixed(2)} L` : rs(x); };
   const SECURE = `<div class="secure">${I.shield}<span>Your client data is private to your firm. Other partners can never see it, mobile numbers are shown masked, and Dream India uses it only to call your clients for the project you choose. A client you register stays credited to your CP ID.</span></div>`;
 
   async function api(path, body) {
@@ -35,6 +41,8 @@
   let ME = null, AREAS = [], view = 'home', H = null;
 
   async function start() {
+    const inv = new URLSearchParams(location.search).get('invite');
+    if (inv) return invited(inv);
     try {
       const r = await api('/api/cp-portal?me=1');
       if (!r.signedIn) { AREAS = r.areas || []; return signIn(); }
@@ -123,6 +131,54 @@
       <div class="actions"><button class="block" id="go">Open the portal</button></div>`);
     $('#go').onclick = start;
   }
+  // an invitation for a firm already in Dream India's records: confirm details, choose a login, verify the code
+  const dropInvite = () => { try { window.history.replaceState(null, '', location.pathname); } catch {} };
+  async function invited(token) {
+    authShell('<p class="muted">Opening your invitation…</p>');
+    let F;
+    try { F = await api('/api/cp-portal?invite=' + encodeURIComponent(token)); }
+    catch (e) { dropInvite(); authShell(`<h1>Invitation</h1><div class="err">${esc(e.message)}</div><div class="actions"><button class="block" id="si">Go to sign in</button></div>`); $('#si').onclick = () => start(); return; }
+    AREAS = F.areas || AREAS;
+    const R = { contact: F.contact || '', address: F.address || '', area: F.area || '', rera: F.rera || '' };
+    const form = (msg) => {
+      authShell(`<h1>Welcome, ${esc(F.firm)}</h1><p class="muted">You are invited to the Dream India Partner Portal: see your bookings and brokerage, send your bills and register clients. Your bookings with Dream India are already on your account.</p>
+        <form id="f"><h3>Your login</h3>
+        <label>Username</label><input name="username" value="${esc(R.username || '')}" required pattern="[A-Za-z0-9._]{4,30}" autocomplete="username"><div class="hint">4 to 30 letters, numbers, dots or underscores</div>
+        <div class="row"><div><label>Password</label><input name="password" type="password" required minlength="8" autocomplete="new-password"></div><div><label>Confirm password</label><input name="password2" type="password" required autocomplete="new-password"></div></div>
+        <div class="hint">At least 8 characters with letters and numbers</div>
+        <h3 style="margin-top:18px">Your firm</h3>
+        <div class="row"><div><label>Point of contact</label><input name="contact" value="${esc(R.contact)}" required></div><div><label>Designation</label><input name="designation" value="${esc(R.designation || '')}" placeholder="Proprietor, Partner…"></div></div>
+        <label>MahaRERA agent registration no.</label><input name="rera" value="${esc(R.rera)}" required placeholder="A51800012345">
+        <label>Office address</label><textarea name="address" rows="2" required>${esc(R.address)}</textarea>
+        <div class="row"><div><label>Office area</label><select name="area" required><option value="">Choose…</option>${AREAS.map((a) => `<option ${R.area === a ? 'selected' : ''}>${esc(a)}</option>`).join('')}</select></div>
+        <div><label>Callers in your team</label><input name="callers" type="number" min="0" value="${esc(R.callers || '')}"></div></div>
+        <label class="check" style="margin-top:16px"><input type="checkbox" name="agree" required><span>I confirm the details are correct and accept the partner terms. The verification code goes to the mobile ${esc(F.mobile || '')}${F.email ? ' and email ' + esc(F.email) : ''} in Dream India's records.</span></label>
+        <div class="actions"><button class="block">Send verification code</button></div><div id="m">${msg || ''}</div></form>
+        <p class="small" style="margin-top:14px">Mobile or email changed? Please call the Dream India office before you continue.</p>`);
+      const f = $('#f');
+      f.onsubmit = (e) => {
+        e.preventDefault();
+        for (const el of f.elements) if (el.name) R[el.name] = el.type === 'checkbox' ? el.checked : el.value;
+        if (R.password !== R.password2) return showErr($('#m'), 'The passwords do not match.');
+        R.rera = String(R.rera || '').toUpperCase().replace(/\s/g, '');
+        if (!/^A\d{11}$/.test(R.rera)) return showErr($('#m'), 'MahaRERA agent numbers look like A51800012345.');
+        busy($('button', f), async () => {
+          try { const r = await api('/api/cp-portal', { action: 'invite-start', invite: token, ...R }); code(r); } catch (x) { showErr($('#m'), x); }
+        });
+      };
+    };
+    const code = (r) => {
+      authShell(`<h1>Verify it is you</h1><p class="muted">We sent a 6-digit code to ${esc(r.sentTo || 'your mobile and email on our records')}. It expires in 10 minutes.</p>
+        <form id="f"><input name="otp" class="otp" inputmode="numeric" maxlength="6" autocomplete="one-time-code" required autofocus>
+        <div class="actions"><button class="block">Verify and open my account</button></div><div id="m"></div></form>
+        <p class="small" style="margin-top:14px"><button type="button" class="link" id="ed">Back</button></p>`);
+      $('#ed').onclick = () => form();
+      $('#f').onsubmit = (e) => { e.preventDefault(); busy($('button', e.target), async () => {
+        try { const v = await api('/api/cp-portal', { action: 'invite-verify', token: r.token, otp: e.target.otp.value }); dropInvite(); view = 'docs'; welcome(v); } catch (x) { showErr($('#m'), x); } }); };
+    };
+    form();
+  }
+
   function forgot() {
     authShell(`<h1>Reset password</h1><p class="muted">Enter your username, CP ID or registered mobile. We will send a code to your registered mobile and email.</p>
       <form id="f"><label>Username, CP ID or mobile</label><input name="u" required autofocus><div class="actions"><button class="block">Send code</button></div><div id="m"></div></form>
@@ -144,8 +200,12 @@
   }
 
   // ---------- portal ----------
-  const NAV = [['home', 'Overview', 'home'], ['docs', 'Documents', 'file'], ['upload', 'Upload clients', 'upload'], ['clients', 'My clients', 'users'], ['history', 'Upload history', 'clock'], ['profile', 'Firm profile', 'office']];
+  // approved partners: every tab; a partner waiting for approval: documents (and the profile, to change the password)
+  const NAV_ALL = [['home', 'Home', 'home'], ['register', 'Register clients', 'upload'], ['bookings', 'My bookings & brokerage', 'rupee'], ['bills', 'Bills', 'bill'], ['docs', 'Documents', 'file'], ['profile', 'Profile', 'office']];
+  const navFor = () => (ME && ME.approved ? NAV_ALL : NAV_ALL.filter(([k]) => k === 'docs' || k === 'profile'));
+  let NAV = NAV_ALL, sub = 'upload';
   function portal() {
+    NAV = navFor(); if (!NAV.some(([k]) => k === view)) view = NAV[0][0];
     const ini = (ME.firm || '?').split(/\s+/).map((w) => w[0]).join('').slice(0, 2).toUpperCase();
     app.innerHTML = `<div class="shell"><aside class="side"><img src="/logo.svg" alt="Dream India Realty"><nav>${NAV.map(([k, l, ic]) => `<button data-v="${k}" aria-current="${k === view}">${I[ic]}${l}</button>`).join('')}
       <button id="so">${I.out}Sign out</button></nav><div class="sfoot">Partner Portal · Dream India Realty</div></aside>
@@ -159,12 +219,83 @@
   async function show() {
     const v = $('#v'); v.innerHTML = '<p class="muted">Loading…</p>';
     try {
-      H = await api('/api/cp-portal?home=1'); ME = H.profile;
-      ({ home, docs, upload, clients, history, profile })[view](v);
+      H = await api('/api/cp-portal?home=1');
+      const was = ME && ME.approved; ME = H.profile;
+      if (!!was !== !!ME.approved) return portal(); // approved (or no longer) since the page was opened
+      if (!NAV.some(([k]) => k === view)) view = NAV[0][0];
+      ({ home, register: regClients, bookings, bills, docs, profile })[view](v);
       window.scrollTo(0, 0);
     } catch (e) { showErr(v, e); }
   }
-  const go = (k) => { view = k; $$('[data-v]').forEach((x) => x.setAttribute('aria-current', x.dataset.v === k)); show(); };
+  const go = (k) => {
+    if (['upload', 'clients', 'history'].includes(k)) { sub = k; k = 'register'; }
+    view = k; $$('[data-v]').forEach((x) => x.setAttribute('aria-current', x.dataset.v === k)); show();
+  };
+  // Register clients: upload, my clients and upload history
+  function regClients(v) {
+    const S = [['upload', 'Upload clients'], ['clients', 'My clients'], ['history', 'Upload history']];
+    v.innerHTML = `<div class="seg" role="tablist">${S.map(([k, l]) => `<button type="button" data-sub="${k}" aria-pressed="${k === sub}">${esc(l)}</button>`).join('')}</div><div id="sv"></div>`;
+    $$('[data-sub]', v).forEach((b) => (b.onclick = () => { sub = b.dataset.sub; regClients(v); }));
+    ({ upload, clients, history })[sub]($('#sv', v));
+  }
+
+  // My bookings & brokerage: the flats booked through the firm, project by project, with the brokerage on each.
+  // Nothing about the buyer is ever sent to the portal.
+  const STATE = { Paid: ['Paid', 'good'], Due: ['Due to you', 'navy'], 'Not yet due': ['Not yet due', 'warn'], 'No amount': ['Brokerage not set', ''], Cancelled: ['Cancelled', ''], 'Cancelled: recover': ['Cancelled: brokerage to return', 'bad'] };
+  async function bookings(v) {
+    const d = await api('/api/cp-portal?bookings=1'), T = d.totals;
+    const k = (val, l, cls = '') => `<div class="kpi ${cls}"><b>${val}</b><span>${esc(l)}</span></div>`;
+    const rule = `Brokerage becomes due on a flat ${d.rule.afterRegistration ? 'once its agreement is registered and ' : 'once '}the buyer has paid ${esc(d.rule.minReceivedPct)}% of the agreement value. Paid shows payments Dream India has made and verified.`;
+    v.innerHTML = `<div class="kpis money">${k(nf(T.flats), 'Flats booked through you')}${k(cr(T.agreementValue), 'Total agreement value')}${k(rs(T.brokerage), 'Brokerage earned')}${k(rs(T.paid), 'Paid to you')}${k(rs(T.balance), 'Balance')}${k(rs(T.dueNow), 'Due now', T.dueNow ? 'due' : '')}</div>
+      <p class="hint" style="margin:-6px 0 16px">${rule}${T.passBack ? ` Pass back adjusted: ${rs(T.passBack)}.` : ''}${T.recoverable ? ` <b>${rs(T.recoverable)} was paid on cancelled bookings and is to be returned or adjusted.</b>` : ''}</p>
+      ${d.projects.length ? d.projects.map((p) => `<div class="card"><div class="proj-h"><h2>${esc(p.project.name)}</h2><span>${nf(p.totals.flats)} live${p.totals.cancelled ? ` · ${nf(p.totals.cancelled)} cancelled` : ''} · brokerage ${rs(p.totals.brokerage)} · balance ${rs(p.totals.balance)}</span></div>
+        <div class="tw"><table><thead><tr><th>Flat</th><th>Booked on</th><th>Status</th><th class="num">Agreement value</th><th class="num">Brokerage %</th><th class="num">Brokerage</th><th class="num">Buyer has paid</th><th class="num">Paid to you</th><th class="num">Balance</th><th>Brokerage</th></tr></thead><tbody>
+        ${p.bookings.map((b) => { const s = STATE[b.state] || [b.state, '']; return `<tr class="${b.status === 'cancelled' ? 'dim' : ''}"><td><b>${esc(b.unitNo)}</b></td><td>${dd(b.bookingDate)}</td><td>${b.status === 'active' ? 'Active' : 'Cancelled'}</td>
+          <td class="num">${rs(b.agreementValue)}</td><td class="num">${b.brokeragePct == null ? '—' : esc(b.brokeragePct) + '%'}</td><td class="num">${b.status === 'active' ? rs(b.brokerage) : '—'}</td><td class="num">${esc(b.receivedPct)}%</td>
+          <td class="num">${b.paid ? rs(b.paid) : '—'}</td><td class="num">${b.status === 'active' ? rs(b.balance) : '—'}</td><td><span class="pill ${s[1]}">${esc(s[0])}</span>${b.why ? `<span class="why">${esc(b.why)}</span>` : ''}</td></tr>`; }).join('')}</tbody></table></div></div>`).join('')
+    : '<div class="card"><div class="empty">No bookings under your CP ID yet.</div></div>'}
+      <div class="actions"><button class="ghost" id="tb">${I.bill}Send a bill</button></div>`;
+    $('#tb').onclick = () => go('bills');
+  }
+
+  // Bills: send a tax invoice for brokerage; see each bill's status
+  const BST = { submitted: 'warn', checked: 'good', rejected: 'bad' };
+  async function bills(v) {
+    const d = await api('/api/cp-portal?bills=1');
+    const today = new Date(Date.now() + 330 * 60000).toISOString().slice(0, 10);
+    const byProj = {}; for (const f of d.flats) (byProj[f.project] ||= []).push(f);
+    v.innerHTML = `<div class="card"><h2>Send a bill</h2><p class="muted small">Your tax invoice for brokerage. Accounts checks it against your bookings; you see the result below.</p><form id="bf">
+      <div class="row"><div><label>Bill (invoice) no.</label><input name="billNo" required maxlength="40"></div><div><label>Bill date</label><input name="billDate" type="date" max="${today}" value="${today}" required></div></div>
+      <div class="row"><div><label>Amount before GST (₹)</label><input name="amount" inputmode="decimal" required></div><div><label>GST amount (₹)</label><input name="gst" inputmode="decimal" value="0" required></div></div>
+      ${d.flats.length ? `<label>Flats this bill is for (optional)</label><div class="flatpick">${Object.entries(byProj).map(([p, fs]) => fs.map((f) => `<label class="check"><input type="checkbox" name="flat" value="${f.id}"><span>${esc(f.unitNo)} <span class="muted">${esc(p)}${f.status === 'cancelled' ? ', cancelled' : ''}</span></span></label>`).join('')).join('')}</div>` : ''}
+      <label>The bill (PDF, JPG or PNG, up to ${esc(d.maxMb)} MB)</label><input type="file" name="f" accept="application/pdf,image/png,image/jpeg" required>
+      <div class="bar" hidden><i></i></div>
+      <div class="actions"><button>${I.upload}Send the bill</button></div><div id="bm"></div></form></div>
+      <div class="card"><h2>Your bills</h2>${d.bills.length ? `<div class="tw"><table><thead><tr><th>Bill no.</th><th>Date</th><th class="num">Amount</th><th class="num">GST</th><th class="num">Total</th><th>Flats</th><th>Sent on</th><th>Status</th></tr></thead><tbody>
+        ${d.bills.map((b) => `<tr><td><b>${esc(b.billNo)}</b></td><td>${dd(b.billDate)}</td><td class="num">${rs(b.amount)}</td><td class="num">${rs(b.gst)}</td><td class="num">${rs(b.total)}</td><td>${esc(b.flats.join(', ') || '—')}</td><td>${dd(b.sentOn)}</td>
+          <td><span class="pill ${BST[b.status] || ''}">${esc(b.statusLabel)}</span>${b.reason ? `<span class="why">${esc(b.reason)}</span>` : ''}</td></tr>`).join('')}</tbody></table></div>` : '<div class="empty">No bills sent yet.</div>'}</div>`;
+    const f = $('#bf', v);
+    f.onsubmit = (e) => { e.preventDefault(); busy($('button', f), async () => {
+      const bar = $('.bar', f), fill = $('.bar i', f);
+      try {
+        const file = f.f.files[0]; if (!file) throw new Error('Attach the bill.');
+        if (!/^(application\/pdf|image\/(png|jpeg))$/.test(file.type)) throw new Error('Attach a PDF, JPG or PNG.');
+        if (file.size > d.maxMb * 1024 * 1024) throw new Error(`The file must be under ${d.maxMb} MB.`);
+        const buf = new Uint8Array(await file.arrayBuffer());
+        const s = await api('/api/cp-portal', { action: 'bill-start', billNo: f.billNo.value, billDate: f.billDate.value, amount: f.amount.value, gst: f.gst.value,
+          bookingIds: $$('[name=flat]:checked', f).map((x) => +x.value), file: { name: file.name, mime: file.type, size: file.size } });
+        bar.hidden = false;
+        for (let i = 0; i < s.parts; i++) {
+          const part = buf.subarray(i * s.part, (i + 1) * s.part); let bin = '';
+          for (let j = 0; j < part.length; j += 0x8000) bin += String.fromCharCode.apply(null, part.subarray(j, j + 0x8000));
+          await api('/api/cp-portal', { action: 'bill-part', id: s.id, i, data: btoa(bin) });
+          fill.style.width = Math.round(((i + 1) / s.parts) * 100) + '%';
+        }
+        await api('/api/cp-portal', { action: 'bill-finish', id: s.id });
+        await bills(v); $('#bm', v).innerHTML = '<div class="ok">Bill sent. Accounts will check it; its status shows below.</div>';
+      } catch (x) { bar.hidden = true; showErr($('#bm', v), x); }
+    }); };
+  }
   const pending = () => (ME.approved ? '' : H && H.docs && !H.docs.complete
     ? `<div class="banner warn">To be approved, please send your documents: <b>${esc(H.docs.missing.join(', '))}</b>. <button type="button" class="link" data-godocs>Add them now</button></div>`
     : '<div class="banner warn">Your documents are in. Your account is waiting for approval by the Dream India team; you can upload clients once it is approved.</div>');

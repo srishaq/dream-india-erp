@@ -1,12 +1,18 @@
 // Partner portal (/partner): channel partner firms register (username, password, firm details, mobile verified by OTP),
 // get a CP ID, upload client lists for the launches that are open, and see only their own clients, masked.
-// GET  ?me=1 · ?home=1 · ?leads=1[&project=ID&q=…] · ?issues=UPLOAD_ID
-// POST {action}: register-start · register-verify · login · logout · forgot-start · forgot-verify · parse · upload · profile · password
+// GET  ?me=1 · ?invite=TOKEN · ?home=1 · ?leads=1[&project=ID&q=…] · ?issues=UPLOAD_ID · ?docs=1 · ?bookings=1 · ?bills=1
+// POST {action}: register-start · register-verify · invite-start · invite-verify · login · logout · forgot-start · forgot-verify ·
+//      parse · upload · doc-upload · agreement-sign · bill-start · bill-part · bill-finish · profile · password
+// Every signed-in request is scoped to the signed-in firm (c.id). Bookings & brokerage and bills: approved firms only,
+// and never anything about a buyer (lib/cp.js firmView keeps buyer fields out at the source).
 const db = require('../lib/db');
 const audit = require('../lib/audit');
 const { parseFile } = require('../lib/sheetfile');
 const TM = require('../lib/tm');
 const CA = require('../lib/cp-auth');
+const CF = require('../lib/cp-firms');
+const CB = require('../lib/cp-bills');
+const RL = require('../lib/mkt-rate');
 const { route, fail, str, intOr } = require('../lib/http');
 
 const AREAS = ['Jogeshwari West', 'Jogeshwari East', 'Andheri West', 'Oshiwara', 'Lokhandwala', 'Versova', 'Andheri East', 'Goregaon West', 'Goregaon East',
@@ -21,6 +27,19 @@ function profile(c) {
     status: statusLabel[c.portal_status] || 'Pending review', approved: c.portal_status === 'approved', registeredOn: TM.iso(c.registered_at) };
 }
 async function need(req) { const c = await CA.session(req); if (!c) throw fail(401, 'Please sign in.'); return c; }
+const approved = (c) => { if (c.portal_status !== 'approved') throw fail(403, 'This opens once Dream India has approved your account.'); };
+const goneInvite = () => fail(404, 'This invitation link has expired or was already used. Please ask the Dream India office for a new one.');
+// The firm's details the invited partner confirms (the rest is already in the ERP).
+function inviteFields(b, f) {
+  const x = { username: str(b.username, 40).toLowerCase(), contact: str(b.contact, 80) || f.contact_person || '', designation: str(b.designation, 60), address: str(b.address, 250) || f.office_address || '',
+    area: str(b.area, 60) || f.office_area || '', callers: intOr(b.callers), rera: (str(b.rera, 30) || f.rera_no || '').toUpperCase().replace(/\s/g, ''), alt: str(b.alt, 20) };
+  if (!/^[a-z0-9._]{4,30}$/.test(x.username)) throw fail(400, 'Username must be 4 to 30 letters, numbers, dots or underscores.');
+  const pp = CA.passwordProblem(b.password); if (pp) throw fail(400, 'Password: ' + pp);
+  for (const [k, l] of [['contact', 'the point of contact'], ['address', 'the office address'], ['area', 'the office area']]) if (!x[k]) throw fail(400, `Please fill in ${l}.`);
+  if (!/^A\d{11}$/.test(x.rera)) throw fail(400, 'MahaRERA agent registration numbers look like A51800012345. Please check the number.');
+  if (!b.agree) throw fail(400, 'Please accept the partner terms.');
+  return x;
+}
 const findBy = (who) => {
   const w = str(who, 80).toLowerCase(), m = TM.mobile(w);
   return db.one(`select * from channel_partners where username is not null and (lower(username) = $1 or lower(cp_code) = $1 or ($2 <> '' and regexp_replace(coalesce(phone, ''), '\\D', '', 'g') like '%' || $2)) order by id limit 1`, [w, m]);
@@ -30,6 +49,11 @@ module.exports = route({
   GET: async (req, res) => {
     const Q = req.query || {};
     if (Q.me) { const c = await CA.session(req); return res.json(c ? { signedIn: true, profile: profile(c) } : { signedIn: false, areas: AREAS }); }
+    if (Q.invite) {
+      if (!(await RL.allow('invite-ip', CA.ipOf(req), 60))) throw fail(429, 'Too many tries. Please wait an hour.');
+      const f = await CF.inviteByToken(Q.invite); if (!f) throw goneInvite();
+      return res.json({ firm: f.name, contact: f.contact_person, mobile: TM.mask(TM.mobile(f.phone || '')), email: CA.maskEmail(f.email), rera: f.rera_no, address: f.office_address, area: f.office_area, expires: f.expires_at, areas: AREAS });
+    }
     const c = await need(req);
     if (Q.home) {
       const st = await db.q('select status, count(*)::int as n, count(*) filter (where owner_until >= $2::date)::int as active from tm_leads where cp_id = $1 group by status', [c.id, TM.istToday()]);
@@ -44,6 +68,8 @@ module.exports = route({
         uploads: uploads.map((u) => ({ id: u.id, at: u.created_at, file: u.file_name, received: u.received, accepted: u.accepted, project: u.project })), areas: AREAS, maxRows: Math.min(TM.MAX_ROWS, +(await TM.settings()).partnerDailyRows || TM.PARTNER_DAILY_ROWS) });
     }
     if (Q.docs) { const D2 = require('../lib/cp-docs'); const text = await D2.agreementText(); return res.json({ ...(await D2.status(c.id)), agreement: text, fingerprint: D2.fingerprint(text), rera: c.rera_no, pan: c.pan, gstin: c.gstin }); }
+    if (Q.bookings) { approved(c); return res.json(await require('../lib/cp').firmView(c.id)); }
+    if (Q.bills) { approved(c); return res.json(await CB.mine(c.id)); }
     if (Q.leads) {
       const q = str(Q.q, 40).toLowerCase(), pid = intOr(Q.project);
       const rows = await db.q(`select l.id, l.name, l.mobile, l.config, l.locality, l.uploaded_on, l.owner_until, l.status, p.name as project
@@ -90,7 +116,8 @@ module.exports = route({
       const cp = await db.tx(async (t) => {
         if (await t.one('select 1 from channel_partners where lower(username) = $1', [f.username])) throw fail(409, 'This account already exists. Please sign in.');
         const k = keyOf(f.firm);
-        const ex = await t.one('select id, name, username from channel_partners where name_key = $1 for update', [k]);
+        const ex = (await t.one('select id, name, username from channel_partners where name_key = $1 for update', [k]))
+          || (await t.one('select c.id, c.name, null as username from cp_name_aliases a join channel_partners c on c.id = a.cp_id where a.name_key = $1', [k]));
         if (ex && ex.username) throw fail(409, 'A firm with this name is already registered.');
         // always a new firm of its own, pending: a firm already in the ERP under the same name (from bookings or brokerage)
         // is never taken over by whoever registers that name; staff see the possible match and decide
@@ -106,6 +133,39 @@ module.exports = route({
       try { sentTo = await CA.send({ mobile: cp.phone, email: cp.email }, 'welcome', { name: cp.contact_person, cpCode: cp.cp_code }); } catch { sentTo = ''; }
       await CA.issue(req, res, cp.id);
       return res.json({ cpCode: cp.cp_code, status: statusLabel[cp.portal_status], approved: cp.portal_status === 'approved', sentTo: sentTo === 'test' ? '' : sentTo });
+    }
+    if (a === 'invite-start') {
+      const f = await CF.inviteByToken(b.invite); if (!f) throw goneInvite();
+      const x = inviteFields(b, f);
+      if (await db.one('select 1 from channel_partners where lower(username) = $1', [x.username])) throw fail(409, 'This username is taken. Please choose another.');
+      if (await db.one('select 1 from channel_partners where username is not null and upper(rera_no) = $1 and id <> $2', [x.rera, f.id])) throw fail(409, 'This MahaRERA number is already registered by another firm. Please contact the Dream India office.');
+      const mobile = TM.mobile(f.phone || '');
+      if (!mobile && !f.email) throw fail(409, 'We have no mobile or email for your firm. Please contact the Dream India office.');
+      // the code goes to the firm's mobile and email on our records (staff confirmed them when inviting)
+      return res.json(await CA.newCode({ purpose: 'invite', mobile: mobile || null, email: f.email, ip: CA.ipOf(req), staff: true, payload: { inviteId: f.invite_id, cpId: f.id, ...x, pwHash: CA.hash(b.password) } }));
+    }
+    if (a === 'invite-verify') {
+      const code = await CA.checkCode(b.token, 'invite', b.otp);
+      const x = code.payload;
+      const cp = await db.tx(async (t) => {
+        const inv = await t.one('select * from cp_invites where id = $1 for update', [x.inviteId]);
+        if (!inv || inv.used_at || inv.revoked_at || new Date(inv.expires_at) < new Date() || inv.cp_id !== x.cpId) throw goneInvite();
+        const f = await t.one('select * from channel_partners where id = $1 for update', [x.cpId]);
+        if (!f || f.username || f.merged_into || f.is_reference) throw goneInvite();
+        if (await t.one('select 1 from channel_partners where lower(username) = $1', [x.username])) throw fail(409, 'This username is taken. Please start again with another.');
+        const row = await t.one(`update channel_partners set username = $2, pw_hash = $3, contact_person = $4, designation = $5, office_address = $6, office_area = $7, callers_in_team = $8,
+            rera_no = $9, alt_phone = coalesce($10, alt_phone), portal_status = 'pending', mobile_verified_at = now(), registered_at = now(), failed_logins = 0, locked_until = null,
+            cp_code = coalesce(cp_code, 'DI-CP-' || lpad(nextval('cp_code_seq')::text, 4, '0')) where id = $1 returning *`,
+        [f.id, x.username, x.pwHash, x.contact, x.designation || null, x.address, x.area, x.callers, x.rera, x.alt || null]);
+        await t.q('update cp_invites set used_at = now() where id = $1', [inv.id]);
+        await t.q('update cp_invites set revoked_at = now() where cp_id = $1 and id <> $2 and used_at is null and revoked_at is null', [f.id, inv.id]);
+        await audit.record(t.q, { user: null, action: 'partner-invite-accepted', entity: 'channel-partner', entityId: f.id, after: { cp_code: row.cp_code, username: x.username, invite: inv.id } });
+        return row;
+      });
+      let sentTo = '';
+      try { sentTo = await CA.send({ mobile: TM.mobile(cp.phone || '') || null, email: cp.email }, 'welcome', { name: cp.contact_person, cpCode: cp.cp_code }, { staff: true }); } catch { sentTo = ''; }
+      await CA.issue(req, res, cp.id);
+      return res.json({ cpCode: cp.cp_code, status: statusLabel[cp.portal_status], approved: false, sentTo: sentTo === 'test' ? '' : sentTo });
     }
     if (a === 'login') {
       const c = await findBy(b.username);
@@ -143,6 +203,9 @@ module.exports = route({
     }
     if (a === 'doc-upload') { const r = await require('../lib/cp-docs').upload(c, { kind: b.kind, number: b.number, file: b.file }); await audit.record(db.q, { user: null, action: 'partner-doc', entity: 'channel-partner', entityId: c.id, after: { kind: b.kind } }); return res.json(r); }
     if (a === 'agreement-sign') { const r = await require('../lib/cp-docs').signOnline(c, { name: b.name, agree: !!b.agree, ip: String(req.headers['x-forwarded-for'] || '').split(',')[0] }); await audit.record(db.q, { user: null, action: 'partner-agreement-online', entity: 'channel-partner', entityId: c.id, after: { name: str(b.name, 120) } }); return res.json(r); }
+    if (a === 'bill-start') { approved(c); return res.json(await CB.start(c, { billNo: b.billNo, billDate: b.billDate, amount: b.amount, gst: b.gst, bookingIds: b.bookingIds, file: b.file })); }
+    if (a === 'bill-part') { approved(c); return res.json(await CB.part(c, { id: b.id, i: b.i, data: b.data })); }
+    if (a === 'bill-finish') { approved(c); return res.json(await CB.finish(c, { id: b.id })); }
     if (a === 'profile') {
       const r = await db.one(`update channel_partners set office_address = coalesce(nullif($2, ''), office_address), office_area = coalesce(nullif($3, ''), office_area),
           contact_person = coalesce(nullif($4, ''), contact_person), designation = $5, alt_phone = $6, callers_in_team = $7 where id = $1 returning *`,

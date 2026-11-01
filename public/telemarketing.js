@@ -116,7 +116,8 @@
     const d = await C.api('/api/tm?partners=1');
     D.partners = d.rows;
     const pend = d.rows.filter((r) => r.portal_status === 'pending').length;
-    body(`<div class="tm-tools"><input class="search" id="tmQ" placeholder="Search firm, CP ID, contact, mobile, RERA no."><span class="muted small">${nf(d.rows.length)} registered${pend ? ` · <b>${pend} waiting for approval</b>` : ''}</span></div>
+    body(`<div class="tm-tools"><input class="search" id="tmQ" placeholder="Search firm, CP ID, contact, mobile, RERA no."><span class="muted small">${nf(d.rows.length)} registered${pend ? ` · <b>${pend} waiting for approval</b>` : ''}</span>
+      <a class="btn ghost small" href="#/cpportal">Firms not on the portal yet, duplicates and merges</a></div>
       <div class="panel"><div class="table-wrap"><table><thead><tr><th>CP ID</th><th>Firm</th><th>Contact</th><th>Mobile</th><th>MahaRERA</th><th>Area</th><th class="num">Clients</th><th class="num">Active</th><th class="num">Bookings</th><th>Status</th><th></th></tr></thead><tbody id="tmPT"></tbody></table></div></div>`);
     const draw = (q) => {
       q = (q || '').toLowerCase();
@@ -364,6 +365,7 @@
       <textarea name="agreementText" rows="10" style="font-size:12.5px">${esc(AGR || '')}</textarea>
       <h3>WhatsApp messages to partners</h3><p class="muted small">Approved template names in Click Connect. Until these are set, codes and the CP ID go by email.</p>
       <div class="row"><div><label>Verification code template (1 value: the code)</label><input name="waOtpTemplate" value="${esc(s.waOtpTemplate)}"></div><div><label>Welcome template (2 values: name, CP ID)</label><input name="waWelcomeTemplate" value="${esc(s.waWelcomeTemplate)}"></div></div>
+      <div class="row"><div><label>Invitation template (2 values: name, link)</label><input name="waInviteTemplate" value="${esc(s.waInviteTemplate || '')}"></div><div></div></div>
       <div class="actions"><button>Save</button></div><div id="tmSM"></div></form></div>`);
     $('#tmS').onsubmit = async (e) => {
       e.preventDefault(); const x = Object.fromEntries(new FormData(e.target)); x.approvers = $$('[name=approver]:checked', e.target).map((i) => +i.value); delete x.approver;

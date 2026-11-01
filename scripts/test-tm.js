@@ -277,6 +277,213 @@ const firm = (i, extra = {}) => ({ username: 'partner' + i, password: 'secret12'
     await db.q('update projects set active = false where id = $1', [other.id]);
   });
 
+  // ---------- existing firms on the portal: duplicates, merges (asked by Accounts, approved by Mubeen), invitations ----------
+  const CP = require('../lib/cp');
+  const headacc = await mk('headacc', 'head_accounts'), accEntry = await mk('acc1', 'accounts');
+  const mubeenId = (await db.one("select id from users where username = 'mubeen'")).id, headaccId = (await db.one("select id from users where username = 'headacc'")).id;
+  const mub = client(); await mub('/api/session', { action: 'login', username: 'mubeen', password: 'pass-word-123' });
+  await db.q("update settings set value = jsonb_set(value, '{approvers}', $1::jsonb) where key = 'tm'", [JSON.stringify([mubeenId, headaccId])]);
+  // firms from the accounts sheet, with real (not sample) bookings and brokerage
+  const mkFirm = async (name, extra = {}) => (await db.one('insert into channel_partners (name, name_key, phone, email) values ($1, $2, $3, $4) returning id', [name, CP.keyOf(name), extra.phone || null, extra.email || null])).id;
+  const tohfa1 = await mkFirm('Tohfa Property'), tohfa2 = await mkFirm('Tohfa Properties'), sk1 = await mkFirm('S.K Realtors'), sk2 = await mkFirm('S K Realtors');
+  const arsh = await mkFirm('Arsh Rehmani (Just Deal Properties)'), jd = await mkFirm('Just Deal'), ref = await mkFirm('Direct Reference Walkin');
+  const freeBk = await db.q("select b.id from bookings b join units u on u.id = b.unit_id where u.project_id = $1 and b.status = 'active' and b.cp_id is null order by b.id limit 6", [sig.id]);
+  assert.ok(freeBk.length >= 6, 'enough sample bookings');
+  const own = [[freeBk[0].id, tohfa1], [freeBk[1].id, tohfa1], [freeBk[2].id, tohfa2], [freeBk[3].id, sk1], [freeBk[4].id, sk2], [freeBk[5].id, jd]];
+  for (const [bid, cp] of own) await db.q("update bookings set cp_id = $2, sample = false, brokerage_pct = 2, brokerage = round(agreement_value * 0.02, 2), registration_date = coalesce(registration_date, booking_date) where id = $1", [bid, cp]);
+  const payEntry = await db.one("insert into brokerage_entries (booking_id, cp_id, kind, entry_date, amount, reference, created_by, verified_by, verified_at) values ($1, $2, 'payment', current_date, 1000, 'UTR-T2', $3, $3, now()) returning id", [freeBk[2].id, tohfa2, mubeenId]);
+  await db.q("insert into brokerage_entries (booking_id, cp_id, kind, entry_date, amount, reference, created_by) values ($1, $2, 'payment', current_date, 500, 'UTR-UNVER', $3)", [freeBk[0].id, tohfa1, mubeenId]);
+
+  await step('Accounts sees the firms not on the portal and the possible duplicates (spacing, punctuation, plurals, the firm in brackets)', async () => {
+    const p = await headacc('/api/partners?portal=1');
+    assert.equal(p.status, 200, p.error); assert.equal(p.can.request, true); assert.equal(p.can.invite, true);
+    const row = p.notOnPortal.find((x) => x.id === tohfa1); assert.equal(row.bookings, 2); assert.deepEqual(row.duplicates.map((x) => x.id), [tohfa2]);
+    const grp = (id) => p.duplicates.find((g) => g.firms.some((f) => f.id === id));
+    assert.deepEqual(grp(sk1).firms.map((f) => f.id).sort(), [sk1, sk2].sort());
+    assert.deepEqual(grp(jd).firms.map((f) => f.id).sort(), [arsh, jd].sort());
+    assert.ok(!p.notOnPortal.some((x) => x.username));
+    assert.equal((await crm('/api/partners?portal=1')).status, 403);
+    const a2 = await accEntry('/api/partners?portal=1'); assert.equal(a2.status, 200); assert.equal(a2.can.request, false);
+  });
+
+  await step('A merge: Head Accounts asks, cannot approve it himself; Mubeen approves and every booking and entry moves; old spellings map to the kept firm', async () => {
+    assert.equal((await accEntry('/api/partners', { action: 'merge-request', intoId: tohfa1, fromIds: [tohfa2], keepName: 'Tohfa Properties' })).status, 403);
+    const r = await headacc('/api/partners', { action: 'merge-request', intoId: tohfa1, fromIds: [tohfa2], keepName: 'Tohfa Properties' });
+    assert.ok(r.id, r.error);
+    assert.equal((await headacc('/api/partners', { action: 'merge-request', intoId: tohfa2, fromIds: [tohfa1], keepName: 'Tohfa' })).status, 409); // already in a request
+    const inv = await accEntry('/api/partners', { action: 'invite', id: tohfa1, mobile: '9822200077', email: 'tohfa@example.com' }); assert.equal(inv.status, 409); assert.match(inv.error, /merge waiting/);
+    const self = await headacc('/api/partners', { action: 'merge-decide', id: r.id, approve: true }); assert.equal(self.status, 403); assert.match(self.error, /someone else/);
+    assert.equal((await crm('/api/partners', { action: 'merge-decide', id: r.id, approve: true })).status, 403);
+    assert.equal((await mub('/api/partners?merges=1&status=pending')).rows.length, 1);
+    const ok = await mub('/api/partners', { action: 'merge-decide', id: r.id, approve: true });
+    assert.equal(ok.status, 'approved', ok.error); assert.equal(ok.result.moved['bookings.cp_id'], 1); assert.equal(ok.result.moved['brokerage_entries.cp_id'], 1);
+    assert.equal((await db.one('select cp_id from bookings where id = $1', [freeBk[2].id])).cp_id, tohfa1);
+    assert.equal((await db.one('select cp_id from brokerage_entries where id = $1', [payEntry.id])).cp_id, tohfa1);
+    const m = await db.one('select merged_into, active from channel_partners where id = $1', [tohfa2]); assert.equal(m.merged_into, tohfa1); assert.equal(m.active, false);
+    assert.equal((await db.one('select name from channel_partners where id = $1', [tohfa1])).name, 'Tohfa Properties');
+    assert.equal((await CP.firmFor(db, { cpName: 'Tohfa Property' })).id, tohfa1); // both old spellings
+    assert.equal((await CP.firmFor(db, { cpName: 'tohfa properties.' })).id, tohfa1);
+    assert.ok(await db.one("select 1 as x from audit_log where action = 'partner-merge' and entity_id = $1", [String(tohfa1)]));
+    assert.equal((await mub('/api/partners', { action: 'merge-decide', id: r.id, approve: false, reason: 'x' })).status, 409);
+    // a merge never joins two firms that each have a portal login
+    const cpA = (await db.one("select id from channel_partners where cp_code = 'DI-CP-0001'")).id, cpB = (await db.one("select id from channel_partners where cp_code = 'DI-CP-0002'")).id;
+    const two = await headacc('/api/partners', { action: 'merge-request', intoId: cpA, fromIds: [cpB], keepName: 'Test Realty' }); assert.equal(two.status, 409); assert.match(two.error, /portal login/);
+  });
+
+  const SHEET_H = ['ERP ID', 'Name in ERP', 'Flats', 'Agreement value (Rs)', 'Brokerage earned (Rs)', 'Paid so far (Rs)', 'Duplicate group', 'Suggested correct name', 'Check this', 'Correct firm name', 'Keep separate (Y)', 'Contact person', 'Mobile', 'Email', 'RERA no', 'GSTIN', 'Notes'];
+  await step('The clean-up sheet: downloaded in the Accounts layout, filled in Excel, uploaded: a preview, then one batch Mubeen approves', async () => {
+    const dl = await headacc('/api/partners?cleanup=1');
+    assert.equal(dl.status, 200, dl.error);
+    const wb = require('../lib/xlsx').read(Buffer.from(dl.data, 'base64'));
+    assert.deepEqual(wb.map((s) => s.name), ['How to clean', 'Clean-up', 'Summary']);
+    const cu = wb[1].rows; assert.deepEqual(cu[0].map(String), SHEET_H);
+    const skRow = cu.find((r) => String(r[0]) === String(sk1)); assert.ok(skRow[6], 'duplicate group filled');
+    assert.equal(String(cu[cu.length - 1][1]), 'Totals');
+    const cpA = (await db.one("select id from channel_partners where cp_code = 'DI-CP-0001'")).id, cpB = (await db.one("select id from channel_partners where cp_code = 'DI-CP-0002'")).id;
+    const row = (id, correct, x = {}) => SHEET_H.map((h) => ({ 'ERP ID': id, 'Correct firm name': correct, 'Keep separate (Y)': x.sep || '', 'Contact person': x.contact || '', Mobile: x.mobile || '', Email: x.email || '', 'RERA no': x.rera || '', GSTIN: x.gstin || '' })[h] ?? '');
+    const q = (v) => (/[",\n]/.test(String(v)) ? `"${String(v).replace(/"/g, '""')}"` : String(v));
+    const rows = [SHEET_H, row(sk1, 'S K Realtors'), row(sk2, 's.k. realtors', { mobile: '98111 22233', email: 'sk@example.com', contact: 'Sunil K' }), row(arsh, 'Just Deal Properties', { email: 'not-an-email' }),
+      row(jd, 'Just Deal Properties'), row(ref, 'reference'), row(cpA, 'Test Realty'), row(cpB, 'Test Realty'), row(tohfa1, ''), row(99999, 'Nobody'), ['', 'Totals', '6', '', '', '', '', '', '', '', '', '', '', '', '', '', '']];
+    const csv = Buffer.from(rows.map((r) => r.map(q).join(',')).join('\n')).toString('base64');
+    assert.equal((await accEntry('/api/partners', { action: 'cleanup-preview', file: csv, name: 'clean.csv' })).status, 403);
+    const pv = await headacc('/api/partners', { action: 'cleanup-preview', file: csv, name: 'clean.csv' });
+    assert.equal(pv.status, 200, pv.error);
+    assert.equal(pv.merges, 2, JSON.stringify(pv)); assert.equal(pv.references.length, 1); assert.equal(pv.references[0].id, ref);
+    const skp = pv.plan.find((p) => p.keepName === 'S K Realtors'); assert.ok(skp, JSON.stringify(pv.plan)); assert.equal(skp.merge.length, 1); assert.equal(skp.contacts.mobile, '9811122233'); assert.equal(skp.contacts.contact, 'Sunil K');
+    const jdp = pv.plan.find((p) => p.keepName === 'Just Deal Properties'); assert.equal(jdp.keep.id, jd); assert.deepEqual(jdp.merge.map((x) => x.id), [arsh]); // the one with more flats is kept
+    assert.ok(pv.refused.some((x) => /each have a portal login/.test(x.reason)));
+    assert.ok(pv.refused.some((x) => /not-an-email/.test(x.reason)));
+    assert.ok(pv.refused.some((x) => /No firm with this ERP ID/.test(x.reason)));
+    assert.ok(!pv.plan.some((p) => p.keep.id === tohfa1)); // empty correct name: unchanged
+    // the same sheet as .xlsx with the "How to clean" sheet first: the Clean-up sheet is the one read
+    const xl = require('../lib/xlsx-write').write([{ name: 'How to clean', rows: [['Read me']] }, { name: 'Clean-up', rows }, { name: 'Summary', rows: [['x', 1]] }]).toString('base64');
+    const pv2 = await headacc('/api/partners', { action: 'cleanup-preview', file: xl, name: 'clean.xlsx' }); assert.equal(pv2.merges, 2, pv2.error); assert.equal(pv2.references.length, 1);
+    const sub = await headacc('/api/partners', { action: 'cleanup-submit', file: csv, name: 'clean.csv' });
+    assert.equal(sub.requests.length, 3, JSON.stringify(sub)); assert.ok(sub.batch);
+    assert.equal((await headacc('/api/partners', { action: 'merge-batch', batch: sub.batch, approve: true })).status, 403); // not his own
+    const ap = await mub('/api/partners', { action: 'merge-batch', batch: sub.batch, approve: true });
+    assert.equal(ap.done.length, 3, JSON.stringify(ap));
+    const k = await db.one('select name, phone, email, contact_person from channel_partners where id = $1', [sk1]); // the first row had the most... equal flats: lower id kept
+    assert.equal(k.name, 'S K Realtors'); assert.equal(k.phone, '9811122233'); assert.equal(k.email, 'sk@example.com'); assert.equal(k.contact_person, 'Sunil K');
+    assert.equal((await db.one('select cp_id from bookings where id = $1', [freeBk[4].id])).cp_id, sk1);
+    assert.equal((await db.one('select merged_into from channel_partners where id = $1', [arsh])).merged_into, jd);
+    assert.equal((await db.one('select is_reference from channel_partners where id = $1', [ref])).is_reference, true);
+    const p = await headacc('/api/partners?portal=1'); assert.ok(!p.notOnPortal.some((x) => x.id === ref || x.id === arsh || x.id === sk2));
+    const ri = await headacc('/api/partners', { action: 'invite', id: ref, email: 'ref@example.com' }); assert.equal(ri.status, 409); assert.match(ri.error, /reference/);
+  });
+
+  let P, tohfaBuyers;
+  await step('An existing firm is invited: one-time link, code to the mobile and email on file, own login; pending until papers and approval', async () => {
+    assert.equal((await crm('/api/partners', { action: 'invite', id: tohfa1, email: 'tohfa@example.com' })).status, 403);
+    assert.equal((await accEntry('/api/partners', { action: 'invite', id: tohfa1, mobile: '123', email: 'tohfa@example.com' })).status, 400);
+    const old = await accEntry('/api/partners', { action: 'invite', id: tohfa1, mobile: '9822200077', email: 'tohfa@example.com' }); assert.ok(old.link, old.error);
+    const inv = await accEntry('/api/partners', { action: 'invite', id: tohfa1, mobile: '98222 00077', email: 'Tohfa@Example.com' });
+    assert.match(inv.link, /^https:\/\/partners\.dreamindiarealty\.com\/\?invite=[A-Za-z0-9_-]{30,}$/);
+    const tok = inv.link.split('invite=')[1], oldTok = old.link.split('invite=')[1];
+    const f = await db.one('select phone, email from channel_partners where id = $1', [tohfa1]); assert.equal(f.phone, '9822200077'); assert.equal(f.email, 'tohfa@example.com');
+    assert.equal((await db.one('select count(*)::int as c from cp_invites where cp_id = $1 and token_hash = $2', [tohfa1, tok])).c, 0, 'only the hash is kept');
+    P = client();
+    assert.equal((await P('/api/cp-portal?invite=' + oldTok)).status, 404); // the earlier link stops working
+    const info = await P('/api/cp-portal?invite=' + tok);
+    assert.equal(info.firm, 'Tohfa Properties'); assert.equal(info.mobile, '98XXXXXX77');
+    const det = { invite: tok, username: 'tohfa', password: 'tohfa-pass1', contact: 'Imran Tohfa', address: 'Shop 4, Jogeshwari', area: 'Jogeshwari West', rera: 'A51800099901', agree: true };
+    assert.equal((await P('/api/cp-portal', { action: 'invite-start', ...det, username: 'partner1' })).status, 409);
+    assert.equal((await P('/api/cp-portal', { action: 'invite-start', ...det, rera: 'X1' })).status, 400);
+    const s = await P('/api/cp-portal', { action: 'invite-start', ...det }); assert.ok(s.token, s.error);
+    assert.equal((await P('/api/cp-portal', { action: 'invite-verify', token: s.token, otp: '111111' })).status, 400);
+    const v = await P('/api/cp-portal', { action: 'invite-verify', token: s.token, otp: '424242' });
+    assert.match(v.cpCode || '', /^DI-CP-\d{4}$/, v.error); assert.equal(v.approved, false);
+    const me = await db.one('select id, username, portal_status, cp_code from channel_partners where username = $1', ['tohfa']);
+    assert.equal(me.id, tohfa1); assert.equal(me.portal_status, 'pending'); // the same firm, with its bookings
+    assert.equal((await P('/api/cp-portal?invite=' + tok)).status, 404); // used once
+    assert.equal((await client()('/api/cp-portal', { action: 'invite-start', ...det, username: 'tohfa2' })).status, 404);
+    assert.equal((await P('/api/cp-portal?home=1')).stats.bookings, 3);
+    assert.equal((await P('/api/cp-portal?bookings=1')).status, 403); // approved partners only
+    assert.equal((await P('/api/cp-portal?bills=1')).status, 403);
+    assert.equal((await P('/api/cp-portal', { action: 'bill-start', billNo: 'X' })).status, 403);
+    assert.equal((await headacc('/api/partners', { action: 'invite', id: tohfa1, email: 'tohfa@example.com' })).status, 409); // on the portal now
+    // papers, then Mubeen approves as usual
+    assert.equal((await mub('/api/tm', { action: 'partner-status', id: tohfa1, status: 'approved' })).status, 400);
+    for (const kd of ['pan', 'gst', 'rera', 'agreement']) await db.q("insert into cp_docs (cp_id, kind, how) values ($1, $2, 'test')", [tohfa1, kd]);
+    assert.equal((await mub('/api/tm', { action: 'partner-status', id: tohfa1, status: 'approved' })).ok, true);
+    tohfaBuyers = await db.q(`select y.name, y.phone, y.email from buyers y join booking_applicants a on a.buyer_id = y.id where a.booking_id = any($1::int[])`, [[freeBk[0].id, freeBk[1].id, freeBk[2].id]]);
+    assert.ok(tohfaBuyers.length >= 3);
+  });
+
+  await step('My bookings & brokerage: the ledger\'s own figures across projects, verified payments only, and no buyer data at all', async () => {
+    const r = await P('/api/cp-portal?bookings=1');
+    assert.equal(r.status, 200, r.error);
+    assert.equal(r.totals.flats, 3); assert.equal(r.projects.length, 1); assert.equal(r.projects[0].bookings.length, 3);
+    const staff = await admin(`/api/partners?project=${sig.id}&cp=${tohfa1}`);
+    assert.equal(r.totals.brokerage, staff.firm.brokerage); assert.equal(r.totals.balance, staff.firm.balance); assert.equal(r.totals.dueNow, staff.firm.dueNow);
+    assert.equal(r.totals.paid, 1000); // the 500 not verified yet is not shown as paid
+    const b2 = r.projects[0].bookings.find((x) => x.bookingId === freeBk[2].id); assert.equal(b2.paid, 1000); assert.ok(['Due', 'Not yet due', 'Paid'].includes(b2.state));
+    const json = JSON.stringify(r);
+    for (const y of tohfaBuyers) {
+      assert.ok(!json.includes(y.name), 'buyer name leaked');
+      const d = String(y.phone || '').replace(/\D/g, '').slice(-10); if (d) assert.ok(!json.includes(d), 'buyer phone leaked');
+      if (y.email) assert.ok(!json.toLowerCase().includes(String(y.email).toLowerCase()), 'buyer email leaked');
+    }
+    assert.ok(!/buyer|applicant|"received"/i.test(json));
+    // another partner never sees these
+    const other = await A('/api/cp-portal?bookings=1'); assert.ok(!other.projects.some((p) => p.bookings.some((x) => [freeBk[0].id, freeBk[1].id, freeBk[2].id].includes(x.bookingId))));
+  });
+
+  await step('Bills: an approved partner sends a tax invoice (in parts), Accounts is told, opens it, checks or rejects it; the partner sees the status', async () => {
+    const CB = require('../lib/cp-bills');
+    const send = async (cli, meta, buf) => {
+      const s = await cli('/api/cp-portal', { action: 'bill-start', ...meta, file: { name: 'bill.pdf', mime: meta.mime || 'application/pdf', size: buf.length } });
+      if (!s.id) return s;
+      for (let i = 0; i < s.parts; i++) { const p = await cli('/api/cp-portal', { action: 'bill-part', id: s.id, i, data: buf.subarray(i * s.part, (i + 1) * s.part).toString('base64') }); if (!p.ok) return p; }
+      return cli('/api/cp-portal', { action: 'bill-finish', id: s.id });
+    };
+    const big = Buffer.concat([Buffer.from('%PDF-1.4\n'), Buffer.alloc(CB.PART + 5000, 32)]);
+    const fl = (await P('/api/cp-portal?bills=1')).flats; assert.equal(fl.length, 3);
+    const r = await send(P, { billNo: 'TP/26/001', billDate: '2026-10-20', amount: '20,000', gst: 3600, bookingIds: [freeBk[0].id] }, big);
+    assert.equal(r.ok, true, r.error);
+    assert.equal((await send(P, { billNo: 'tp/26/001', billDate: '2026-10-20', amount: 100, gst: 0 }, Buffer.from('%PDF-1.4 x'))).status, 409); // same number again
+    assert.equal((await P('/api/cp-portal', { action: 'bill-start', billNo: 'TP2', billDate: '2026-10-20', amount: 100, gst: 0, file: { name: 'a.exe', mime: 'application/x-msdownload', size: 10 } })).status, 400);
+    assert.equal((await P('/api/cp-portal', { action: 'bill-start', billNo: 'TP2', billDate: '2026-10-20', amount: 100, gst: 0, file: { name: 'a.pdf', mime: 'application/pdf', size: 6 * 1024 * 1024 } })).status, 400);
+    assert.equal((await P('/api/cp-portal', { action: 'bill-start', billNo: 'TP2', billDate: '2099-01-01', amount: 100, gst: 0, file: { name: 'a.pdf', mime: 'application/pdf', size: 10 } })).status, 400);
+    assert.equal((await P('/api/cp-portal', { action: 'bill-start', billNo: 'TP2', billDate: '2026-10-20', amount: 100, gst: 0, bookingIds: [freeBk[3].id], file: { name: 'a.pdf', mime: 'application/pdf', size: 10 } })).status, 400); // not their flat
+    assert.equal((await send(P, { billNo: 'TP-FAKE', billDate: '2026-10-20', amount: 100, gst: 0 }, Buffer.from('MZ not a pdf'))).status, 400);
+    const mine = await P('/api/cp-portal?bills=1'); assert.equal(mine.bills.length, 1); assert.equal(mine.bills[0].status, 'submitted'); assert.equal(mine.bills[0].total, 23600);
+    assert.equal((await A('/api/cp-portal?bills=1')).bills.length, 0); // another firm sees none
+    // Accounts is told: Dream Chat, the To-Do
+    assert.ok(await db.one("select 1 as x from team_messages where to_team = 'accounts' and needs_action and body like '%TP/26/001%'"));
+    assert.ok(await db.one("select 1 as x from daily_tasks where dept = 'accounts' and key = 'cp-bills' and count = 1"));
+    assert.equal((await CB.finding()).count, 1); // and on the morning audit's list
+    // staff open the bill and check it
+    assert.equal((await crm('/api/partners?bills=1')).status, 200); // brokerage.bill
+    assert.equal((await entry('/api/partners?bills=1')).status, 403);
+    const L = await accEntry('/api/partners?bills=1&status=submitted'); const bill = L.rows.find((x) => x.bill_no === 'TP/26/001'); assert.ok(bill); assert.equal(L.canCheck, true);
+    const parts = []; let f0;
+    for (let i = 0; ; i++) { const p = await accEntry(`/api/partners?billfile=${bill.id}&part=${i}`); f0 = p; parts.push(Buffer.from(p.data, 'base64')); if (i >= p.parts - 1) break; }
+    assert.ok(Buffer.concat(parts).equals(big)); assert.equal(f0.mime, 'application/pdf');
+    assert.equal((await accEntry('/api/partners', { action: 'cp-bill-check', id: bill.id, decision: 'rejected' })).status, 400); // reason needed
+    const ck = await accEntry('/api/partners', { action: 'cp-bill-check', id: bill.id, decision: 'checked' }); assert.ok(ck.entryId, ck.error);
+    assert.equal((await accEntry('/api/partners', { action: 'cp-bill-check', id: bill.id, decision: 'checked' })).status, 409);
+    const led = await admin(`/api/partners?project=${sig.id}&cp=${tohfa1}`); assert.equal(led.firm.billed, 20000);
+    assert.equal((await P('/api/cp-portal?bills=1')).bills[0].status, 'checked');
+    // a second bill, rejected with a reason the partner sees; the number can then be sent again
+    const r2 = await send(P, { billNo: 'TP/26/002', billDate: '2026-10-21', amount: 5000, gst: 900 }, Buffer.from('%PDF-1.4 y')); assert.ok(r2.ok, r2.error);
+    const b2 = (await accEntry('/api/partners?bills=1&status=submitted')).rows.find((x) => x.bill_no === 'TP/26/002');
+    assert.ok((await accEntry('/api/partners', { action: 'cp-bill-check', id: b2.id, decision: 'rejected', reason: 'GSTIN missing on the bill' })).ok);
+    const mb = (await P('/api/cp-portal?bills=1')).bills.find((x) => x.billNo === 'TP/26/002'); assert.equal(mb.status, 'rejected'); assert.equal(mb.reason, 'GSTIN missing on the bill');
+    assert.ok((await send(P, { billNo: 'TP/26/002', billDate: '2026-10-21', amount: 5000, gst: 900 }, Buffer.from('%PDF-1.4 z'))).ok);
+    // at most 20 a day
+    await db.q("insert into cp_bills (cp_id, bill_no, bill_date, amount, status) select $1, 'RL-' || g, current_date, 1, 'rejected' from generate_series(1, 20) g", [tohfa1]);
+    const lim = await P('/api/cp-portal', { action: 'bill-start', billNo: 'TP-LIM', billDate: '2026-10-21', amount: 100, gst: 0, file: { name: 'a.pdf', mime: 'application/pdf', size: 10 } }); assert.equal(lim.status, 429);
+  });
+
+  await step('The partners site answers only the partner portal API (the staff partner calls are not reachable there)', async () => {
+    const { route } = require('../lib/http');
+    let code = 0; const res = { setHeader() {}, status(c) { code = c; return { json() {} }; } };
+    await route({ GET: async () => { code = 200; } })({ method: 'GET', url: '/api/partners?portal=1', headers: { host: 'partners.dreamindiarealty.com' } }, res); assert.equal(code, 404);
+    await route({ GET: async () => { code = 200; } })({ method: 'GET', url: '/api/cp-portal?bookings=1', headers: { host: 'partners.dreamindiarealty.com' } }, res); assert.equal(code, 200);
+    for (const f of ['/partner.js', '/partner.css']) assert.equal((await fetch(BASE + f)).status, 200);
+  });
+
   console.log(`\nPartner & Telemarketing: ${n} checks passed.`);
   process.exit(0);
 })().catch((e) => { console.error(e); process.exit(1); });

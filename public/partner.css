@@ -128,3 +128,18 @@ dl.prof dt { color: var(--ink-3); font-size: 13.5px; } dl.prof dd { margin: 0; f
 }
 button svg, .btn svg { width: 18px; height: 18px; flex: none; }
 @media (min-width: 901px) { .shell { background: linear-gradient(90deg, var(--navy) 250px, var(--bg) 250px); } }
+/* register clients: sub tabs; bookings & brokerage; bills */
+.seg { display: flex; gap: 6px; flex-wrap: wrap; margin: 0 0 14px; }
+.seg button { background: #fff; color: var(--navy); border-color: #D0D5DD; padding: 8px 14px; font-size: 14px; }
+.seg button[aria-pressed=true] { background: var(--navy); color: #fff; border-color: var(--navy); }
+.kpis.money .kpi b { font-size: 20px; }
+.kpi.due b { color: var(--bad); }
+table td.num, table th.num { text-align: right; white-space: nowrap; }
+tr.dim td { color: var(--ink-3); }
+.proj-h { display: flex; justify-content: space-between; gap: 10px; flex-wrap: wrap; align-items: baseline; }
+.proj-h span { font-size: 13px; color: var(--ink-3); }
+.why { display: block; font-size: 12px; color: var(--ink-3); margin-top: 2px; white-space: normal; }
+.flatpick { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 6px 12px; max-height: 210px; overflow: auto; border: 1px solid var(--line); border-radius: 10px; padding: 10px 12px; }
+.flatpick .check { font-size: 13.5px; }
+.bar { height: 8px; border-radius: 9px; background: var(--soft); overflow: hidden; margin-top: 10px; } .bar i { display: block; height: 100%; width: 0; background: var(--teal); transition: width .2s; }
+@media (max-width: 640px) { .kpis.money { grid-template-columns: 1fr 1fr; } .tools input, .tools select { min-width: 0; width: 100%; } }

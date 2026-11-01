@@ -166,6 +166,7 @@
     { key: 'reg-rentLinks', label: 'Tenant Rent Links', show: () => can('accounts.view'), sub: true },
     { key: 'reg-cancellations', label: 'Cancelled flats & refunds', show: () => can('accounts.view') },
     { key: 'cpacc', label: 'Channel partner ledger', show: () => can('accounts.view') && can('ledger.view'), href: () => '#/partners' },
+    { key: 'cpportal', label: 'Partner portal: firms & merges', show: () => anyOf('accounts.manage', 'accounts.enter', 'tm.manage'), sub: true },
     { key: 'accreports', label: 'Reports & Tally', show: () => can('accounts.view') },
     { key: 'checks', label: 'Checks', show: () => can('accounts.view') },
     { key: 'bookscrm', label: 'Tally vs CRM', show: () => anyOf('accounts.view', 'ledger.view') },
@@ -267,7 +268,7 @@
     $('#cpw').onclick = () => changePassword(false);
     if ($('#proj')) $('#proj').onchange = (e) => { proj = +e.target.value; store.set('erp_project', proj); shell(); };
     if (/^reg-/.test(page || '') && can('accounts.view')) { try { await accRegister(page.slice(4)); } catch (e) { $('#page').innerHTML = `<div class="err">${esc(e.message)}</div>`; } return; }
-    const fn = { stages: () => demands(true), home, mgmt, marketing: () => window.Marketing.render({ api, dialog, toast, me }, (/^\d+$/.test(location.hash.split('/')[2] || '') ? location.hash.split('/')[2] : null) || store.get('erp_mkt_scope') || null), telemarketing: () => window.Telemarketing.render({ api, dialog, toast, me }), ca: caPage, accdash, collections, flats, custdocs, comms, team: teamPage, accteam: teamPage, sdr: sdrPage, cp: cpPage, project: projectHome, crmtodo: () => dailyTodo('crm'), acctodo: () => dailyTodo('accounts'), training, projects, plans, users, audit, units, bookings, demands, receipts, ledgers, letters, followups, verify, prices, partners, balances: accBalances, bankauto: bankAuto, bookscrm: booksCrm, accreports: accReports, checks: accChecks, accsetup: accSetup, import: importPage, booking: bookingPage, statement: statementPage, run: runPage };
+    const fn = { stages: () => demands(true), home, mgmt, marketing: () => window.Marketing.render({ api, dialog, toast, me }, (/^\d+$/.test(location.hash.split('/')[2] || '') ? location.hash.split('/')[2] : null) || store.get('erp_mkt_scope') || null), telemarketing: () => window.Telemarketing.render({ api, dialog, toast, me }), ca: caPage, accdash, collections, flats, custdocs, comms, team: teamPage, accteam: teamPage, sdr: sdrPage, cp: cpPage, cpportal: cpPortalPage, project: projectHome, crmtodo: () => dailyTodo('crm'), acctodo: () => dailyTodo('accounts'), training, projects, plans, users, audit, units, bookings, demands, receipts, ledgers, letters, followups, verify, prices, partners, balances: accBalances, bankauto: bankAuto, bookscrm: booksCrm, accreports: accReports, checks: accChecks, accsetup: accSetup, import: importPage, booking: bookingPage, statement: statementPage, run: runPage };
     const key = DETAIL[page] && arg ? page : cur.key;
     try { await fn[key](arg ? +arg : undefined); } catch (e) { $('#page').innerHTML = `<div class="err">${esc(e.message)}</div>`; }
   }
@@ -1533,12 +1534,14 @@
     const d = await api(`/api/partners?project=${proj}&ledger=1`);
     const F = d.firms, sum = (k) => F.reduce((a, f) => a + toNum(f[k]), 0);
     $('#page').innerHTML = `<div class="page-head"><div><h1>Channel partner ledger</h1><p class="muted">Firm by firm: the brokerage earned on its live bookings, the bills received, pass back, payments (RTGS) and what is still owed. A payment counts once someone else has verified it. Brokerage is due once ${d.rule.afterRegistration ? 'the agreement is registered and ' : ''}${d.rule.minReceivedPct}% of the agreement value has been received.</p></div>
-      <div class="actions" style="margin:0">${d.can.firm ? '<button id="cpAdd">Add a firm</button>' : ''}${d.can.rule ? '<button class="ghost" id="rule">Change the rule</button>' : ''}</div></div>
+      <div class="actions" style="margin:0">${anyOf('accounts.manage', 'accounts.enter', 'tm.manage') ? '<a class="btn ghost" href="#/cpportal">Partner portal: firms, duplicates, invitations</a>' : ''}${d.can.firm ? '<button id="cpAdd">Add a firm</button>' : ''}${d.can.rule ? '<button class="ghost" id="rule">Change the rule</button>' : ''}</div></div>
+      <div class="panel" id="cpBills"></div>
       <div class="panel"><div class="kpis">${kpi(F.filter((f) => f.flats).length, 'firms with live bookings')}${kpi(F.reduce((a, f) => a + f.flats, 0), 'bookings via partners')}${kpi(cr(sum('brokerage')), 'brokerage earned')}${kpi(cr(sum('passBack')), 'pass back')}${kpi(cr(sum('paid') + sum('paidBefore')), 'paid (RTGS)')}${kpi(cr(sum('toVerify')), 'waiting to be verified', sum('toVerify') ? 'bad' : '')}${kpi(cr(sum('balance')), 'still owed')}${kpi(cr(sum('dueNow')), 'due now', sum('dueNow') ? 'bad' : '')}</div></div>
       <div class="panel table-wrap"><input class="search" id="cpq" placeholder="Find a firm"><table id="cpt"><tr><th>Firm</th><th class="num">Flats</th><th class="num">Agreement value</th><th class="num">Collected</th><th class="num">Brokerage</th><th class="num">Billed</th><th class="num">Pass back</th><th class="num">Paid (RTGS)</th><th class="num">To verify</th><th class="num">Balance</th><th class="num">Due now</th></tr>
         ${F.map((f) => `<tr class="click" data-cp="${f.id}" data-s="${esc(f.name.toLowerCase())}"><td><b>${esc(f.name)}</b>${f.active ? '' : ' <span class="pill grey">inactive</span>'}${f.cancelled ? `<br><span class="small muted">${f.cancelled} cancelled${f.recoverable ? ', ' + inr(f.recoverable) + ' to recover' : ''}</span>` : ''}</td><td class="num">${f.flats}</td><td class="num">${cr(f.agreementValue)}</td><td class="num">${cr(f.received)}</td>
           <td class="num">${inr(f.brokerage)}</td><td class="num">${f.billed ? inr(f.billed) : '—'}</td><td class="num">${f.passBack ? inr(f.passBack) : '—'}</td><td class="num">${f.paid + f.paidBefore ? inr(f.paid + f.paidBefore) : '—'}</td><td class="num ${f.toVerify ? 'bad-t' : ''}">${f.toVerify ? inr(f.toVerify) : '—'}</td>
           <td class="num"><b>${inr(f.balance)}</b></td><td class="num ${f.dueNow ? 'bad-t' : ''}">${f.dueNow ? inr(f.dueNow) : '—'}</td></tr>`).join('') || '<tr><td colspan="11" class="muted">No channel partner bookings yet.</td></tr>'}</table></div>`;
+    billsPanel($('#cpBills'), null).catch(() => { if ($('#cpBills')) $('#cpBills').remove(); });
     document.querySelectorAll('tr[data-cp]').forEach((tr) => (tr.onclick = () => go(`#/cp/${tr.dataset.cp}`)));
     $('#cpq').oninput = (e) => { const v = e.target.value.trim().toLowerCase(); document.querySelectorAll('#cpt tr[data-s]').forEach((tr) => { tr.style.display = !v || tr.dataset.s.includes(v) ? '' : 'none'; }); };
     if ($('#cpAdd')) $('#cpAdd').onclick = () => cpForm(null, (id) => go(`#/cp/${id}`));
@@ -1567,8 +1570,10 @@
           <td>${e.kind === 'payment' ? (e.verified_at ? `<span class="pill good">verified</span><br><span class="small muted">${esc(e.verified_name || '')}</span>` : '<span class="pill bad">to verify</span>') : ''}</td><td>${esc(e.by_name || '')}</td>
           <td style="white-space:nowrap">${e.kind === 'payment' && !e.verified_at && d.can.verify && e.created_by !== d.me ? `<button class="small" data-ver="${e.id}">Verify</button>` : ''}${d.can.verify ? ` <button class="link small" data-cx="${e.id}">Cancel</button>` : ''}</td></tr>`).join('') || '<tr><td colspan="8" class="muted">No bills, pass back or payments yet.</td></tr>'}</table>
         <p class="small muted">Before verifying a payment, check it against the partner's bill, the bookings above and the bank statement. The person who entered a payment cannot verify it.</p></div>
+      <div class="panel" id="cpPortalBills"><p class="muted small">Loading…</p></div>
       <div class="panel" id="cpdocs"><h2>Bills and papers</h2><p class="muted small">Loading…</p></div>`;
     docsPanel('cp', f.id, $('#cpdocs'), f.name);
+    billsPanel($('#cpPortalBills'), f.id, () => cpPage(id)).catch(() => { if ($('#cpPortalBills')) $('#cpPortalBills').remove(); });
     if ($('#cpEdit')) $('#cpEdit').onclick = () => cpForm(f, () => cpPage(id));
     document.querySelectorAll('[data-k]').forEach((x) => (x.onclick = () => {
       const k = x.dataset.k;
@@ -1582,6 +1587,127 @@
     }));
     document.querySelectorAll('[data-ver]').forEach((x) => (x.onclick = async () => { if (!confirm('Verify this payment? Check it against the bill and the bank statement first.')) return; try { await api('/api/partners', { action: 'cp-verify', id: +x.dataset.ver }); toast('Payment verified.'); cpPage(id); } catch (e) { alert(e.message); } }));
     document.querySelectorAll('[data-cx]').forEach((x) => (x.onclick = async () => { const r = prompt('Cancel this entry? It stays in the audit log. Reason:'); if (!r) return; try { await api('/api/partners', { action: 'cp-cancel', id: +x.dataset.cx, reason: r }); cpPage(id); } catch (e) { alert(e.message); } }));
+  }
+
+  // ---------- partner bills from the portal (in the CP ledger) ----------
+  // The file comes back in parts (a response may carry at most 4.5 MB) and is opened as one file in a new tab.
+  async function openBill(id, name) {
+    const w = window.open('', '_blank');
+    try {
+      const parts = []; let p;
+      for (let i = 0; ; i++) { p = await api(`/api/partners?billfile=${id}&part=${i}`); parts.push(Uint8Array.from(atob(p.data), (c) => c.charCodeAt(0))); if (i >= p.parts - 1) break; }
+      const url = URL.createObjectURL(new Blob(parts, { type: p.mime }));
+      if (w) w.location.href = url; else { const a = document.createElement('a'); a.href = url; a.download = name || p.name; a.click(); }
+      setTimeout(() => URL.revokeObjectURL(url), 120000);
+    } catch (e) { if (w) w.close(); alert(e.message); }
+  }
+  const BILL_ST = { submitted: '<span class="pill warn">to check</span>', checked: '<span class="pill good">checked</span>', rejected: '<span class="pill bad">rejected</span>' };
+  async function billsPanel(el, cpId, after) {
+    if (!anyOf('accounts.view', 'accounts.enter', 'brokerage.bill', 'brokerage.pay')) { el.remove(); return; }
+    const d = await api(`/api/partners?bills=1${cpId ? '&cp=' + cpId : '&status=submitted'}`);
+    if (!cpId && !d.rows.length) { el.remove(); return; }
+    el.innerHTML = `<h2>${cpId ? 'Bills from the partner portal' : `Partner bills to check (${d.rows.length})`}</h2>
+      <p class="small muted">Tax invoices partners sent on the partner portal. Open the bill, check it against the bookings and the brokerage, then mark it checked (it becomes a bill in the ledger) or rejected with the reason (the partner sees it).</p>
+      <div class="table-wrap"><table><tr>${cpId ? '' : '<th>Firm</th>'}<th>Bill no.</th><th>Date</th><th class="num">Amount</th><th class="num">GST</th><th>Flats</th><th>Sent</th><th>Status</th><th></th></tr>
+      ${d.rows.map((b) => `<tr>${cpId ? '' : `<td><a href="#/cp/${b.cp_id}">${esc(b.firm)}</a><br><span class="small muted">${esc(b.cp_code || '')}</span></td>`}<td><b>${esc(b.bill_no)}</b></td><td>${fmtD(b.bill_date)}</td><td class="num">${inr(b.amount)}</td><td class="num">${inr(b.gst)}</td>
+        <td>${esc(b.flats || 'whole firm')}</td><td>${fmtD(String(b.submitted_at || '').slice(0, 10))}</td><td>${BILL_ST[b.status] || esc(b.status)}${b.reason ? `<br><span class="small muted">${esc(b.reason)}</span>` : ''}${b.checked_name ? `<br><span class="small muted">${esc(b.checked_name)}</span>` : ''}</td>
+        <td style="white-space:nowrap"><button class="small ghost" data-bopen="${b.id}" data-bn="${esc(b.file_name || '')}">Open</button>${b.status === 'submitted' && d.canCheck ? ` <button class="small" data-bck="${b.id}">Checked</button> <button class="small ghost" data-brj="${b.id}">Reject</button>` : ''}</td></tr>`).join('') || `<tr><td colspan="${cpId ? 8 : 9}" class="muted">No bills from the portal yet.</td></tr>`}</table></div>`;
+    el.querySelectorAll('[data-bopen]').forEach((x) => (x.onclick = () => openBill(+x.dataset.bopen, x.dataset.bn)));
+    el.querySelectorAll('[data-bck]').forEach((x) => (x.onclick = async () => { if (!confirm('Mark this bill checked? It is then entered as a bill in the ledger.')) return; try { await api('/api/partners', { action: 'cp-bill-check', id: +x.dataset.bck, decision: 'checked' }); toast('Bill checked.'); after ? after() : billsPanel(el, cpId); } catch (e) { alert(e.message); } }));
+    el.querySelectorAll('[data-brj]').forEach((x) => (x.onclick = async () => { const r = prompt('Reject this bill? The partner sees the reason. Reason:'); if (!r) return; try { await api('/api/partners', { action: 'cp-bill-check', id: +x.dataset.brj, decision: 'rejected', reason: r }); toast('Bill rejected.'); billsPanel(el, cpId); } catch (e) { alert(e.message); } }));
+  }
+
+  // ---------- partner portal (Accounts): firms not on the portal, duplicates, merges, invitations, clean-up sheet ----------
+  async function cpPortalPage() {
+    const d = await api('/api/partners?portal=1');
+    const merges = d.merges, batches = [...new Set(merges.map((m) => m.batch).filter(Boolean))];
+    const mRow = (m) => {
+      const what = m.reference ? `Mark <b>${esc(m.into.name)}</b> as a reference (direct sale), not a channel partner`
+        : m.from.length ? `Merge ${m.from.map((f) => `<b>${esc(f.name)}</b> (${f.bookings} flats)`).join(', ')} into <b>${esc(m.into.name)}</b> (${m.into.bookings} flats)${m.keepName !== m.into.name ? `, named <b>${esc(m.keepName)}</b>` : ''}`
+        : `Rename <b>${esc(m.into.name)}</b>${m.keepName !== m.into.name ? ` to <b>${esc(m.keepName)}</b>` : ''}`;
+      const ct = Object.entries(m.contacts || {}).map(([k, v]) => `${{ contact: 'contact', mobile: 'mobile', email: 'email', rera: 'RERA', gstin: 'GSTIN' }[k] || k} ${esc(v)}`).join(', ');
+      const mine = m.requestedBy === d.me;
+      return `<tr><td>#${m.id}${m.batch ? `<br><span class="small muted">${esc(m.batch)}</span>` : ''}</td><td>${what}${ct ? `<br><span class="small muted">Contacts: ${ct}</span>` : ''}${m.note ? `<br><span class="small muted">${esc(m.note)}</span>` : ''}</td><td>${esc(m.requestedName || '')}<br><span class="small muted">${fmtDate(m.requestedAt)}</span></td>
+        <td style="white-space:nowrap">${d.can.approve && (!mine || me.role === 'admin') ? `<button class="small" data-mok="${m.id}">Approve</button> <button class="small ghost" data-mno="${m.id}">Reject</button>` : ''}${mine ? ` <button class="link small" data-mcx="${m.id}">Withdraw</button>` : ''}</td></tr>`;
+    };
+    $('#page').innerHTML = `<p class="crumbs"><a href="#/partners">Channel partner ledger</a> › Partner portal</p>
+      <div class="page-head"><div><h1>Partner portal: firms, duplicates and invitations</h1><p class="muted">Firms in the ERP from the bookings and the accounts sheet that are not on the partner portal yet. Clean up duplicate names first (merges are approved by the partner approvers), then invite each firm: it gets a one-time link, verifies a code sent to the mobile and email you confirm, and becomes a partner waiting for approval like any other.</p></div>
+        <div class="actions" style="margin:0">${d.can.invite ? '<button class="ghost" id="cuDl">Download clean-up sheet</button>' : ''}${d.can.request ? '<button id="cuUp">Upload cleaned sheet</button><input type="file" id="cuFile" accept=".xlsx,.csv" hidden>' : ''}</div></div>
+      <div id="cuPrev"></div>
+      ${merges.length ? `<div class="panel table-wrap"><h2>${d.can.approve ? 'Merges to approve' : 'Merges waiting for approval'} (${merges.length})</h2>
+        ${d.can.approve && batches.length ? `<div class="actions" style="margin:0 0 10px">${batches.map((b) => `<button class="small" data-bok="${esc(b)}">Approve the whole batch ${esc(b)} (${merges.filter((m) => m.batch === b).length})</button>`).join(' ')}</div>` : ''}
+        <table><tr><th>Request</th><th>What</th><th>Asked by</th><th></th></tr>${merges.map(mRow).join('')}</table>
+        <p class="small muted">On approval every booking, brokerage entry, document, bill and telecalling record of the merged firms moves to the firm that is kept, in one step. The merged names stay as spellings of the kept firm, so a later import does not split it again. The person who asked cannot approve.</p></div>` : ''}
+      ${d.can.invite ? `<div class="panel"><div class="kpis">${kpi(d.notOnPortal.length, 'firms not on the portal')}${kpi(d.notOnPortal.filter((f) => f.bookings).length, 'of them with live bookings')}${kpi(d.duplicates.length, 'possible duplicate groups')}${kpi(d.portalCount, 'firms on the portal')}</div></div>
+      ${d.duplicates.length ? `<div class="panel table-wrap"><h2>Possible duplicates</h2><p class="small muted">The same firm written differently: spacing, dots, capitals, plurals, words like Realty / Properties / Pvt Ltd, or the firm named in brackets after a person.</p>
+        <table><tr><th>Firms</th><th>Why</th><th></th></tr>${d.duplicates.map((g, i) => `<tr><td>${g.firms.map((f) => `${esc(f.name)} <span class="small muted">#${f.id} · ${f.bookings} flats${f.onPortal ? ' · on the portal ' + esc(f.cpCode || '') : ''}${f.mergeRequest ? ' · in request #' + f.mergeRequest : ''}</span>`).join('<br>')}</td>
+          <td class="small">${esc(g.why.join('; '))}</td><td>${d.can.request && !g.firms.some((f) => f.mergeRequest) ? `<button class="small ghost" data-grp="${i}">Ask to merge</button>` : ''}</td></tr>`).join('')}</table></div>` : ''}
+      <div class="panel table-wrap"><h2>Firms not on the portal yet</h2><input class="search" id="npq" placeholder="Find a firm">
+        <table id="npt"><tr><th>Firm</th><th class="num">Flats</th><th>Projects</th><th>Mobile / email</th><th>Invitation</th><th></th></tr>
+        ${d.notOnPortal.map((f) => `<tr data-s="${esc(f.name.toLowerCase())}"><td><b>${esc(f.name)}</b> <span class="small muted">#${f.id}</span>${f.duplicates.length ? `<br><span class="small bad-t">Possible duplicate of ${f.duplicates.map((x) => esc(x.name)).join(', ')}</span>` : ''}</td>
+          <td class="num">${f.bookings}${f.cancelled ? `<br><span class="small muted">${f.cancelled} cancelled</span>` : ''}</td><td class="small">${esc(f.projects || '')}</td><td class="small">${esc(f.phone || '—')}<br>${esc(f.email || '—')}</td>
+          <td class="small">${f.invite ? (f.invite.used ? 'accepted' : f.invite.live ? `sent ${fmtD(String(f.invite.at).slice(0, 10))}${f.invite.sentTo ? ' to ' + esc(f.invite.sentTo) : ''}<br>expires ${fmtD(String(f.invite.expires).slice(0, 10))}` : 'expired') : '—'}</td>
+          <td>${f.merge_request ? `<span class="small muted">merge #${f.merge_request} pending</span>` : `<button class="small" data-inv="${f.id}">${f.invite && f.invite.live ? 'Invite again' : 'Invite to the portal'}</button>`}</td></tr>`).join('') || '<tr><td colspan="6" class="muted">Every firm is on the portal.</td></tr>'}</table></div>` : ''}`;
+    const reload = () => cpPortalPage();
+    document.querySelectorAll('[data-mok],[data-mno]').forEach((x) => (x.onclick = async () => {
+      const ok = !!x.dataset.mok, id = +(x.dataset.mok || x.dataset.mno);
+      const reason = ok ? '' : prompt('Reject this merge? Reason:'); if (!ok && !reason) return;
+      if (ok && !confirm('Approve? The firms are merged now, in one step.')) return;
+      try { await api('/api/partners', { action: 'merge-decide', id, approve: ok, reason }); toast(ok ? 'Merged.' : 'Rejected.'); reload(); } catch (e) { alert(e.message); }
+    }));
+    document.querySelectorAll('[data-bok]').forEach((x) => (x.onclick = async () => { if (!confirm(`Approve every request in batch ${x.dataset.bok}?`)) return; try { const r = await api('/api/partners', { action: 'merge-batch', batch: x.dataset.bok, approve: true }); toast(`${r.done.length} approved${r.failed.length ? `, ${r.failed.length} could not be done` : ''}.`); if (r.failed.length) alert(r.failed.map((f) => `#${f.id}: ${f.reason}`).join('\n')); reload(); } catch (e) { alert(e.message); } }));
+    document.querySelectorAll('[data-mcx]').forEach((x) => (x.onclick = async () => { if (!confirm('Withdraw this request?')) return; try { await api('/api/partners', { action: 'merge-cancel', id: +x.dataset.mcx }); reload(); } catch (e) { alert(e.message); } }));
+    document.querySelectorAll('[data-grp]').forEach((x) => (x.onclick = () => {
+      const g = d.duplicates[+x.dataset.grp], top = g.firms[0];
+      dialog(`<h2>Ask to merge</h2><p class="muted">Choose the firm to keep (its bookings, ledger and login stay; the others move into it), tick the firms that are the same, and the name to keep. The partner approvers then approve it.</p>
+        <table>${g.firms.map((f) => `<tr><td><label class="check" style="margin:0"><input type="radio" name="into" value="${f.id}" ${f.id === top.id ? 'checked' : ''}> keep</label></td><td><label class="check" style="margin:0"><input type="checkbox" name="from" value="${f.id}" ${f.id === top.id ? '' : 'checked'}> merge</label></td><td>${esc(f.name)} <span class="small muted">#${f.id} · ${f.bookings} flats${f.onPortal ? ' · on the portal' : ''}</span></td></tr>`).join('')}</table>
+        <label>Name to keep</label><select name="pick">${g.firms.map((f) => `<option>${esc(f.name)}</option>`).join('')}</select>
+        <label>Or type the correct name</label><input name="keepName" placeholder="leave empty to use the name chosen above">
+        <label>Note</label><input name="note">`, async (v, form) => {
+        const into = +v.into, fromIds = [...form.querySelectorAll('[name=from]:checked')].map((i) => +i.value).filter((i) => i !== into);
+        if (!fromIds.length) throw new Error('Tick at least one firm to merge into the one kept.');
+        await api('/api/partners', { action: 'merge-request', intoId: into, fromIds, keepName: (v.keepName || '').trim() || v.pick, note: v.note });
+        toast('Sent for approval.'); reload();
+      });
+    }));
+    document.querySelectorAll('[data-inv]').forEach((x) => (x.onclick = () => {
+      const f = d.notOnPortal.find((r) => r.id === +x.dataset.inv);
+      const dl = dialog(`<h2>Invite ${esc(f.name)} to the partner portal</h2><p class="muted">Confirm the firm's mobile and email: the invitation goes there, and so does the code the firm types to set up its login. A new invitation replaces any earlier one; it works once and for 14 days.</p>
+        <div class="row"><div><label>Mobile</label><input name="mobile" inputmode="tel" value="${esc(f.phone || '')}"></div><div><label>Email</label><input name="email" type="email" value="${esc(f.email || '')}"></div></div><div id="invRes"></div>`, async (v) => {
+        const r = await api('/api/partners', { action: 'invite', id: f.id, mobile: v.mobile, email: v.email });
+        alert(`${r.sentTo ? 'Invitation sent to ' + r.sentTo + '.' : r.warning || 'Invitation made.'}\n\nThe link (you can also send it yourself):\n${r.link}`);
+        reload();
+      });
+      dl.querySelector('[value=save]').textContent = 'Invite';
+    }));
+    if ($('#npq')) $('#npq').oninput = (e) => { const s = e.target.value.trim().toLowerCase(); document.querySelectorAll('#npt tr[data-s]').forEach((tr) => { tr.style.display = !s || tr.dataset.s.includes(s) ? '' : 'none'; }); };
+    if ($('#cuDl')) $('#cuDl').onclick = async (e) => {
+      e.target.disabled = true;
+      try { const r = await api('/api/partners?cleanup=1'); const a = document.createElement('a'); a.href = URL.createObjectURL(new Blob([Uint8Array.from(atob(r.data), (c) => c.charCodeAt(0))], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' })); a.download = r.name; a.click(); setTimeout(() => URL.revokeObjectURL(a.href), 60000); }
+      catch (x) { alert(x.message); } finally { e.target.disabled = false; }
+    };
+    if ($('#cuUp')) {
+      $('#cuUp').onclick = () => $('#cuFile').click();
+      $('#cuFile').onchange = async (e) => {
+        const file = e.target.files[0]; e.target.value = ''; if (!file) return;
+        const box = $('#cuPrev'); box.innerHTML = '<div class="panel"><p class="muted">Reading the sheet…</p></div>';
+        try {
+          const b64 = await new Promise((ok, no) => { const r = new FileReader(); r.onload = () => ok(String(r.result).split(',')[1] || ''); r.onerror = () => no(new Error('Could not read the file.')); r.readAsDataURL(file); });
+          const p = await api('/api/partners', { action: 'cleanup-preview', file: b64, name: file.name });
+          const ct = (c) => Object.entries(c || {}).map(([k, v]) => `${k} ${esc(v)}`).join(', ');
+          box.innerHTML = `<div class="panel table-wrap"><h2>What the sheet ${esc(file.name)} will do</h2>
+            <div class="kpis">${kpi(p.rows, 'firms on the sheet')}${kpi(p.merges, 'merges')}${kpi(p.merged, 'firms merged away')}${kpi(p.renames, 'renamed')}${kpi(p.contactFixes, 'contacts updated')}${kpi(p.references.length, 'marked as reference')}${kpi(p.refused.length, 'refused / not used', p.refused.length ? 'bad' : '')}</div>
+            ${p.plan.length ? `<table><tr><th>Rows</th><th>Kept firm</th><th>Merged into it</th><th>Name</th><th>Contacts</th></tr>${p.plan.map((x) => `<tr><td class="small">${esc(x.rows.join(', '))}</td><td>${esc(x.keep.name)} <span class="small muted">#${x.keep.id} · ${x.keep.flats} flats${x.keep.onPortal ? ' · on the portal' : ''}</span></td>
+              <td>${x.merge.map((m) => `${esc(m.name)} <span class="small muted">#${m.id} · ${m.flats} flats</span>`).join('<br>') || '—'}</td><td>${x.rename ? `<b>${esc(x.keepName)}</b>` : '<span class="muted">unchanged</span>'}</td><td class="small">${ct(x.contacts) || '—'}</td></tr>`).join('')}</table>` : ''}
+            ${p.references.length ? `<h3>Reference / direct sale (never merged or invited)</h3><p>${p.references.map((r) => `${esc(r.name)} <span class="small muted">#${r.id}</span>`).join(', ')}</p>` : ''}
+            ${p.refused.length ? `<h3>Refused or not used</h3><table><tr><th>Row</th><th>Firm</th><th>Why</th></tr>${p.refused.map((r) => `<tr><td class="small">${esc(r.row)}</td><td>${esc(r.name || r.id || '')}</td><td class="small">${esc(r.reason)}</td></tr>`).join('')}</table>` : ''}
+            <div class="actions">${p.plan.length || p.references.length ? '<button id="cuSend">Send for approval</button>' : ''}<button class="ghost" id="cuX">Close</button></div>
+            <p class="small muted">Nothing changes until the partner approvers approve. They can approve the whole batch at once or one by one.</p></div>`;
+          $('#cuX').onclick = () => { box.innerHTML = ''; };
+          if ($('#cuSend')) $('#cuSend').onclick = async (ev) => { ev.target.disabled = true; try { const r = await api('/api/partners', { action: 'cleanup-submit', file: b64, name: file.name }); toast(`${r.requests.length} requests sent for approval (batch ${r.batch}).`); if (r.failed.length) alert(r.failed.map((f) => `${f.name}: ${f.reason}`).join('\n')); reload(); } catch (x) { ev.target.disabled = false; alert(x.message); } };
+        } catch (x) { box.innerHTML = `<div class="panel"><div class="err">${esc(x.message)}</div></div>`; }
+      };
+    }
   }
 
   // ---------- accounts (the Master Accounts sheet, tab for tab) ----------

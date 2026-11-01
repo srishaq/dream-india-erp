@@ -3,6 +3,9 @@
 // (The older per-booking list and its amount / bill / payment actions are gone: every entry goes through cp-entry,
 // so a payment counts only once someone else has verified it.)
 // POST cp-save (a firm's details) · cp-entry (bill, pass back, payment) · cp-verify (a payment, by someone else) · cp-cancel
+// Partner portal (Accounts): GET ?portal=1 (firms not on the portal, possible duplicates, merges) · ?merges=1 · ?cleanup=1 (the
+// clean-up sheet) · ?bills=1[&cp=ID&status=] · ?billfile=ID&part=N. POST invite · merge-request · merge-decide · merge-batch ·
+// merge-cancel · cleanup-preview · cleanup-submit · cp-bill-check
 const db = require('../lib/db');
 const auth = require('../lib/auth');
 const audit = require('../lib/audit');
@@ -12,6 +15,13 @@ const { today } = require('../lib/demands');
 const { route, fail, str, intOr } = require('../lib/http');
 const CP = require('../lib/cp');
 const { notOwn } = require('../lib/access');
+const CF = require('../lib/cp-firms');
+const CB = require('../lib/cp-bills');
+// Who works the partner portal list (invites, merge requests): Accounts and the partner managers; who looks at bills.
+const any = (u, ps) => ps.some((p) => has(u, p));
+const PORTAL = ['accounts.manage', 'accounts.enter', 'tm.manage'], REQUEST = ['accounts.manage', 'tm.manage'];
+const BILLS = ['accounts.view', 'accounts.enter', 'brokerage.bill', 'brokerage.pay'], BILL_CHECK = ['accounts.enter', 'accounts.manage', 'brokerage.bill'];
+async function isApprover(u) { return u.role === 'admin' || (await CF.mergeApprovers()).includes(u.id); }
 
 const n = (v) => Number(v) || 0;
 const r2 = (x) => Math.round(x * 100) / 100;
@@ -20,6 +30,26 @@ async function rule() { const r = await db.one("select value from settings where
 
 module.exports = route({
   GET: async (req, res) => {
+    const Q = req.query || {};
+    if (Q.portal || Q.merges || Q.cleanup || Q.bills || Q.billfile) {
+      const u = await auth.guard(req, res, null); if (!u) return;
+      if (Q.bills || Q.billfile) {
+        if (!any(u, BILLS)) throw fail(403, 'Your role does not allow this.');
+        if (Q.billfile) return res.json(await CB.filePart(intOr(Q.billfile), intOr(Q.part, 0)));
+        return res.json({ rows: await CB.list({ cpId: intOr(Q.cp), status: ['submitted', 'checked', 'rejected'].includes(Q.status) ? Q.status : null }), canCheck: any(u, BILL_CHECK) });
+      }
+      const appr = await isApprover(u);
+      if (!any(u, PORTAL) && !appr) throw fail(403, 'Your role does not allow this.');
+      if (Q.merges) return res.json({ rows: await CF.merges(['pending', 'approved', 'rejected', 'cancelled'].includes(Q.status) ? Q.status : null), me: u.id, approver: appr });
+      if (Q.cleanup) {
+        if (!any(u, PORTAL)) throw fail(403, 'Your role does not allow this.');
+        const S = await CF.cleanupSheet();
+        return res.json({ name: `partner-cleanup-${today()}.xlsx`, data: require('../lib/xlsx-write').write(S.sheets).toString('base64'), firms: S.firms, groups: S.groups });
+      }
+      const L = any(u, PORTAL) ? await CF.firmsList() : { notOnPortal: [], duplicates: [], portalCount: null };
+      return res.json({ ...L, merges: await CF.merges('pending'), me: u.id, approver: appr, portalUrl: CF.portalUrl(),
+        can: { invite: any(u, PORTAL), request: any(u, REQUEST), approve: appr } });
+    }
     const u = await auth.guard(req, res, 'ledger.view'); if (!u) return;
     const projectId = needProject(u, intOr(req.query.project));
     const can = { bill: has(u, 'brokerage.bill') || has(u, 'accounts.enter'), pay: has(u, 'brokerage.pay'), rule: has(u, 'price.manage'), firm: has(u, 'brokerage.bill') || has(u, 'accounts.manage'), verify: has(u, 'brokerage.pay') || has(u, 'accounts.manage') };
@@ -39,6 +69,26 @@ module.exports = route({
   POST: async (req, res, b) => {
     const u = await auth.guard(req, res); if (!u) return;
     const need = (p) => { if (!has(u, p)) throw fail(403, 'Your role does not allow this.'); };
+    if (b.action === 'invite') {
+      if (!any(u, PORTAL)) throw fail(403, 'Your role does not allow this.');
+      return res.json(await CF.invite({ id: intOr(b.id), mobile: str(b.mobile, 20), email: str(b.email, 120), user: u }));
+    }
+    if (b.action === 'merge-request') {
+      if (!any(u, REQUEST)) throw fail(403, 'Merges are asked for by Head Accounts.');
+      return res.json(await CF.requestMerge({ intoId: intOr(b.intoId), fromIds: b.fromIds, keepName: str(b.keepName, 120), contacts: b.contacts || {}, note: str(b.note, 300), user: u }));
+    }
+    if (b.action === 'merge-decide') return res.json(await CF.decideMerge({ id: intOr(b.id), approve: !!b.approve, reason: str(b.reason, 300), user: u }));
+    if (b.action === 'merge-batch') return res.json(await CF.decideBatch({ batch: str(b.batch, 40), approve: !!b.approve, reason: str(b.reason, 300), user: u }));
+    if (b.action === 'merge-cancel') return res.json(await CF.cancelMerge({ id: intOr(b.id), user: u }));
+    if (b.action === 'cleanup-preview' || b.action === 'cleanup-submit') {
+      if (!any(u, REQUEST)) throw fail(403, 'The clean-up sheet is sent by Head Accounts.');
+      const rows = CF.readCleanup(b.file, str(b.name, 120));
+      return res.json(b.action === 'cleanup-preview' ? await CF.cleanupPreview(rows) : await CF.cleanupSubmit(rows, u, str(b.name, 120)));
+    }
+    if (b.action === 'cp-bill-check') {
+      if (!any(u, BILL_CHECK)) throw fail(403, 'Your role does not allow this.');
+      return res.json(await CB.decide({ id: intOr(b.id), decision: b.decision, reason: str(b.reason, 300), user: u }));
+    }
     if (b.action === 'rule') {
       need('price.manage');
       const before = await rule();
