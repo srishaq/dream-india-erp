@@ -1,5 +1,6 @@
 // Accounts: import from the Master Accounts sheet layout, registers, Daily Bank Balance, To Do, reports, Tally.
 // DATABASE_URL=postgres://... node scripts/test-accounts.js
+require('./login-code-helper'); // staff sign-in: password, then the code (ERP_TEST_OTP)
 const assert = require('assert/strict');
 const path = require('path');
 process.env.PORT = process.env.PORT || '3995';

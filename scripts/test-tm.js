@@ -1,6 +1,7 @@
 // Partner & Telemarketing: partner registration with OTP and CP ID, approval, uploads with duplicate and owner checks,
 // privacy between partners, earlier numbers, call sheets and outcomes, lookup, password reset, who may see what.
 // DATABASE_URL=postgres://... node scripts/test-tm.js   (an empty database)
+require('./login-code-helper'); // staff sign-in: password, then the code (ERP_TEST_OTP)
 const assert = require('assert/strict');
 process.env.PORT = process.env.PORT || '3996';
 process.env.TM_TEST_OTP = '424242';

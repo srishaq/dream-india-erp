@@ -1,6 +1,7 @@
 // Changes asked for in the staff training: booking edit (Head CRM only), payment receipts, SDR challans (no duplicates),
 // letter settings, PDCs for six months, CP ledger, unit transfers, unsold cost list, replies waiting, install as an app.
 // DATABASE_URL=postgres://... node scripts/test-training.js   (an empty database)
+require('./login-code-helper'); // staff sign-in: password, then the code (ERP_TEST_OTP)
 const assert = require('assert/strict');
 const path = require('path');
 process.env.PORT = process.env.PORT || '3993';

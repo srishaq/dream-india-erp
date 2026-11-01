@@ -1,5 +1,6 @@
 // Module 1 end-to-end: booking → approval → demands → receipts → ledger, with maker-and-checker rules.
 // DATABASE_URL=postgres://... (EMPTY database) node scripts/test-m1.js
+require('./login-code-helper'); // staff sign-in: password, then the code (ERP_TEST_OTP)
 const assert = require('assert/strict');
 process.env.PORT = process.env.PORT || '3998';
 const server = require('./dev-server');

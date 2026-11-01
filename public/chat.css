@@ -220,5 +220,11 @@ a { color: var(--brand-2); }
 .login p { margin: 0 0 20px; color: var(--ink-3); }
 .login form { text-align: left; }
 .login .btn { width: 100%; padding: 12px; margin-top: 12px; font-size: 16px; }
+.login input.otp { font-size: 22px; letter-spacing: 6px; text-align: center; }
+.login .remember { display: flex; align-items: center; gap: 8px; margin: 8px 0; font-size: 14px; }
+.login .remember input { width: auto; }
+.login .otp-actions { display: flex; gap: 8px; margin-top: 8px; }
+.login .otp-actions .btn { flex: 1; margin-top: 0; font-size: 15px; }
+.login #byMail { margin: 14px 0 0; text-align: center; }
 .err { background: var(--bad-tint); color: var(--bad); border-radius: 8px; padding: 9px 12px; margin-top: 10px; font-size: 14px; }
 .install { margin-top: 22px; font-size: 13.5px; color: var(--ink-3); text-align: left; background: var(--wall); border-radius: 10px; padding: 10px 12px; }

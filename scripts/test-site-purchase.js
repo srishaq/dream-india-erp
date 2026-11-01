@@ -2,6 +2,7 @@
 // reply, Purchase orders, site receives with a photo of the challan (also logged as a site delivery), money stays
 // hidden from site logins, a request waiting 24 hours gets a reminder to Management only (not the Admin), and the 10 am summary.
 // DATABASE_URL=postgres://... (EMPTY database) node scripts/test-site-purchase.js
+require('./login-code-helper'); // staff sign-in: password, then the code (ERP_TEST_OTP)
 const assert = require('assert/strict');
 process.env.PORT = process.env.PORT || '3997';
 const server = require('./dev-server');

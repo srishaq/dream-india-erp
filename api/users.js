@@ -1,10 +1,12 @@
-// Admin only. GET lists logins; POST {action}: create, update, reset, disable, enable.
+// Admin only. GET lists logins (?security=1: the Login security panel); POST {action}: create, update, reset, disable,
+// enable, devices-revoke (sign out all devices), security (Login security settings).
 // New logins and resets get a temporary password, shown once, that must be changed at first sign-in.
 const crypto = require('crypto');
 const db = require('../lib/db');
 const auth = require('../lib/auth');
 const audit = require('../lib/audit');
 const { ROLES } = require('../lib/roles');
+const OTP = require('../lib/staff-otp');
 const { route, fail, str, intOr } = require('../lib/http');
 
 const tempPassword = () => {
@@ -30,12 +32,18 @@ const emailOrNull = (v) => { const e = str(v, 120).toLowerCase(); if (!e) return
 
 module.exports = route({
   GET: async (req, res) => {
-    if (!(await auth.guard(req, res, 'users.manage'))) return;
+    const me = await auth.guard(req, res, 'users.manage'); if (!me) return;
+    if (req.query && req.query.security) { if (me.role !== 'admin') throw fail(403, 'Only the Admin sees Login security.'); return res.json(await OTP.status()); }
     return res.json(await list());
   },
   POST: async (req, res, b) => {
     const me = await auth.guard(req, res, 'users.manage'); if (!me) return;
     const role = str(b.role, 30);
+    if (b.action === 'security') {
+      if (me.role !== 'admin') throw fail(403, 'Only the Admin can change Login security.');
+      await OTP.saveSettings(me, { enforce: b.enforce !== false, waOtpTemplate: str(b.waOtpTemplate, 120) });
+      return res.json({ ok: true, ...(await OTP.status()) });
+    }
     if (b.action === 'create') {
       const username = auth.norm(b.username), name = str(b.name, 80);
       if (!auth.USERNAME.test(username)) throw fail(400, 'Username: 3 to 40 letters, numbers, dots or dashes.');
@@ -51,16 +59,24 @@ module.exports = route({
       return res.json({ ok: true, username, tempPassword: temp, ...(await list()) });
     }
     const id = intOr(b.id);
-    const before = id && (await db.one('select id, username, name, role, disabled, all_projects from users where id = $1', [id]));
+    const before = id && (await db.one('select id, username, name, role, disabled, all_projects, phone, email from users where id = $1', [id]));
     if (!before) throw fail(404, 'Login not found.');
     if (id === me.id && ['disable', 'update'].includes(b.action) && (b.action === 'disable' || role !== 'admin')) throw fail(400, 'You cannot remove your own Admin access.');
     if (b.action === 'update') {
       if (!ROLES[role]) throw fail(400, 'Choose a role.');
       const name = str(b.name, 80) || before.name;
+      const phone = str(b.phone, 20) || null, email = emailOrNull(b.email);
+      const phoneChanged = (phone || '') !== (before.phone || ''), emailChanged = (email || '') !== (before.email || '');
+      // sign-in codes go to this mobile and email: nobody changes their own (another Admin does), except to fill in a blank one
+      if (id === me.id && ((phoneChanged && before.phone) || (emailChanged && before.email))) throw fail(403, 'You cannot change your own mobile or email: sign-in codes go there. Another Admin must change it.');
       await db.tx(async (t) => {
-        await t.q('update users set name = $2, role = $3, all_projects = $4, phone = $5, designation = $6, email = $7, session_version = session_version + 1, portal_role = case when role = $3 then portal_role end, portal_access = case when role = $3 then portal_access end where id = $1', [id, name, role, !!b.allProjects, str(b.phone, 20) || null, str(b.designation, 80) || null, emailOrNull(b.email)]);
+        await t.q('update users set name = $2, role = $3, all_projects = $4, phone = $5, designation = $6, email = $7, session_version = session_version + 1, portal_role = case when role = $3 then portal_role end, portal_access = case when role = $3 then portal_access end where id = $1', [id, name, role, !!b.allProjects, phone, str(b.designation, 80) || null, email]);
         await setProjects(t, id, cleanIds(b.projects));
-        await audit.record(t.q, { user: me, action: 'update', entity: 'user', entityId: id, before, after: { name, role, allProjects: !!b.allProjects, projects: cleanIds(b.projects) } });
+        const { phone: bp, email: be, ...rest } = before;
+        await audit.record(t.q, { user: me, action: 'update', entity: 'user', entityId: id, before: rest, after: { name, role, allProjects: !!b.allProjects, projects: cleanIds(b.projects) } });
+        if (phoneChanged) await audit.record(t.q, { user: me, action: 'phone', entity: 'user', entityId: id, before: { phone: before.phone }, after: { phone }, note: `Mobile for sign-in codes changed for ${before.username}: ${before.phone || 'none'} → ${phone || 'none'}` });
+        if (emailChanged) await audit.record(t.q, { user: me, action: 'email', entity: 'user', entityId: id, before: { email: before.email }, after: { email }, note: `Email for sign-in codes changed for ${before.username}: ${before.email || 'none'} → ${email || 'none'}` });
+        if (role !== before.role) { const n = await OTP.revokeAll(t.q, id); if (n) await audit.record(t.q, { user: me, action: 'devices-revoke', entity: 'user', entityId: id, note: `New role: ${n} remembered device(s) of ${before.username} signed out` }); }
       });
       return res.json({ ok: true, ...(await list()) });
     }
@@ -68,7 +84,8 @@ module.exports = route({
       const temp = tempPassword();
       await db.tx(async (t) => {
         await t.q('update users set password_hash = $2, must_change = true, session_version = session_version + 1 where id = $1', [id, auth.hashPassword(temp)]);
-        await audit.record(t.q, { user: me, action: 'reset-password', entity: 'user', entityId: id });
+        const n = await OTP.revokeAll(t.q, id);
+        await audit.record(t.q, { user: me, action: 'reset-password', entity: 'user', entityId: id, note: n ? `${n} remembered device(s) signed out` : null });
       });
       return res.json({ ok: true, username: before.username, tempPassword: temp, ...(await list()) });
     }
@@ -76,9 +93,20 @@ module.exports = route({
       const off = b.action === 'disable';
       await db.tx(async (t) => {
         await t.q('update users set disabled = $2, session_version = session_version + 1 where id = $1', [id, off]);
-        await audit.record(t.q, { user: me, action: b.action, entity: 'user', entityId: id });
+        const n = off ? await OTP.revokeAll(t.q, id) : 0;
+        await audit.record(t.q, { user: me, action: b.action, entity: 'user', entityId: id, note: n ? `${n} remembered device(s) signed out` : null });
       });
       return res.json({ ok: true, ...(await list()) });
+    }
+    if (b.action === 'devices-revoke') { // "Sign out all devices": every session and every remembered device of that login
+      if (me.role !== 'admin') throw fail(403, 'Only the Admin can do this.');
+      let n = 0;
+      await db.tx(async (t) => {
+        await t.q('update users set session_version = session_version + 1 where id = $1', [id]);
+        n = await OTP.revokeAll(t.q, id);
+        await audit.record(t.q, { user: me, action: 'devices-revoke', entity: 'user', entityId: id, note: `Signed out all devices of ${before.username} (${n} remembered device(s))` });
+      });
+      return res.json({ ok: true, revoked: n, ...(await OTP.status()) });
     }
     throw fail(400, 'Unknown action.');
   },

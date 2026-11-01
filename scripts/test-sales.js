@@ -1,5 +1,6 @@
 // Sales/CRM: price list and cost sheet, booking documents, brokerage, important dates and the forecast.
 // DATABASE_URL=postgres://... node scripts/test-sales.js
+require('./login-code-helper'); // staff sign-in: password, then the code (ERP_TEST_OTP)
 const assert = require('assert/strict');
 process.env.PORT = process.env.PORT || '3996';
 const server = require('./dev-server');

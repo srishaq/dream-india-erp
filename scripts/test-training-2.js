@@ -97,4 +97,5 @@ module.exports = async ({ admin, crm, hcrm, acc, hacc, sig, bks, db, step, asser
     console.log('\nall training checks passed');
     process.exit(0);
   } catch (e) { console.error(e); process.exit(1); }
-};
+};require('./login-code-helper'); // staff sign-in: password, then the code (ERP_TEST_OTP)
+

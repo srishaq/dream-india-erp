@@ -1,5 +1,6 @@
 // DreamComm (company chat): end-to-end checks against a real, EMPTY Postgres database.
 // DATABASE_URL=postgres://... node scripts/test-chat.js
+require('./login-code-helper'); // staff sign-in: password, then the code (ERP_TEST_OTP)
 const assert = require('assert/strict');
 const crypto = require('crypto');
 process.env.PORT = process.env.PORT || '3996';
