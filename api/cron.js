@@ -18,9 +18,22 @@ const { route, fail } = require('../lib/http');
 
 const istHour = () => new Date(Date.now() + 5.5 * 3600000).getUTCHours();
 
+// Every run leaves its result for the watchdog (lib/watchdog.js), which emails the Admin when a job fails or stops.
 module.exports = route({
   GET: async (req, res) => {
-    const job = (req.query || {}).job;
+    const job = (req.query || {}).job, W = require('../lib/watchdog'), t0 = Date.now();
+    const send = res.json.bind(res); let body;
+    res.json = (b) => { body = b; return res; };
+    try { await run(req, res, job); }
+    catch (e) { if (e.status !== 401 && e.status !== 403) await W.record(job, false, null, e.message, Date.now() - t0); res.json = send; throw e; }
+    res.json = send;
+    await W.record(job, true, body, null, Date.now() - t0);
+    if (job === 'mail' || job === 'morning') body = { ...body, watchdog: await W.check().catch((e) => ({ error: e.message })) };
+    return send(body);
+  },
+});
+async function run(req, res, job) {
+  {
     const secret = process.env.CRON_SECRET;
     if (secret) { if (req.headers.authorization !== `Bearer ${secret}`) throw fail(401, 'Not allowed.'); }
     // No CRON_SECRET in Vercel yet: only Vercel's own scheduler, and only at each job's hour (a stopgap; add CRON_SECRET)
@@ -87,5 +100,5 @@ module.exports = route({
       return res.json(r);
     }
     throw fail(400, 'Unknown job.');
-  },
-});
+  }
+}

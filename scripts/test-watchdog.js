@@ -1,0 +1,12 @@
+const assert=require('assert'); const db=require('../lib/db'); const {migrate}=require('../lib/migrate'); const W=require('../lib/watchdog');
+(async()=>{ await migrate();
+ await W.record('mail', true, {sync:{n:1}, autoLetters:{error:'This is the test version: set a test email'}}, null, 10);
+ let p=await W.problems(); assert.ok(!p.some(x=>x.job==='mail'), JSON.stringify(p));
+ await W.record('morning', true, {exotel:{error:'Exotel keys not in Vercel yet'}, cheques:{error:'Query failed: boom'}}, null, 10);
+ p=await W.problems(); assert.ok(p.some(x=>x.key==='morning:steps' && /boom/.test(x.text)) && !p.some(x=>/Exotel/.test(x.text)), JSON.stringify(p));
+ await W.record('backup', false, null, 'Drive down', 5); p=await W.problems(); assert.ok(p.some(x=>x.key==='backup:failed'));
+ await db.q("update job_marks set done_at = now() - interval '2 days' where key='cron-seen:watchdog'"); await db.q("delete from job_marks where key='cron-good:bank'");
+ p=await W.problems(); assert.ok(p.some(x=>x.key==='bank:late'));
+ const c=await W.check(); console.log('check', JSON.stringify(c)); const h=await W.health(); assert.equal(h.ok,true);
+ await W.record('morning', true, {ok:1}, null, 5); p=await W.problems(); assert.ok(!p.some(x=>x.key==='morning:steps'));
+ console.log('Watchdog: 6 checks passed.'); process.exit(0)})().catch(e=>{console.error(e);process.exit(1)});
