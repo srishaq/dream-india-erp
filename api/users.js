@@ -44,6 +44,26 @@ module.exports = route({
       await OTP.saveSettings(me, { enforce: b.enforce !== false, waOtpTemplate: str(b.waOtpTemplate, 120) });
       return res.json({ ok: true, ...(await OTP.status()) });
     }
+    // New temporary passwords for many logins at once (Admin only): the list of usernames and passwords is shown once,
+    // for the Admin to send to each person. Never the Admin's own login, never a disabled one.
+    if (b.action === 'reset-many') {
+      if (me.role !== 'admin') throw fail(403, 'Only the Admin can reset passwords in bulk.');
+      const ids = cleanIds(b.ids).filter((x) => x !== me.id);
+      if (!ids.length) throw fail(400, 'Tick at least one login.');
+      if (ids.length > 300) throw fail(400, 'At most 300 logins at once.');
+      const rows = await db.q('select id, username, name, role from users where id = any($1) and not disabled order by name', [ids]);
+      const out = [];
+      await db.tx(async (t) => {
+        for (const u of rows) {
+          const temp = tempPassword();
+          await t.q('update users set password_hash = $2, must_change = true, session_version = session_version + 1 where id = $1', [u.id, auth.hashPassword(temp)]);
+          await OTP.revokeAll(t.q, u.id);
+          await audit.record(t.q, { user: me, action: 'reset-password', entity: 'user', entityId: u.id, note: 'Bulk reset (new temporary passwords for many logins)' });
+          out.push({ id: u.id, name: u.name, username: u.username, role: u.role, tempPassword: temp });
+        }
+      });
+      return res.json({ ok: true, reset: out, ...(await list()) });
+    }
     if (b.action === 'create') {
       const username = auth.norm(b.username), name = str(b.name, 80);
       if (!auth.USERNAME.test(username)) throw fail(400, 'Username: 3 to 40 letters, numbers, dots or dashes.');

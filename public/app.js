@@ -682,7 +682,7 @@
     const pname = (id) => d.projects.find((p) => p.id === id)?.name || '';
     const rlabel = (k) => d.roles.find((r) => r.key === k)?.label || k;
     $('#page').innerHTML = `<div class="page-head"><div><h1>Logins</h1><p class="muted">Each person gets their own login. New logins and resets use a temporary password that must be changed at first sign-in.</p></div>
-      <div class="actions" style="margin:0"><button id="add">Add login</button></div></div>
+      <div class="actions" style="margin:0">${me.role === 'admin' ? '<button class="ghost" id="bulkReset">New passwords for many…</button>' : ''}<button id="add">Add login</button></div></div>
       <div class="panel table-wrap"><table><tr><th>Name</th><th>Username</th><th>Role</th><th>Projects</th><th>Status</th><th></th></tr>
       ${d.users.map((u) => `<tr><td>${esc(u.name)}</td><td>${esc(u.username)}</td><td>${esc(rlabel(u.role))}</td>
         <td>${u.role === 'admin' || u.all_projects ? 'All projects' : esc(u.projects.map(pname).join(', ') || 'None')}</td>
@@ -714,11 +714,59 @@
         <div class="temp">${esc(r.tempPassword)}</div><div class="actions"><button>Done</button></div></form>`;
       document.body.appendChild(dl); dl.addEventListener('close', () => dl.remove()); dl.showModal();
     };
+    if ($('#bulkReset')) $('#bulkReset').onclick = () => bulkReset(d);
     $('#add').onclick = () => dialog(form(null), async (x) => { const r = await api('/api/users', { action: 'create', ...pick(x) }); users(r); showTemp(r); });
     document.querySelectorAll('[data-edit]').forEach((b) => (b.onclick = () => { const u = d.users.find((x) => x.id === +b.dataset.edit); dialog(form(u), async (x) => users(await api('/api/users', { action: 'update', id: u.id, ...pick(x, u) }))); }));
     document.querySelectorAll('[data-reset]').forEach((b) => (b.onclick = async () => { const u = d.users.find((x) => x.id === +b.dataset.reset); if (!confirm(`Reset the password for ${u.name}? They will be signed out.`)) return; const r = await api('/api/users', { action: 'reset', id: u.id }); users(r); showTemp(r); }));
     document.querySelectorAll('[data-toggle]').forEach((b) => (b.onclick = async () => { const u = d.users.find((x) => x.id === +b.dataset.toggle); if (!u.disabled && !confirm(`Disable ${u.name}? They will be signed out at once.`)) return; users(await api('/api/users', { action: u.disabled ? 'enable' : 'disable', id: u.id })); }));
     if (me.role === 'admin') portalCopyPanel();
+  }
+  // New temporary passwords for many logins at once: pick the logins, then the list of usernames and passwords is
+  // shown once, with a ready message per person (copy for WhatsApp), "Copy all" and "Print".
+  function bulkReset(d) {
+    const rlabel = (k) => d.roles.find((r) => r.key === k)?.label || k;
+    const can = d.users.filter((u) => !u.disabled && u.id !== me.id);
+    const dl = document.createElement('dialog'); dl.style.maxWidth = '720px'; dl.style.width = '96vw';
+    dl.innerHTML = `<h2>New passwords for many logins</h2>
+      <p class="small">Each login you tick gets a new temporary password and is signed out. The list is shown <b>once</b>, for you to send to each person. When they sign in they choose their own password. Your own login is not in the list.</p>
+      <div class="actions" style="justify-content:flex-start;margin:0 0 8px"><button class="ghost small" data-pick="all">Tick all</button><button class="ghost small" data-pick="new">Only "awaiting first sign-in"</button><button class="ghost small" data-pick="none">Untick all</button></div>
+      <div style="max-height:50vh;overflow:auto;border:1px solid #eaecf0;border-radius:10px;padding:6px 10px">${can.map((u) => `<label class="check"><input type="checkbox" data-u="${u.id}" checked> ${esc(u.name)} <span class="small muted">(${esc(u.username)} · ${esc(rlabel(u.role))}${u.must_change ? ' · awaiting first sign-in' : ''})</span></label>`).join('') || '<p class="muted">No other active logins.</p>'}</div>
+      <div class="actions"><button class="ghost" data-x>Cancel</button><button class="danger" data-go>Make new passwords</button></div>`;
+    document.body.appendChild(dl); dl.showModal();
+    const shut = () => { dl.close(); dl.remove(); };
+    $('[data-x]', dl).onclick = shut;
+    dl.querySelectorAll('[data-pick]').forEach((b) => (b.onclick = () => dl.querySelectorAll('[data-u]').forEach((c) => { const u = can.find((x) => x.id === +c.dataset.u); c.checked = b.dataset.pick === 'all' || (b.dataset.pick === 'new' && u.must_change); })));
+    $('[data-go]', dl).onclick = async (e) => {
+      const ids = [...dl.querySelectorAll('[data-u]:checked')].map((c) => +c.dataset.u);
+      if (!ids.length) return alert('Tick at least one login.');
+      if (!confirm(`Make new passwords for ${ids.length} login${ids.length === 1 ? '' : 's'}? They are signed out, and their old passwords stop working at once.`)) return;
+      e.target.disabled = true; e.target.textContent = 'Working…';
+      try { const r = await api('/api/users', { action: 'reset-many', ids }); shut(); users(r); bulkList(r.reset); } catch (x) { alert(x.message); e.target.disabled = false; e.target.textContent = 'Make new passwords'; }
+    };
+  }
+  function bulkList(list) {
+    const site = location.origin;
+    const msg = (u) => `Hello ${u.name}, here is your Dream India ERP login.\n\nOpen: ${site}\nUsername: ${u.username}\nTemporary password: ${u.tempPassword}\n\nWhen you sign in it will ask you to set your own new password. Then type your own email, and enter the 6 digit code sent to that email (check Spam if you do not see it). Keep "Remember this device for 30 days" ticked. Please do not share your password with anyone.`;
+    const copy = async (text, btn) => {
+      try { await navigator.clipboard.writeText(text); } catch { const ta = document.createElement('textarea'); ta.value = text; document.body.appendChild(ta); ta.select(); document.execCommand('copy'); ta.remove(); }
+      if (btn) { const t = btn.textContent; btn.textContent = 'Copied'; setTimeout(() => (btn.textContent = t), 1500); }
+    };
+    const dl = document.createElement('dialog'); dl.style.maxWidth = '820px'; dl.style.width = '96vw';
+    dl.innerHTML = `<h2>New passwords (${list.length})</h2>
+      <p class="small"><b>Shown only once.</b> Send each person their own line, privately (not in a group). Close this window only after you have copied or printed the list.</p>
+      <div class="table-wrap" style="max-height:55vh;overflow:auto"><table><tr><th>Name</th><th>Username</th><th>Temporary password</th><th></th></tr>
+      ${list.map((u, i) => `<tr><td>${esc(u.name)}</td><td>${esc(u.username)}</td><td class="temp" style="font-size:14px;padding:4px 8px">${esc(u.tempPassword)}</td><td><button class="ghost small" data-c="${i}">Copy message</button></td></tr>`).join('')}</table></div>
+      <div class="actions"><button class="ghost" data-all>Copy all</button><button class="ghost" data-print>Print</button><button data-done>Done</button></div>`;
+    document.body.appendChild(dl); dl.showModal();
+    dl.querySelectorAll('[data-c]').forEach((b) => (b.onclick = () => copy(msg(list[+b.dataset.c]), b)));
+    $('[data-all]', dl).onclick = (e) => copy(list.map((u) => `${u.name} | ${u.username} | ${u.tempPassword}`).join('\n'), e.target);
+    $('[data-print]', dl).onclick = () => {
+      const w = window.open('', '_blank'); if (!w) return alert('Allow pop-ups to print.');
+      w.document.write(`<!doctype html><meta charset="utf-8"><title>ERP logins</title><style>body{font:14px system-ui;padding:24px}table{border-collapse:collapse;width:100%}td,th{border:1px solid #ccc;padding:6px 8px;text-align:left}td.p{font-family:monospace}</style><h2>Dream India ERP: new logins</h2><p>Open ${esc(site)} · set your own password at first sign-in, then add your email and type the code sent there.</p><table><tr><th>Name</th><th>Username</th><th>Temporary password</th></tr>${list.map((u) => `<tr><td>${esc(u.name)}</td><td>${esc(u.username)}</td><td class="p">${esc(u.tempPassword)}</td></tr>`).join('')}</table>`);
+      w.document.close(); w.focus(); w.print();
+    };
+    $('[data-done]', dl).onclick = () => { if (confirm('Close the list? The passwords will not be shown again.')) { dl.close(); dl.remove(); } };
+    dl.addEventListener('cancel', (e) => { if (!confirm('Close the list? The passwords will not be shown again.')) e.preventDefault(); else setTimeout(() => dl.remove(), 0); });
   }
   // Login security (Admin): codes at sign-in, the WhatsApp template, and the logins a code cannot reach yet.
   async function loginSecurityPanel(box) {

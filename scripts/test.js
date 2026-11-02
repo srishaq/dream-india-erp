@@ -85,6 +85,16 @@ const step = async (name, fn) => { await fn(); passed++; console.log('  ✓', na
     const r = await admin('/api/users', { action: 'reset', id }); assert.ok(r.tempPassword);
     assert.equal((await neha('/api/masters')).status, 401);
   });
+  await step('bulk reset: new temporary passwords for many logins, never the Admin; Admin only', async () => {
+    const list = await admin('/api/users'); const ids = list.users.map((u) => u.id);
+    const r = await admin('/api/users', { action: 'reset-many', ids });
+    assert.equal(r.ok, true); assert.ok(r.reset.length >= 1); assert.ok(!r.reset.some((u) => u.username === 'rafi'));
+    const n = r.reset.find((u) => u.username === 'neha'); assert.ok(n && n.tempPassword);
+    const c = client(); const l = await c('/api/session', { action: 'login', username: 'neha', password: n.tempPassword });
+    assert.equal(l.ok, true, JSON.stringify(l)); assert.equal(l.user.mustChange, true);
+    assert.equal((await c('/api/users', { action: 'reset-many', ids })).status, 403);
+    await c('/api/session', { action: 'password', current: n.tempPassword, next: 'neha-own-password-1' });
+  });
   await step('disabled login cannot sign in', async () => {
     const list = await admin('/api/users'); const id = list.users.find((u) => u.username === 'neha').id;
     await admin('/api/users', { action: 'disable', id });
