@@ -315,7 +315,7 @@
       ['🚪', 'Sign out', 'out', 'danger'],
     ])}`, (el, close) => bindActions(el, close, {
       status: statusSheet, group: () => newGroup(), saved: savedSheet, push: pushSheet, review: reviewSheet,
-      install: () => sheet(`<h2>Install ${APP}</h2><div class="body">${installHint() || `<p>You are using the installed ${APP} app right now.</p><p class="small">Its icon is on your home screen. Can't find it? Swipe down on the home screen and type ${APP}, or look in the App Library. Tap anywhere outside this box to close it.</p>`}<p class="small muted">Send this link to staff: <b>${esc(location.origin)}/chat</b>. They sign in with their ERP username and password.</p></div>`),
+      install: () => sheet(`<h2>Install ${APP}</h2><div class="body">${installHint() || (ios() ? `<p>No ${APP} icon on your home screen? You may have opened ${APP} from inside the ERP app. To give it its own icon: open <b>Safari</b>, go to <b>${esc(location.origin)}/chat</b>, tap Share <b>⎋</b>, then <b>Add to Home Screen</b>, and tap Add.</p>` : `<p>If there is no ${APP} icon yet: open this page in Chrome, tap the menu <b>⋮</b> and choose <b>Install app</b>.</p>`)}<p class="small muted">Send this link to staff: <b>${esc(location.origin)}/chat</b>. They sign in with their ERP username and password.</p></div>`),
       out: async () => { let ep = null; try { const reg = await navigator.serviceWorker?.getRegistration(); const s = await reg?.pushManager.getSubscription(); ep = s?.endpoint; await s?.unsubscribe(); } catch {} await api('', { action: 'logout', endpoint: ep }).catch(() => {}); location.hash = ''; showLogin(); },
     }));
   }
