@@ -32,7 +32,8 @@ const fake = http.createServer(async (req, res) => {
   }
   if (P === '/yta/reports') {
     const h = ['views', 'estimatedMinutesWatched', 'subscribersGained', 'subscribersLost', 'likes', 'comments', 'shares'];
-    if (q.get('dimensions') === 'day') return J({ columnHeaders: [{ name: 'day' }, ...h.map((name) => ({ name }))], rows: [2, 1, 0].map((k) => [iso(k), 100, 300, 5, 1, 10, 2, 1]) });
+    if (q.get('dimensions') === 'day') return J({ columnHeaders: [{ name: 'day' }, ...h.map((name) => ({ name }))], rows: [...[4, 3].map((k) => [mon(k), 3000, 9000, 40, 4, 200, 20, 10]), ...[2, 1, 0].map((k) => [iso(k), 100, 300, 5, 1, 10, 2, 1])] });
+    if (q.get('dimensions') === 'month' && q.get('endDate') && !q.get('endDate').endsWith('-01')) return J({ error: { message: 'Date range does not align to chosen date dimension.' } }, 400); // as YouTube does
     return J({ columnHeaders: [{ name: 'month' }, ...h.map((name) => ({ name }))], rows: [2, 1, 0].map((k) => [mon(k).slice(0, 7), 3000, 9000, 40, 4, 200, 20, 10]) });
   }
   // Canva, Claude (captions), Google Ads, and Meta's Conversions API
