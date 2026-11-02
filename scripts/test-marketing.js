@@ -17,6 +17,12 @@ const fake = http.createServer(async (req, res) => {
   const J = (o, st = 200) => { res.statusCode = st; res.setHeader('Content-Type', 'application/json'); res.end(JSON.stringify(o)); };
   if (P.startsWith('/exo/v1/Accounts/ACC1/Calls.json')) {
     if (req.headers.authorization !== 'Basic ' + Buffer.from('k1:t1').toString('base64')) return J({ RestException: { Message: 'Authentication failed' } }, 401);
+    if (q.get('page') !== '2') { // like Exotel: at most 31 days per request; the sample calls sit in the latest window
+      const [, a, b] = (q.get('DateCreated') || '').match(/gte:([^;]+);lte:(.+)/) || [];
+      const ms = (x) => Date.parse(String(x).replace(' ', 'T') + 'Z');
+      if (!a || ms(b) - ms(a) > 31 * 864e5) return J({ Metadata: null, RestException: [{ StatusCode: 400, Message: 'Invalid parameter', Description: 'DateCreated time range should not be more than 31 days' }], Calls: null }, 400);
+      if (Date.now() - ms(a) > 32 * 864e5) return J({ Metadata: {}, Calls: [] });
+    }
     if (q.get('page') === '2') return J({ Metadata: {}, Calls: [{ Sid: 'x3', From: '09111122222', To: '02261234567', Direction: 'inbound', Status: 'no-answer', StartTime: '2026-06-02 09:00:00', Duration: '0' }] });
     return J({ Metadata: { NextPageUri: '/exo/v1/Accounts/ACC1/Calls.json?page=2' }, Calls: [
       { Sid: 'x1', From: '09111122222', To: '02261234567', Direction: 'inbound', Status: 'completed', StartTime: '2026-06-01 10:00:00', Duration: '65', RecordingUrl: 'https://rec/x1.mp3' },
