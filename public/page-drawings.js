@@ -62,7 +62,7 @@ function renderKpis() {
   const b = base().filter((f) => matches(f, { disc: true, trade: true, bld: true }));
   const cell = (key, label, n, sub, cls = '') => `<button class="kpi ${cls}" data-disc="${key}" aria-pressed="${ST.disc === key}"><small>${label}</small><b>${n}</b><span>${sub}</span></button>`;
   const by = (d) => b.filter((f) => f.discipline === d);
-  const subOf = (list) => { const r = list.filter((f) => f.building === 'Rehab').length, s = list.filter((f) => f.building === 'Sale').length; return `Rehab ${r} · Sale ${s}`; };
+  const subOf = (list) => { const r = list.filter((f) => f.building === 'Rehab').length, s = list.filter((f) => f.building === 'Sale').length; const g = list.length - r - s; return `Rehab ${r} · Sale ${s}` + (g ? ` · General ${g}` : ''); };
   const n = b.filter(isNew).length;
   $('#kpis').innerHTML = cell('All', 'All drawings', b.length, `${n} new this week`, 'new')
     + ['Architect', 'Structure', 'MEP'].map((d) => cell(d, DISC_LABEL[d], by(d).length, subOf(by(d)))).join('');

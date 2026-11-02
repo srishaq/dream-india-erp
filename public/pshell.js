@@ -50,6 +50,9 @@
     .shl-mods a{background:rgba(255,255,255,.08);border:1px solid rgba(255,255,255,.14);color:#C6CCEB}
     .shl-left .shl-home .t{display:inline}.shl-left .shl-home svg{width:14px;height:14px}
     .shl-mods .f{display:none}.shl-mods .s{display:inline}
+    /* no department tabs (e.g. Drawings): keep logo, project and initials on one line */
+    .shl-left:not(:has(.shl-mods a)){display:flex;flex:0 1 auto}
+    .shl-left:not(:has(.shl-mods a)) .shl-home{padding:6px 12px}
   }
   .shl-user{position:relative;display:flex;align-items:center;gap:8px}
   .shl-inst{display:none!important;align-items:center;gap:6px;background:#64C2E6;color:#140C59;border:0;border-radius:999px;padding:6px 12px;font:inherit;font-size:13px;font-weight:700;cursor:pointer;white-space:nowrap}
