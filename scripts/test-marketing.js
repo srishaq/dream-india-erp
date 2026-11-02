@@ -21,6 +21,7 @@ const fake = http.createServer(async (req, res) => {
       const [, a, b] = (q.get('DateCreated') || '').match(/gte:([^;]+);lte:(.+)/) || [];
       const ms = (x) => Date.parse(String(x).replace(' ', 'T') + 'Z');
       if (!a || ms(b) - ms(a) > 31 * 864e5) return J({ Metadata: null, RestException: [{ StatusCode: 400, Message: 'Invalid parameter', Description: 'DateCreated time range should not be more than 31 days' }], Calls: null }, 400);
+      if (Date.now() - ms(a) > 200 * 864e5) return J({ Metadata: null, RestException: [{ StatusCode: 400, Message: 'Invalid parameter', Description: 'DateCreated time range is out of bounds' }], Calls: null }, 400);
       if (Date.now() - ms(a) > 32 * 864e5) return J({ Metadata: {}, Calls: [] });
     }
     if (q.get('page') === '2') return J({ Metadata: {}, Calls: [{ Sid: 'x3', From: '09111122222', To: '02261234567', Direction: 'inbound', Status: 'no-answer', StartTime: '2026-06-02 09:00:00', Duration: '0' }] });
