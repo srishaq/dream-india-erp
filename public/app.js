@@ -12,6 +12,7 @@
     let j = {};
     try { j = await r.json(); } catch {}
     if (r.status === 401) { me = null; start(); throw new Error(j.error || 'Please sign in.'); }
+    if (r.status === 403 && j.ndaRequired) { start(); throw new Error(j.error); }
     // an entry in a closed month: Head Accounts gives the reason, and it is kept in the audit log
     if (r.status === 400 && body && !body.reason && /books are closed up to/.test(j.error || '')) {
       const why = prompt(j.error + '\n\nReason:');
@@ -42,6 +43,7 @@
     if (!s.user) return login();
     me = s.user;
     if (me.mustChange) return changePassword(true);
+    if (me.nda) return ndaSign(me.nda);
     if (me.role === 'consultant') { location.replace('/drawings'); return; } // consultants see the drawings only
     shell();
   }
@@ -214,6 +216,34 @@
     paint();
   }
 
+  // The confidentiality agreement at sign-in: read to the end (the tick box opens only then), tick, initial, Agree.
+  function ndaSign(nda) {
+    app.innerHTML = `<div class="center"><form class="card" id="nda" style="max-width:760px">
+      ${brand(me.name)}
+      <h1 style="margin-bottom:4px">${esc(nda.title)}</h1>
+      <p class="muted small" style="margin-top:0">Please read the whole agreement. The tick box opens when you reach the end.</p>
+      <div id="ndaText" tabindex="0" style="white-space:pre-wrap;max-height:52vh;overflow:auto;border:1px solid var(--line);border-radius:10px;padding:14px 16px;background:#fff;font-size:14px;line-height:1.55">${esc(nda.body)}<p style="margin:18px 0 0;font-weight:600">End of agreement.</p></div>
+      <p class="small muted" id="ndaHint" style="margin:8px 0">Scroll down to the end of the agreement ↓</p>
+      <label class="check"><input type="checkbox" name="agree" id="ndaAgree" disabled> I have read the whole agreement and I agree to it.</label>
+      <label>Your initials</label><input name="initials" id="ndaInit" maxlength="12" autocomplete="off" placeholder="e.g. R K" style="max-width:180px;text-transform:uppercase" disabled required>
+      <p class="small muted" style="margin:6px 0 0">Signed electronically as ${esc(me.name)} (${esc(me.username)}), with today's date and time.</p>
+      <div class="actions"><button id="ndaGo" disabled>Agree and continue</button><button type="button" class="ghost" id="out">Sign out</button></div>
+    </form></div>`;
+    const box = $('#ndaText'), agree = $('#ndaAgree'), init = $('#ndaInit'), go = $('#ndaGo');
+    let read = false;
+    const check = () => {
+      if (!read && box.scrollTop + box.clientHeight >= box.scrollHeight - 8) { read = true; agree.disabled = false; init.disabled = false; $('#ndaHint').textContent = 'You have reached the end. Tick the box and type your initials.'; }
+      go.disabled = !(read && agree.checked && init.value.replace(/[^A-Za-z]/g, '').length >= 2);
+    };
+    box.addEventListener('scroll', check); agree.onchange = check; init.oninput = check; setTimeout(check, 50);
+    $('#out').onclick = signOut;
+    $('#nda').onsubmit = async (ev) => {
+      ev.preventDefault(); if (go.disabled) return;
+      go.disabled = true;
+      try { await api('/api/session', { action: 'nda-sign', version: nda.version, agree: agree.checked, readToEnd: read, initials: init.value }); toast('Thank you. The signed agreement is saved on your record.'); start(); }
+      catch (e) { showErr($('#nda'), e); go.disabled = false; }
+    };
+  }
   function changePassword(forced) {
     const html = `<form class="card" id="pw">
       ${brand(me.name)}
@@ -689,9 +719,10 @@
         <td>${u.disabled ? '<span class="pill bad">disabled</span>' : u.must_change ? '<span class="pill grey">awaiting first sign-in</span>' : '<span class="pill good">active</span>'}</td>
         <td class="num" style="white-space:nowrap"><button class="ghost small" data-edit="${u.id}">Edit</button> <button class="ghost small" data-reset="${u.id}">Reset password</button>
           ${u.id === me.id ? '' : `<button class="${u.disabled ? 'ghost' : 'danger'} small" data-toggle="${u.id}">${u.disabled ? 'Enable' : 'Disable'}</button>`}
-          ${me.role === 'admin' && !u.disabled ? ` <button class="ghost small" data-signout="${u.id}">Sign out all devices</button>` : ''}</td></tr>`).join('')}</table></div>${me.role === 'admin' ? '<div class="panel" id="loginSec"><h2>Login security</h2><p class="muted small">Loading…</p></div>' : ''}<div class="panel" id="dayRep"><h2>8 pm day reports</h2><p class="muted small">Loading…</p></div><div class="panel" id="bkPanel"><h2>Backups</h2><p class="muted small">Loading…</p></div>`;
+          ${me.role === 'admin' && !u.disabled ? ` <button class="ghost small" data-signout="${u.id}">Sign out all devices</button>` : ''}</td></tr>`).join('')}</table></div>${me.role === 'admin' ? '<div class="panel" id="loginSec"><h2>Login security</h2><p class="muted small">Loading…</p></div><div class="panel" id="ndaBox"><h2>Staff confidentiality agreement (NDA)</h2><p class="muted small">Loading…</p></div>' : ''}<div class="panel" id="dayRep"><h2>8 pm day reports</h2><p class="muted small">Loading…</p></div><div class="panel" id="bkPanel"><h2>Backups</h2><p class="muted small">Loading…</p></div>`;
     dayReportPanel($('#dayRep')); backupPanel($('#bkPanel'));
     if ($('#loginSec')) loginSecurityPanel($('#loginSec'));
+    if ($('#ndaBox')) ndaPanel($('#ndaBox'));
     document.querySelectorAll('[data-signout]').forEach((b) => (b.onclick = async () => {
       const u = d.users.find((x) => x.id === +b.dataset.signout);
       if (!confirm(`Sign ${u.name} out everywhere? Every session ends and every remembered device will need a code again.`)) return;
@@ -767,6 +798,50 @@
     };
     $('[data-done]', dl).onclick = () => { if (confirm('Close the list? The passwords will not be shown again.')) { dl.close(); dl.remove(); } };
     dl.addEventListener('cancel', (e) => { if (!confirm('Close the list? The passwords will not be shown again.')) e.preventDefault(); else setTimeout(() => dl.remove(), 0); });
+  }
+  // Staff NDA (Admin): switch it on, the text (a change is a new version that everyone signs again), who has signed.
+  async function ndaPanel(box) {
+    let S; try { S = await api('/api/users?nda=1'); } catch (e) { box.innerHTML = `<h2>Staff confidentiality agreement (NDA)</h2><p class="bad-t small">${esc(e.message)}</p>`; return; }
+    const fmtT = (t) => new Date(t).toLocaleString('en-IN', { timeZone: 'Asia/Kolkata', day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' });
+    box.innerHTML = `<h2>Staff confidentiality agreement (NDA)</h2>
+      <p class="small muted" style="margin:0 0 8px">When this is on, every staff login (not the Admin) sees the agreement at sign-in, must scroll to the end, tick "I agree" and type their initials before using the ERP or the HR portal. Each signature keeps the name, initials, date and time, device and address, and a fingerprint of the exact text. Changing the text makes a new version that everyone signs again.</p>
+      <p><b>${S.on ? '<span class="pill good">On</span>' : '<span class="pill grey">Off</span>'}</b> &nbsp; Version ${S.version} · signed by <b>${S.signed}</b> of ${S.total}</p>
+      <div class="actions" style="justify-content:flex-start"><button id="ndaSw" class="${S.on ? 'ghost' : ''}">${S.on ? 'Switch off' : 'Switch on'}</button><button class="ghost" id="ndaRead">Read / edit the text</button></div>
+      <div class="table-wrap" style="max-height:340px;overflow:auto"><table><tr><th>Name</th><th>Username</th><th>Signed</th><th>Initials</th><th></th></tr>
+      ${S.users.map((u) => `<tr><td>${esc(u.name)}</td><td>${esc(u.username)}</td><td>${u.signed_at ? fmtT(u.signed_at) : '<span class="muted">Not yet</span>'}</td><td>${esc(u.initials || '')}</td><td>${u.signed_at ? `<button class="ghost small" data-ndacopy="${u.id}">Print copy</button>` : ''}</td></tr>`).join('')}</table></div>`;
+    $('#ndaSw').onclick = async () => {
+      if (!S.on && !confirm('Switch the NDA on? Every staff login will have to sign it before continuing, from their next page.')) return;
+      try { await api('/api/users', { action: 'nda-save', on: !S.on }); toast(S.on ? 'NDA switched off.' : 'NDA switched on.'); ndaPanel(box); } catch (e) { alert(e.message); }
+    };
+    $('#ndaRead').onclick = () => {
+      const dl = document.createElement('dialog'); dl.style.maxWidth = '820px'; dl.style.width = '96vw';
+      dl.innerHTML = `<h2>NDA text (version ${S.version})</h2><p class="small muted">Saving a changed text makes version ${S.version + 1}: everyone signs again at their next page.</p>
+        <label>Title</label><input id="ndaT" value="${esc(S.title)}" maxlength="150">
+        <label>Agreement</label><textarea id="ndaB" style="width:100%;min-height:50vh;font:13px/1.5 system-ui">${esc(S.body)}</textarea>
+        <div class="actions"><button class="ghost" data-x>Close</button><button data-save>Save as new version</button></div>`;
+      document.body.appendChild(dl); dl.showModal();
+      const shut = () => { dl.close(); dl.remove(); };
+      $('[data-x]', dl).onclick = shut;
+      $('[data-save]', dl).onclick = async () => {
+        const title = $('#ndaT', dl).value, body = $('#ndaB', dl).value;
+        if (body.trim() === S.body.trim() && title.trim() === S.title.trim()) { shut(); return; }
+        if (!confirm(`Save as version ${S.version + 1}? Everyone signs again.`)) return;
+        try { await api('/api/users', { action: 'nda-save', title, body }); shut(); toast('Saved as a new version.'); ndaPanel(box); } catch (e) { alert(e.message); }
+      };
+    };
+    box.querySelectorAll('[data-ndacopy]').forEach((b) => (b.onclick = async () => {
+      try {
+        const c = await api('/api/users?ndaCopy=' + b.dataset.ndacopy);
+        const w = window.open('', '_blank'); if (!w) return alert('Allow pop-ups to print.');
+        w.document.write(`<!doctype html><meta charset="utf-8"><title>${esc(c.title)} · ${esc(c.name)}</title><style>body{font:14px/1.55 Georgia,serif;max-width:760px;margin:30px auto;padding:0 20px}pre{white-space:pre-wrap;font:inherit}table{border-collapse:collapse;margin-top:20px}td{border:1px solid #bbb;padding:6px 10px}</style>
+          <h2>${esc(c.title)}</h2><pre>${esc(c.body)}</pre><h3>Accepted electronically</h3><table>
+          <tr><td>Name</td><td>${esc(c.name)}</td></tr><tr><td>Login</td><td>${esc(c.username)}</td></tr><tr><td>Initials</td><td>${esc(c.initials)}</td></tr>
+          <tr><td>Date and time (IST)</td><td>${esc(fmtT(c.signed_at))}</td></tr><tr><td>Address</td><td>${esc(c.ip || '')}</td></tr><tr><td>Device</td><td>${esc(c.user_agent || '')}</td></tr>
+          <tr><td>Version</td><td>${c.version}</td></tr><tr><td>Text fingerprint (SHA-256)</td><td style="font:11px monospace">${esc(c.text_sha)}</td></tr></table>
+          <p style="font-size:12px;color:#555">Read to the end, ticked "I have read the whole agreement and I agree to it" and initialled after signing in with the person's own login and sign-in code.</p>`);
+        w.document.close(); w.focus(); w.print();
+      } catch (e) { alert(e.message); }
+    }));
   }
   // Login security (Admin): codes at sign-in, the WhatsApp template, and the logins a code cannot reach yet.
   async function loginSecurityPanel(box) {

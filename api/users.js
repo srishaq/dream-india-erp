@@ -33,12 +33,15 @@ const emailOrNull = (v) => { const e = str(v, 120).toLowerCase(); if (!e) return
 module.exports = route({
   GET: async (req, res) => {
     const me = await auth.guard(req, res, 'users.manage'); if (!me) return;
+    if (req.query && req.query.nda) { if (me.role !== 'admin') throw fail(403, 'Only the Admin manages the NDA.'); return res.json(await require('../lib/nda').status()); }
+    if (req.query && req.query.ndaCopy) { if (me.role !== 'admin') throw fail(403, 'Only the Admin sees signed copies.'); const c = await require('../lib/nda').copy(intOr(req.query.ndaCopy), intOr(req.query.v) || null); if (!c) throw fail(404, 'Not signed yet.'); return res.json(c); }
     if (req.query && req.query.security) { if (me.role !== 'admin') throw fail(403, 'Only the Admin sees Login security.'); return res.json(await OTP.status()); }
     return res.json(await list());
   },
   POST: async (req, res, b) => {
     const me = await auth.guard(req, res, 'users.manage'); if (!me) return;
     const role = str(b.role, 30);
+    if (b.action === 'nda-save') { if (me.role !== 'admin') throw fail(403, 'Only the Admin manages the NDA.'); return res.json({ ok: true, ...(await require('../lib/nda').save(me, b)) }); }
     if (b.action === 'security') {
       if (me.role !== 'admin') throw fail(403, 'Only the Admin can change Login security.');
       await OTP.saveSettings(me, { enforce: b.enforce !== false, waOtpTemplate: str(b.waOtpTemplate, 120) });

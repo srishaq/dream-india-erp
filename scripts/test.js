@@ -95,6 +95,28 @@ const step = async (name, fn) => { await fn(); passed++; console.log('  ✓', na
     assert.equal((await c('/api/users', { action: 'reset-many', ids })).status, 403);
     await c('/api/session', { action: 'password', current: n.tempPassword, next: 'neha-own-password-1' });
   });
+  await step('NDA: off by default; when on, staff must read, tick and initial before using the ERP; a new text means signing again', async () => {
+    const c = client(); const l = await c('/api/session', { action: 'login', username: 'neha', password: 'neha-own-password-1' }); assert.equal(l.ok, true, JSON.stringify(l));
+    assert.ok(!(await c('/api/session')).user.nda);
+    let st = await admin('/api/users?nda=1'); assert.equal(st.on, false); assert.ok(st.body.length > 1000);
+    assert.equal((await c('/api/users?nda=1')).status, 403);
+    await admin('/api/users', { action: 'nda-save', on: true });
+    const ses = await c('/api/session'); assert.equal(ses.user.nda.version, 1);
+    const blocked = await c('/api/masters'); assert.equal(blocked.status, 403); assert.equal(blocked.ndaRequired, true);
+    assert.ok(!(await admin('/api/session')).user.nda); // never the Admin
+    assert.equal((await c('/api/session', { action: 'nda-sign', version: 1, agree: true, readToEnd: false, initials: 'NS' })).status, 400);
+    assert.equal((await c('/api/session', { action: 'nda-sign', version: 1, agree: true, readToEnd: true, initials: 'x' })).status, 400);
+    assert.equal((await c('/api/session', { action: 'nda-sign', version: 1, agree: true, readToEnd: true, initials: 'n s' })).ok, true);
+    assert.ok(!(await c('/api/session')).user.nda);
+    assert.notEqual((await c('/api/masters')).status, 403);
+    st = await admin('/api/users?nda=1'); const row = st.users.find((u) => u.username === 'neha'); assert.equal(row.initials, 'N S'); assert.ok(row.signed_at);
+    const cp = await admin('/api/users?ndaCopy=' + row.id); assert.equal(cp.version, 1); assert.equal(cp.text_sha.length, 64);
+    await admin('/api/users', { action: 'nda-save', title: st.title, body: st.body + '\n\n10. Added clause for the test.' });
+    assert.equal((await c('/api/session')).user.nda.version, 2);
+    assert.equal((await c('/api/session', { action: 'nda-sign', version: 1, agree: true, readToEnd: true, initials: 'NS' })).status, 409);
+    assert.equal((await c('/api/session', { action: 'nda-sign', version: 2, agree: true, readToEnd: true, initials: 'NS' })).ok, true);
+    await admin('/api/users', { action: 'nda-save', on: false });
+  });
   await step('disabled login cannot sign in', async () => {
     const list = await admin('/api/users'); const id = list.users.find((u) => u.username === 'neha').id;
     await admin('/api/users', { action: 'disable', id });

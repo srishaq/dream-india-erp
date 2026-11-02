@@ -140,6 +140,8 @@
     try { r = await fetch('/api/me', { credentials: 'same-origin' }); } catch { return null; }
     if (r.status === 401) { location.replace('/'); return null; }
     const me = await r.json();
+    // the confidentiality agreement is signed on the ERP's sign-in page first
+    try { const ss = await (await fetch('/api/session', { credentials: 'same-origin' })).json(); if (ss.user && (ss.user.nda || ss.user.mustChange)) { location.replace('/'); return null; } } catch {}
     // The portal address itself (/) opens the Home page for Admin and Management; /sales is the CRM.
     
     if (module && !me.modules.includes(module)) {

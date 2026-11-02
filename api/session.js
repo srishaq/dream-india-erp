@@ -22,7 +22,8 @@ async function state(req) {
   // sections brought over from the staff portal (Construction, Purchase, Drawings, HR & Admin) this login may open
   const pu = await require('../lib/portal/auth').session(req).catch(() => null);
   const sections = pu ? require('../lib/portal/auth').publicUser(pu).modules.filter((m) => ['site', 'purchase', 'drawings', 'hr'].includes(m)) : [];
-  return { state: 'ready', user: { ...auth.publicUser(u), sections } };
+  const nda = u.must_change ? null : await require('../lib/nda').pending(u);
+  return { state: 'ready', user: { ...auth.publicUser(u), sections, ...(nda ? { nda } : {}) } };
 }
 
 module.exports = route({
@@ -56,6 +57,11 @@ module.exports = route({
         if (r.error) throw fail(401, r.error);
         // the session starts only after the code (or on a remembered device, or the break-glass Admin reset)
         return res.json(await OTP.afterPassword(req, res, r, 'erp', auth.issue));
+      }
+      case 'nda-sign': { // the confidentiality agreement at sign-in: read to the end, ticked, initialled
+        const u = await auth.guard(req, res, 'self'); if (!u) return;
+        if (u.must_change) throw fail(403, 'Set a new password first.');
+        return res.json(await require('../lib/nda').sign(u, b, req));
       }
       case 'login-otp': {
         const u = await OTP.afterCode(req, res, b, 'erp', auth.issue);
