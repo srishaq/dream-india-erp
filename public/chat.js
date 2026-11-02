@@ -239,6 +239,10 @@
     const q = S.q.toLowerCase();
     let rooms = S.rooms.filter((r) => (S.filter === 'unread' ? r.unread : S.filter === 'groups' ? r.kind !== 'dm' : S.filter === 'hidden' ? r.hidden : !r.hidden));
     if (q) rooms = S.rooms.filter((r) => r.name.toLowerCase().includes(q));
+    // searching also finds people you have not chatted with yet (tap one to start a chat)
+    if (q && !S.people && !S.peopleLoading) { S.peopleLoading = true; loadPeople().then(() => renderList()).catch(() => {}).finally(() => { S.peopleLoading = false; }); }
+    const dmNames = new Set(S.rooms.filter((r) => r.kind === 'dm').map((r) => r.name.toLowerCase()));
+    const newPeople = q && S.people ? S.people.filter((p) => p.name.toLowerCase().includes(q) && !dmNames.has(p.name.toLowerCase())).slice(0, 20) : [];
     const showPush = 'Notification' in window && 'serviceWorker' in navigator && 'PushManager' in window && Notification.permission !== 'granted' && Notification.permission !== 'denied' && store.get('dc_push_later') !== '1';
     const hiddenN = S.rooms.filter((r) => r.hidden).length;
     const html = `
@@ -251,7 +255,8 @@
       ${installEvent && !standalone() ? `<div class="notice">📲 Install ${APP} on this ${mobile() ? 'phone' : 'computer'}.<button id="instOn">Install</button></div>` : ''}
       ${!standalone() && ios() && !store.get('dc_ios_hint') ? `<div class="notice small">📲 Tap Share ⎋ then “Add to Home Screen” to install ${APP} and get notifications.<button class="x" id="iosX">${I.x}</button></div>` : ''}
       <div class="list">
-        ${rooms.map((r) => rowHtml(r)).join('') || `<div class="empty-room">${S.filter === 'unread' ? 'No unread messages.' : q ? 'No chat by that name.' : 'No chats yet. Tap the button below to start one.'}</div>`}
+        ${rooms.map((r) => rowHtml(r)).join('') || (newPeople.length ? '' : `<div class="empty-room">${S.filter === 'unread' ? 'No unread messages.' : q ? (S.people ? 'No chat or person by that name.' : 'Searching…') : 'No chats yet. Tap the button below to start one.'}</div>`)}
+        ${newPeople.length ? `<div class="sect" style="padding:10px 16px 4px;font-size:12px;color:var(--muted);text-transform:uppercase;letter-spacing:.06em">People · tap to start a chat</div>` + newPeople.map((p) => `<button class="pick" data-newdm="${p.id}" style="width:100%">${avatar(p.name, p.id, 'sm')}<span>${esc(p.name)}<br><small class="muted">${esc(p.designation || p.role || '')}</small></span></button>`).join('') : ''}
         ${S.me.desk && !q && S.filter === 'all' ? `<a class="row" href="/#/team" target="_blank" rel="noopener"><span class="av" style="background:#0E7490">🏠</span><span class="mid"><span class="top"><b>CRM ↔ Accounts desk</b></span><span class="sub"><span>Messages about a flat or a cheque (opens the ERP)</span></span></span></a>` : ''}
         <div style="height:90px"></div>
       </div>
@@ -263,6 +268,7 @@
     $('.list', el).scrollTop = scroll;
     if (typing) { const i = $('#lq', el); i.focus(); i.setSelectionRange(i.value.length, i.value.length); }
     $('#lq', el).oninput = (e) => { S.q = e.target.value; renderList(); };
+    el.querySelectorAll('[data-newdm]').forEach((b) => (b.onclick = async () => { try { const r = await api('', { action: 'dm', user: +b.dataset.newdm }); S.q = ''; await loadRooms(); go('#r' + r.room); } catch (x) { alert(x.message); } }));
     el.querySelectorAll('[data-f]').forEach((b) => (b.onclick = () => { S.filter = b.dataset.f; renderList(); }));
     $('#newChat', el).onclick = newChat;
     $('#lMenu', el).onclick = mainMenu;
