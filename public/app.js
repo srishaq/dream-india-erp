@@ -351,7 +351,7 @@
     { key: 'users', label: 'Logins', show: () => can('users.manage') },
     { key: 'audit', label: 'Audit log', show: () => can('audit.view') },
   ];
-  const DETAIL = { booking: 'flats', statement: 'flats', run: 'demands', bankauto: 'bankauto', project: 'home', team: 'team', accteam: 'accteam', cp: 'partners' };
+  const DETAIL = { booking: 'flats', statement: 'flats', run: 'demands', pre: 'demands', bankauto: 'bankauto', project: 'home', team: 'team', accteam: 'accteam', cp: 'partners' };
   let projectList = null, proj = null;
   const store = { get: (k) => { try { return localStorage.getItem(k); } catch { return null; } }, set: (k, v) => { try { localStorage.setItem(k, v); } catch {} } };
 
@@ -434,7 +434,7 @@
     $('#cpw').onclick = () => changePassword(false);
     if ($('#proj')) $('#proj').onchange = (e) => { proj = +e.target.value; store.set('erp_project', proj); shell(); };
     if (/^reg-/.test(page || '') && can('accounts.view')) { try { await accRegister(page.slice(4)); } catch (e) { $('#page').innerHTML = `<div class="err">${esc(e.message)}</div>`; } return; }
-    const fn = { stages: () => demands(true), home, mgmt, marketing: () => window.Marketing.render({ api, dialog, toast, me }, (/^\d+$/.test(location.hash.split('/')[2] || '') ? location.hash.split('/')[2] : null) || store.get('erp_mkt_scope') || null), telemarketing: () => window.Telemarketing.render({ api, dialog, toast, me }), ca: caPage, accdash, collections, flats, custdocs, comms, team: teamPage, accteam: teamPage, sdr: sdrPage, cp: cpPage, cpportal: cpPortalPage, project: projectHome, crmtodo: () => dailyTodo('crm'), acctodo: () => dailyTodo('accounts'), training, projects, plans, users, audit, units, bookings, demands, receipts, ledgers, letters, followups, verify, prices, partners, balances: accBalances, bankauto: bankAuto, bookscrm: booksCrm, accreports: accReports, checks: accChecks, accsetup: accSetup, import: importPage, booking: bookingPage, statement: statementPage, run: runPage };
+    const fn = { stages: () => demands(true), home, mgmt, marketing: () => window.Marketing.render({ api, dialog, toast, me }, (/^\d+$/.test(location.hash.split('/')[2] || '') ? location.hash.split('/')[2] : null) || store.get('erp_mkt_scope') || null), telemarketing: () => window.Telemarketing.render({ api, dialog, toast, me }), ca: caPage, accdash, collections, flats, custdocs, comms, team: teamPage, accteam: teamPage, sdr: sdrPage, cp: cpPage, cpportal: cpPortalPage, project: projectHome, crmtodo: () => dailyTodo('crm'), acctodo: () => dailyTodo('accounts'), training, projects, plans, users, audit, units, bookings, demands, receipts, ledgers, letters, followups, verify, prices, partners, balances: accBalances, bankauto: bankAuto, bookscrm: booksCrm, accreports: accReports, checks: accChecks, accsetup: accSetup, import: importPage, booking: bookingPage, statement: statementPage, run: runPage, pre: prePage };
     const key = DETAIL[page] && arg ? page : cur.key;
     try { await fn[key](arg ? +arg : undefined); } catch (e) { $('#page').innerHTML = `<div class="err">${esc(e.message)}</div>`; }
   }
@@ -1497,7 +1497,7 @@
       return;
     }
     $('#page').innerHTML = `<div class="page-head"><div><h1>Stages & demands</h1><p class="muted">Site records a stage as complete; CRM prepares the demand run; Head CRM approves it. Buyers pay within ${d.daysToPay} days.</p></div>
-      <div class="actions" style="margin:0">${can('stage.record') ? '<button class="ghost" id="stage">Record a completed stage</button>' : ''}${can('demand.raise') ? '<button id="run">Prepare a demand run</button>' : ''}${can('demand.approve') ? '<button class="ghost" id="days">Days to pay</button>' : ''}</div></div>
+      <div class="actions" style="margin:0">${can('stage.record') ? '<button class="ghost" id="stage">Record a completed stage</button>' : ''}${can('demand.raise') ? '<button class="ghost" id="pre">Pre-demand notice</button><button id="run">Prepare a demand run</button>' : ''}${can('demand.approve') ? '<button class="ghost" id="days">Days to pay</button>' : ''}</div></div>
       <div class="panel table-wrap"><h2>Construction stages</h2><table><tr><th>Stage</th>${d.buildings.map((b) => `<th>${esc(b.name)}</th>`).join('')}</tr>
         ${d.stages.map((s) => `<tr><td>${esc(s.name)} <span class="muted">(${toNum(s.pct)}%)</span></td>${d.buildings.map((b) => { const x = done(b.id, s.name); return `<td>${x ? `<span class="pill good" title="${esc([x.certified_by ? 'Certified by ' + x.certified_by : '', x.recorded_by ? 'recorded by ' + x.recorded_by : ''].filter(Boolean).join(', '))}">done ${fmtD(x.completed_on)}</span>${!x.raised && anyOf('stage.record', 'demand.approve') ? ` <button class="link small" data-undo="${x.id}" title="Recorded by mistake? Remove it (only before any demand is raised on it)">Remove</button>` : ''}` : '<span class="muted">—</span>'}</td>`; }).join('')}</tr>`).join('')}</table></div>
       ${d.schedule ? `<div class="panel table-wrap"><h2>Payment schedule</h2><p class="muted small">What each stage of the payment plan is worth across all live bookings, and how much of it has come in. Each buyer's AV and TDS received is applied to their stages in order.</p>
@@ -1505,8 +1505,24 @@
         ${[...d.schedule.rows, d.schedule.total].map((r, i, a) => `<tr class="${i === a.length - 1 ? 'tot' : ''}"><td>${i === a.length - 1 ? '<b>Total</b>' : esc(r.stage)}</td><td class="num">${Math.round(r.pct * 1000) / 10}%</td><td class="num">${inr(r.due)}</td><td class="num">${inr(r.gst)}</td><td class="num">${inr(r.received)}</td><td class="num ${r.balance > 1000 ? 'bad-t' : ''}">${inr(r.balance)}</td></tr>`).join('')}</table></div>` : ''}
       <div class="panel table-wrap"><h2>Demand runs</h2><table><tr><th>Building</th><th>Stage</th><th>Demand date</th><th>Due</th><th class="num">Letters</th><th class="num">Total</th><th>Status</th><th>Prepared by</th><th>Approved by</th></tr>
         ${d.runs.map((r) => `<tr class="click" data-r="${r.id}"><td>${esc(r.building || '')}</td><td>${esc(r.stage_name)}</td><td>${fmtD(r.demand_date)}</td><td>${fmtD(r.due_date)}</td><td class="num">${r.status === 'draft' ? '—' : r.letters}</td><td class="num">${r.status === 'draft' ? '—' : inr(r.total)}</td>
-          <td>${r.status === 'draft' ? '<span class="pill">waiting for approval</span>' : r.status === 'approved' ? '<span class="pill good">raised</span>' : '<span class="pill grey">cancelled</span>'}</td><td>${esc(r.created_by_name || 'Sample')}</td><td>${esc(r.approved_by_name || '')}</td></tr>`).join('') || '<tr><td colspan="9" class="muted">No demand runs yet.</td></tr>'}</table></div>`;
+          <td>${r.status === 'draft' ? '<span class="pill">waiting for approval</span>' : r.status === 'approved' ? '<span class="pill good">raised</span>' : '<span class="pill grey">cancelled</span>'}</td><td>${esc(r.created_by_name || 'Sample')}</td><td>${esc(r.approved_by_name || '')}</td></tr>`).join('') || '<tr><td colspan="9" class="muted">No demand runs yet.</td></tr>'}</table></div>
+      <div class="panel table-wrap"><h2>Pre-demand notices</h2><p class="muted small">Advance word to buyers, about two weeks ahead, that a stage's demand is coming and what to keep ready. Nothing is charged.</p>
+        <table><tr><th>Building</th><th>Stage</th><th>Demand expected</th><th class="num">Buyers</th><th>Status</th><th>Prepared by</th><th>Approved by</th></tr>
+        ${(d.pre || []).map((r) => `<tr class="click" data-pre="${r.id}"><td>${esc(r.building_name || r.building || '')}</td><td>${esc(r.stage_name)}</td><td>${fmtD(r.expected_date)}</td><td class="num">${r.status === 'approved' ? `${r.sent} of ${r.items} sent` : '—'}</td>
+          <td>${r.status === 'draft' ? '<span class="pill">waiting for approval</span>' : r.status === 'approved' ? '<span class="pill good">sent</span>' : '<span class="pill grey">cancelled</span>'}</td><td>${esc(r.created_by_name || '')}</td><td>${esc(r.approved_by_name || '')}</td></tr>`).join('') || '<tr><td colspan="7" class="muted">No pre-demand notices yet.</td></tr>'}</table></div>`;
     document.querySelectorAll('tr[data-r]').forEach((tr) => (tr.onclick = () => go(`#/run/${tr.dataset.r}`)));
+    document.querySelectorAll('tr[data-pre]').forEach((tr) => (tr.onclick = () => go(`#/pre/${tr.dataset.pre}`)));
+    if ($('#pre')) $('#pre').onclick = () => {
+      // stages not yet demanded for that building (a pre-notice goes out before the stage is complete)
+      const raised = (bid, s) => d.runs.some((r) => r.building_id === bid && r.stage_name === s && r.status === 'approved');
+      const opts = d.buildings.flatMap((b) => d.stages.filter((s) => !raised(b.id, s.name)).map((s) => ({ b, s: s.name, pct: s.pct })));
+      const in14 = new Date(Date.now() + 14 * 864e5 + 5.5 * 36e5).toISOString().slice(0, 10);
+      dialog(`<h2>Pre-demand notice</h2><p class="muted">Tells every buyer in the building that this stage's demand is coming, with the amount to keep ready (instalment + GST, plus anything already pending). Head CRM approves it before it goes out.</p>
+        <label>Building and stage</label><select name="pick">${opts.map((o, i) => `<option value="${i}">${esc(o.b.name)} · ${esc(o.s)} (${toNum(o.pct)}%)</option>`).join('')}</select>
+        <label>Demand expected on</label><input type="date" name="expectedDate" value="${in14}" min="${todayIso()}" required>
+        <label>Extra line for the letter (optional)</label><textarea name="note" rows="2" maxlength="600" placeholder="e.g. Our CRM team will call you to confirm your payment plan."></textarea>`,
+      async (x) => { const o = opts[+x.pick]; const out = await api('/api/demands', { action: 'pre.create', buildingId: o.b.id, stageName: o.s, expectedDate: x.expectedDate, note: x.note }); go(`#/pre/${out.id}`); });
+    };
     document.querySelectorAll('[data-undo]').forEach((x) => (x.onclick = async () => {
       const reason = prompt('Remove this stage record? Any draft demand run for it is cancelled too. Reason (e.g. recorded by mistake, a test):');
       if (!reason) return;
@@ -1540,6 +1556,31 @@
         ${d.rows.map((x) => `<tr><td><a href="#/booking/${x.booking_id}">${esc(x.unit_no)}</a></td><td>${esc(x.buyers || '')}</td><td class="num">${toNum(x.pct)}%</td><td class="num">${inr(x.amount, 2)}</td><td class="num">${inr(x.gst, 2)}</td></tr>`).join('') || '<tr><td colspan="5" class="muted">No buyers to charge.</td></tr>'}</table></div>`;
     if ($('#ok')) $('#ok').onclick = async () => { if (!confirm(`Raise ${d.rows.length} demands totalling ${inr(total)} plus GST?`)) return; try { const o = await api('/api/demands', { action: 'run.approve', id: r.id }); const L = o.letters || {}; toast(`${o.raised} demands raised. ` + (L.error ? 'Letters: ' + L.error : L.notEmailed ? `${L.letters} letters ready on the Demand letters page (${L.notEmailed})` : L.letters ? `${L.emailed} letters emailed${L.waiting ? ', ' + L.waiting + ' more within 5 minutes' : ''}${L.whatsapp ? ', ' + L.whatsapp + ' WhatsApps sent' : ''}${L.noEmail ? `. ${L.noEmail} buyer${L.noEmail > 1 ? 's have' : ' has'} no email: see Print and courier on Today` : ''}${L.errors ? ', ' + L.errors + ' could not be sent' : ''}.` : ''), 8000); runPage(id); } catch (e) { alert(e.message); } };
     if ($('#cancel')) $('#cancel').onclick = async () => { if (!confirm('Cancel this draft run?')) return; try { await api('/api/demands', { action: 'run.cancel', id: r.id }); go('#/demands'); } catch (e) { alert(e.message); } };
+  }
+
+  async function prePage(id) {
+    const d = await api(`/api/demands?pre=${id}`);
+    const n = d.notice, draft = n.status === 'draft';
+    const sum = (k) => d.rows.reduce((a, x) => a + toNum(x[k]), 0);
+    const courier = d.rows.filter((x) => !x.has_email && !x.sent_at && x.id);
+    const banner = d.mail.cannot ? `<div class="note">${esc(d.mail.cannot)} The notices can still be printed.</div>` : !d.mail.live ? `<div class="note">Test version: emails go <b>only</b> to ${esc(d.mail.testEmail || 'the test address')}, never to buyers.</div>` : '';
+    $('#page').innerHTML = `<p class="crumbs"><a href="#/demands">Stages & demands</a> › Pre-demand notice</p>
+      <div class="page-head"><div><h1>${esc(n.building_name)} · ${esc(n.stage_name)}</h1><p class="muted">Pre-demand notice · demand expected ${fmtD(n.expected_date)} · ${draft ? 'waiting for approval' : n.status === 'approved' ? `approved by ${esc(n.approved_by_name || '')} ${fmtD(n.approved_at)}` : 'cancelled'}${n.created_by_name ? ' · prepared by ' + esc(n.created_by_name) : ''}</p></div>
+      <div class="actions" style="margin:0">${draft && can('demand.approve') ? '<button id="ok">Approve and send</button>' : ''}${draft && anyOf('demand.raise', 'demand.approve') ? '<button class="ghost" id="cancel">Cancel</button>' : ''}</div></div>
+      ${banner}
+      ${n.note ? `<div class="panel"><b>Extra line:</b> ${esc(n.note)}</div>` : ''}
+      <div class="panel"><div class="kpis">${kpi(d.rows.length, 'buyers')}${kpi(inr(sum('instalment')), 'instalments')}${kpi(inr(sum('gst')), 'GST')}${kpi(inr(sum('arrears')), 'already pending', sum('arrears') > 0 ? 'bad' : '')}${kpi(inr(sum('total')), 'to keep ready')}${kpi(d.rows.filter((x) => !x.has_email).length, 'no email: print')}</div></div>
+      ${courier.length ? `<div class="panel"><h3 style="margin:0 0 4px">Print and courier: ${courier.length}</h3><p class="small muted" style="margin:0 0 8px">These buyers have no email address on file.</p>
+        <div class="actions" style="margin:0"><a class="btn" href="/api/demands?prePdf=${courier.map((c) => c.id).join(',')}" target="_blank" rel="noopener">Print all (one PDF)</a>${anyOf('demand.raise', 'demand.approve') ? '<button class="ghost" id="couriered">Mark all as couriered</button>' : ''}</div></div>` : ''}
+      <div class="panel table-wrap"><table><tr><th>Unit</th><th>Buyer</th><th class="num">%</th><th class="num">Instalment</th><th class="num">GST</th><th class="num">Already pending</th><th class="num">Keep ready</th><th>${draft ? 'Preview' : 'Sent'}</th></tr>
+        ${d.rows.map((x) => `<tr><td><a href="#/booking/${x.booking_id}">${esc(x.unit_no)}</a></td><td>${esc(x.buyers || '')}${x.has_email ? '' : ' <span class="pill grey">no email</span>'}</td><td class="num">${toNum(x.pct)}%</td><td class="num">${inr(x.instalment)}</td><td class="num">${inr(x.gst)}</td><td class="num ${toNum(x.arrears) > 0 ? 'bad-t' : ''}">${toNum(x.arrears) ? inr(x.arrears) : ''}</td><td class="num"><b>${inr(x.total)}</b></td>
+          <td class="small">${draft ? `<a href="/api/demands?prePreview=${n.id}&booking=${x.booking_id}" target="_blank" rel="noopener">letter</a>` : `<a href="/api/demands?prePdf=${x.id}" target="_blank" rel="noopener">letter</a> · ${x.sent_at ? `${esc(x.sent_via || '')} ${fmtD(x.sent_at)}` : x.send_error ? `<span class="bad-t">${esc(x.send_error)}</span>` : x.has_email ? 'being emailed' : 'to courier'}`}</td></tr>`).join('') || '<tr><td colspan="8" class="muted">No buyers are waiting for this stage.</td></tr>'}</table></div>`;
+    if ($('#ok')) $('#ok').onclick = async () => {
+      if (!confirm(`Send the pre-demand notice to ${d.rows.length} buyers of ${n.building_name}? Nothing is charged; it tells them the ${n.stage_name} demand is expected around ${fmtD(n.expected_date)}.`)) return;
+      try { const o = await api('/api/demands', { action: 'pre.approve', id: n.id }); toast(`${o.notices} notices saved. ` + (o.notEmailed ? `Not emailed: ${o.notEmailed}` : `${o.emailed} emailed${o.waiting ? ', ' + o.waiting + ' more within 5 minutes' : ''}${o.noEmail ? `. ${o.noEmail} have no email: print them from this page` : ''}${o.errors ? ', ' + o.errors + ' could not be sent' : ''}.`), 9000); prePage(id); } catch (e) { alert(e.message); }
+    };
+    if ($('#cancel')) $('#cancel').onclick = async () => { if (!confirm('Cancel this pre-demand notice?')) return; try { await api('/api/demands', { action: 'pre.cancel', id: n.id }); go('#/demands'); } catch (e) { alert(e.message); } };
+    if ($('#couriered')) $('#couriered').onclick = async () => { try { const o = await api('/api/demands', { action: 'pre.couriered', id: n.id }); toast(`${o.couriered} marked as couriered.`); prePage(id); } catch (e) { alert(e.message); } };
   }
 
   // ---------- ledgers ----------

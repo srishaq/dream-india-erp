@@ -45,7 +45,23 @@ module.exports = route({
     if (!['demand.raise', 'demand.approve', 'stage.record', 'ledger.view'].some((p) => has(u, p))) return res.status(403).json({ error: 'Your role does not allow this.' });
     // Site staff record stages only: no percentages, demand runs, amounts or payment schedule
     const money = ['demand.raise', 'demand.approve', 'ledger.view'].some((p) => has(u, p));
-    if (req.query.run && !money) throw fail(403, 'Your role does not allow this.');
+    if ((req.query.run || req.query.pre || req.query.prePdf || req.query.prePreview) && !money) throw fail(403, 'Your role does not allow this.');
+    const PRE = require('../lib/predemand');
+    if (req.query.prePdf || req.query.prePreview) {
+      const p = req.query.prePreview
+        ? await PRE.pdfFor({ preview: { noticeId: intOr(req.query.prePreview), bookingId: intOr(req.query.booking) } })
+        : await PRE.pdfFor({ itemIds: String(req.query.prePdf).split(',').map((x) => intOr(x)).filter(Boolean).slice(0, 300) });
+      needProject(u, p.projectId);
+      res.setHeader('Content-Type', 'application/pdf');
+      res.setHeader('Content-Disposition', `inline; filename="${p.name.replace(/[^A-Za-z0-9._-]+/g, '_')}"`);
+      return res.end(p.buf);
+    }
+    if (req.query.pre) {
+      const d = await PRE.detail(intOr(req.query.pre));
+      needProject(u, d.notice.project_id);
+      const L = require('../lib/letters'), set = await L.settings();
+      return res.json({ ...d, mail: { live: L.live(), testEmail: set.testEmail || null, cannot: L.cannotEmail(set) } });
+    }
     if (req.query.run) {
       const run = await db.one('select r.*, b.code as building from demand_runs r left join buildings b on b.id = r.building_id where r.id = $1', [intOr(req.query.run)]);
       if (!run) throw fail(404, 'Run not found.');
@@ -59,6 +75,7 @@ module.exports = route({
     const o = await overview(pid);
     if (!money || req.query.site) return res.json({ buildings: o.buildings, stages: o.stages.map((x) => ({ seq: x.seq, name: x.name })), done: o.done.map(({ raised, ...x }) => x), site: true });
     if (has(u, 'ledger.view')) o.schedule = await require('../lib/dashboard').schedule(pid);
+    o.pre = await PRE.overview(pid);
     return res.json(o);
   },
   POST: async (req, res, b) => {
@@ -156,6 +173,26 @@ module.exports = route({
       // The letters go out by themselves, with a first follow-up on the due date. A problem here never undoes the demands.
       const letters = charged.length ? await require('../lib/letters').afterRun({ run, bookingIds: charged, user: u }).catch((e) => ({ error: e.message })) : null;
       return res.json({ ok: true, raised: count, letters, ...(await overview(run.project_id)) });
+    }
+
+    // Pre-demand notices (lib/predemand.js): CRM prepares, Head CRM approves and they are sent.
+    if (b.action === 'pre.create') {
+      need('demand.raise');
+      const bld = await db.one('select project_id from buildings where id = $1', [intOr(b.buildingId)]);
+      if (!bld) throw fail(404, 'Building not found.');
+      needProject(u, bld.project_id);
+      const r = await require('../lib/predemand').create({ user: u, buildingId: intOr(b.buildingId), stageName: str(b.stageName, 120), expectedDate: b.expectedDate, note: str(b.note, 600) });
+      return res.json({ ok: true, id: r.id });
+    }
+    if (b.action === 'pre.approve' || b.action === 'pre.cancel' || b.action === 'pre.couriered') {
+      const PRE = require('../lib/predemand');
+      const n = await db.one('select project_id from predemand_notices where id = $1', [intOr(b.id)]);
+      if (!n) throw fail(404, 'Pre-demand notice not found.');
+      needProject(u, n.project_id);
+      if (b.action === 'pre.approve') { need('demand.approve'); return res.json({ ok: true, ...(await PRE.approve({ user: u, id: intOr(b.id) })) }); }
+      if (!has(u, 'demand.raise') && !has(u, 'demand.approve')) throw fail(403, 'Your role does not allow this.');
+      if (b.action === 'pre.cancel') return res.json(await PRE.cancel({ user: u, id: intOr(b.id) }));
+      return res.json({ ok: true, ...(await PRE.markCouriered({ user: u, id: intOr(b.id) })) });
     }
 
     if (b.action === 'settings') {

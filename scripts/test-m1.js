@@ -232,6 +232,34 @@ const n = (v) => Number(v);
     assert.equal((await L.reminders({ day: '2026-10-17' })).after, 0);
     assert.ok(rcpts.length >= before + 1); assert.ok(rcpts.slice(before).every((x) => x === 'tester@erp.test')); // test address only
   });
+  await step('Pre-demand notice: CRM prepares, Head CRM approves; buyers are emailed (test address only) with what to keep ready', async () => {
+    const stage = 'On Completion of Plinth';
+    const in14 = new Date(Date.now() + 14 * 864e5 + 5.5 * 36e5).toISOString().slice(0, 10);
+    assert.equal((await site('/api/demands', { action: 'pre.create', buildingId: A.id, stageName: stage, expectedDate: in14 })).status, 403); // site: no
+    assert.equal((await crm('/api/demands', { action: 'pre.create', buildingId: A.id, stageName: stage, expectedDate: '2020-01-01' })).status, 400); // past date
+    const r = await crm('/api/demands', { action: 'pre.create', buildingId: A.id, stageName: stage, expectedDate: in14, note: 'Our CRM team will call you.' });
+    assert.equal(r.ok, true);
+    assert.equal((await crm('/api/demands', { action: 'pre.create', buildingId: A.id, stageName: stage, expectedDate: in14 })).status, 409); // one draft at a time
+    const d = await crm(`/api/demands?pre=${r.id}`);
+    assert.ok(d.rows.length >= 2); const row = d.rows.find((x) => x.booking_id === b1);
+    assert.ok(row.instalment > 0 && row.gst > 0); assert.equal(row.total, row.instalment + row.gst + row.arrears);
+    assert.ok(row.arrears > 0); // A-1001 still owes earlier demands
+    const pv = await crm(`/api/demands?prePreview=${r.id}&booking=${b1}`, null, true); assert.equal(pv.headers.get('content-type'), 'application/pdf');
+    assert.ok((await pv.arrayBuffer()).byteLength > 10000);
+    assert.equal((await site(`/api/demands?pre=${r.id}`)).status, 403); // no amounts for site
+    assert.equal((await crm('/api/demands', { action: 'pre.approve', id: r.id })).status, 403); // CRM cannot approve
+    const before = rcpts.length;
+    const ok = await headcrm('/api/demands', { action: 'pre.approve', id: r.id });
+    assert.equal(ok.notices, d.rows.length, JSON.stringify(ok)); assert.ok(ok.emailed >= 1 && ok.noEmail >= 1, JSON.stringify(ok));
+    assert.ok(rcpts.length > before); assert.ok(rcpts.slice(before).every((x) => x === 'tester@erp.test')); // test address only
+    assert.equal((await headcrm('/api/demands', { action: 'pre.approve', id: r.id })).status, 409);
+    const sent = await crm(`/api/demands?pre=${r.id}`); assert.ok(sent.rows.some((x) => x.sent_via === 'email'));
+    const pdf = await crm(`/api/demands?prePdf=${sent.rows[0].id}`, null, true); assert.equal(pdf.headers.get('content-type'), 'application/pdf');
+    const h = await crm(`/api/followups?booking=${b1}`); assert.ok(h.rows.some((x) => /Pre-demand notice/.test(x.note || '')));
+    const cm = await require('../lib/db').one("select count(*)::int as n from communications where kind = 'predemand'"); assert.ok(cm.n >= 1);
+    const c = await crm('/api/demands', { action: 'pre.couriered', id: r.id }); assert.ok(c.couriered >= 1);
+    const ov = await crm(`/api/demands?project=${sig.id}`); assert.equal(ov.pre[0].status, 'approved');
+  });
   await step('Approving a demand run with email set up sends the letters straight away', async () => {
     const next = 'On Completion of Plinth';
     const st = await site('/api/demands', { action: 'stage.complete', buildingId: A.id, stageName: next, completedOn: '2026-10-20', certifiedBy: 'Engineer' });
