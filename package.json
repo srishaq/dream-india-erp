@@ -3,9 +3,16 @@
   "version": "0.1.0",
   "private": true,
   "description": "Dream India ERP: booking-to-collection, contractor billing, project costing and RERA tracking. No outside packages.",
-  "engines": { "node": "24.x" },
+  "engines": {
+    "node": "24.x"
+  },
   "scripts": {
     "dev": "node scripts/dev-server.js",
-    "test": "node scripts/test-import.js && node scripts/test.js && node scripts/test-m1.js && node scripts/test-importdb.js && node scripts/test-sales.js && node scripts/test-accounts.js && node scripts/test-bankauto.js && node scripts/test-cheques.js && node scripts/test-site-purchase.js && node scripts/test-construction.js && node scripts/test-tm.js && node scripts/test-chat.js && node scripts/test-marketing.js && node scripts/test-tasks.js && node scripts/test-training.js && node scripts/test-training-2.js && node scripts/test-otp.js && node scripts/test-backup.js && node scripts/test-watchdog.js"
+    "test": "node scripts/test-import.js && node scripts/test.js && node scripts/test-m1.js && node scripts/test-importdb.js && node scripts/test-sales.js && node scripts/test-accounts.js && node scripts/test-bankauto.js && node scripts/test-cheques.js && node scripts/test-site-purchase.js && node scripts/test-construction.js && node scripts/test-tm.js && node scripts/test-chat.js && node scripts/test-marketing.js && node scripts/test-tasks.js && node scripts/test-training.js && node scripts/test-training-2.js && node scripts/test-otp.js && node scripts/test-backup.js && node scripts/test-watchdog.js",
+    "vercel-build": "node scripts/build-cad.js"
+  },
+  "devDependencies": {
+    "@mlightcad/cad-simple-viewer": "1.5.1",
+    "@mlightcad/libredwg-converter": "*"
   }
 }
