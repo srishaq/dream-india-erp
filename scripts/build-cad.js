@@ -6,8 +6,10 @@ const out = R('public', 'cad');
 fs.mkdirSync(path.join(out, '_probe'), { recursive: true });
 const pkg = R('node_modules', '@mlightcad', 'cad-simple-viewer');
 for (const f of fs.readdirSync(path.join(pkg, 'dist'))) if (/worker|\.wasm$/.test(f)) fs.copyFileSync(path.join(pkg, 'dist', f), path.join(out, f));
-const conv = R('node_modules', '@mlightcad', 'libredwg-converter');
-if (fs.existsSync(conv)) {
+// the DWG reader comes with the viewer (nested in its node_modules, or hoisted)
+const conv = [path.join(pkg, 'node_modules', '@mlightcad', 'libredwg-converter'), R('node_modules', '@mlightcad', 'libredwg-converter')].find((p) => fs.existsSync(p));
+console.log('dwg converter:', conv || 'not found', conv ? require(path.join(conv, 'package.json')).version : '');
+if (conv) {
   for (const f of fs.readdirSync(path.join(conv, 'dist'))) if (/worker|\.wasm$/.test(f)) fs.copyFileSync(path.join(conv, 'dist', f), path.join(out, f));
   for (const f of ['README.md', 'package.json']) if (fs.existsSync(path.join(conv, f))) fs.copyFileSync(path.join(conv, f), path.join(out, '_probe', 'conv__' + f));
 }

@@ -13,7 +13,6 @@
   },
   "devDependencies": {
     "@mlightcad/cad-simple-viewer": "1.7.8",
-    "esbuild": "0.24.0",
-    "@mlightcad/libredwg-converter": "latest"
+    "esbuild": "0.24.0"
   }
 }
