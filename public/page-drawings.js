@@ -13,7 +13,7 @@ const STAGES = [
 const STAGE_LABEL = Object.fromEntries(STAGES.map(([k, l]) => [k, l]));
 const BLD = ['All', 'Rehab', 'Sale', 'General'];
 const NEW_DAYS = 7, DAY = 864e5;
-let FILES = [], UPLOAD = [], ST = { stage: null, disc: 'All', bld: 'All', trade: '', q: '', onlyNew: false, cad: false };
+let FILES = [], UPLOAD = [], ST = { stage: null, disc: 'All', bld: 'All', trade: '', q: '', onlyNew: false, ft: 'pdf' };
 try { Object.assign(ST, JSON.parse(localStorage.getItem('drawings.filters') || '{}'), { q: '' }); } catch {}
 const save = () => { try { localStorage.setItem('drawings.filters', JSON.stringify({ ...ST, q: '' })); } catch {} };
 
@@ -22,7 +22,10 @@ const fmtDate = (iso) => iso ? new Date(iso).toLocaleDateString('en-IN', { day: 
 const fmtSize = (b) => b == null ? '' : b > 1e6 ? (b / 1e6).toFixed(1) + ' MB' : Math.max(1, Math.round(b / 1e3)) + ' KB';
 const ago = (iso) => { const m = Math.round((Date.now() - Date.parse(iso)) / 6e4); return m < 1 ? 'just now' : m < 60 ? `${m} min ago` : `${Math.round(m / 60)} h ago`; };
 const coll = new Intl.Collator('en', { numeric: true, sensitivity: 'base' });
-const visibleKind = (f) => f.kind === 'pdf' || f.kind === 'image' || (ST.cad && (f.kind === 'cad' || f.kind === 'zip' || f.kind === 'other'));
+// File type: PDF (and images) to read; CAD (DWG / DXF, and zip packs) to download; or everything
+if (!['pdf', 'cad', 'all'].includes(ST.ft)) ST.ft = ST.cad ? 'all' : 'pdf';
+const isCad = (f) => f.kind === 'cad' || f.kind === 'zip';
+const visibleKind = (f) => ST.ft === 'all' ? true : ST.ft === 'cad' ? isCad(f) : f.kind === 'pdf' || f.kind === 'image';
 
 function base() { return FILES.filter(visibleKind); }
 function matches(f, skip = {}) {
@@ -77,7 +80,9 @@ function renderControls() {
   if (ST.trade && !trades.includes(ST.trade)) ST.trade = '';
   $('#trade').innerHTML = `<option value="">All types</option>` + trades.map((t) => `<option ${t === ST.trade ? 'selected' : ''}>${esc(t)}</option>`).join('');
   $('#trade').hidden = trades.length < 2;
-  $('#onlyNew').checked = ST.onlyNew; $('#cad').checked = ST.cad;
+  $('#onlyNew').checked = ST.onlyNew;
+  const nCad = FILES.filter(isCad).length;
+  document.querySelectorAll('#ft [data-ft]').forEach((x) => { x.setAttribute('aria-pressed', String(ST.ft === x.dataset.ft)); if (x.dataset.ft === 'cad') x.textContent = `CAD (DWG) ${nCad}`; });
 }
 // Folder shown under the name, without the discipline folder and the consultants' "PDF" subfolders.
 const shortFolder = (f) => (f.folder || '').split(' › ').slice(1).filter((x) => !/^pdf$/i.test(x.trim())).join(' › ') || 'Site Plans';
@@ -131,11 +136,11 @@ async function load(refresh) {
 document.addEventListener('click', (e) => {
   const sg = e.target.closest('[data-stage]'); if (sg) { ST.stage = sg.dataset.stage; ST.trade = ''; render(); return; }
   const k = e.target.closest('[data-disc]'); if (k) { ST.disc = k.dataset.disc; ST.trade = ''; render(); return; }
-  const b = e.target.closest('[data-bld]'); if (b) { ST.bld = b.dataset.bld; render(); }
+  const b = e.target.closest('[data-bld]'); if (b) { ST.bld = b.dataset.bld; render(); return; }
+  const ft = e.target.closest('[data-ft]'); if (ft) { ST.ft = ft.dataset.ft; ST.trade = ''; render(); }
 });
 $('#trade').onchange = (e) => { ST.trade = e.target.value; render(); };
 $('#onlyNew').onchange = (e) => { ST.onlyNew = e.target.checked; render(); };
-$('#cad').onchange = (e) => { ST.cad = e.target.checked; render(); };
 let qt; $('#q').oninput = (e) => { clearTimeout(qt); qt = setTimeout(() => { ST.q = e.target.value.trim(); renderStages(); renderKpis(); renderControls(); renderList(); }, 120); };
 $('#refresh').onclick = () => load(true);
 setInterval(() => { const at = $('#checked').dataset.at; if (at) $('#checked').textContent = 'Checked ' + ago(at); }, 30000);

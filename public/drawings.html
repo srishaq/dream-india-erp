@@ -104,7 +104,7 @@ a.btn{text-decoration:none;display:inline-flex;align-items:center;gap:6px}
     </div>
     <div class="ctl">
       <label class="chk"><input type="checkbox" id="onlyNew"> Only new (last 7 days)</label>
-      <label class="chk"><input type="checkbox" id="cad"> Also show CAD and zip files</label>
+      <div class="seg" id="ft" role="group" aria-label="File type"><button type="button" data-ft="pdf">PDF</button><button type="button" data-ft="cad">CAD (DWG)</button><button type="button" data-ft="all">All files</button></div>
       <span class="note" id="count" role="status"></span>
     </div>
   </section>
