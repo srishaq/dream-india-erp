@@ -16,7 +16,10 @@
     window.ERPCad.useDwgWorker('/cad/libredwg-parser-worker.js');
     const mgr = window.ERPCad.AcApDocManager.createInstance({ container: $('#view'), autoResize: true, webworkerFileUrls: { mtextRender: '/cad/mtext-renderer-worker.js', dwgParser: '/cad/libredwg-parser-worker.js' }, builtinOpenFileDialog: false, notificationCenter: false });
     window.ERPCad.useDwgWorker('/cad/libredwg-parser-worker.js'); // again after start-up, in case the viewer registered its own
-    const ok = await mgr.openUrl(j.file);
+    // the file is fetched here and handed over with its name, so the viewer knows it is a DWG
+    const fr = await fetch(j.file);
+    if (!fr.ok) throw new Error('Could not read the drawing from Google Drive. Try again.');
+    const ok = await mgr.openDocument(name, await fr.arrayBuffer(), {});
     if (!ok) throw new Error('This drawing could not be read in the browser. Use Download to open it in AutoCAD, or open its PDF.');
     msg('');
     $('#fit').hidden = false; $('#fit').onclick = () => { try { mgr.sendStringToExecute('zoom e\n'); } catch {} };
