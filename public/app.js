@@ -2087,7 +2087,8 @@
         ${R.cols.some((c) => c.type === 'date') ? `<div><label>From</label><input type="date" id="af" value="${esc(state.from)}"></div><div><label>To</label><input type="date" id="at" value="${esc(state.to)}"></div>` : '<div></div><div></div>'}
         <div><button class="ghost" id="ago">Show</button></div></div>
         ${ACC_FILTERS[key] ? `<div class="tabs" style="margin:12px 0 0">${ACC_FILTERS[key].map(([k, l]) => `<button class="tab ${k === state.filter ? 'on' : ''}" data-f="${k}">${l}</button>`).join('')}</div>` : ''}
-        <p class="small muted" style="margin:10px 0 0">${d.rows.length < d.total ? `Showing ${d.rows.length} of ` : ''}${d.total.toLocaleString('en-IN')} rows${d.amount != null ? ` · total ${inr(d.amount)}` : ''}. Tap a row to ${d.can.enter ? 'edit' : 'see'} it.</p></div>
+        <div style="display:flex;flex-wrap:wrap;align-items:center;gap:10px;margin:10px 0 0"><p class="small muted" style="margin:0;flex:1">${d.rows.length < d.total ? `Showing ${d.rows.length} of ` : ''}${d.total.toLocaleString('en-IN')} rows${d.amount != null ? ` · total ${inr(d.amount)}` : ''}. Tap a row to ${d.can.enter ? 'edit' : 'see'} it.</p>
+          ${d.total ? '<button class="ghost small" id="aprint">Print</button><button class="ghost small" id="axls">Export to Excel</button>' : ''}</div></div>
       <div class="panel"><div class="table-wrap acc-grid"><table><tr>${show.map((c) => `<th class="${['money', 'num', 'pct'].includes(c.type) ? 'num' : ''}">${esc(c.label)}</th>`).join('')}</tr>
         ${d.rows.map((r) => `<tr data-id="${r.id}" class="${r.cheque_status === 'Bounced' ? 'dim' : ''}">${show.map((c) => `<td class="${['money', 'num', 'pct'].includes(c.type) ? 'num' : c.type === 'long' || c.key === 'needs' ? 'small wrap' : ''}">${c.key === 'needs' && r.needs ? `<span class="bad-t">${esc(r.needs)}</span>` : accFmt(c, r[c.key])}</td>`).join('')}</tr>`).join('') || `<tr><td colspan="${show.length}" class="muted">Nothing here.</td></tr>`}</table></div>
         ${d.rows.length < d.total ? '<div class="actions"><button class="ghost" id="amore">Show more</button></div>' : ''}</div>`;
@@ -2098,6 +2099,25 @@
     $('#aq').onkeydown = (e) => { if (e.key === 'Enter') $('#ago').click(); };
     document.querySelectorAll('.tab[data-f]').forEach((b) => (b.onclick = () => reload({ filter: b.dataset.f })));
     if ($('#amore')) $('#amore').onclick = () => accRegister(key, { limit: state.limit + 400 });
+    // Print / Excel: every row the search and dates find (not only this page), with the total and a total per payee
+    const expQs = (kind) => new URLSearchParams({ reg: key, q: state.q, from: state.from, to: state.to, filter: state.filter, export: kind, cols: show.map((c) => c.key).join(',') });
+    if ($('#axls')) $('#axls').onclick = () => { location.href = '/api/accounts?' + expQs('xlsx'); };
+    if ($('#aprint')) $('#aprint').onclick = async () => {
+      const w = window.open('', '_blank'); if (!w) return alert('Allow pop-ups for the ERP to print.');
+      w.document.write('<p style="font:14px Arial;padding:20px">Preparing…</p>');
+      try {
+        const x = await api('/api/accounts?' + expQs('rows'));
+        const cs = x.cols, num = (c) => ['money', 'num', 'pct'].includes(c.type);
+        const ai = cs.findIndex((c) => c.key === 'amount');
+        const st = 'body{font:12px Arial,sans-serif;margin:24px;color:#111}h1{font-size:18px;margin:0 0 2px}p{margin:2px 0 12px;color:#444}table{border-collapse:collapse;width:100%;margin:0 0 18px}th,td{border:1px solid #ccc;padding:4px 6px;text-align:left;vertical-align:top}th{background:#f2f4f7}td.n,th.n{text-align:right;white-space:nowrap}tr.t td{font-weight:700;background:#f7f7f7}@media print{body{margin:10mm}}';
+        const body = `<h1>${esc(x.head.title)}${x.head.search ? ' · ' + esc(x.head.search) : ''}</h1><p>${esc(x.head.when)} · ${x.head.rows} rows${x.head.amount != null ? ' · total <b>' + inr(x.head.amount) + '</b>' : ''} · printed ${fmtD(todayIso())}</p>
+          ${x.byWho.length > 1 ? `<table><tr><th>${esc(x.whoLabel)}</th><th class="n">Rows</th><th class="n">Total</th></tr>${x.byWho.map((b) => `<tr><td>${esc(b.name)}</td><td class="n">${b.n}</td><td class="n">${inr(b.amount)}</td></tr>`).join('')}</table>` : ''}
+          <table><tr>${cs.map((c) => `<th class="${num(c) ? 'n' : ''}">${esc(c.label)}</th>`).join('')}</tr>${x.rows.map((r) => `<tr>${cs.map((c) => `<td class="${num(c) ? 'n' : ''}">${accFmt(c, r[c.key])}</td>`).join('')}</tr>`).join('')}
+          ${ai >= 0 ? `<tr class="t">${cs.map((c, i) => `<td class="${num(c) ? 'n' : ''}">${i === 0 ? 'Total' : i === ai ? inr(x.head.amount) : ''}</td>`).join('')}</tr>` : ''}</table>`;
+        w.document.open(); w.document.write(`<!doctype html><html><head><meta charset="utf-8"><title>${esc(x.head.title)}${x.head.search ? ' - ' + esc(x.head.search) : ''}</title><style>${st}</style></head><body>${body}</body></html>`); w.document.close();
+        setTimeout(() => w.print(), 300);
+      } catch (e) { w.close(); alert(e.message); }
+    };
     const form = (row) => {
       const v = (c) => (row ? row[c.key] : c.key === R.cols.find((x) => x.type === 'date')?.key ? todayIso() : '');
       const field = (c) => {
