@@ -1146,7 +1146,7 @@
         <div class="ff-id"><h1>${esc(d.unit.unit_no)} <span class="ff-names">${esc(names)}</span> ${statusPill}${b.sample ? ' <span class="pill grey">sample</span>' : ''}</h1>
           <p class="muted">${esc(d.unit.building)} · floor ${d.unit.floor ?? '—'} · ${esc(d.unit.typology || '')} ${d.unit.carpet_sqft ? toNum(d.unit.carpet_sqft) + ' sq ft' : ''} · booked ${fmtD(b.booking_date)}${b.rm_name ? ' · RM ' + esc(b.rm_name) : ''}</p>
           <div class="ff-people">${d.applicants.map(contact).join('')}</div></div>
-        <div class="ff-money">${kpi(inr(b.agreement_value), 'agreement value')}${kpi(inr(bal.credit_av), 'received')}${kpi(inr(bal.received_tds), 'TDS received')}${kpi(inr(bal.received_gst), 'GST received')}${kpi(inr(bal.outstanding), 'balance due')}${kpi(inr(bal.overdue), 'overdue', toNum(bal.overdue) > 0 ? 'bad' : '')}${kpi(inr(bal.gst_outstanding), 'GST due')}${kpi(nextDue ? fmtD(nextDue) : '—', 'last demand due')}</div>
+        <div class="ff-money">${kpi(inr(b.agreement_value), 'agreement value')}${kpi(inr(bal.received_av ?? (toNum(bal.credit_av) - toNum(bal.received_tds))), 'AV received')}${kpi(inr(bal.received_tds), 'TDS received')}${kpi(inr(bal.received_gst), 'GST received')}${kpi(inr(bal.outstanding), 'balance due')}${kpi(inr(bal.overdue), 'overdue', toNum(bal.overdue) > 0 ? 'bad' : '')}${kpi(inr(bal.gst_outstanding), 'GST due')}${kpi(nextDue ? fmtD(nextDue) : '—', 'last demand due')}</div>
       </div>
       ${notes.map((n) => `<div class="note" style="margin-bottom:12px">${n}</div>`).join('')}
       <div id="ffVerify"></div>
