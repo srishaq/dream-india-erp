@@ -386,7 +386,7 @@ button.link { background: none; border: 0; padding: 0; color: var(--brand); font
 .ff-person { display: flex; flex-wrap: wrap; gap: 4px 12px; align-items: baseline; font-size: 14px; }
 .ff-person span { display: inline-flex; flex-wrap: wrap; gap: 4px 12px; }
 .ff-person a { font-weight: 600; }
-.ff-money { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; }
+.ff-money { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 10px; }
 .ff-money .kpi { background: #f6f7fb; border-radius: 10px; padding: 10px 12px; }
 .ff-money .kpi.bad b { color: var(--bad, #b42318); }
 .ff-actions { display: flex; flex-wrap: wrap; gap: 8px; margin: 0 0 14px; align-items: stretch; }
