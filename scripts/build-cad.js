@@ -11,7 +11,7 @@ for (const f of ['app/AcApDocManager.d.ts', 'app/AcDbOpenDatabaseOptions.d.ts', 
 }
 // three.js example modules are imported without ".js"; node-only modules (fs) are never used in the browser
 const fixes = { name: 'erp-fixes', setup(b) {
-  b.onResolve({ filter: /^three\/examples\/jsm\/.*[^s]$/ }, (a) => ({ path: require.resolve(a.path + '.js', { paths: [a.resolveDir] }) }));
+  b.onResolve({ filter: /^three\/examples\/jsm\// }, (a) => (a.path.endsWith('.js') ? undefined : { path: require.resolve(a.path + '.js', { paths: [a.resolveDir] }) }));
   b.onResolve({ filter: /^(fs|path|os|crypto)$/ }, () => ({ path: 'empty', namespace: 'empty' }));
   b.onLoad({ filter: /.*/, namespace: 'empty' }, () => ({ contents: 'module.exports = {};' }));
 } };
