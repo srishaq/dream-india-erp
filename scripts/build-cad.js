@@ -16,4 +16,4 @@ const fixes = { name: 'erp-fixes', setup(b) {
   b.onLoad({ filter: /.*/, namespace: 'empty' }, () => ({ contents: 'module.exports = {};' }));
 } };
 require('esbuild').build({ entryPoints: [R('scripts', 'cad-entry.js')], bundle: true, format: 'iife', minify: true, outfile: path.join(out, 'viewer.js'), target: 'es2020', logLevel: 'warning', plugins: [fixes] })
-  .then(() => console.log('cad viewer built:', fs.readdirSync(out).join(', '), ['cad-simple-viewer','data-model','mtext-renderer','libredwg-converter'].map((n) => n + '@' + require(R('node_modules', '@mlightcad', n, 'package.json')).version).join(' ')), (e) => { console.error(e.message); process.exit(1); });
+  .then(() => console.log('cad viewer built:', fs.readdirSync(out).join(', ')), (e) => { console.error(e.message); process.exit(1); });
