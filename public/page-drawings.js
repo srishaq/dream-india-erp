@@ -96,7 +96,7 @@ function row(f) {
     ${f.kind === 'cad' || f.kind === 'zip'
     // a browser cannot show a DWG: download it to open in AutoCAD / DWG TrueView (Drive's own page shows "no preview")
     ? (f.kind === 'cad'
-      ? `<button type="button" class="btn small go open" data-cad="${esc(f.id)}" title="Opens the drawing in the browser">Open CAD</button>`
+      ? `<a class="btn small go open" href="https://drive.google.com/uc?export=download&id=${encodeURIComponent(f.id)}" target="_blank" rel="noopener" title="Downloads the file to open in AutoCAD or a DWG viewer">Download DWG</a>`
       : `<a class="btn small go open" href="https://drive.google.com/uc?export=download&id=${encodeURIComponent(f.id)}" target="_blank" rel="noopener">Download ZIP</a>`)
     : `<a class="btn small go open" href="${esc(f.url)}" target="_blank" rel="noopener">${f.kind === 'pdf' ? 'Open PDF' : 'Open'}</a>`}</div>`;
 }
