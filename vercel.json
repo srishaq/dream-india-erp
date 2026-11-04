@@ -190,5 +190,7 @@
       "source": "/(crm|finance|audit|construction|training|home|management)",
       "destination": "/"
     }
-  ]
+  ],
+  "installCommand": "npm install --no-audit --no-fund",
+  "buildCommand": "node scripts/build-cad.js"
 }
