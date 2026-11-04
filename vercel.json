@@ -191,6 +191,6 @@
       "destination": "/"
     }
   ],
-  "installCommand": "rm -rf node_modules && npm install --no-audit --no-fund && npm ls @mlightcad/data-model @mlightcad/mtext-renderer @mlightcad/cad-simple-viewer || true",
+  "installCommand": "rm -rf node_modules && npm install --no-audit --no-fund --legacy-peer-deps && npm ls @mlightcad/data-model @mlightcad/libredwg-converter @mlightcad/cad-simple-viewer || true",
   "buildCommand": "node scripts/build-cad.js"
 }
