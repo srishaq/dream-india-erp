@@ -191,6 +191,6 @@
       "destination": "/"
     }
   ],
-  "installCommand": "rm -rf node_modules && npm install --no-audit --no-fund --legacy-peer-deps && npm ls @mlightcad/data-model @mlightcad/libredwg-converter @mlightcad/cad-simple-viewer || true",
+  "installCommand": "npm view @mlightcad/cad-simple-viewer@1.7.8 peerDependencies dependencies --json; npm view @mlightcad/libredwg-converter@3.15.22 peerDependencies dependencies --json; npm view @mlightcad/libredwg-converter versions --json | tail -15; rm -rf node_modules && npm install --no-audit --no-fund --legacy-peer-deps",
   "buildCommand": "node scripts/build-cad.js"
 }
