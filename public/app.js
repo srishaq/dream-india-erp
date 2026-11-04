@@ -2954,6 +2954,27 @@
     window.CAPage();
   }
 
+  // Management dashboard, Today: a table of wings side by side (Wing A vs Wing B, Inventory)
+  function mgTable(title, T, first) {
+    const crs = (v) => { const a = Math.abs(v); return a >= 1e7 ? `₹${(v / 1e7).toFixed(2)} Cr` : a >= 1e5 ? `₹${(v / 1e5).toFixed(2)} L` : inr(v); };
+    return `<section class="mpanel"><h2>${esc(title)}</h2><div class="table-wrap"><table class="mg-tbl"><tr><th>${esc(first)}</th>${T.names.map((w) => `<th class="num">${first ? esc(w) : 'Wing ' + esc(w)}</th>`).join('')}<th class="num">${first ? 'Units' : 'Total'}</th></tr>
+      ${T.rows.map((r) => `<tr><td>${esc(r.label)}</td>${r.wings.map((v) => `<td class="num">${r.money ? crs(v) : Number(v).toLocaleString('en-IN')}</td>`).join('')}<td class="num"><b>${r.money ? crs(r.total) : Number(r.total).toLocaleString('en-IN')}</b></td></tr>`).join('')}</table></div></section>`;
+  }
+  // the last 30 days of collections from buyers, one bar a day
+  function mgChart(rows) {
+    const max = Math.max(1, ...rows.map((r) => r.amt)), W = 400, H = 150, bw = W / rows.length, L = rows.length - 1;
+    const step = max >= 1e7 ? 1e7 / 4 : max >= 4e6 ? 1e6 : max >= 1e6 ? 5e5 : max >= 2e5 ? 1e5 : Math.max(1e4, Math.ceil(max / 4 / 1e4) * 1e4);
+    const top = Math.ceil(max / step) * step, y = (v) => H - (v / top) * H;
+    const lab = (v) => (v >= 1e7 ? `₹${(v / 1e7).toFixed(2)} Cr` : v >= 1e5 ? `₹${(v / 1e5).toFixed(0)} L` : inr(v));
+    const ticks = []; for (let v = 0; v <= top + 1; v += step) ticks.push(v);
+    const tot = rows.reduce((a, r) => a + r.amt, 0);
+    return `<figure class="mg-chart"><figcaption class="small muted">Collections from buyers, last 30 days · ${esc(fmtD(rows[0].d))} to ${esc(fmtD(rows[rows.length - 1].d))}</figcaption>
+      <svg viewBox="-62 -8 ${W + 70} ${H + 28}" role="img" aria-label="Daily collections, last 30 days, total ${esc(inr(tot))}">
+        ${ticks.map((v) => `<line x1="0" x2="${W}" y1="${y(v)}" y2="${y(v)}" stroke="var(--line, #E4E7EC)"/><text x="-6" y="${y(v) + 4}" text-anchor="end" font-size="12" fill="#5E6A72">${lab(v)}</text>`).join('')}
+        ${rows.map((r, i) => (r.amt ? `<rect x="${i * bw + bw * 0.18}" y="${y(r.amt)}" width="${bw * 0.64}" height="${H - y(r.amt)}" rx="2" fill="#117A65"><title>${esc(fmtD(r.d))}: ${esc(inr(r.amt))}</title></rect>` : '')).join('')}
+        ${rows.map((r, i) => ((L - i) % 7 === 0 ? `<text x="${i * bw + bw / 2}" y="${H + 20}" text-anchor="${i === L ? 'end' : 'middle'}" font-size="12" fill="#5E6A72">${esc(fmtD(r.d).replace(/ \d{4}$/, ''))}</text>` : '')).join('')}
+      </svg></figure>`;
+  }
   async function mgmt() {
     const pq = proj ? `?project=${proj}` : '';
     $('#page').innerHTML = heroHtml('Management', 'Management dashboard', 'Working out today’s figures…', ['#/home', 'Home']);
@@ -2969,7 +2990,7 @@
     const at = new Date(d.generatedAt).toLocaleTimeString('en-IN', { hour: 'numeric', minute: '2-digit', timeZone: 'Asia/Kolkata' });
     // Today: six numbers and only what needs attention. Full report: every figure, for the monthly review.
     let view = store.get('erp_mg_view') === 'full' ? 'full' : 'today';
-    const D = d.daily || { top: [], attention: [], limits: {} };
+    const D = d.daily || { top: [], attention: [], limits: {} }, O = d.overview;
     // the same look as the Collections dashboard: a grid of figures, big coloured numbers, a short line under each
     const fig = (x) => `<a class="mfig ${tone(x.tone)}" href="${href(x.link)}"><span>${esc(x.title)}</span><b>${esc(x.value)}</b>${x.sub ? `<small>${esc(x.sub)}</small>` : ''}</a>`;
     const rfig = (t) => `<a class="mfig ${tone(t.tone)}" href="${href(t.link)}"><span>${esc(t.title)}</span><b>${esc(t.value)}</b>${t.sub ? `<small>${esc(t.sub)}</small>` : ''}
@@ -2983,7 +3004,11 @@
         <nav class="mg-tabs2" role="tablist">${[['today', 'Today'], ['full', 'Full report']].map(([k, l]) => `<button type="button" role="tab" data-mv="${k}" aria-selected="${k === view}">${l}</button>`).join('')}</nav></div></div>
       <div class="hm mg">
         <div data-mvp="today" ${view === 'today' ? '' : 'hidden'}>
-          <div class="mfigs">${D.top.map(fig).join('')}</div>
+          ${O ? `<div class="mfigs mfigs2 f5">${O.figures.map(fig).join('')}</div>
+          <section class="mpanel"><div class="mp-head"><h2>Daily collections</h2><a class="btn ghost small" href="#/collections">Open collections</a></div>
+            <div class="mfigs mfigs2 in">${O.collections.map(fig).join('')}</div>${mgChart(O.chart)}</section>
+          ${mgTable(`${O.wings.names.map((w) => 'Wing ' + w).join(' vs ')}`, O.wings, '')}
+          ${mgTable('Inventory', O.inventory, 'Status')}` : `<div class="mfigs">${D.top.map(fig).join('')}</div>`}
           <section class="mpanel"><h2>Needs your attention ${D.attention.length ? `<span class="mg-cnt">${D.attention.length}</span>` : ''}</h2>${att}</section>
         </div>
         <div data-mvp="full" ${view === 'full' ? '' : 'hidden'}>
