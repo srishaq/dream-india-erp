@@ -79,7 +79,13 @@ module.exports = route({
         const sheet = [[`${reg.title}${opts.q ? ' · search: ' + opts.q : ''}${fLabel ? ' · ' + fLabel : ''} · ${when}`], [], cols.map((c) => c.label), ...all.map((r) => cols.map((c) => cell(c, r[c.key])))];
         if (amt) { const i = cols.findIndex((c) => c.key === amt); const t = cols.map(() => ''); t[0] = `Total (${total} rows)`; if (i >= 0) t[i] = Math.round((amount || 0) * 100) / 100; sheet.push([], t); }
         const sheets = [{ name: reg.title, rows: sheet, widths: cols.map((c) => (c.type === 'long' ? 40 : ['payee', 'head', 'payer_name', 'description'].includes(c.key) ? 30 : 14)) }];
-        if (G && G.rows.length) sheets.splice(0, 0, { name: `Total by ${G.label}`.slice(0, 31), rows: [[`${reg.title} · total by ${G.label}${fLabel ? ' · ' + fLabel : ''} · ${when}`], [], [G.label, 'Rows', 'Total', 'Share'], ...G.rows.map((g) => [g.name, g.n, g.amount != null ? Math.round(g.amount * 100) / 100 : '', amount ? Math.round((g.amount || 0) / amount * 1000) / 10 + '%' : '']), [], ['Total', total, Math.round((amount || 0) * 100) / 100, '']], widths: [40, 8, 16, 8] });
+        if (G && G.rows.length) {
+          const r2 = (v) => Math.round((v || 0) * 100) / 100, td = !!G.tillDate;
+          sheets.splice(0, 0, { name: `Total by ${G.label}`.slice(0, 31), rows: [[`${reg.title} · total by ${G.label}${fLabel ? ' · ' + fLabel : ''}`], [],
+            [G.label, `Rows (${when})`, `Total (${when})`, 'Share', ...(td ? ['Rows (project till date)', 'Total (project till date)'] : [])],
+            ...G.rows.map((g) => [g.name, g.n, g.amount != null ? r2(g.amount) : '', amount ? Math.round((g.amount || 0) / amount * 1000) / 10 + '%' : '', ...(td ? [g.tdN, r2(g.tdAmount)] : [])]), [],
+            ['Total', total, r2(amount), '', ...(td ? [G.tillDate.n, r2(G.tillDate.amount)] : [])]], widths: [40, 12, 18, 8, ...(td ? [14, 20] : [])] });
+        }
         if (byWho.length && !(G && G.by === who)) sheets.push({ name: `Total by ${who === 'payee' ? 'payee' : 'payer'}`, rows: [[who === 'payee' ? 'Payee' : 'Payer', 'Rows', 'Total'], ...byWho.map(([k, v]) => [k, v.n, Math.round(v.amt * 100) / 100]), [], ['Total', total, Math.round((amount || 0) * 100) / 100]], widths: [40, 8, 16] });
         const name = `${reg.title}${opts.q ? ' - ' + opts.q : ''} ${new Date(Date.now() + 5.5 * 36e5).toISOString().slice(0, 10)}.xlsx`.replace(/[^A-Za-z0-9 ._-]+/g, '');
         res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');

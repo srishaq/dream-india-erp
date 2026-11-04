@@ -143,6 +143,11 @@ let n = 0; const step = async (name, fn) => { await fn(); n++; console.log('  âœ
     assert.equal(f.total, 1); assert.equal(f.amount, 5000);
     const two = await admin('/api/accounts?reg=payments&m_head=RMC|Nothing&by=month');
     assert.equal(two.total, rmc.n); assert.ok(two.groups.rows.some((g) => g.name === '2026-10'));
+    // a date range: each head also shows the project till date
+    const fy = await admin('/api/accounts?reg=payments&by=head&from=2026-10-28&to=2026-10-28');
+    const g = fy.groups.rows.find((x) => x.name === 'RMC'); assert.equal(g.n, 1); assert.equal(g.tdN, rmc.n); assert.equal(Math.round(fy.groups.tillDate.amount), Math.round(all.amount));
+    const x = await admin('/api/accounts?reg=payments&by=head&from=2026-10-28&to=2026-10-28&export=xlsx', null, true);
+    assert.equal(x.status, 200); assert.ok(x.text.startsWith('PK')); // an Excel file
     const pr = await admin('/api/accounts?reg=payments&m_head=RMC&by=payee&export=rows');
     assert.equal(pr.rows.length, rmc.n); assert.match(pr.head.filters, /Cash Flow Head: RMC/); assert.equal(pr.groups.by, 'payee');
   });
