@@ -62,9 +62,10 @@ const num = Number;
   await step('Data to verify lists the items; they can be closed with a note and reopened', async () => {
     const v = await admin(`/api/verify?project=${sig.id}`);
     assert.ok(v.counts.open > 5 && v.counts.money > 0);
-    const shared = v.rows.find((r) => r.kind === 'shared-instrument' && r.unit_no === 'A-1007'); assert.ok(shared && shared.booking_id);
+    assert.ok(!v.rows.some((r) => r.kind === 'shared-instrument')); // old cheques split across flats are allowed, not a query
+    const shared = v.rows.find((r) => r.booking_id && r.severity === 'money'); assert.ok(shared);
     assert.equal((await admin('/api/verify', { action: 'resolve', id: shared.id })).status, 400);
-    assert.equal((await admin('/api/verify', { action: 'resolve', id: shared.id, resolution: 'One cheque covered both A-1007 and A-1008 (same family); split confirmed with Accounts.' })).ok, true);
+    assert.equal((await admin('/api/verify', { action: 'resolve', id: shared.id, resolution: 'Checked with Accounts; the sheet is right.' })).ok, true);
     const after = await admin(`/api/verify?project=${sig.id}`); assert.equal(after.counts.resolved, 1);
     const per = await admin(`/api/verify?booking=${shared.booking_id}`); assert.equal(per.rows.find((x) => x.id === shared.id).status, 'resolved');
   });

@@ -3,6 +3,7 @@
 require('./login-code-helper'); // staff sign-in: password, then the code (ERP_TEST_OTP)
 const assert = require('assert/strict');
 process.env.PORT = process.env.PORT || '3998';
+process.env.ONE_CHEQUE_FROM = '2026-10-28'; // cheques from this date pay one flat only; older ones may be split
 const server = require('./dev-server');
 // A fake mail server on this machine records who each email was addressed to.
 const net = require('net');
@@ -339,16 +340,28 @@ const n = (v) => Number(v);
   });
   await step('4 Nov rules: one cheque pays one flat, no double entries; provisional receipt on entry, final receipt on approval', async () => {
     const before = rcpts.length;
-    const r = await crm('/api/receipts', { action: 'create', bookingId: b1, receivedOn: '2026-10-25', amount: '5000', mode: 'cheque', instrumentNo: 'CHQ 777', bank: 'HDFC Bank', splits: { av: '5000' } });
+    const r = await crm('/api/receipts', { action: 'create', bookingId: b1, receivedOn: '2026-10-25', amount: '5000', mode: 'cheque', instrumentNo: 'CHQ 7771', bank: 'HDFC Bank', splits: { av: '5000' } });
     assert.equal(r.ok, true, JSON.stringify(r)); assert.ok(r.mail && r.mail.provisional, JSON.stringify(r.mail));
     assert.ok(rcpts.length > before); assert.ok(rcpts.slice(before).every((x) => x === 'tester@erp.test'));
-    const twin = await crm('/api/receipts', { action: 'create', bookingId: b1, receivedOn: '2026-10-25', amount: '5000', mode: 'cheque', instrumentNo: 'chq777', splits: { av: '5000' }, allowDuplicate: true });
+    const twin = await crm('/api/receipts', { action: 'create', bookingId: b1, receivedOn: '2026-10-25', amount: '5000', mode: 'cheque', instrumentNo: 'chq7771', splits: { av: '5000' }, allowDuplicate: true });
     assert.equal(twin.status, 409); assert.equal(twin.blocked, true); assert.match(twin.error, /cannot be entered twice/);
-    const split = await crm('/api/receipts', { action: 'create', bookingId: bEmail, receivedOn: '2026-10-25', amount: '3000', mode: 'cheque', instrumentNo: 'CHQ777', splits: { av: '3000' }, allowDuplicate: true });
+    // an old cheque (before go-live) for two flats: asked, then allowed
+    const ask = await crm('/api/receipts', { action: 'create', bookingId: bEmail, receivedOn: '2026-10-25', amount: '3000', mode: 'cheque', instrumentNo: 'CHQ7771', splits: { av: '3000' } });
+    assert.equal(ask.status, 409); assert.ok(!ask.blocked); assert.match(ask.error, /split across flats/);
+    const part = await crm('/api/receipts', { action: 'create', bookingId: bEmail, receivedOn: '2026-10-25', amount: '3000', mode: 'cheque', instrumentNo: 'CHQ7771', splits: { av: '3000' }, allowDuplicate: true });
+    assert.equal(part.ok, true, JSON.stringify(part));
+    // the bank shows one line for the total: both parts are linked to it and approved
+    const db = require('../lib/db');
+    await db.q("insert into acc_receipts (book, ref_id, txn_date, bank, description, reference, amount) values ('signature', 'T-SPLIT', '2026-10-27', 'HDFC', 'CHQ DEP 7771', '7771', 8000)");
+    const m = await require('../lib/cheque-match').run({ trigger: 'test' });
+    const both = await db.q('select status, bank_match from receipts where id = any($1) order by id', [[r.id, part.id]]);
+    assert.ok(both.every((x) => x.status === 'approved' && /split cheque/.test(x.bank_match)), JSON.stringify({ m, both }));
+    // a cheque from go-live on another flat: refused outright
+    await crm('/api/receipts', { action: 'create', bookingId: b1, receivedOn: '2026-10-30', amount: '4000', mode: 'cheque', instrumentNo: 'CHQ 888', splits: { av: '4000' } });
+    const split = await crm('/api/receipts', { action: 'create', bookingId: bEmail, receivedOn: '2026-10-30', amount: '3000', mode: 'cheque', instrumentNo: 'CHQ888', splits: { av: '3000' }, allowDuplicate: true });
     assert.equal(split.status, 409); assert.equal(split.blocked, true); assert.match(split.error, /only one flat/);
-    const mid = rcpts.length;
-    const ok = await headacc('/api/receipts', { action: 'approve', id: r.id });
-    assert.equal(ok.ok, true); assert.ok(ok.mail && ok.mail.receiptNo && !ok.mail.provisional, JSON.stringify(ok.mail)); assert.ok(rcpts.length > mid);
+    const fin = await db.one('select receipt_no, receipt_sent_at from receipts where id = $1', [r.id]);
+    assert.ok(fin.receipt_no && fin.receipt_sent_at, JSON.stringify(fin)); // final receipt sent on the bank approval
     const again = await require('../lib/receipt-mail').autoSend(r.id, 'final'); assert.equal(again.skipped, 'already sent'); // once only
   });
   await step('Everything is in the audit log', async () => {

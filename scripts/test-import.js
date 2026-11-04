@@ -33,7 +33,7 @@ ok('A-1002: two applicants, two emails, bank shortfall flagged', () => {
   assert.equal(b.applicants.length, 2); assert.equal(b.applicants[1].email, 'afrojshaikh100@gmail.com');
   assert.ok(has('A-1002', 'ledger-vs-bank'));
 });
-ok('A-1007 and A-1008 share cheques: flagged on both', () => { assert.ok(has('A-1007', 'shared-instrument')); assert.ok(has('A-1008', 'shared-instrument')); });
+ok('A-1007 and A-1008 share old cheques (before go-live): allowed, not flagged', () => { assert.ok(!has('A-1007', 'shared-instrument')); assert.ok(!has('A-1008', 'shared-instrument')); });
 ok('A-1105: no email, CRM total differs from ledger', () => { assert.ok(has('A-1105', 'no-email')); assert.ok(has('A-1105', 'crm-vs-ledger')); });
 ok('held unit with money in the bank is flagged', () => { assert.ok(has('A-1006', 'held-unit')); assert.ok(has('A-1006', 'money-on-unsold')); });
 ok('bank tags that are not units are flagged', () => assert.ok(r.issues.some((i) => i.kind === 'bank-tag' && /SUSPENSE/.test(i.detail))));
