@@ -13,9 +13,9 @@
     const name = decodeURIComponent((j.file.match(/[?&]name=([^&]+)/) || [])[1] || 'Drawing');
     $('#name').textContent = name; document.title = name + ' · Dream India ERP';
     $('#dl').hidden = false; $('#dl').onclick = () => { location.href = `https://drive.google.com/uc?export=download&id=${encodeURIComponent(id)}`; };
-    window.ERPCad.useDwgWorker('/cad/libredwg-parser-worker.js');
-    const mgr = window.ERPCad.AcApDocManager.createInstance({ container: $('#view'), autoResize: true, webworkerFileUrls: { mtextRender: '/cad/mtext-renderer-worker.js', dwgParser: '/cad/libredwg-parser-worker.js' }, builtinOpenFileDialog: false, notificationCenter: false });
-    window.ERPCad.useDwgWorker('/cad/libredwg-parser-worker.js'); // again after start-up, in case the viewer registered its own
+    window.ERPCad.useDwgWorker('/cad/libredwg-parser-worker.js?v=2');
+    const mgr = window.ERPCad.AcApDocManager.createInstance({ container: $('#view'), autoResize: true, webworkerFileUrls: { mtextRender: '/cad/mtext-renderer-worker.js?v=2', dwgParser: '/cad/libredwg-parser-worker.js?v=2' }, builtinOpenFileDialog: false, notificationCenter: false });
+    window.ERPCad.useDwgWorker('/cad/libredwg-parser-worker.js?v=2'); // again after start-up, in case the viewer registered its own
     // the file is fetched here and handed over with its name, so the viewer knows it is a DWG
     const fr = await fetch(j.file);
     if (!fr.ok) throw new Error('Could not read the drawing from Google Drive. Try again.');
