@@ -7,7 +7,7 @@
   },
   "headers": [
     {
-      "source": "/((?!site$|site\\.html|purchase$|purchase\\.html|drawings$|drawings\\.html|contracts$|contracts\\.html|hr$|hr\\.html|chat$|chat\\.html).*)",
+      "source": "/((?!site$|site\\.html|purchase$|purchase\\.html|drawings$|drawings\\.html|contracts$|contracts\\.html|hr$|hr\\.html|chat$|chat\\.html|cad$|cad\\.html|cad/).*)",
       "headers": [
         {
           "key": "X-Frame-Options",
@@ -32,6 +32,35 @@
         {
           "key": "Content-Security-Policy",
           "value": "default-src 'self'; img-src 'self' data:; style-src 'self' 'unsafe-inline'; script-src 'self'; connect-src 'self'; frame-ancestors 'none'; base-uri 'none'; form-action 'self'"
+        }
+      ]
+    },
+    {
+      "source": "/(cad|cad\\.html|cad/.*)",
+      "headers": [
+        {
+          "key": "X-Frame-Options",
+          "value": "DENY"
+        },
+        {
+          "key": "X-Content-Type-Options",
+          "value": "nosniff"
+        },
+        {
+          "key": "Referrer-Policy",
+          "value": "no-referrer"
+        },
+        {
+          "key": "X-Robots-Tag",
+          "value": "noindex, nofollow"
+        },
+        {
+          "key": "Strict-Transport-Security",
+          "value": "max-age=31536000"
+        },
+        {
+          "key": "Content-Security-Policy",
+          "value": "default-src 'self'; img-src 'self' data: blob:; style-src 'self' 'unsafe-inline'; font-src 'self' data: https://cdn.jsdelivr.net; script-src 'self' 'wasm-unsafe-eval'; worker-src 'self' blob:; connect-src 'self' https://cdn.jsdelivr.net; frame-ancestors 'none'; base-uri 'none'; form-action 'self'"
         }
       ]
     },
