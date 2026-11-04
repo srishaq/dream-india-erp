@@ -337,6 +337,20 @@ const n = (v) => Number(v);
     assert.equal(t.assignedTo, me.id); assert.match(t.link, new RegExp('who=' + me.id));
     const db = require('../lib/db'); const row = await db.one("select assigned_to from daily_tasks where key = $1 order by id desc limit 1", ['fu-due-' + me.id]); assert.equal(row.assigned_to, me.id);
   });
+  await step('4 Nov rules: one cheque pays one flat, no double entries; provisional receipt on entry, final receipt on approval', async () => {
+    const before = rcpts.length;
+    const r = await crm('/api/receipts', { action: 'create', bookingId: b1, receivedOn: '2026-10-25', amount: '5000', mode: 'cheque', instrumentNo: 'CHQ 777', bank: 'HDFC Bank', splits: { av: '5000' } });
+    assert.equal(r.ok, true, JSON.stringify(r)); assert.ok(r.mail && r.mail.provisional, JSON.stringify(r.mail));
+    assert.ok(rcpts.length > before); assert.ok(rcpts.slice(before).every((x) => x === 'tester@erp.test'));
+    const twin = await crm('/api/receipts', { action: 'create', bookingId: b1, receivedOn: '2026-10-25', amount: '5000', mode: 'cheque', instrumentNo: 'chq777', splits: { av: '5000' }, allowDuplicate: true });
+    assert.equal(twin.status, 409); assert.equal(twin.blocked, true); assert.match(twin.error, /cannot be entered twice/);
+    const split = await crm('/api/receipts', { action: 'create', bookingId: bEmail, receivedOn: '2026-10-25', amount: '3000', mode: 'cheque', instrumentNo: 'CHQ777', splits: { av: '3000' }, allowDuplicate: true });
+    assert.equal(split.status, 409); assert.equal(split.blocked, true); assert.match(split.error, /only one flat/);
+    const mid = rcpts.length;
+    const ok = await headacc('/api/receipts', { action: 'approve', id: r.id });
+    assert.equal(ok.ok, true); assert.ok(ok.mail && ok.mail.receiptNo && !ok.mail.provisional, JSON.stringify(ok.mail)); assert.ok(rcpts.length > mid);
+    const again = await require('../lib/receipt-mail').autoSend(r.id, 'final'); assert.equal(again.skipped, 'already sent'); // once only
+  });
   await step('Everything is in the audit log', async () => {
     const a = await admin('/api/audit?limit=500');
     const k = new Set(a.rows.map((r) => `${r.action}:${r.entity}`));

@@ -303,6 +303,7 @@
     { key: 'stages', label: 'Construction stages', show: () => can('stage.record'), sub: true },
     { key: 'letters', label: 'Demand letters (many flats)', show: () => anyOf('demand.raise', 'ledger.view') },
     { key: 'prices', label: 'Price list & cost sheet', show: () => can('inventory.view') },
+    { key: 'parking', label: 'Parking', show: () => can('inventory.view') },
     { key: 'partners', label: 'Channel partner ledger', show: () => can('ledger.view') },
     { key: 'verify', label: 'Data to verify', show: () => anyOf('inventory.view', 'ledger.view') },
     { key: 'custdocs', label: 'Customer documents', show: () => anyOf('buyer.kyc', 'accounts.view') || can('users.manage') },
@@ -434,7 +435,7 @@
     $('#cpw').onclick = () => changePassword(false);
     if ($('#proj')) $('#proj').onchange = (e) => { proj = +e.target.value; store.set('erp_project', proj); shell(); };
     if (/^reg-/.test(page || '') && can('accounts.view')) { try { await accRegister(page.slice(4)); } catch (e) { $('#page').innerHTML = `<div class="err">${esc(e.message)}</div>`; } return; }
-    const fn = { stages: () => demands(true), home, mgmt, marketing: () => window.Marketing.render({ api, dialog, toast, me }, (/^\d+$/.test(location.hash.split('/')[2] || '') ? location.hash.split('/')[2] : null) || store.get('erp_mkt_scope') || null), telemarketing: () => window.Telemarketing.render({ api, dialog, toast, me }), ca: caPage, accdash, collections, flats, custdocs, comms, team: teamPage, accteam: teamPage, sdr: sdrPage, cp: cpPage, cpportal: cpPortalPage, project: projectHome, crmtodo: () => dailyTodo('crm'), acctodo: () => dailyTodo('accounts'), training, projects, plans, users, audit, units, bookings, demands, receipts, ledgers, letters, followups, verify, prices, partners, balances: accBalances, bankauto: bankAuto, bookscrm: booksCrm, accreports: accReports, checks: accChecks, accsetup: accSetup, import: importPage, booking: bookingPage, statement: statementPage, run: runPage, pre: prePage };
+    const fn = { stages: () => demands(true), home, mgmt, marketing: () => window.Marketing.render({ api, dialog, toast, me }, (/^\d+$/.test(location.hash.split('/')[2] || '') ? location.hash.split('/')[2] : null) || store.get('erp_mkt_scope') || null), telemarketing: () => window.Telemarketing.render({ api, dialog, toast, me }), ca: caPage, accdash, collections, flats, custdocs, comms, team: teamPage, accteam: teamPage, sdr: sdrPage, cp: cpPage, cpportal: cpPortalPage, project: projectHome, crmtodo: () => dailyTodo('crm'), acctodo: () => dailyTodo('accounts'), training, projects, plans, users, audit, units, bookings, demands, receipts, ledgers, letters, followups, verify, prices, partners, balances: accBalances, bankauto: bankAuto, bookscrm: booksCrm, accreports: accReports, checks: accChecks, accsetup: accSetup, import: importPage, booking: bookingPage, statement: statementPage, run: runPage, pre: prePage, parking: parkingPage };
     const key = DETAIL[page] && arg ? page : cur.key;
     try { await fn[key](arg ? +arg : undefined); } catch (e) { $('#page').innerHTML = `<div class="err">${esc(e.message)}</div>`; }
   }
@@ -480,7 +481,7 @@
     bookings: 'Bookings, applicants, cancellations and transfers', demands: 'Construction stages and the demands raised on them', stages: 'Record each construction stage as it is completed, with who certified it',
     receipts: 'Enter receipts; Head Accounts approves them', ledgers: 'Each buyer’s statement of demands and payments',
     letters: 'Stage demands and reminders, by email or courier', followups: 'Calls, WhatsApps and promises to pay',
-    comms: 'Buyers\' email replies and WhatsApps, and messages to link to a flat', team: 'Dream Chat: CRM and Accounts, about a flat or a cheque', accteam: 'Dream Chat: CRM and Accounts, about a flat or a cheque', custdocs: 'Signed and scanned papers for every flat and SRA tenant, kept in Google Drive', verify: 'Items from the import still to check and close', prices: 'Rates, floor rise and the cost sheet', partners: 'Each partner firm: brokerage, bills, pass back, payments and balance',
+    parking: 'Total, allotted and free parking spaces', comms: 'Buyers\' email replies and WhatsApps, and messages to link to a flat', team: 'Dream Chat: CRM and Accounts, about a flat or a cheque', accteam: 'Dream Chat: CRM and Accounts, about a flat or a cheque', custdocs: 'Signed and scanned papers for every flat and SRA tenant, kept in Google Drive', verify: 'Items from the import still to check and close', prices: 'Rates, floor rise and the cost sheet', partners: 'Each partner firm: brokerage, bills, pass back, payments and balance',
     site: 'Slab cycle, daily progress reports, hindrances, materials and floor-wise works', purchase: 'Purchase requests from request to payment', drawings: 'The drawing register from Google Drive', hr: 'Staff records, leave, letters and HR policies',
     crmtodo: 'Today’s calls, approvals, letters and what the 9 am check found', flats: 'Every flat and buyer. Open one to see payments, calls, messages and documents in one place',
     'sc-calls': 'Who to call today, broken promises to pay, and buyers never called', 'sc-dues': 'Every buyer with an overdue amount; open one for the full ledger and statement',
@@ -496,11 +497,11 @@
     accreports: 'Reports and the Tally import', checks: 'Daily checks on the registers', bookscrm: 'Tally receipts flat by flat against the CRM',
     ca: 'GST, TDS payable, RERA quarterly and cash flow, for the CA', accsetup: 'Bank accounts, heads, statement folders and imports', audit: 'Who changed what, and when',
   };
-  const PICON = { 'acc-bank': 'rupee', 'acc-money': 'book', 'acc-tax': 'check', 'acc-sra': 'users', collections: 'chart', flats: 'users', 'sc-calls': 'phone', 'sc-dues': 'book', 'sc-appr': 'check', comms: 'mail', team: 'users', accteam: 'users', sdr: 'rupee', custdocs: 'book', site: 'tower', crmtodo: 'check', acctodo: 'check', training: 'book', dashboard: 'chart', units: 'grid', bookings: 'book', demands: 'tower', receipts: 'rupee', ledgers: 'book', letters: 'mail', followups: 'phone', verify: 'check', prices: 'rupee', partners: 'users',
+  const PICON = { parking: 'grid', 'acc-bank': 'rupee', 'acc-money': 'book', 'acc-tax': 'check', 'acc-sra': 'users', collections: 'chart', flats: 'users', 'sc-calls': 'phone', 'sc-dues': 'book', 'sc-appr': 'check', comms: 'mail', team: 'users', accteam: 'users', sdr: 'rupee', custdocs: 'book', site: 'tower', crmtodo: 'check', acctodo: 'check', training: 'book', dashboard: 'chart', units: 'grid', bookings: 'book', demands: 'tower', receipts: 'rupee', ledgers: 'book', letters: 'mail', followups: 'phone', verify: 'check', prices: 'rupee', partners: 'users',
     accdash: 'chart', balances: 'rupee', bankauto: 'check', 'reg-cancellations': 'users', bookscrm: 'check', checks: 'check', audit: 'book', ca: 'chart', accsetup: 'grid' };
   const DEPTS = [
     { key: 'crm', title: 'Sales & CRM', sub: 'Today’s work, every flat and buyer in one place, receipts, collections and the inbox', icon: 'chart', tone: '#2B5C8A', group: 'CRM', more: 'CRM tools',
-      sections: [['Every day', ['crmtodo', 'flats', 'receipts', 'comms', 'team']], ['Sales', ['units', 'sc-appr', 'prices', 'partners']],
+      sections: [['Every day', ['crmtodo', 'flats', 'receipts', 'comms', 'team']], ['Sales', ['units', 'parking', 'sc-appr', 'prices', 'partners']],
         ['Collections', ['collections', 'demands', 'letters']], ['Records and checks', ['custdocs', 'verify']]] },
     { key: 'accounts', title: 'Accounts', sub: 'Bank, receipts, payments, PDC, TDS, SRA rent, GST, SDR and Tally', icon: 'book', tone: '#117A65', group: 'Accounts', skip: ['ca', 'bookscrm', 'checks'],
       sections: [['Every day', ['acctodo', 'acc-bank', 'acc-money', 'accteam']], ['Taxes & compliance', ['acc-tax']], ['Refunds, partners & tenants', ['reg-cancellations', 'cpacc', 'acc-sra']], ['Reports & set-up', ['accdash', 'accreports', 'accsetup']]] },
@@ -1374,7 +1375,7 @@
     const dl = dialog(`<h2>Enter a receipt</h2>
       ${booking ? `<p class="muted">${esc(booking.label)}</p>` : `<label>Booking</label><input name="pick" list="bk-list" required placeholder="Type the unit number"><datalist id="bk-list">${choices.map((c) => `<option value="${esc(c.label)}">`).join('')}</datalist>`}
       <div class="row"><div><label>Date received</label><input type="date" name="receivedOn" max="${todayIso()}" value="${todayIso()}" required></div><div><label>Amount (₹)</label><input name="amount" inputmode="decimal" required></div></div>
-      <div class="row"><div><label>Mode</label><select name="mode"><option value="bank">Bank transfer</option><option value="cheque">Cheque</option><option value="loan">Loan disbursement</option><option value="tds">TDS certificate</option><option value="other">Other</option></select></div><div><label>Bank</label><input name="bank"></div></div>
+      <div class="row"><div><label>Mode</label><select name="mode"><option value="bank">Bank transfer</option><option value="cheque">Cheque</option><option value="loan">Loan disbursement</option><option value="tds">TDS certificate</option><option value="other">Other</option></select></div><div><label>Bank (buyer\'s bank)</label><input name="bank" list="inBanks" autocomplete="off" placeholder="Start typing: HDFC, SBI…"><datalist id="inBanks">${INDIAN_BANKS.map((x) => `<option value="${esc(x)}">`).join('')}</datalist></div></div>
       <div class="row"><div><label>UTR / cheque no.</label><input name="instrumentNo"></div><div><label>Into account (last digits)</label><input name="accountNo"></div></div>
       <label>How it splits <button type="button" class="ghost small" id="auto">Split as AV + GST</button></label>
       <div class="row3">${Object.entries(HEAD).map(([h, l]) => `<div><label class="sub">${l}</label><input name="s_${h}" inputmode="decimal"></div>`).join('')}</div>
@@ -1387,7 +1388,7 @@
       const body = { action: 'create', bookingId, receivedOn: x.receivedOn, amount: x.amount, mode: x.mode, bank: x.bank, instrumentNo: x.instrumentNo, accountNo: x.accountNo, note: x.note, splits };
       let made;
       try { made = await api('/api/receipts', body); }
-      catch (e) { if (!(e.data && e.data.duplicate) || !confirm(e.message + '\n\nSave it anyway?')) throw e; made = await api('/api/receipts', { ...body, allowDuplicate: true }); }
+      catch (e) { if (!(e.data && e.data.duplicate) || e.data.blocked || !confirm(e.message + '\n\nSave it anyway?')) throw e; made = await api('/api/receipts', { ...body, allowDuplicate: true }); }
       toast('Receipt saved. It counts once Head Accounts approves it (or the bank statement matches the cheque).');
       after();
       receiptDocDialog(made.id);
@@ -1557,6 +1558,32 @@
     if ($('#ok')) $('#ok').onclick = async () => { if (!confirm(`Raise ${d.rows.length} demands totalling ${inr(total)} plus GST?`)) return; try { const o = await api('/api/demands', { action: 'run.approve', id: r.id }); const L = o.letters || {}; toast(`${o.raised} demands raised. ` + (L.error ? 'Letters: ' + L.error : L.notEmailed ? `${L.letters} letters ready on the Demand letters page (${L.notEmailed})` : L.letters ? `${L.emailed} letters emailed${L.waiting ? ', ' + L.waiting + ' more within 5 minutes' : ''}${L.whatsapp ? ', ' + L.whatsapp + ' WhatsApps sent' : ''}${L.noEmail ? `. ${L.noEmail} buyer${L.noEmail > 1 ? 's have' : ' has'} no email: see Print and courier on Today` : ''}${L.errors ? ', ' + L.errors + ' could not be sent' : ''}.` : ''), 8000); runPage(id); } catch (e) { alert(e.message); } };
     if ($('#cancel')) $('#cancel').onclick = async () => { if (!confirm('Cancel this draft run?')) return; try { await api('/api/demands', { action: 'run.cancel', id: r.id }); go('#/demands'); } catch (e) { alert(e.message); } };
   }
+
+  // Parking inventory: total spaces (set here), allotted (the spaces on each live booking) and the balance free.
+  async function parkingPage() {
+    if (!proj) return noProject();
+    const d = await api(`/api/units?parking=1&project=${proj}`);
+    const edit = can('inventory.edit');
+    $('#page').innerHTML = `<div class="page-head"><div><h1>Parking</h1><p class="muted">Allotted spaces come from each booking (its number of car parks). Set the total once; the balance is what is still free to sell.</p></div>
+      ${edit ? '<div class="actions" style="margin:0"><button id="pkSet">Set total spaces</button></div>' : ''}</div>
+      <div class="panel"><div class="kpis">${kpi(d.total || '—', 'total spaces')}${kpi(d.allotted, 'allotted to flats')}${kpi(d.total ? d.balance : '—', 'balance free', d.total && d.balance < 0 ? 'bad' : '')}</div>
+        ${!d.total ? '<p class="small muted" style="margin:8px 0 0">The total number of spaces is not set yet.</p>' : d.balance < 0 ? `<p class="small bad-t" style="margin:8px 0 0">${-d.balance} more spaces are allotted than the total. Check the bookings or the total.</p>` : ''}
+        ${d.updatedBy ? `<p class="small muted" style="margin:8px 0 0">Total set by ${esc(d.updatedBy)} on ${fmtD(String(d.updatedAt).slice(0, 10))}${d.note ? ': ' + esc(d.note) : ''}.</p>` : ''}</div>
+      ${d.byWing.length > 1 ? `<div class="panel table-wrap"><h2>By wing</h2><table><tr><th>Wing</th><th class="num">Total</th><th class="num">Allotted</th><th class="num">Balance</th></tr>
+        ${d.byWing.map((w) => `<tr><td>${esc(w.wing)} Wing</td><td class="num">${w.total ?? '—'}</td><td class="num">${w.allotted}</td><td class="num ${w.balance != null && w.balance < 0 ? 'bad-t' : ''}">${w.balance ?? '—'}</td></tr>`).join('')}</table></div>` : ''}
+      <div class="panel table-wrap"><h2>Flats with parking (${d.rows.length})</h2><input class="search" id="pq" placeholder="Search flat or buyer">
+        <table><tr><th>Flat</th><th>Buyer</th><th class="num">Spaces</th><th>Status</th></tr>
+        ${d.rows.map((r) => `<tr class="click" data-b="${r.booking_id}" data-s="${esc((r.unit_no + ' ' + (r.buyers || '')).toLowerCase())}"><td><b>${esc(r.unit_no)}</b></td><td>${esc(r.buyers || '')}</td><td class="num">${r.parking}</td><td>${r.status === 'pending' ? '<span class="pill">waiting for approval</span>' : '<span class="pill good">booked</span>'}</td></tr>`).join('') || '<tr><td colspan="4" class="muted">No booking has parking yet.</td></tr>'}</table></div>`;
+    document.querySelectorAll('tr[data-b]').forEach((tr) => (tr.onclick = () => go(`#/booking/${tr.dataset.b}`)));
+    $('#pq').oninput = (e) => { const q = e.target.value.toLowerCase(); document.querySelectorAll('tr[data-s]').forEach((tr) => (tr.style.display = tr.dataset.s.includes(q) ? '' : 'none')); };
+    if ($('#pkSet')) $('#pkSet').onclick = () => dialog(`<h2>Total parking spaces</h2><label>Total spaces in the project</label><input name="total" inputmode="numeric" value="${d.total || ''}" required>
+      ${d.byWing.length > 1 ? `<p class="small muted">By wing (optional)</p><div class="row">${d.byWing.map((w) => `<div><label>${esc(w.wing)} Wing</label><input name="w_${esc(w.wing)}" inputmode="numeric" value="${w.total ?? ''}"></div>`).join('')}</div>` : ''}
+      <label>Note (optional)</label><input name="note" value="${esc(d.note || '')}" placeholder="e.g. as per the approved plan, incl. stack parking">`,
+    async (x) => { const byWing = Object.fromEntries(Object.entries(x).filter(([k]) => k.startsWith('w_')).map(([k, v]) => [k.slice(2), v])); await api('/api/units', { action: 'parking.set', projectId: proj, total: x.total, byWing, note: x.note }); toast('Saved.'); parkingPage(); });
+  }
+
+  // Buyers' banks for the "Bank" field on receipts (4 Nov meeting: one list, so names are spelt the same way)
+  const INDIAN_BANKS = ["State Bank of India", "HDFC Bank", "ICICI Bank", "Axis Bank", "Kotak Mahindra Bank", "Bank of Baroda", "Punjab National Bank", "Canara Bank", "Union Bank of India", "Bank of India", "Indian Bank", "Central Bank of India", "Bank of Maharashtra", "Indian Overseas Bank", "UCO Bank", "Punjab & Sind Bank", "IDBI Bank", "Yes Bank", "IndusInd Bank", "IDFC First Bank", "Federal Bank", "RBL Bank", "South Indian Bank", "Karnataka Bank", "Karur Vysya Bank", "City Union Bank", "DCB Bank", "Bandhan Bank", "CSB Bank", "Tamilnad Mercantile Bank", "Dhanlaxmi Bank", "Jammu & Kashmir Bank", "Nainital Bank", "AU Small Finance Bank", "Equitas Small Finance Bank", "Ujjivan Small Finance Bank", "Jana Small Finance Bank", "Suryoday Small Finance Bank", "Saraswat Co-operative Bank", "Cosmos Co-operative Bank", "Shamrao Vithal Co-operative Bank (SVC)", "TJSB Sahakari Bank", "Abhyudaya Co-operative Bank", "Bharat Co-operative Bank", "NKGSB Co-operative Bank", "Janata Sahakari Bank", "Kalupur Commercial Co-operative Bank", "The Mumbai District Central Co-operative Bank", "Standard Chartered Bank", "HSBC", "Citibank", "DBS Bank", "Deutsche Bank", "Barclays Bank", "Bank of America", "Emirates NBD", "Mashreq Bank", "Doha Bank", "State Bank of Mauritius", "HDFC Ltd (home loan)", "LIC Housing Finance", "Bajaj Housing Finance", "PNB Housing Finance", "Tata Capital Housing Finance", "Aditya Birla Housing Finance", "ICICI Home Finance", "Axis Bank (home loan)", "SBI (home loan)", "Kotak (home loan)", "L&T Finance", "Piramal Capital & Housing Finance", "Aavas Financiers", "Aadhar Housing Finance", "India Post Payments Bank", "Paytm Payments Bank", "Airtel Payments Bank"];
 
   async function prePage(id) {
     const d = await api(`/api/demands?pre=${id}`);

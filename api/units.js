@@ -22,10 +22,28 @@ async function inventory(projectId) {
   return { buildings, units };
 }
 
+async function parkingSettings(projectId) {
+  const r = await db.one('select value from settings where key = $1', ['parking:' + projectId]);
+  return { total: 0, byWing: {}, note: '', ...(r ? r.value : {}) };
+}
+async function parking(projectId) {
+  const set = await parkingSettings(projectId);
+  const rows = await db.q(`select b.id as booking_id, u.unit_no, bl.code as wing, bl.name as building, b.parking, b.status,
+      (select string_agg(y.name, ' & ' order by a.seq) from booking_applicants a join buyers y on y.id = a.buyer_id where a.booking_id = b.id) as buyers
+    from bookings b join units u on u.id = b.unit_id join buildings bl on bl.id = u.building_id
+    where u.project_id = $1 and b.status in ('active', 'pending') and not b.sample and b.parking > 0 order by u.unit_no`, [projectId]);
+  const wings = [...new Set([...(await db.q("select code from buildings where project_id = $1 and kind <> 'rehab' order by code", [projectId])).map((x) => x.code), ...Object.keys(set.byWing || {})])];
+  const allotted = rows.reduce((a, r) => a + Number(r.parking), 0);
+  const byWing = wings.map((w) => { const a = rows.filter((r) => r.wing === w).reduce((s, r) => s + Number(r.parking), 0); const t = set.byWing && set.byWing[w] != null ? Number(set.byWing[w]) : null; return { wing: w, total: t, allotted: a, balance: t == null ? null : t - a }; });
+  return { total: Number(set.total) || 0, allotted, balance: (Number(set.total) || 0) - allotted, byWing, rows, note: set.note || '', updatedBy: set.updatedBy || null, updatedAt: set.updatedAt || null };
+}
+
 module.exports = route({
   GET: async (req, res) => {
     const u = await auth.guard(req, res, 'inventory.view'); if (!u) return;
     const projectId = needProject(u, intOr(req.query.project));
+    // Parking inventory (4 Nov meeting): total spaces (set by CRM), allotted = spaces on live bookings, balance free
+    if (req.query.parking) return res.json(await parking(projectId));
     // Saleable flats and area sold for everyone who sees the inventory; the sale value and average rate only for
     // those who see the ledgers.
     const sum = await require('../lib/sales-summary').build(projectId);
@@ -34,6 +52,15 @@ module.exports = route({
   },
   POST: async (req, res, b) => {
     const u = await auth.guard(req, res, 'inventory.edit'); if (!u) return;
+    if (b.action === 'parking.set') {
+      const projectId = needProject(u, intOr(b.projectId));
+      const num = (v) => { const x = intOr(v, null); if (x == null || x < 0 || x > 100000) throw fail(400, 'Enter the number of parking spaces.'); return x; };
+      const before = await parkingSettings(projectId);
+      const v = { total: num(b.total), byWing: Object.fromEntries(Object.entries(b.byWing || {}).filter(([, x]) => x !== '' && x != null).map(([k, x]) => [String(k).slice(0, 10), num(x)])), note: String(b.note || '').slice(0, 300), updatedBy: u.name, updatedAt: new Date().toISOString() };
+      await db.q("insert into settings (key, value) values ($1, $2) on conflict (key) do update set value = excluded.value", ['parking:' + projectId, v]);
+      await audit.record(db.q, { user: u, action: 'update', entity: 'parking', entityId: String(projectId), projectId, before, after: v });
+      return res.json({ ok: true, ...(await parking(projectId)) });
+    }
     if (b.action === 'generate') {
       const bld = await db.one('select id, project_id, code from buildings where id = $1', [intOr(b.buildingId)]);
       if (!bld) throw fail(404, 'Building not found.');

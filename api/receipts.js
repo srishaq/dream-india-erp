@@ -15,51 +15,7 @@ const { route, fail, str, intOr } = require('../lib/http');
 const HEADS = ['av', 'gst', 'tds', 'stamp_duty', 'registration', 'other'];
 const MODES = ['bank', 'cheque', 'loan', 'tds', 'other'];
 
-// ---------- the payment receipt given to the buyer ----------
-const HEAD_LABEL = { av: 'Agreement value (flat cost)', gst: 'GST', tds: 'TDS (Section 194-IA)', stamp_duty: 'Stamp duty', registration: 'Registration charges', other: 'Other' };
-const fyOf = (iso) => { const [y, m] = iso.split('-').map(Number); const s = m >= 4 ? y : y - 1; return `${s}-${String((s + 1) % 100).padStart(2, '0')}`; };
-// The receipt number is given once, in order of issue, when the receipt is approved: DS/2026-27/0001 (project initials /
-// financial year of the payment / running number). A receipt waiting for approval prints as Provisional, subject to realisation.
-async function issueNo(r) {
-  if (r.receipt_no) return r.receipt_no;
-  return db.tx(async (t) => {
-    await t.q('select pg_advisory_xact_lock(7316020)');
-    const cur = await t.one('select receipt_no from receipts where id = $1', [r.id]); if (cur.receipt_no) return cur.receipt_no;
-    const p = await t.one('select code, name from projects where id = $1', [r.project_id]);
-    // the financial year of the payment, not of the day the receipt is printed
-    const pre = (p.code === 'SIGNATURE' ? 'DS' : String(p.code || p.name).replace(/[^A-Za-z]/g, '').slice(0, 3).toUpperCase()) + '/' + fyOf(String(r.received_on instanceof Date ? r.received_on.toISOString() : r.received_on || today()).slice(0, 10)) + '/';
-    const last = await t.one("select max(substring(receipt_no from '[0-9]+$')::int) as n from receipts where receipt_no like $1", [pre + '%']);
-    const no = pre + String((last.n || 0) + 1).padStart(4, '0');
-    await t.q('update receipts set receipt_no = $2, receipt_issued_at = now() where id = $1', [r.id, no]);
-    return no;
-  });
-}
-async function receiptFigures(u, id) {
-  const r = await db.one('select * from receipts where id = $1', [id]);
-  if (!r) throw fail(404, 'Receipt not found.');
-  needProject(u, r.project_id);
-  if (!['pending', 'approved'].includes(r.status)) throw fail(409, `This receipt is ${r.status}, so no receipt can be given for it.`);
-  if (r.opening) throw fail(409, 'This is an opening balance from the import, not a payment received in the ERP.');
-  const bk = await db.one(`select b.id, u.unit_no, p.name as project from bookings b join units u on u.id = b.unit_id join projects p on p.id = u.project_id where b.id = $1`, [r.booking_id]);
-  const ap = await db.q('select y.name, y.address, y.email from booking_applicants a join buyers y on y.id = a.buyer_id where a.booking_id = $1 order by a.seq', [r.booking_id]);
-  const splits = await db.q('select head, amount from receipt_splits where receipt_id = $1 and amount > 0', [id]);
-  const set = (await db.one("select value from settings where key = 'letters'"))?.value || {};
-  // the receipt number is given only once Head Accounts has approved it; until then the receipt is provisional
-  const no = r.status === 'approved' ? await issueNo(r) : 'Provisional';
-  const iso = (d) => (d instanceof Date ? d.toISOString() : String(d)).slice(0, 10);
-  const { words } = require('../lib/docs');
-  const order = ['av', 'gst', 'tds', 'stamp_duty', 'registration', 'other'];
-  return {
-    r: { ...r, receipt_no: no }, bk, emails: ap.flatMap((a) => String(a.email || '').split(/[\/,;\s]+/).filter((e) => /@/.test(e))),
-    doc: {
-      receiptNo: no, date: iso(r.received_on), unit: bk.unit_no, projectName: bk.project, reference: set.reference || null,
-      name: ap.map((a) => a.name).join(' & '), addressLines: String(ap[0]?.address || '').split(/\n|,\s*(?=\S)/).map((x) => x.trim()).filter(Boolean).slice(0, 4),
-      amount: Number(r.amount), words: words(r.amount), mode: r.mode, instrument: r.instrument_no, drawnOn: r.bank,
-      splits: splits.sort((a, b) => order.indexOf(a.head) - order.indexOf(b.head)).map((x) => [HEAD_LABEL[x.head] || x.head, Number(x.amount)]),
-      cleared: r.status === 'approved' || r.bank_status === 'cleared', signedFor: set.signedFor, signatory: set.signatory, signatoryTitle: set.signatoryTitle,
-    },
-  };
-}
+const { issueNo, receiptFigures, sendReceipt } = require('../lib/receipt-mail');
 
 async function list(projectId, status) {
   return db.q(
@@ -119,7 +75,21 @@ module.exports = route({
       if (sum !== amount) throw fail(400, `The parts add up to ₹${rupees(sum)}, but the receipt is ₹${rupees(amount)}. They must match.`);
       const mode = MODES.includes(b.mode) ? b.mode : 'bank';
       const instrument = str(b.instrumentNo, 60) || null;
-      // the same UTR / cheque number already entered anywhere in the project (another flat too): ask before saving it again
+      // Rules agreed in the 4 Nov meeting:
+      //  - one cheque pays one flat: a cheque number already entered on another flat is refused (separate cheques per flat);
+      //  - the same cheque / UTR with the same date and amount on the same flat is a double entry and is refused.
+      if (instrument) {
+        const norm = "upper(regexp_replace(r.instrument_no, '\\s', '', 'g')) = upper(regexp_replace($2, '\\s', '', 'g'))";
+        const twin = await db.one(`select r.id, u.unit_no from receipts r join bookings bb on bb.id = r.booking_id join units u on u.id = bb.unit_id
+            where r.booking_id = $1 and ${norm} and r.received_on = $3 and r.amount = $4 and r.status not in ('rejected', 'reversed') limit 1`, [bk.id, instrument, on, rupees(amount)]);
+        if (twin) throw Object.assign(fail(409, `This receipt is already entered: ${twin.unit_no}, ${mode === 'cheque' ? 'cheque' : 'UTR'} ${instrument}, same date and amount. It cannot be entered twice.`), { duplicate: twin.id, blocked: true });
+        if (mode === 'cheque') {
+          const other = await db.one(`select r.id, u.unit_no from receipts r join bookings bb on bb.id = r.booking_id join units u on u.id = bb.unit_id
+              where r.project_id = $1 and r.booking_id <> $3 and r.mode = 'cheque' and ${norm} and r.status not in ('rejected', 'reversed', 'bounced') limit 1`, [bk.project_id, instrument, bk.id]);
+          if (other) throw Object.assign(fail(409, `Cheque ${instrument} is already entered on ${other.unit_no}. One cheque can pay only one flat: ask the buyer for a separate cheque for each flat.`), { duplicate: other.id, blocked: true });
+        }
+      }
+      // the same UTR / cheque number already entered elsewhere (another flat's transfer, or the same flat on another date): ask before saving it again
       if (instrument && !b.allowDuplicate) {
         const dup = await db.one(`select r.id, r.amount, r.received_on, u.unit_no from receipts r join bookings bb on bb.id = r.booking_id join units u on u.id = bb.unit_id
             where r.project_id = $1 and upper(regexp_replace(r.instrument_no, '\\s', '', 'g')) = upper(regexp_replace($2, '\\s', '', 'g')) and r.status not in ('rejected') limit 1`, [bk.project_id, instrument]);
@@ -136,29 +106,15 @@ module.exports = route({
       });
       // a cheque: Accounts is told straight away, in Dream Chat (with the chime) and on the top bar count
       if (mode === 'cheque') await require('../lib/team').system('accounts', `Cheque to deposit: ${bk.unit_no}, ₹${Math.round(rupees(amount)).toLocaleString('en-IN')}${instrument ? ', cheque ' + instrument : ''}${b.bank ? ' (' + str(b.bank, 80) + ')' : ''}, received ${on}, entered by ${u.name}. Mark it Received when you have it, and Deposited when it goes to the bank.`, { bookingId: bk.id, receiptId: id, needsAction: true });
-      return res.json({ ok: true, id });
+      // the buyer gets the provisional receipt ("subject to clearance") straight away
+      const mail = await require('../lib/receipt-mail').autoSend(id, 'provisional', u);
+      return res.json({ ok: true, id, mail });
     }
 
     // Email the payment receipt (PDF attached) to the buyer; until the ERP is live, to the test address only.
     if (b.action === 'receipt-email') {
       if (!(has(u, 'receipt.enter') || has(u, 'receipt.approve') || has(u, 'demand.raise'))) throw fail(403, 'Your role does not allow this.');
-      const mailer = require('../lib/mailer');
-      if (!mailer.configured()) throw fail(409, 'Email is not set up yet, so the receipt could not be sent.');
-      const f = await receiptFigures(u, intOr(b.id));
-      const live = process.env.ERP_LIVE === '1';
-      const set = (await db.one("select value from settings where key = 'letters'"))?.value || {};
-      const to = live ? [...new Set(f.emails)] : String(set.testEmail || '').split(/[,;\s]+/).filter((e) => /@/.test(e)).slice(0, 1);
-      if (!to.length) throw fail(409, live ? `${f.doc.unit}: no email address on this booking.` : 'Test version: set a test email address in Letter settings first.');
-      const bm = require('../lib/buyer-mail'), x = await bm.context(f.bk.id), sig = await bm.signature(u);
-      const subject = `Payment receipt ${f.doc.receiptNo}: ${f.doc.projectName} ${f.doc.unit}`;
-      const text = bm.compose({ people: x.people, sig, body: `Thank you for your payment of Rs. ${Math.round(f.doc.amount).toLocaleString('en-IN')} towards unit ${f.doc.unit}. Please find your payment receipt ${f.doc.receiptNo} attached.${f.doc.mode === 'cheque' && !f.doc.cleared ? '\n\nThe receipt is subject to realisation of the cheque.' : ''}` });
-      const pdf = require('../lib/demand-letter').buildReceipt(f.doc);
-      const cn = await mailer.connect(); let sent;
-      try { sent = await cn.send({ to, subject: (live ? '' : '[TEST] ') + subject, text, attachments: [{ filename: `Receipt_${f.doc.receiptNo.replace(/[^A-Za-z0-9-]+/g, '_')}.pdf`, type: 'application/pdf', content: pdf }] }); } finally { await cn.close().catch(() => {}); }
-      await db.q('update receipts set receipt_sent_at = now() where id = $1', [f.r.id]);
-      await require('../lib/comms').logSent({ bookingId: f.bk.id, to, subject, body: text, sent, kind: 'receipt', userId: u.id, test: !live });
-      await audit.record(db.q, { user: u, action: 'receipt-email', entity: 'receipt', entityId: f.r.id, projectId: f.r.project_id, after: { receiptNo: f.doc.receiptNo, to: live ? to : ['test'] } });
-      return res.json({ ok: true, to, receiptNo: f.doc.receiptNo, test: !live });
+      return res.json({ ok: true, ...(await sendReceipt(intOr(b.id), { user: u })) });
     }
     if (b.action === 'bankcheck') {
       if (!(has(u, 'receipt.approve') || has(u, 'accounts.enter'))) throw fail(403, 'Your role does not allow this.');
@@ -221,7 +177,9 @@ module.exports = route({
             from bookings b join units u on u.id = b.unit_id where b.id = $1`, [r.booking_id]).catch(() => null);
         if (k) whatsapp = await L.waNotice({ bookingId: r.booking_id, kind: 'received', userId: u.id, params: [k.names, L.rs(r.amount), k.unit_no, L.dmy(r.received_on)] }).catch((e) => ({ error: e.message }));
       }
-      return res.json({ ok: true, whatsapp });
+      // the final receipt, with its number, by email
+      const mail = status === 'approved' && !r.opening ? await require('../lib/receipt-mail').autoSend(r.id, 'final', u) : null;
+      return res.json({ ok: true, whatsapp, mail });
     }
     if (b.action === 'bounce' || b.action === 'reverse') {
       if (r.status !== 'approved') throw fail(409, 'Only an approved receipt can be marked bounced or reversed.');
