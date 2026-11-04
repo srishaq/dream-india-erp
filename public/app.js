@@ -3236,9 +3236,49 @@
     if ($('#reopenM')) $('#reopenM').onclick = async () => { const m = prompt('Reopen the books back to the end of which month? (YYYY-MM, before the one closed now)'); if (!m) return; const why = prompt('Why are the books being reopened?'); if (!why) return; try { await api('/api/accounts', { action: 'close-month', month: m.trim(), reopen: true, reason: why }); toast('Books reopened.'); accChecks(); } catch (e) { alert(e.message); } };
   }
 
+  // Payments by Head: the accounts sheet's pivot. Heads down the side, months across, the total for the months chosen
+  // and the project till date. Tap an amount to see those payments in the register.
+  async function accByHead(out) {
+    const st = JSON.parse(store.get('erp_byhead') || '{}');
+    const L = await api('/api/accounts?view=lists');
+    const qs = new URLSearchParams({ view: 'report', name: 'byHead', from: st.from || '', to: st.to || '', bank: st.bank || '' });
+    const d = await api('/api/accounts?' + qs);
+    const ml = (m) => { const [y, mo] = m.split('-'); return `${['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'][+mo - 1]}-${y.slice(2)}`; };
+    const t = todayIso(), fy = +t.slice(5, 7) >= 4 ? +t.slice(0, 4) : +t.slice(0, 4) - 1;
+    const amt = (v) => (v ? Math.round(v).toLocaleString('en-IN') : '0');
+    const grid = (title, B, reg, col) => `<div class="panel"><h2>${esc(title)}</h2><div class="table-wrap acc-grid byhead"><table>
+      <tr><th>Cash Flow Head</th>${d.months.map((m) => `<th class="num">${ml(m)}</th>`).join('')}<th class="num">Total ${ml(d.from)} to ${ml(d.to)}</th><th class="num">Project till date</th></tr>
+      ${[...B.rows, B.total].map((x) => { const tot = x.head === 'Total'; return `<tr class="${tot ? 'tot' : ''}"><td>${tot ? '<b>Total</b>' : esc(x.head)}</td>${d.months.map((m) => `<td class="num">${!tot && x.months[m] ? `<a href="#" class="bh" data-reg="${reg}" data-col="${col}" data-h="${esc(x.head)}" data-m="${m}">${amt(x.months[m])}</a>` : amt(x.months[m])}</td>`).join('')}<td class="num"><b>${amt(x.total)}</b></td><td class="num"><b>${amt(x.tillDate)}</b></td></tr>`; }).join('')}
+      </table></div></div>`;
+    out.innerHTML = `<div class="panel"><div class="row" style="grid-template-columns:repeat(auto-fill,minmax(170px,1fr));align-items:end;gap:10px">
+        <div><label>From month</label><input type="month" id="bhf" value="${esc(d.from)}"></div><div><label>To month</label><input type="month" id="bht" value="${esc(d.to)}"></div>
+        <div><label>Bank account</label><select id="bhb"><option value="">All banks</option>${(L.lists.bank || []).map((b) => `<option ${b === d.bank ? 'selected' : ''}>${esc(b)}</option>`).join('')}</select></div>
+        <div><button class="ghost" id="bhgo">Show</button></div></div>
+      <div class="tabs" style="margin:10px 0 0"><button class="tab" data-p="fy">This year (Apr ${fy}–Mar ${fy + 1})</button><button class="tab" data-p="lfy">Last year</button><button class="tab" data-p="m">This month</button><button class="tab" data-p="all">All months</button></div>
+      <div style="display:flex;gap:10px;align-items:center;margin-top:10px"><p class="small muted" style="margin:0;flex:1">Live from Receipts and Payments Out. Bounced cheques are left out of the receipts. "Project till date" is everything since the first entry${d.bank ? ' in this bank' : ''}, whatever months are shown. Tap an amount to see those entries.</p>
+        <button class="ghost small" id="bhp">Print</button><a class="btn ghost small" href="/api/accounts?${new URLSearchParams({ ...Object.fromEntries(qs), export: 'xlsx' })}">Export to Excel</a></div></div>
+      <div id="bhgrids">${grid('PAYMENTS (money out)', d.payments, 'payments', 'head')}${grid('RECEIPTS (money in, excluding bounced cheques)', d.receipts, 'receipts', 'head')}${grid('CUSTOMER RECEIPTS BY PAYMENT HEAD (AV / GST / SDR)', d.customer, 'receipts', 'payment_head')}</div>`;
+    const save = (o) => { store.set('erp_byhead', JSON.stringify({ ...st, ...o })); accByHead(out); };
+    $('#bhgo').onclick = () => save({ from: $('#bhf').value, to: $('#bht').value, bank: $('#bhb').value });
+    $('#bhb').onchange = () => $('#bhgo').click();
+    const mm = t.slice(0, 7);
+    document.querySelectorAll('.tab[data-p]').forEach((b) => (b.onclick = () => save(b.dataset.p === 'fy' ? { from: `${fy}-04`, to: `${fy + 1}-03` } : b.dataset.p === 'lfy' ? { from: `${fy - 1}-04`, to: `${fy}-03` } : b.dataset.p === 'm' ? { from: mm, to: mm } : { from: '', to: '' })));
+    document.querySelectorAll('a.bh').forEach((a) => (a.onclick = (e) => {
+      e.preventDefault(); const [y, mo] = a.dataset.m.split('-').map(Number), last = new Date(Date.UTC(y, mo, 0)).getUTCDate();
+      const k = 'erp_acc_' + a.dataset.reg, cur = JSON.parse(store.get(k) || '{}');
+      store.set(k, JSON.stringify({ ...cur, q: '', filter: '', from: `${a.dataset.m}-01`, to: `${a.dataset.m}-${String(last).padStart(2, '0')}`, m: { ...(d.bank ? { bank: d.bank } : {}), [a.dataset.col]: a.dataset.h === '(no head)' ? '(blank)' : a.dataset.h }, by: '' }));
+      location.hash = '#/reg-' + a.dataset.reg;
+    }));
+    $('#bhp').onclick = () => {
+      const w = window.open('', '_blank'); if (!w) return alert('Allow pop-ups for the ERP to print.');
+      const css = 'body{font:10px Arial,sans-serif;margin:16px;color:#111}h1{font-size:15px;margin:0 0 4px}h2{font-size:12px;margin:14px 0 4px}p{margin:0 0 8px;color:#444}table{border-collapse:collapse;width:100%}th,td{border:1px solid #ccc;padding:2px 4px;text-align:right;white-space:nowrap}th:first-child,td:first-child{text-align:left;white-space:normal}th{background:#f2f4f7}tr.tot td{font-weight:700;background:#f7f7f7}a{color:inherit;text-decoration:none}@page{size:A3 landscape;margin:10mm}';
+      w.document.write(`<!doctype html><html><head><meta charset="utf-8"><title>Payments by Head ${esc(d.from)} to ${esc(d.to)}</title><style>${css}</style></head><body><h1>Receipts and payments by cash flow head, by month${d.bank ? ' · ' + esc(d.bank) : ''}</h1><p>${ml(d.from)} to ${ml(d.to)} · printed ${fmtD(t)}. Bounced cheques are left out of the receipts.</p>${$('#bhgrids').innerHTML.replace(/<div class="panel">/g, '<div>')}</body></html>`);
+      w.document.close(); setTimeout(() => w.print(), 300);
+    };
+  }
   async function accReports() {
-    const tab0 = store.get('erp_accrep'), tab = ['byHead', 'units', 'tds', 'bounced'].includes(tab0) || !tab0 ? 'gst' : tab0;
-    const T = [['gst', 'GST report'], ['sdr', 'SDR report'], ['payees', 'Payees'], ['partners', 'Channel partner accounts'], ['vendorBills', 'Vendor bills'], ['register', 'Salary & expense register'], ['tally', 'Tally export']];
+    const tab0 = store.get('erp_accrep'), tab = ['units', 'tds', 'bounced'].includes(tab0) || !tab0 ? 'byHead' : tab0;
+    const T = [['byHead', 'Payments by head'], ['gst', 'GST report'], ['sdr', 'SDR report'], ['payees', 'Payees'], ['partners', 'Channel partner accounts'], ['vendorBills', 'Vendor bills'], ['register', 'Salary & expense register'], ['tally', 'Tally export']];
     $('#page').innerHTML = `<div class="page-head"><div><h1>Accounts reports</h1><p class="muted">The report tabs of the accounts sheet, worked out live from the registers.</p></div></div>
       <div class="tabs">${T.map(([k, l]) => `<button class="tab ${k === tab ? 'on' : ''}" data-t="${k}">${l}</button>`).join('')}</div><div id="rep"><div class="panel muted">Loading…</div></div>`;
     document.querySelectorAll('.tab[data-t]').forEach((b) => (b.onclick = () => { store.set('erp_accrep', b.dataset.t); accReports(); }));
@@ -3246,6 +3286,7 @@
     const table = (cols, rows, opts = {}) => `<div class="panel">${opts.head || ''}<div class="table-wrap acc-grid"><table><tr>${cols.map(([l, , t]) => `<th class="${t ? 'num' : ''}">${esc(l)}</th>`).join('')}</tr>
       ${rows.slice(0, opts.limit || 1500).map((r) => `<tr>${cols.map(([, f, t]) => { const v = f(r); return `<td class="${t ? 'num' : ''}">${t === 'm' ? (v ? inr(v) : '—') : t === 'n' ? (v ?? '') : esc(v ?? '')}</td>`; }).join('')}</tr>`).join('')}</table></div>${rows.length > (opts.limit || 1500) ? `<p class="small muted">Showing ${opts.limit || 1500} of ${rows.length}.</p>` : ''}</div>`;
     const P = proj || '';
+    if (tab === 'byHead') return accByHead(out);
     if (tab === 'tally') {
       const m0 = todayIso().slice(0, 8) + '01';
       out.innerHTML = `<div class="panel"><h2>Export to Tally</h2><p class="muted">Receipts and Payments Out for a period, as Tally vouchers. Bounced cheques are left out. Each receipt debits the bank ledger and credits its cash flow head; each payment the reverse. The bank and head names must exist as ledgers in Tally (create them once, with the same names), or Tally will report them as missing.</p>

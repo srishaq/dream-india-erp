@@ -148,6 +148,11 @@ let n = 0; const step = async (name, fn) => { await fn(); n++; console.log('  âœ
     const g = fy.groups.rows.find((x) => x.name === 'RMC'); assert.equal(g.n, 1); assert.equal(g.tdN, rmc.n); assert.equal(Math.round(fy.groups.tillDate.amount), Math.round(all.amount));
     const x = await admin('/api/accounts?reg=payments&by=head&from=2026-10-28&to=2026-10-28&export=xlsx', null, true);
     assert.equal(x.status, 200); assert.ok(x.text.startsWith('PK')); // an Excel file
+    // Payments by Head (the sheet's pivot): heads by month, total for the months and the project till date
+    const bh = await admin('/api/accounts?view=report&name=byHead&from=2026-10&to=2026-10');
+    const pr0 = bh.payments.rows.find((x) => x.head === 'RMC'); assert.ok(pr0 && pr0.months['2026-10'] > 0 && pr0.tillDate >= pr0.total, JSON.stringify(bh.payments));
+    assert.equal(Math.round(bh.payments.total.tillDate), Math.round((await admin('/api/accounts?reg=payments')).amount));
+    const bx = await admin('/api/accounts?view=report&name=byHead&export=xlsx', null, true); assert.equal(bx.status, 200); assert.ok(bx.text.startsWith('PK'));
     const pr = await admin('/api/accounts?reg=payments&m_head=RMC&by=payee&export=rows');
     assert.equal(pr.rows.length, rmc.n); assert.match(pr.head.filters, /Cash Flow Head: RMC/); assert.equal(pr.groups.by, 'payee');
   });

@@ -609,3 +609,7 @@ h2.ff-sec { font-size: 13px; letter-spacing: .1em; text-transform: uppercase; co
   .table-wrap { max-height: calc(100vh - 150px); overflow: auto; }
   .table-wrap thead th { position: sticky; top: 0; background: var(--panel); z-index: 1; box-shadow: 0 1px 0 var(--line); }
 }
+/* Payments by head: the head column stays in view while the months scroll */
+.byhead th:first-child, .byhead td:first-child { position: sticky; left: 0; background: var(--panel, #fff); z-index: 2; min-width: 200px; white-space: normal; }
+.byhead tr.tot td { font-weight: 700; }
+.byhead a.bh { color: inherit; text-decoration: none; border-bottom: 1px dotted currentColor; }

@@ -108,7 +108,21 @@ module.exports = route({
       case 'balances': { const dd = DATE.test(q.date || '') ? q.date : today(); const cf = await db.one("select done_at, info from job_marks where key = $1", ['daily-confirm:' + dd]); return res.json({ ...(await acc.balances(dd)), confirmed: cf ? { at: cf.done_at, ...cf.info } : null, closed: await closedTo(), can }); }
       case 'lists': return res.json({ lists: await acc.lists(), heads: await db.q("select * from acc_heads where book = 'signature' order by side, name"), banks: await db.q("select * from acc_banks where book = 'signature' order by name"), dailyBanks: await db.q("select * from acc_daily_banks where book = 'signature' order by seq, id"), can });
       case 'checks': return res.json({ rows: await acc.checks(q.project ? needProject(u, intOr(q.project)) : null), closed: await closedTo(), can });
-      case 'report': return res.json(await acc.report(str(q.name, 20), { projectId: q.project ? needProject(u, intOr(q.project)) : null, fy: intOr(q.fy), head: str(q.head, 80) }));
+      case 'report': {
+        const R = await acc.report(str(q.name, 20), { projectId: q.project ? needProject(u, intOr(q.project)) : null, fy: intOr(q.fy), head: str(q.head, 80), from: str(q.from, 7), to: str(q.to, 7), bank: str(q.bank, 120) });
+        if (q.name === 'byHead' && q.export === 'xlsx') { // the same grid as on screen, one sheet
+          const ml = (m) => { const [y, mo] = m.split('-'); return `${['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'][+mo - 1]}-${y.slice(2)}`; };
+          const r0 = (v) => Math.round(v || 0);
+          const head = ['Cash Flow Head', ...R.months.map(ml), `Total ${ml(R.from)} to ${ml(R.to)}`, 'Project till date'];
+          const sec = (title, B) => [[title], head, ...[...B.rows, B.total].map((x) => [x.head, ...R.months.map((m) => r0(x.months[m])), r0(x.total), r0(x.tillDate)]), []];
+          const rows = [[`Receipts and payments by cash flow head, by month${R.bank ? ' · ' + R.bank : ''}`], ['Bounced cheques are left out of the receipts figures.'], [],
+            ...sec('RECEIPTS (money in, excluding bounced cheques)', R.receipts), ...sec('CUSTOMER RECEIPTS BY PAYMENT HEAD (AV / GST / SDR)', R.customer), ...sec('PAYMENTS (money out)', R.payments)];
+          res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+          res.setHeader('Content-Disposition', `attachment; filename="Payments by Head ${R.from} to ${R.to}.xlsx"`);
+          return res.end(require('../lib/xlsx-write').write([{ name: 'Payments by Head', rows, widths: [34, ...R.months.map(() => 12), 16, 16] }]));
+        }
+        return res.json(R);
+      }
       case 'tally': {
         const from = DATE.test(q.from || '') ? q.from : today().slice(0, 8) + '01', to = DATE.test(q.to || '') ? q.to : today();
         const csv = q.format === 'csv';
