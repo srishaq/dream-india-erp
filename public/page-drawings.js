@@ -88,7 +88,10 @@ function row(f) {
     <div class="c-tr">${f.trade ? `<span class="tag tr">${esc(f.trade)}</span>` : ''}</div>
     <div class="c-dt muted" title="Uploaded ${esc(fmtDate(f.uploaded))}${f.by ? ' by ' + esc(f.by) : ''}">${esc(fmtDate(f.uploaded))}</div>
     <div class="c-sz muted">${esc(fmtSize(f.size))}</div>
-    <a class="btn small go open" href="${esc(f.url)}" target="_blank" rel="noopener">${f.kind === 'pdf' ? 'Open PDF' : 'Open'}</a></div>`;
+    ${f.kind === 'cad' || f.kind === 'zip'
+    // a browser cannot show a DWG: download it to open in AutoCAD / DWG TrueView (Drive's own page shows "no preview")
+    ? `<a class="btn small go open" href="https://drive.google.com/uc?export=download&id=${encodeURIComponent(f.id)}" target="_blank" rel="noopener" title="Downloads the file to open in AutoCAD or a free DWG viewer">Download ${f.kind === 'cad' ? 'DWG' : 'ZIP'}</a>`
+    : `<a class="btn small go open" href="${esc(f.url)}" target="_blank" rel="noopener">${f.kind === 'pdf' ? 'Open PDF' : 'Open'}</a>`}</div>`;
 }
 function renderList() {
   const list = base().filter((f) => matches(f));
