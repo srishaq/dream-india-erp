@@ -55,7 +55,12 @@ module.exports = route({
     const can = { enter: has(u, 'accounts.enter'), manage: has(u, 'accounts.manage') };
     if (q.reg) {
       const reg = REGISTERS[q.reg]; if (!reg) throw fail(400, 'Unknown register.');
-      const opts = { q: str(q.q, 80), from: DATE.test(q.from || '') ? q.from : null, to: DATE.test(q.to || '') ? q.to : null, filter: str(q.filter, 20) };
+      // column filters come as m_<column>=value|value (e.g. m_head=Salary|Rent); by=<column>|month adds totals by it
+      const match = {}; for (const c of acc.filterCols(reg)) { const v = q['m_' + c.key]; if (v) match[c.key] = String(v).split('|').map((x) => x.trim()).filter(Boolean).slice(0, 50); }
+      const opts = { q: str(q.q, 80), from: DATE.test(q.from || '') ? q.from : null, to: DATE.test(q.to || '') ? q.to : null, filter: str(q.filter, 20), match };
+      const by = str(q.by, 30) || null;
+      const G = by ? await acc.groups(q.reg, opts, by) : null;
+      const fLabel = Object.entries(match).map(([k, v]) => `${reg.cols.find((c) => c.key === k).label}: ${v.join(', ')}`).join(' · ');
       // Excel or print: every row the search finds (not only the first page), the columns on screen, a total row,
       // and a total for each payee / payer so "everything paid to X" is one figure.
       if (q.export === 'xlsx' || q.export === 'rows') {
@@ -68,20 +73,21 @@ module.exports = route({
         const amt = reg.cols.some((c) => c.key === 'amount') ? 'amount' : null;
         const byWho = who && amt ? Object.entries(all.reduce((m, r) => { const k = (r[who] || '(no name)').trim(); m[k] = m[k] || { n: 0, amt: 0 }; m[k].n++; m[k].amt += Number(r[amt]) || 0; return m; }, {})).sort((a, b) => b[1].amt - a[1].amt) : [];
         const when = [opts.from, opts.to].some(Boolean) ? `${opts.from || 'start'} to ${opts.to || 'today'}` : 'all dates';
-        const head = { title: reg.title, search: opts.q || '', when, rows: total, amount };
-        if (q.export === 'rows') return res.json({ head, cols, rows: all, byWho: byWho.map(([k, v]) => ({ name: k, n: v.n, amount: Math.round(v.amt * 100) / 100 })), whoLabel: who === 'payee' ? 'Payee' : 'Payer' });
+        const head = { title: reg.title, search: opts.q || '', filters: fLabel, when, rows: total, amount };
+        if (q.export === 'rows') return res.json({ head, cols, rows: all, groups: G, byWho: byWho.map(([k, v]) => ({ name: k, n: v.n, amount: Math.round(v.amt * 100) / 100 })), whoLabel: who === 'payee' ? 'Payee' : 'Payer' });
         const cell = (c, v) => (v == null || v === '' ? '' : ['money', 'num'].includes(c.type) ? Number(v) : c.type === 'pct' ? Number(v) : c.type === 'date' ? String(v instanceof Date ? v.toISOString() : v).slice(0, 10) : String(v));
-        const sheet = [[`${reg.title}${opts.q ? ' · search: ' + opts.q : ''} · ${when}`], [], cols.map((c) => c.label), ...all.map((r) => cols.map((c) => cell(c, r[c.key])))];
+        const sheet = [[`${reg.title}${opts.q ? ' · search: ' + opts.q : ''}${fLabel ? ' · ' + fLabel : ''} · ${when}`], [], cols.map((c) => c.label), ...all.map((r) => cols.map((c) => cell(c, r[c.key])))];
         if (amt) { const i = cols.findIndex((c) => c.key === amt); const t = cols.map(() => ''); t[0] = `Total (${total} rows)`; if (i >= 0) t[i] = Math.round((amount || 0) * 100) / 100; sheet.push([], t); }
         const sheets = [{ name: reg.title, rows: sheet, widths: cols.map((c) => (c.type === 'long' ? 40 : ['payee', 'head', 'payer_name', 'description'].includes(c.key) ? 30 : 14)) }];
-        if (byWho.length) sheets.push({ name: `Total by ${who === 'payee' ? 'payee' : 'payer'}`, rows: [[who === 'payee' ? 'Payee' : 'Payer', 'Rows', 'Total'], ...byWho.map(([k, v]) => [k, v.n, Math.round(v.amt * 100) / 100]), [], ['Total', total, Math.round((amount || 0) * 100) / 100]], widths: [40, 8, 16] });
+        if (G && G.rows.length) sheets.splice(0, 0, { name: `Total by ${G.label}`.slice(0, 31), rows: [[`${reg.title} · total by ${G.label}${fLabel ? ' · ' + fLabel : ''} · ${when}`], [], [G.label, 'Rows', 'Total', 'Share'], ...G.rows.map((g) => [g.name, g.n, g.amount != null ? Math.round(g.amount * 100) / 100 : '', amount ? Math.round((g.amount || 0) / amount * 1000) / 10 + '%' : '']), [], ['Total', total, Math.round((amount || 0) * 100) / 100, '']], widths: [40, 8, 16, 8] });
+        if (byWho.length && !(G && G.by === who)) sheets.push({ name: `Total by ${who === 'payee' ? 'payee' : 'payer'}`, rows: [[who === 'payee' ? 'Payee' : 'Payer', 'Rows', 'Total'], ...byWho.map(([k, v]) => [k, v.n, Math.round(v.amt * 100) / 100]), [], ['Total', total, Math.round((amount || 0) * 100) / 100]], widths: [40, 8, 16] });
         const name = `${reg.title}${opts.q ? ' - ' + opts.q : ''} ${new Date(Date.now() + 5.5 * 36e5).toISOString().slice(0, 10)}.xlsx`.replace(/[^A-Za-z0-9 ._-]+/g, '');
         res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
         res.setHeader('Content-Disposition', `attachment; filename="${name}"`);
         return res.end(require('../lib/xlsx-write').write(sheets));
       }
       const L = await acc.list(q.reg, { ...opts, limit: intOr(q.limit, 200), offset: intOr(q.offset, 0) });
-      return res.json({ ...L, reg: { key: q.reg, title: reg.title, help: reg.help, prefix: reg.prefix || null, idLabel: reg.idLabel || null, cols: reg.cols }, lists: await acc.lists(), can });
+      return res.json({ ...L, groups: G, filterCols: acc.filterCols(reg).map((c) => c.key), reg: { key: q.reg, title: reg.title, help: reg.help, prefix: reg.prefix || null, idLabel: reg.idLabel || null, dateKey: reg.dateKey || null, cols: reg.cols }, lists: await acc.lists(), can });
     }
     switch (q.view) {
       case 'todo': return res.json({ ...(await acc.todo()), can });

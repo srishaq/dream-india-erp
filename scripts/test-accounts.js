@@ -134,6 +134,18 @@ let n = 0; const step = async (name, fn) => { await fn(); n++; console.log('  âœ
     assert.equal((await admin('/api/accounts', { action: 'save', reg: 'payments', id: p.id, data: { tds_rate: '0.1' } })).ok, true);
     assert.equal(Number((await admin('/api/accounts?reg=payments&q=' + r.ref_id)).rows[0].tds_rate), 0.001);
   });
+  await step('Payments Out report: filter by head and payee, totals by head and by month, in print and Excel', async () => {
+    await admin('/api/accounts', { action: 'save', reg: 'payments', data: { txn_date: '2026-10-28', bank: 'Yes RERA Collection 100% (0700)', amount: '5,000', head: 'RMC', payee: 'Other RMC' } });
+    const all = await admin('/api/accounts?reg=payments&by=head');
+    const rmc = all.groups.rows.find((g) => g.name === 'RMC'); assert.ok(rmc && rmc.n >= 2, JSON.stringify(all.groups));
+    assert.equal(Math.round(all.groups.rows.reduce((a, g) => a + g.amount, 0)), Math.round(all.amount));
+    const f = await admin('/api/accounts?reg=payments&m_head=RMC&m_payee=Other%20RMC');
+    assert.equal(f.total, 1); assert.equal(f.amount, 5000);
+    const two = await admin('/api/accounts?reg=payments&m_head=RMC|Nothing&by=month');
+    assert.equal(two.total, rmc.n); assert.ok(two.groups.rows.some((g) => g.name === '2026-10'));
+    const pr = await admin('/api/accounts?reg=payments&m_head=RMC&by=payee&export=rows');
+    assert.equal(pr.rows.length, rmc.n); assert.match(pr.head.filters, /Cash Flow Head: RMC/); assert.equal(pr.groups.by, 'payee');
+  });
   await step('an approved purchase bill is paid from Payments Out and marked Paid', async () => {
     const kv = require('../lib/portal/kv');
     await kv.hset('po:orders', 'PO123456', { id: 'PO123456', material: 'RMC', line: 'A wing|5th slab', status: 'accounts_ok', order: { vendor: 'Concrete Ltd', amount: 250000, billNo: 'B-77', billDate: '2026-10-20' }, accounts: { by: 'hacc', at: '2026-10-21T10:00:00Z', payable: 250000 }, history: [] });

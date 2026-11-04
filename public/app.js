@@ -2100,11 +2100,35 @@
     payments: ['ref_id', 'txn_date', 'bank', 'amount', 'head', 'unit_no', 'payee', 'remark', 'needs', 'description'],
     cancellations: ['cancel_date', 'unit_no', 'client', 'final_av', 'received', 'deduction', 'refund_due', 'refund_rtgs', 'refund_white', 'refund_status', 'crm_now', 'books_received', 'books_refunded', 'to_refund', 'books_check', 'cp'],
   };
+  const accMonth = (ym) => { const [y, m] = String(ym).split('-'); return m ? `${['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'][+m - 1]} ${y}` : ym; };
+  // Filters on the register's dropdown columns (Cash Flow Head, Bank, Payee, Unit…) and "Totals by" for a report
+  function accFilterBox(d, state) {
+    const fcs = (d.filterCols || []).map((k) => d.reg.cols.find((c) => c.key === k)).filter(Boolean);
+    if (!fcs.length) return '';
+    const active = Object.values(state.m).some(Boolean) || state.by;
+    const ctl = (c) => {
+      const L = c.list ? d.lists[c.list] || [] : [], v = state.m[c.key] || '';
+      if (c.unit || c.free || L.length > 40) return `<div><label>${esc(c.label)}</label><input class="amf" data-k="${c.key}" value="${esc(v)}" ${c.list ? `list="fl_${c.key}"` : ''} placeholder="${c.unit ? 'A-1001' : 'Any'}">${c.list ? `<datalist id="fl_${c.key}">${L.slice(0, 3000).map((o) => `<option value="${esc(o)}">`).join('')}</datalist>` : ''}</div>`;
+      return `<div><label>${esc(c.label)}</label><select class="amf" data-k="${c.key}"><option value="">Any</option><option ${v === '(blank)' ? 'selected' : ''}>(blank)</option>${L.map((o) => `<option ${o === v ? 'selected' : ''}>${esc(o)}</option>`).join('')}${v && v !== '(blank)' && !L.includes(v) ? `<option selected>${esc(v)}</option>` : ''}</select></div>`;
+    };
+    return `<details class="acc-filters" ${active ? 'open' : ''} style="margin:12px 0 0"><summary><b>Filters and report</b>${active ? ' <span class="pill">on</span>' : ''} <span class="small muted">filter by head, bank, payee or unit, and total by any of them or by month</span></summary>
+      <div class="row" style="grid-template-columns:repeat(auto-fill,minmax(180px,1fr));gap:10px;margin-top:8px">${fcs.map(ctl).join('')}
+        <div><label>Totals by</label><select id="aby"><option value="">No totals</option>${fcs.map((c) => `<option value="${c.key}" ${state.by === c.key ? 'selected' : ''}>${esc(c.label)}</option>`).join('')}${d.reg.dateKey ? `<option value="month" ${state.by === 'month' ? 'selected' : ''}>Month</option>` : ''}</select></div></div>
+      ${active ? '<div class="actions" style="margin:6px 0 0"><button class="ghost small" id="aclear">Clear filters</button></div>' : ''}</details>`;
+  }
+  function accGroupsPanel(G, amount, total) {
+    return `<div class="panel table-wrap"><h2>Total by ${esc(G.label)} <span class="small muted">(${G.rows.length}; tap one to see its rows)</span></h2>
+      <table><tr><th>${esc(G.label)}</th><th class="num">Rows</th><th class="num">Total</th><th class="num">Share</th></tr>
+      ${G.rows.map((g) => `<tr data-g="${esc(g.name)}" style="cursor:pointer"><td>${esc(G.by === 'month' ? accMonth(g.name) : g.name)}</td><td class="num">${g.n.toLocaleString('en-IN')}</td><td class="num">${g.amount != null ? inr(g.amount) : ''}</td><td class="num">${amount ? (Math.round((g.amount || 0) / amount * 1000) / 10) + '%' : ''}</td></tr>`).join('')}
+      <tr class="tot"><td><b>Total</b></td><td class="num"><b>${total.toLocaleString('en-IN')}</b></td><td class="num"><b>${amount != null ? inr(amount) : ''}</b></td><td></td></tr></table></div>`;
+  }
   async function accRegister(key, opts = {}) {
     const st = JSON.parse(store.get('erp_acc_' + key) || '{}');
     const f0 = ACC_FILTERS[key] ? ACC_FILTERS[key][0][0] : '';
-    const state = { q: st.q || '', from: st.from || '', to: st.to || '', filter: st.filter ?? f0, limit: 200, ...opts };
-    const qs = new URLSearchParams({ reg: key, q: state.q, from: state.from, to: state.to, filter: state.filter, limit: state.limit });
+    const state = { q: st.q || '', from: st.from || '', to: st.to || '', filter: st.filter ?? f0, m: st.m || {}, by: st.by || '', limit: 200, ...opts };
+    // column filters (m_head=Salary|Rent) and "totals by" (by=head | month): the same on screen, in print and in Excel
+    const mqs = () => Object.fromEntries([...Object.entries(state.m).filter(([, v]) => v).map(([k, v]) => ['m_' + k, v]), ...(state.by ? [['by', state.by]] : [])]);
+    const qs = new URLSearchParams({ reg: key, q: state.q, from: state.from, to: state.to, filter: state.filter, limit: state.limit, ...mqs() });
     const d = await api('/api/accounts?' + qs);
     const R = d.reg, cols = R.cols, show = ACC_SHOW[key] ? ACC_SHOW[key].map((k) => (k === 'ref_id' ? { key: 'ref_id', label: R.idLabel, type: 'text' } : cols.find((c) => c.key === k))) : [...(R.prefix ? [{ key: 'ref_id', label: R.idLabel, type: 'text' }] : []), ...cols];
     $('#page').innerHTML = `<div class="page-head"><div><h1>${esc(R.title)}</h1><p class="muted">${esc(R.help)}</p></div>
@@ -2113,21 +2137,29 @@
         <div><label>Search</label><input id="aq" value="${esc(state.q)}" placeholder="Any word, name, unit or reference"></div>
         ${R.cols.some((c) => c.type === 'date') ? `<div><label>From</label><input type="date" id="af" value="${esc(state.from)}"></div><div><label>To</label><input type="date" id="at" value="${esc(state.to)}"></div>` : '<div></div><div></div>'}
         <div><button class="ghost" id="ago">Show</button></div></div>
+        ${accFilterBox(d, state)}
         ${ACC_FILTERS[key] ? `<div class="tabs" style="margin:12px 0 0">${ACC_FILTERS[key].map(([k, l]) => `<button class="tab ${k === state.filter ? 'on' : ''}" data-f="${k}">${l}</button>`).join('')}</div>` : ''}
         <div style="display:flex;flex-wrap:wrap;align-items:center;gap:10px;margin:10px 0 0"><p class="small muted" style="margin:0;flex:1">${d.rows.length < d.total ? `Showing ${d.rows.length} of ` : ''}${d.total.toLocaleString('en-IN')} rows${d.amount != null ? ` · total ${inr(d.amount)}` : ''}. Tap a row to ${d.can.enter ? 'edit' : 'see'} it.</p>
           ${d.total ? '<button class="ghost small" id="aprint">Print</button><button class="ghost small" id="axls">Export to Excel</button>' : ''}</div></div>
+      ${d.groups ? accGroupsPanel(d.groups, d.amount, d.total) : ''}
       <div class="panel"><div class="table-wrap acc-grid"><table><tr>${show.map((c) => `<th class="${['money', 'num', 'pct'].includes(c.type) ? 'num' : ''}">${esc(c.label)}</th>`).join('')}</tr>
         ${d.rows.map((r) => `<tr data-id="${r.id}" class="${r.cheque_status === 'Bounced' ? 'dim' : ''}">${show.map((c) => `<td class="${['money', 'num', 'pct'].includes(c.type) ? 'num' : c.type === 'long' || c.key === 'needs' ? 'small wrap' : ''}">${c.key === 'needs' && r.needs ? `<span class="bad-t">${esc(r.needs)}</span>` : accFmt(c, r[c.key])}</td>`).join('')}</tr>`).join('') || `<tr><td colspan="${show.length}" class="muted">Nothing here.</td></tr>`}</table></div>
         ${d.rows.length < d.total ? '<div class="actions"><button class="ghost" id="amore">Show more</button></div>' : ''}</div>`;
     if (['tenants', 'rentLinks', 'cancellations'].includes(key) && d.rows.length) $('.acc-grid table tr').insertAdjacentHTML('afterend', `<tr class="tot">${show.map((c, i) => `<td class="num"><b>${c.type === 'money' && !['monthly_rent', 'split_amount'].includes(c.key) ? inr(d.rows.reduce((a, r) => a + toNum(r[c.key]), 0)) : i === 0 ? 'Totals' : ''}</b></td>`).join('')}</tr>`);
-    const save = () => store.set('erp_acc_' + key, JSON.stringify({ q: state.q, from: state.from, to: state.to, filter: state.filter }));
+    const save = () => store.set('erp_acc_' + key, JSON.stringify({ q: state.q, from: state.from, to: state.to, filter: state.filter, m: state.m, by: state.by }));
     const reload = (o = {}) => { Object.assign(state, o); save(); accRegister(key, { limit: state.limit }); };
-    $('#ago').onclick = () => reload({ q: $('#aq').value.trim(), from: $('#af') ? $('#af').value : '', to: $('#at') ? $('#at').value : '' });
+    const readM = () => { const m = {}; document.querySelectorAll('.amf').forEach((el) => { if (el.value.trim()) m[el.dataset.k] = el.value.trim(); }); return m; };
+    $('#ago').onclick = () => reload({ q: $('#aq').value.trim(), from: $('#af') ? $('#af').value : '', to: $('#at') ? $('#at').value : '', m: readM(), by: $('#aby') ? $('#aby').value : state.by });
+    document.querySelectorAll('select.amf, #aby').forEach((el) => (el.onchange = () => $('#ago').click()));
+    document.querySelectorAll('input.amf').forEach((el) => (el.onkeydown = (e) => { if (e.key === 'Enter') $('#ago').click(); }));
+    if ($('#aclear')) $('#aclear').onclick = () => reload({ m: {}, by: '' });
+    // a row of the totals: show just those rows
+    document.querySelectorAll('tr[data-g]').forEach((tr) => (tr.onclick = () => { if (d.groups.by === 'month') { const [y, mo] = tr.dataset.g.split('-').map(Number); const last = new Date(Date.UTC(y, mo, 0)).getUTCDate(); reload({ from: `${tr.dataset.g}-01`, to: `${tr.dataset.g}-${String(last).padStart(2, '0')}` }); } else reload({ m: { ...state.m, [d.groups.by]: tr.dataset.g } }); }));
     $('#aq').onkeydown = (e) => { if (e.key === 'Enter') $('#ago').click(); };
     document.querySelectorAll('.tab[data-f]').forEach((b) => (b.onclick = () => reload({ filter: b.dataset.f })));
     if ($('#amore')) $('#amore').onclick = () => accRegister(key, { limit: state.limit + 400 });
     // Print / Excel: every row the search and dates find (not only this page), with the total and a total per payee
-    const expQs = (kind) => new URLSearchParams({ reg: key, q: state.q, from: state.from, to: state.to, filter: state.filter, export: kind, cols: show.map((c) => c.key).join(',') });
+    const expQs = (kind) => new URLSearchParams({ reg: key, q: state.q, from: state.from, to: state.to, filter: state.filter, export: kind, cols: show.map((c) => c.key).join(','), ...mqs() });
     if ($('#axls')) $('#axls').onclick = () => { location.href = '/api/accounts?' + expQs('xlsx'); };
     if ($('#aprint')) $('#aprint').onclick = async () => {
       const w = window.open('', '_blank'); if (!w) return alert('Allow pop-ups for the ERP to print.');
@@ -2137,8 +2169,10 @@
         const cs = x.cols, num = (c) => ['money', 'num', 'pct'].includes(c.type);
         const ai = cs.findIndex((c) => c.key === 'amount');
         const st = 'body{font:12px Arial,sans-serif;margin:24px;color:#111}h1{font-size:18px;margin:0 0 2px}p{margin:2px 0 12px;color:#444}table{border-collapse:collapse;width:100%;margin:0 0 18px}th,td{border:1px solid #ccc;padding:4px 6px;text-align:left;vertical-align:top}th{background:#f2f4f7}td.n,th.n{text-align:right;white-space:nowrap}tr.t td{font-weight:700;background:#f7f7f7}@media print{body{margin:10mm}}';
-        const body = `<h1>${esc(x.head.title)}${x.head.search ? ' · ' + esc(x.head.search) : ''}</h1><p>${esc(x.head.when)} · ${x.head.rows} rows${x.head.amount != null ? ' · total <b>' + inr(x.head.amount) + '</b>' : ''} · printed ${fmtD(todayIso())}</p>
-          ${x.byWho.length > 1 ? `<table><tr><th>${esc(x.whoLabel)}</th><th class="n">Rows</th><th class="n">Total</th></tr>${x.byWho.map((b) => `<tr><td>${esc(b.name)}</td><td class="n">${b.n}</td><td class="n">${inr(b.amount)}</td></tr>`).join('')}</table>` : ''}
+        const G = x.groups;
+        const body = `<h1>${esc(x.head.title)}${x.head.search ? ' · ' + esc(x.head.search) : ''}</h1><p>${x.head.filters ? esc(x.head.filters) + ' · ' : ''}${esc(x.head.when)} · ${x.head.rows} rows${x.head.amount != null ? ' · total <b>' + inr(x.head.amount) + '</b>' : ''} · printed ${fmtD(todayIso())}</p>
+          ${G && G.rows.length ? `<table><tr><th>${esc(G.label)}</th><th class="n">Rows</th><th class="n">Total</th><th class="n">Share</th></tr>${G.rows.map((g) => `<tr><td>${esc(G.by === 'month' ? accMonth(g.name) : g.name)}</td><td class="n">${g.n}</td><td class="n">${g.amount != null ? inr(g.amount) : ''}</td><td class="n">${x.head.amount ? (Math.round((g.amount || 0) / x.head.amount * 1000) / 10) + '%' : ''}</td></tr>`).join('')}<tr class="t"><td>Total</td><td class="n">${x.head.rows}</td><td class="n">${x.head.amount != null ? inr(x.head.amount) : ''}</td><td></td></tr></table>` : ''}
+          ${x.byWho.length > 1 && !(G && G.by === (x.whoLabel === 'Payee' ? 'payee' : 'payer_name')) ? `<table><tr><th>${esc(x.whoLabel)}</th><th class="n">Rows</th><th class="n">Total</th></tr>${x.byWho.map((b) => `<tr><td>${esc(b.name)}</td><td class="n">${b.n}</td><td class="n">${inr(b.amount)}</td></tr>`).join('')}</table>` : ''}
           <table><tr>${cs.map((c) => `<th class="${num(c) ? 'n' : ''}">${esc(c.label)}</th>`).join('')}</tr>${x.rows.map((r) => `<tr>${cs.map((c) => `<td class="${num(c) ? 'n' : ''}">${accFmt(c, r[c.key])}</td>`).join('')}</tr>`).join('')}
           ${ai >= 0 ? `<tr class="t">${cs.map((c, i) => `<td class="${num(c) ? 'n' : ''}">${i === 0 ? 'Total' : i === ai ? inr(x.head.amount) : ''}</td>`).join('')}</tr>` : ''}</table>`;
         w.document.open(); w.document.write(`<!doctype html><html><head><meta charset="utf-8"><title>${esc(x.head.title)}${x.head.search ? ' - ' + esc(x.head.search) : ''}</title><style>${st}</style></head><body>${body}</body></html>`); w.document.close();
