@@ -96,7 +96,7 @@ function row(f) {
     ${f.kind === 'cad' || f.kind === 'zip'
     // a browser cannot show a DWG: download it to open in AutoCAD / DWG TrueView (Drive's own page shows "no preview")
     ? (f.kind === 'cad'
-      ? `<a class="btn small go open" href="https://drive.google.com/uc?export=download&id=${encodeURIComponent(f.id)}" target="_blank" rel="noopener" title="Downloads the file to open in AutoCAD or a DWG viewer">Download DWG</a>`
+      ? `<a class="btn small go open" href="/cad?f=${encodeURIComponent(f.id)}" target="_blank" rel="noopener" title="Opens the drawing in the ERP's own CAD viewer">Open CAD</a>`
       : `<a class="btn small go open" href="https://drive.google.com/uc?export=download&id=${encodeURIComponent(f.id)}" target="_blank" rel="noopener">Download ZIP</a>`)
     : `<a class="btn small go open" href="${esc(f.url)}" target="_blank" rel="noopener">${f.kind === 'pdf' ? 'Open PDF' : 'Open'}</a>`}</div>`;
 }
@@ -139,17 +139,6 @@ document.addEventListener('click', (e) => {
   const sg = e.target.closest('[data-stage]'); if (sg) { ST.stage = sg.dataset.stage; ST.trade = ''; render(); return; }
   const k = e.target.closest('[data-disc]'); if (k) { ST.disc = k.dataset.disc; ST.trade = ''; render(); return; }
   const b = e.target.closest('[data-bld]'); if (b) { ST.bld = b.dataset.bld; render(); return; }
-  const cad = e.target.closest('[data-cad]');
-  if (cad) {
-    // the window opens straight away (so the phone does not block it), then goes to the viewer once the link is ready
-    const w = window.open('about:blank', '_blank');
-    cad.disabled = true; const t = cad.textContent; cad.textContent = 'Opening…';
-    fetch(`/api/portal?drawings=1&cadLink=${encodeURIComponent(cad.dataset.cad)}`, { credentials: 'same-origin' }).then((r) => r.json()).then((j) => {
-      if (!j.viewer) throw new Error(j.error || 'Could not open the drawing.');
-      if (w) w.location.href = j.viewer; else location.href = j.viewer;
-    }).catch((x) => { if (w) w.close(); alert(x.message); }).finally(() => { cad.disabled = false; cad.textContent = t; });
-    return;
-  }
   const ft = e.target.closest('[data-ft]'); if (ft) { ST.ft = ft.dataset.ft; ST.trade = ''; render(); }
 });
 $('#trade').onchange = (e) => { ST.trade = e.target.value; render(); };

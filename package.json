@@ -2,7 +2,7 @@
   "name": "dream-india-erp",
   "version": "0.1.0",
   "private": true,
-  "description": "Dream India ERP: booking-to-collection, contractor billing, project costing and RERA tracking. No outside packages.",
+  "description": "Dream India ERP: booking-to-collection, contractor billing, project costing and RERA tracking. The server code uses no outside packages; the drawings CAD viewer (mlightcad, LibreDWG) is bundled at build time.",
   "engines": {
     "node": "24.x"
   },
