@@ -5,7 +5,7 @@ const R = (...p) => path.join(__dirname, '..', ...p);
 const out = R('public', 'cad');
 fs.mkdirSync(path.join(out, '_probe'), { recursive: true });
 const pkg = R('node_modules', '@mlightcad', 'cad-simple-viewer');
-for (const f of ['libredwg-parser-worker.js', 'mtext-renderer-worker.js']) fs.copyFileSync(path.join(pkg, 'dist', f), path.join(out, f));
+for (const f of fs.readdirSync(path.join(pkg, 'dist'))) if (/worker|\.wasm$/.test(f)) fs.copyFileSync(path.join(pkg, 'dist', f), path.join(out, f));
 for (const f of ['app/AcApDocManager.d.ts', 'app/AcDbOpenDatabaseOptions.d.ts', 'app/AcApFontLoader.js', 'app/AcApDocManager.js']) {
   const p = path.join(pkg, 'lib', f); if (fs.existsSync(p)) fs.copyFileSync(p, path.join(out, '_probe', f.replace('/', '__')));
 }
