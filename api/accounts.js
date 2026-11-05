@@ -356,9 +356,13 @@ module.exports = route({
       // only the flat, heads, payer and description of rows already in the ERP are corrected, matched on the Tally ID and
       // amount. Nothing is added or removed, and rows someone else has edited since are left as they are.
       need('accounts.manage');
-      const files = (Array.isArray(b.files) ? b.files : []).filter((f) => f && f.data).slice(0, 4).map((f) => ({ name: str(f.name, 200), buffer: Buffer.from(String(f.data || ''), 'base64') }));
-      if (files.length < 2) throw fail(400, 'Choose the Tally files.');
-      const p = tally.parse(files, today());
+      let p;
+      if (Array.isArray(b.receipts) && Array.isArray(b.payments)) p = { receipts: b.receipts.slice(0, 20000), payments: b.payments.slice(0, 20000) }; // rows already read from the files
+      else {
+        const files = (Array.isArray(b.files) ? b.files : []).filter((f) => f && f.data).slice(0, 4).map((f) => ({ name: str(f.name, 200), buffer: Buffer.from(String(f.data || ''), 'base64') }));
+        if (files.length < 2) throw fail(400, 'Choose the Tally files.');
+        p = tally.parse(files, today());
+      }
       const out = await db.tx(async (t) => {
         const res2 = { receipts: 0, payments: 0, skipped: 0, examples: [] };
         for (const [table, rows, cols] of [['acc_receipts', p.receipts, ['unit_no', 'head', 'payment_head', 'payer_type', 'payer_name', 'description']], ['acc_payments', p.payments, ['unit_no', 'head', 'payee', 'description']]]) {
