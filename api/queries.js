@@ -20,4 +20,13 @@ module.exports = route({
     }
     return res.json(out);
   },
+  POST: async (req, res, b) => {
+    const u = await auth.guard(req, res, null); if (!u) return;
+    if (!['booking.approve', 'receipt.approve', 'accounts.manage', 'users.manage'].some((p) => has(u, p))) throw fail(403, 'Only Head CRM, Head Accounts, Management or Admin can upload corrections.');
+    if (b.action === 'save') return res.json(await oq.save(needProject(u, intOr(b.project)), Array.isArray(b.rows) ? b.rows.slice(0, 3000) : [], { user: u, apply: b.apply === true }));
+    if (b.action !== 'upload') throw fail(400, 'Unknown action.');
+    const buf = Buffer.from(String(b.file || ''), 'base64');
+    if (!buf.length) throw fail(400, 'Choose the Excel file.');
+    return res.json(await oq.upload(needProject(u, intOr(b.project)), buf, { user: u, apply: b.apply === true }));
+  },
 });

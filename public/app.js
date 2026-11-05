@@ -3242,16 +3242,50 @@
     const d = await api(`/api/queries?project=${proj || ''}`);
     const amt = (v) => v == null || v === '' ? '' : inr(Math.round(v));
     const teams = ['All', 'CRM', 'Accounts'];
+    const ED = { kyc: [['pan', 'PAN', 'ABCDE1234F', 120], ['email', 'Email', 'name@mail.com', 170], ['mobile', 'Mobile', '98XXXXXXXX', 120]], tds: [['flat', 'Flat', 'A-1001', 80]], nounit: [['flat', 'Flat', 'A-1001', 80]] };
     const sec = (s, i) => `<details class="panel" ${s.count && i < 2 ? 'open' : ''} data-team="${esc(s.team)}"><summary style="cursor:pointer;display:flex;gap:10px;align-items:center;flex-wrap:wrap"><b>${esc(s.title)}</b><span class="pill ${s.count ? 'bad' : 'good'}">${s.count ? s.count.toLocaleString('en-IN') + ' open' : 'None'}</span><span class="pill grey">${esc(s.team)}</span>${s.amount ? `<span class="small muted">${inr(s.amount)}</span>` : ''}</summary>
       <p class="small muted" style="margin:8px 0">${esc(s.fix)} <a href="${s.where}">Open where it is fixed →</a>${s.asOf ? ` · comparison of ${fmtD(String(s.asOf).slice(0, 10))}` : ''}</p>
-      ${s.count ? `<div class="table-wrap"><table><tr><th>#</th><th>Flat</th><th>Bank</th><th>Date</th><th>Item</th><th>Detail</th><th class="num">Amount</th></tr>
-      ${s.rows.slice(0, 300).map((r, k) => `<tr><td>${k + 1}</td><td>${r.unit ? `<b>${esc(r.unit)}</b>` : esc(r.ref || '')}</td><td class="small">${esc(r.bank || '')}</td><td class="small">${r.date ? fmtD(r.date) : ''}</td><td>${esc(r.item || '')}</td><td class="small">${esc(r.detail || '')}</td><td class="num">${amt(r.amount)}</td></tr>`).join('')}</table></div>${s.count > 300 ? `<p class="small muted">Showing 300 of ${s.count.toLocaleString('en-IN')}; the Excel file has them all.</p>` : ''}` : ''}</details>`;
-    $('#page').innerHTML = `<div class="page-head"><div><h1>Open queries</h1><p class="muted">${d.total.toLocaleString('en-IN')} corrections still open across the CRM and Accounts. Each list says who fixes it and where; an item drops off by itself once it is corrected.</p></div>
-      <div class="actions no-print"><a class="btn ghost" href="/api/queries?project=${proj || ''}&export=xlsx">Excel</a><button class="ghost" id="oqP">Print</button></div></div>
+      ${s.count ? `<div class="table-wrap"><table><tr><th>#</th><th>Flat</th><th>Bank</th><th>Date</th><th>Item</th><th>Detail</th><th class="num">Amount</th>${(ED[s.key] || []).map((f) => `<th>${esc(f[1])}</th>`).join('')}<th>${s.key === 'verify' ? 'Note (closes it)' : 'Note (explains it)'}</th></tr>
+      ${s.rows.slice(0, 300).map((r, k) => `<tr><td>${k + 1}</td><td>${r.unit ? `<b>${esc(r.unit)}</b>` : esc(r.ref || '')}</td><td class="small">${esc(r.bank || '')}</td><td class="small">${r.date ? fmtD(r.date) : ''}</td><td>${esc(r.item || '')}</td><td class="small">${esc(r.detail || '')}</td><td class="num">${amt(r.amount)}</td>${(ED[s.key] || []).map((f) => `<td><input class="oqi" data-key="${esc(r.key)}" data-f="${f[0]}" data-w="${esc((r.unit || r.ref || '') + ' · ' + s.title)}" placeholder="${esc(f[2])}" style="min-width:${f[3]}px"></td>`).join('')}<td><input class="oqi" data-key="${esc(r.key)}" data-f="note" data-w="${esc((r.unit || r.ref || '') + ' · ' + s.title)}" placeholder="What was checked" style="min-width:200px"></td></tr>`).join('')}</table></div>${s.count > 300 ? `<p class="small muted">Showing 300 of ${s.count.toLocaleString('en-IN')}; the Excel file has them all.</p>` : ''}` : ''}</details>`;
+    $('#page').innerHTML = `<div class="page-head"><div><h1>Open queries</h1><p class="muted">${d.total.toLocaleString('en-IN')} corrections still open across the CRM and Accounts${d.explained ? ` (${d.explained.toLocaleString('en-IN')} more explained in uploaded sheets)` : ''}. Download the Excel, fill the ✎ columns and upload it back to make the corrections. Each list says who fixes it and where; an item drops off by itself once it is corrected.</p></div>
+      <div class="actions no-print"><a class="btn ghost" href="/api/queries?project=${proj || ''}&export=xlsx">Download Excel to correct</a><button id="oqS">Save changes</button><button class="ghost" id="oqU">Upload corrections</button><input type="file" id="oqF" accept=".xlsx" hidden><button class="ghost" id="oqP">Print</button></div></div>
+      <div id="oqOut"></div>
       <div class="panel no-print"><div class="hubtabs" id="oqT">${teams.map((t, i) => `<button type="button" class="${i ? 'ghost' : ''}" data-t="${esc(t)}">${esc(t)}</button>`).join('')}</div>
       <div class="table-wrap" style="margin-top:10px"><table><tr><th>Team</th><th>Query</th><th class="num">Open</th><th class="num">Amount</th></tr>${d.sections.map((s) => `<tr><td>${esc(s.team)}</td><td>${esc(s.title)}</td><td class="num">${s.count.toLocaleString('en-IN')}</td><td class="num">${s.amount ? inr(s.amount) : ''}</td></tr>`).join('')}</table></div></div>
       ${d.sections.map(sec).join('')}`;
     $('#oqP').onclick = () => print();
+    $('#oqS').onclick = async (e) => {
+      const M = {};
+      document.querySelectorAll('input.oqi').forEach((i) => { const v = i.value.trim(); if (!v) return; const k = i.dataset.key; (M[k] ||= { key: k, where: i.dataset.w })[i.dataset.f] = v; });
+      const rows = Object.values(M);
+      if (!rows.length) return toast('Type a correction or a note first.');
+      e.target.disabled = true;
+      try {
+        const r = await api('/api/queries', { action: 'save', project: proj, rows, apply: true });
+        if (r.errors.length) { $('#oqOut').innerHTML = `<div class="panel"><p class="bad-t">Nothing was saved. Please correct:</p><ul class="small">${r.errors.map((x) => `<li>${esc(x)}</li>`).join('')}</ul></div>`; scrollTo(0, 0); e.target.disabled = false; return; }
+        toast(`Saved ${r.changes.length} change${r.changes.length === 1 ? '' : 's'}.`); openQueries();
+      } catch (x) { alert(x.message); e.target.disabled = false; }
+    };
+    $('#oqU').onclick = () => $('#oqF').click();
+    $('#oqF').onchange = async (ev) => {
+      const f = ev.target.files[0]; ev.target.value = ''; if (!f) return;
+      if (f.size > 3e6) return alert('The file is over 3 MB.');
+      const file = await new Promise((ok) => { const r = new FileReader(); r.onload = () => ok(String(r.result).split(',')[1]); r.readAsDataURL(f); });
+      const box = $('#oqOut'); box.innerHTML = '<div class="panel"><p class="muted">Reading the file…</p></div>';
+      try {
+        const r = await api('/api/queries', { action: 'upload', project: proj, file });
+        const W = { PAN: 'PAN', Email: 'Email', Mobile: 'Mobile', Flat: 'Flat', Checked: 'Closed as checked', Explained: 'Explained' };
+        const by = {}; r.changes.forEach((c) => { by[c.what] = (by[c.what] || 0) + 1; });
+        box.innerHTML = `<div class="panel"><h2>Corrections in ${esc(f.name)}</h2>
+          ${r.errors.length ? `<p class="bad-t">${r.errors.length} line(s) need fixing in the file first; nothing is saved until they are right:</p><ul class="small">${r.errors.slice(0, 50).map((e) => `<li>${esc(e)}</li>`).join('')}</ul>` : ''}
+          <p>${r.changes.length ? Object.entries(by).map(([k, v]) => `${v} × ${esc(W[k] || k)}`).join(' · ') : 'No corrections found: fill the ✎ columns and upload again.'}</p>
+          ${r.changes.length ? `<div class="table-wrap"><table><tr><th>Where</th><th>Change</th><th>Value</th></tr>${r.changes.slice(0, 300).map((c) => `<tr><td class="small">${esc(c.where)}</td><td>${esc(W[c.what] || c.what)}</td><td class="small">${esc(c.value)}</td></tr>`).join('')}</table></div>` : ''}
+          ${r.changes.length && !r.errors.length ? `<div class="actions"><button id="oqA">Save these ${r.changes.length} corrections</button><button class="ghost" id="oqC">Cancel</button></div>` : ''}</div>`;
+        if ($('#oqC')) $('#oqC').onclick = () => { box.innerHTML = ''; };
+        if ($('#oqA')) $('#oqA').onclick = async (e) => { e.target.disabled = true; e.target.textContent = 'Saving…';
+          try { const x = await api('/api/queries', { action: 'upload', project: proj, file, apply: true }); toast(`Saved ${x.changes.length} corrections.`); openQueries(); } catch (y) { alert(y.message); e.target.disabled = false; e.target.textContent = 'Save'; } };
+      } catch (x) { box.innerHTML = `<div class="panel"><p class="bad-t">${esc(x.message)}</p></div>`; }
+    };
     $('#oqT').onclick = (e) => { const b = e.target.closest('button'); if (!b) return; const t = b.dataset.t;
       $('#oqT').querySelectorAll('button').forEach((x) => x.classList.toggle('ghost', x !== b));
       document.querySelectorAll('details[data-team]').forEach((x) => { x.hidden = t !== 'All' && !x.dataset.team.includes(t); }); };
