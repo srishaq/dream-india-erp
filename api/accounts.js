@@ -50,8 +50,10 @@ module.exports = route({
       res.setHeader('Content-Type', 'application/xml; charset=utf-8');
       return res.end(TF.xml(list, (await TF.settings()).company));
     }
-    const u = await auth.guard(req, res, 'accounts.view'); if (!u) return;
+    const u = await auth.guard(req, res, null); if (!u) return;
     const q = req.query || {};
+    // Head CRM sees the CRM/Accounts Audit tab (view only): its checks, Reconciling Items and Cancelled flats, not the rest of Accounts.
+    if (!has(u, 'accounts.view') && !(has(u, 'audit.tabs') && (q.reg ? ['recon', 'cancellations'].includes(q.reg) : ['checks', 'lists'].includes(q.view)))) throw fail(403, 'Your role does not allow this.');
     const can = { enter: has(u, 'accounts.enter'), manage: has(u, 'accounts.manage') };
     if (q.reg) {
       const reg = REGISTERS[q.reg]; if (!reg) throw fail(400, 'Unknown register.');
