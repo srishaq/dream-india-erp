@@ -60,18 +60,19 @@ module.exports = route({
     if (b.action === 'commit') {
       const p = await readAndParse(projectId, b.stageDates);
       const days = await daysToPay(db);
-      const out = await db.tx((t) => commit(t, p, { projectId, user: u, source: `CRM master sheet ${sheetId()}`, daysToPay: days }));
+      const out = await db.tx(async (t) => { const o = await commit(t, p, { projectId, user: u, source: `CRM master sheet ${sheetId()}`, daysToPay: days }); o.relinked = await sample.relink(t, projectId); return o; });
       return res.json({ ok: true, ...out });
     }
     if (b.action === 'reset') {
       if (process.env.ERP_LIVE === '1') throw fail(403, 'The ERP is live, so imported data can no longer be cleared.');
       if (b.confirm !== 'CLEAR') throw fail(400, 'Type CLEAR to confirm.');
       const n = await db.tx(async (t) => {
+        await t.q("set local statement_timeout = '120s'").catch(() => {});
         const c = await t.one('select count(*)::int as units from units where project_id = $1', [projectId]);
         await sample.wipe(t, projectId);
         await audit.record(t.q, { user: u, action: 'clear-import', entity: 'project', entityId: projectId, projectId, after: c, note: 'Test version: imported data cleared to import again' });
         return c.units;
-      });
+      }).catch((e) => { if (e.code === '23503') throw fail(409, `Could not clear: ${e.detail || e.message} (${e.constraint || e.table || ''}).`); throw e; });
       return res.json({ ok: true, removedUnits: n });
     }
     throw fail(400, 'Unknown action.');
