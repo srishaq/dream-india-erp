@@ -398,6 +398,12 @@ module.exports = route({
       r.cheques = await require('../lib/cheque-match').run({ user: u, trigger: 'tally' }).catch((e) => ({ error: e.message }));
       return res.json({ ok: true, summary: p.summary, problems: p.problems, ...r });
     }
+    if (b.action === 'cancel-payments' && b.sheetId) {
+      // read straight from the Developer Tracker in Google Sheets (shared with the ERP's service account)
+      need('accounts.manage');
+      const raw = await sheets.fetchTabs(str(b.sheetId, 80), { cp: 'Cancellation Payment' }).catch((e) => { throw fail(400, `The Developer Tracker could not be read: ${e.message}. Share it (view only) with ${sheets.serviceEmail()}.`); });
+      b.rows = cancellations.parsePayments(raw.cp);
+    }
     if (b.action === 'cancel-payments') {
       // The cancelled buyers' payments (Developer Tracker → Cancellation Payment), replacing the list loaded before.
       need('accounts.manage');
