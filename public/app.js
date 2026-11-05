@@ -300,6 +300,7 @@
     { group: 'CRM tools' },
     { key: 'collections', label: 'Collections', show: () => can('ledger.view') },
     { key: 'dues', label: 'Dues & actions', show: () => anyOf('ledger.view', 'accounts.view') },
+    { key: 'reports', label: 'Reports', show: () => anyOf('ledger.view', 'accounts.view', 'ca.view') },
     { key: 'demands', label: 'Stages & demands', show: () => anyOf('demand.raise', 'demand.approve', 'ledger.view') },
     { key: 'stages', label: 'Construction stages', show: () => can('stage.record'), sub: true },
     { key: 'letters', label: 'Demand letters (many flats)', show: () => anyOf('demand.raise', 'ledger.view') },
@@ -354,7 +355,7 @@
     { key: 'users', label: 'Logins', show: () => can('users.manage') },
     { key: 'audit', label: 'Audit log', show: () => can('audit.view') },
   ];
-  const DETAIL = { booking: 'flats', statement: 'flats', run: 'demands', pre: 'demands', bankauto: 'bankauto', project: 'home', team: 'team', accteam: 'accteam', cp: 'partners' };
+  const DETAIL = { report: 'reports', booking: 'flats', statement: 'flats', run: 'demands', pre: 'demands', bankauto: 'bankauto', project: 'home', team: 'team', accteam: 'accteam', cp: 'partners' };
   let projectList = null, proj = null;
   const store = { get: (k) => { try { return localStorage.getItem(k); } catch { return null; } }, set: (k, v) => { try { localStorage.setItem(k, v); } catch {} } };
 
@@ -443,7 +444,7 @@
     if ($('#proj')) $('#proj').onchange = (e) => { proj = +e.target.value; store.set('erp_project', proj); shell(); };
     if (page === 'reg-cancellations' && arg !== 'full' && anyOf('accounts.view', 'audit.tabs')) { try { await cancelledView(); } catch (e) { $('#page').innerHTML = `<div class="err">${esc(e.message)}</div>`; } return; }
     if (/^reg-/.test(page || '') && (can('accounts.view') || (can('audit.tabs') && ['reg-recon', 'reg-cancellations'].includes(page)))) { try { await accRegister(page.slice(4)); } catch (e) { $('#page').innerHTML = `<div class="err">${esc(e.message)}</div>`; } return; }
-    const fn = { stages: () => demands(true), home, mgmt, marketing: () => window.Marketing.render({ api, dialog, toast, me }, (/^\d+$/.test(location.hash.split('/')[2] || '') ? location.hash.split('/')[2] : null) || store.get('erp_mkt_scope') || null), telemarketing: () => window.Telemarketing.render({ api, dialog, toast, me }), ca: caPage, accdash, collections, flats, custdocs, comms, team: teamPage, accteam: teamPage, sdr: sdrPage, cp: cpPage, cpportal: cpPortalPage, project: projectHome, crmtodo: () => dailyTodo('crm'), acctodo: () => dailyTodo('accounts'), training, projects, plans, users, audit, units, bookings, demands, receipts, ledgers, letters, followups, verify, prices, partners, balances: accBalances, bankauto: bankAuto, bookscrm: booksCrm, accreports: accReports, checks: accChecks, queries: openQueries, dues: duesPage, accsetup: accSetup, import: importPage, booking: bookingPage, statement: statementPage, run: runPage, pre: prePage, parking: parkingPage };
+    const fn = { stages: () => demands(true), home, mgmt, marketing: () => window.Marketing.render({ api, dialog, toast, me }, (/^\d+$/.test(location.hash.split('/')[2] || '') ? location.hash.split('/')[2] : null) || store.get('erp_mkt_scope') || null), telemarketing: () => window.Telemarketing.render({ api, dialog, toast, me }), ca: caPage, accdash, collections, flats, custdocs, comms, team: teamPage, accteam: teamPage, sdr: sdrPage, cp: cpPage, cpportal: cpPortalPage, project: projectHome, crmtodo: () => dailyTodo('crm'), acctodo: () => dailyTodo('accounts'), training, projects, plans, users, audit, units, bookings, demands, receipts, ledgers, letters, followups, verify, prices, partners, balances: accBalances, bankauto: bankAuto, bookscrm: booksCrm, accreports: accReports, checks: accChecks, queries: openQueries, dues: duesPage, reports: reportsHub, report: () => reportView(location.hash.split('/')[2]), accsetup: accSetup, import: importPage, booking: bookingPage, statement: statementPage, run: runPage, pre: prePage, parking: parkingPage };
     const key = DETAIL[page] && arg ? page : cur.key;
     try { await fn[key](arg ? +arg : undefined); } catch (e) { $('#page').innerHTML = `<div class="err">${esc(e.message)}</div>`; }
   }
@@ -521,6 +522,7 @@
     { key: 'accounts', title: 'Accounts', sub: 'Bank, receipts, payments, PDC, TDS, SRA rent, GST, SDR and Tally', icon: 'book', tone: '#117A65', group: 'Accounts', skip: ['ca', 'bookscrm', 'checks'],
       sections: [['Every day', ['acctodo', 'acc-bank', 'acc-money', 'accteam']], ['Taxes & compliance', ['acc-tax']], ['Refunds, partners & tenants', ['reg-cancellations', 'cpacc', 'acc-sra']], ['Reports & set-up', ['accdash', 'accreports', 'accsetup']]] },
     { key: 'audit', title: 'CRM/Accounts Audit', sub: 'Tally against the CRM, checks, reconciling items and cancelled flats', icon: 'check', tone: '#0E8C9B', pages: ['queries', 'bookscrm', 'checks', 'reg-recon', 'reg-cancellations', 'verify', 'audit'] },
+    { key: 'reportsd', title: 'Reports', sub: 'Every report from the CRM and Accounts in one place, with search and Excel', icon: 'chart', tone: '#2B5C8A', direct: 'reports' },
     { key: 'cpdept', title: 'Channel Partners', sub: 'Every partner firm: brokerage earned, bills, pass back, payments and what is still owed', icon: 'users', tone: '#0E8C9B', direct: 'partners' },
     { key: 'ca', title: 'CA / Tax', sub: 'GST, TDS payable, RERA quarterly, cash flow and compliance', icon: 'chart', tone: '#7A5C99', direct: 'ca' },
     { key: 'construction', title: 'Construction', sub: 'Site Office: slab cycle, daily progress reports, hindrances, materials and stages', icon: 'hammer', tone: '#B7791F', pages: ['site', 'stages'], later: ['Contractor billing'] },
@@ -3303,6 +3305,77 @@
   }
 
   // Dues & actions: balances due grouped by the CRM follow-up status (as on the old dashboard), then every flat with search.
+  // Reports: every report from the CRM and Accounts in one place. Reports that live on their own page are linked; the
+  // others open in the report view below (same filters, search, print and Excel for each).
+  async function reportsHub() {
+    const L = (await api('/api/reports?list=1')).reports;
+    const page = (k) => { const p = PAGES.find((x) => x.key === k); return p && p.show(); };
+    const R = (k) => { const r = L.find((x) => x.key === k); return r ? { t: r.title, s: r.sub, href: '#/report/' + k } : null; };
+    const P = (k, t, s2, extra) => (page(k) ? { t, s: s2, href: '#/' + k + (extra || '') } : null);
+    const AR = (tab, t, s2) => (page('accreports') ? { t, s: s2, href: '#/accreports', rep: tab } : null);
+    const S = [
+      ['Sales', [P('units', 'Inventory', 'Every flat: sold, available or held, by wing and floor'), R('bookings'), R('cancellations'), R('partners'), P('partners', 'Channel partner ledger', 'Each partner firm: brokerage, bills, pass back and balance'), P('reg-cancellations', 'Cancelled flats & refunds', 'What each old buyer paid, refund due and still to refund')]],
+      ['Collections', [P('dues', 'Dues & actions', 'Balance due by follow-up status, flat by flat'), P('collections', 'Collections', 'Collections dashboard'), R('collections'), R('ageing'), R('stages'), R('cheques'), P('demands', 'Stages & demands', 'Stages, demand letters raised and due dates')]],
+      ['Customer', [P('flats', 'Customer statement', 'Open a flat, then Statement, for the buyer\'s full account'), R('tds'), P('queries', 'Buyer details missing', 'PAN, email or mobile missing, one line per flat'), P('verify', 'Data to verify', 'Items from the CRM import still to check')]],
+      ['Accounts', [AR('byHead', 'Payments by head', 'Heads by month, total and project till date'), AR('payees', 'Payees', 'Every payee with what was paid and billed'), AR('vendorBills', 'Vendor bills', 'Bills against payments'), AR('register', 'Salary & expense register', 'Month by month per person, for Form 16 and 24Q'), AR('partners', 'Channel partner accounts', 'Brokerage agreed, paid and due per firm'),
+        R('cashflow'), R('investors'), P('balances', 'Daily Bank Balance', 'Bank by bank, every day'), P('bankauto', 'Bank Auto Check', 'Statements against the books'), P('accdash', 'Accounts dashboard', 'Banks, collections, units and PDC at a glance'), AR('tally', 'Tally export', 'Receipts and payments as Tally vouchers')]],
+      ['Tax & compliance', [AR('gst', 'GST report', 'GST payable, received and due, flat by flat'), AR('sdr', 'SDR report', 'Stamp duty and registration, flat by flat'), P('reg-tds', 'TDS Tracker', 'TDS deducted and challans paid'), R('rera'), P('reg-compliance', 'Compliance calendar', 'GST, TDS and RERA due dates'), P('ca', 'CA / Tax', 'GST, TDS payable, RERA quarterly and the CA pack')]],
+      ['Audit', [P('queries', 'Open queries', 'Every correction still to make, with who fixes it'), P('bookscrm', 'Tally vs CRM', 'Each flat in Tally against the CRM'), P('checks', 'Checks', 'Daily checks on the registers'), P('reg-recon', 'Reconciling Items', 'Bank and books not yet agreeing'), P('audit', 'Audit log', 'Who changed what, and when')]],
+      ['Management', [P('mgmt', 'Management dashboard', 'Today, collections, wings and inventory')]],
+    ].map(([h, items]) => [h, items.filter(Boolean)]).filter(([, items]) => items.length);
+    $('#page').innerHTML = `<div class="page-head"><div><h1>Reports</h1><p class="muted">Every report from the CRM and Accounts. Each one has search and Excel; tap a line to open the flat or ledger.</p></div></div>
+      <div class="panel no-print" style="padding:10px 16px"><input id="rpQ" placeholder="Find a report (for example ageing, GST, salary)"></div>
+      ${S.map(([h, items]) => `<section class="rp-sec"><h2 class="rp-h">${esc(h)}</h2><div class="rp-grid">${items.map((x) => `<a class="rp-card" href="${x.href}" ${x.rep ? `data-rep="${x.rep}"` : ''}><b>${esc(x.t)}</b><span>${esc(x.s)}</span></a>`).join('')}</div></section>`).join('')}`;
+    document.querySelectorAll('.rp-card[data-rep]').forEach((a) => (a.onclick = () => store.set('erp_accrep', a.dataset.rep)));
+    $('#rpQ').oninput = (e) => { const w = e.target.value.trim().toLowerCase(); document.querySelectorAll('.rp-sec').forEach((sec) => { let k = 0; sec.querySelectorAll('.rp-card').forEach((c) => { const sh = !w || c.textContent.toLowerCase().includes(w); c.hidden = !sh; if (sh) k++; }); sec.hidden = !k; }); };
+  }
+
+  // One report from /api/reports: filters, search, sortable table with totals, print and Excel.
+  async function reportView(key) {
+    const st = JSON.parse(store.get('erp_rep_' + key) || '{}');
+    const f = { from: st.from || '', to: st.to || '', wing: st.wing || '', status: st.status || '', q: '', sort: null };
+    const load = async () => {
+      const qs = new URLSearchParams({ name: key, project: proj || '', from: f.from, to: f.to, wing: f.wing, status: f.status });
+      const d = await api('/api/reports?' + qs);
+      const has = (x) => (d.filters || []).includes(x);
+      const statuses = has('status') ? (await api(`/api/dues?project=${proj || ''}`)).rows.map((r) => r.status).filter((v, i, a) => a.indexOf(v) === i).sort() : [];
+      const fy = todayIso().slice(5, 7) >= '04' ? +todayIso().slice(0, 4) : +todayIso().slice(0, 4) - 1;
+      $('#page').innerHTML = `<div class="page-head"><div><h1>${esc(d.title)}</h1><p class="muted">${esc(d.sub || '')}</p></div>
+          <div class="actions no-print" style="margin:0"><a class="btn ghost" id="rvX" href="#">Export to Excel</a><button class="ghost" id="rvP">Print</button></div></div>
+        <div class="panel no-print"><div class="row" style="grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:10px;align-items:end">
+          ${has('from') ? `<div><label>From</label><input type="date" id="rvF" value="${esc(f.from)}"></div><div><label>To</label><input type="date" id="rvT" value="${esc(f.to)}"></div>` : ''}
+          ${has('wing') ? `<div><label>Wing</label><select id="rvW"><option value="">Both</option><option ${f.wing === 'A' ? 'selected' : ''}>A</option><option ${f.wing === 'B' ? 'selected' : ''}>B</option></select></div>` : ''}
+          ${has('status') ? `<div><label>Follow-up status</label><select id="rvS"><option value="">All</option>${statuses.map((x) => `<option ${x === f.status ? 'selected' : ''}>${esc(x)}</option>`).join('')}</select></div>` : ''}
+          <div style="grid-column:span 2"><label>Search</label><input id="rvQ" placeholder="Search this report" value="${esc(f.q)}"></div></div>
+          ${has('from') ? `<div class="tabs" style="margin:10px 0 0"><button class="tab" data-p="fy">This year (Apr ${fy}–Mar ${fy + 1})</button><button class="tab" data-p="lfy">Last year</button><button class="tab" data-p="m">This month</button><button class="tab" data-p="all">All dates</button></div>` : ''}</div>
+        <div class="panel"><p class="small muted" id="rvN" style="margin:0 0 8px"></p><div class="table-wrap acc-grid" id="rvTb"></div>${d.note ? `<p class="small muted" style="margin:10px 0 0">${esc(d.note)}</p>` : ''}</div>`;
+      const draw = () => {
+        const body = d.rows.filter((r) => !r._total), tot = d.rows.find((r) => r._total);
+        let L = body.filter((r) => !f.q || d.cols.some((c) => String(r[c.k] ?? '').toLowerCase().includes(f.q)));
+        if (f.sort) { const c = d.cols.find((x) => x.k === f.sort); L = L.slice().sort((a, b) => (c.t === 'm' || c.t === 'n' ? (Number(b[c.k]) || 0) - (Number(a[c.k]) || 0) : String(a[c.k] ?? '').localeCompare(String(b[c.k] ?? '')))); }
+        const t2 = tot && f.q ? Object.fromEntries(d.cols.map((c, i) => [c.k, i === 0 ? 'Total (shown)' : (c.t === 'm' || (c.t === 'n' && !c.noSum)) ? L.reduce((a, r) => a + (Number(r[c.k]) || 0), 0) : ''])) : tot;
+        const cell = (r, c) => { const v = r[c.k]; return c.t === 'm' ? (v || v === 0 ? (v ? inr(v) : '—') : '') : c.t === 'n' ? (v ?? '') : c.t === 'd' ? (v ? fmtD(v) : '') : esc(v ?? ''); };
+        $('#rvN').textContent = `${L.length} line${L.length === 1 ? '' : 's'} · tap a heading to sort${L.some((r) => r._href || r._ledger) ? ', a line to open it' : ''}`;
+        $('#rvTb').innerHTML = `<table><tr>${d.cols.map((c) => `<th class="${c.t === 'm' || c.t === 'n' ? 'num' : ''}" data-k="${c.k}" style="cursor:pointer">${esc(c.l)}${f.sort === c.k ? ' ▾' : ''}</th>`).join('')}</tr>
+          ${L.slice(0, 2000).map((r, i) => `<tr class="${r._href || r._ledger ? 'clickable' : ''}" data-i="${body.indexOf(r)}">${d.cols.map((c) => `<td class="${c.t === 'm' || c.t === 'n' ? 'num' : ''}">${cell(r, c)}</td>`).join('')}</tr>`).join('') || `<tr><td colspan="${d.cols.length}" class="muted">Nothing for these filters.</td></tr>`}
+          ${t2 ? `<tr class="tot">${d.cols.map((c) => `<td class="${c.t === 'm' || c.t === 'n' ? 'num' : ''}"><b>${cell(t2, c)}</b></td>`).join('')}</tr>` : ''}</table>`;
+        $('#rvTb').querySelectorAll('th[data-k]').forEach((th) => (th.onclick = () => { f.sort = th.dataset.k; draw(); }));
+        $('#rvTb').querySelectorAll('tr.clickable').forEach((tr) => (tr.onclick = () => { const r = body[+tr.dataset.i]; if (r._ledger) openLedger(r._ledger.reg, r._ledger.col, r._ledger.v, f.from, f.to); else if (r._href) go(r._href); }));
+        $('#rvX').href = '/api/reports?' + new URLSearchParams({ name: key, project: proj || '', from: f.from, to: f.to, wing: f.wing, status: f.status, q: f.q, export: 'xlsx' });
+      };
+      const save = () => { store.set('erp_rep_' + key, JSON.stringify({ from: f.from, to: f.to, wing: f.wing, status: f.status })); load(); };
+      if ($('#rvF')) { $('#rvF').onchange = (e) => { f.from = e.target.value; save(); }; $('#rvT').onchange = (e) => { f.to = e.target.value; save(); }; }
+      if ($('#rvW')) $('#rvW').onchange = (e) => { f.wing = e.target.value; save(); };
+      if ($('#rvS')) $('#rvS').onchange = (e) => { f.status = e.target.value; save(); };
+      $('#rvQ').oninput = (e) => { f.q = e.target.value.trim().toLowerCase(); draw(); };
+      $('#rvP').onclick = () => print();
+      document.querySelectorAll('.tab[data-p]').forEach((b) => (b.onclick = () => { const t = todayIso(); if (b.dataset.p === 'fy') { f.from = `${fy}-04-01`; f.to = `${fy + 1}-03-31`; } else if (b.dataset.p === 'lfy') { f.from = `${fy - 1}-04-01`; f.to = `${fy}-03-31`; } else if (b.dataset.p === 'm') { f.from = t.slice(0, 8) + '01'; f.to = t; } else { f.from = ''; f.to = ''; } save(); }));
+      draw();
+    };
+    $('#page').innerHTML = '<p class="muted">Working it out…</p>';
+    await load();
+  }
+
   async function duesPage() {
     const d = await api(`/api/dues?project=${proj || ''}`);
     const R = d.rows;

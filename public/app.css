@@ -655,3 +655,12 @@ h2.ff-sec { font-size: 13px; letter-spacing: .1em; text-transform: uppercase; co
 #cvT tr.total td { border-top: 2px solid var(--line, #ddd); background: var(--bg-2, #f6f6f8); }
 tr.clickable { cursor: pointer; }
 tr.clickable:hover td { background: var(--brand-tint); }
+/* Reports */
+.rp-sec { margin: 0 0 18px; }
+.rp-h { font-size: 15px; text-transform: uppercase; letter-spacing: .04em; color: var(--ink-3); margin: 18px 0 8px; }
+.rp-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, 240px), 1fr)); gap: 10px; }
+.rp-card { display: block; background: var(--card, #fff); border: 1px solid var(--line, #e3e3ea); border-radius: 12px; padding: 12px 14px; text-decoration: none; color: inherit; }
+.rp-card:hover { border-color: var(--brand); background: var(--brand-tint); }
+.rp-card b { display: block; margin-bottom: 4px; }
+.rp-card span { font-size: 13px; color: var(--ink-3); }
+tr.tot td { border-top: 2px solid var(--line, #ddd); }
