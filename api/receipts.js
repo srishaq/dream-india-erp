@@ -220,6 +220,13 @@ module.exports = route({
     if (b.action === 'resplit') {
       if (r.status !== 'approved') throw fail(409, 'Only an approved receipt can be corrected this way.');
       const reason = str(b.reason, 300); if (!reason) throw fail(400, 'Give the reason for the correction.');
+      const C = require('../lib/changes');
+      if (!C.isApprover(u)) { // a new split waits for the Chairman's or Sameer's approval
+        const ru = await db.one('select u.unit_no from bookings bk join units u on u.id = bk.unit_id where bk.id = $1', [r.booking_id]);
+        const ch = await C.receiptChange(u, r, { splits: b.splits });
+        const out = await C.create({ user: u, kind: 'receipt', entityId: r.id, projectId: r.project_id, bookingId: r.booking_id, title: `the split of a receipt of ${ru ? ru.unit_no : 'a flat'}`, summary: ch.summary, before: ch.before, after: ch.after, reason });
+        return res.json({ ok: true, pendingApproval: true, id: out.id });
+      }
       const amount = toPaise(r.amount); const splits = {}; let sum = 0;
       for (const h of HEADS) { const v = b.splits && b.splits[h]; if (v === undefined || v === null || v === '') continue; const p = toPaise(v); if (!(p >= 0)) throw fail(400, `The ${h.replace('_', ' ')} part looks wrong.`); if (p > 0) { splits[h] = p; sum += p; } }
       if (sum !== amount) throw fail(400, `The parts add up to ₹${rupees(sum)}, but the receipt is ₹${rupees(amount)}. They must match.`);

@@ -52,6 +52,7 @@ async function run(req, res, job) {
       out.reminders = await require('../lib/letters').reminders().catch((e) => ({ error: e.message }));
       out.caPack = await require('../lib/ca-pack').morning().catch((e) => ({ error: e.message }));
       out.cheques = await require('../lib/cheque-match').run({ trigger: 'morning' }).catch((e) => ({ error: e.message }));
+      out.autoClear = await (async () => { const db = require('../lib/db'); const sys = await db.one("select * from users where role = 'admin' and not disabled order by id limit 1"); const out2 = {}; for (const p of await db.q("select id from projects where active")) out2[p.id] = (await require('../lib/auto-clear').run({ projectId: p.id, user: sys, dry: false })).closedTotal; return out2; })().catch((e) => ({ error: e.message })); // Data to verify items that need nobody
       for (const dept of ['accounts', 'crm']) {
         if (!secret && await dt.ranToday(dept)) { out[dept] = 'already ran'; continue; }
         const r = await dt.run(dept, { trigger: 'schedule' });

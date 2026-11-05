@@ -159,8 +159,11 @@ const n = (v) => Number(v);
     assert.equal((await headacc('/api/receipts', { action: 'unbounce', id: rc, reason: 'Matched to the wrong return' })).ok, true);
     let l = await crm(`/api/ledger?project=${sig.id}`); assert.equal(n(l.rows.find((r) => r.booking_id === b1).outstanding), 0);
     assert.equal((await headacc('/api/receipts', { action: 'resplit', id: rc, splits: { av: '1923570', tds: '19430', gst: '90000' }, reason: 'x' })).status, 400); // must add up
-    assert.equal((await headacc('/api/receipts', { action: 'resplit', id: rc, splits: { av: '1923570', tds: '19430', gst: '97150' }, reason: 'GST part checked' })).ok, true);
-    const a = await admin('/api/audit?limit=50'); assert.ok(a.rows.some((x) => x.action === 'unbounce') && a.rows.some((x) => x.action === 'resplit'));
+    const rq = await headacc('/api/receipts', { action: 'resplit', id: rc, splits: { av: '1923720', tds: '19430', gst: '97000' }, reason: 'GST part checked' });
+    assert.equal(rq.pendingApproval, true, JSON.stringify(rq)); // a new split waits for the Chairman or Sameer (5 Nov 2026)
+    assert.equal((await headacc('/api/changes', { action: 'decide', id: rq.id, approve: true })).status, 403);
+    assert.equal((await admin('/api/changes', { action: 'decide', id: rq.id, approve: true })).ok, true);
+    const a = await admin('/api/audit?limit=50'); assert.ok(a.rows.some((x) => x.action === 'unbounce') && a.rows.some((x) => x.action === 'change-approved'));
     assert.equal((await headacc('/api/receipts', { action: 'bounce', id: rc, reason: 'Cheque returned' })).ok, true); // back as it was for the rest of the test
   });
   await step('The same UTR on another flat is caught; Sales cannot register a flat or cancel it', async () => {

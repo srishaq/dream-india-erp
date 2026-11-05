@@ -164,6 +164,16 @@ module.exports = route({
           if ((data.tds_deducted == null || data.tds_deducted === '') && data.taxable_value != null && data.taxable_value !== '' && data.tds_rate != null) data.tds_deducted = Math.round(Number(data.taxable_value) * Number(data.tds_rate));
         }
       }
+      // a refund on a cancelled flat goes only to the buyer whose booking was cancelled (RERA; meeting of 5 Nov 2026)
+      if (b.reg === 'payments') {
+        const cur = id ? await db.one('select head, payee, unit_no from acc_payments where id = $1 and book = $2', [id, acc.BOOK]) : {};
+        const head = data.head ?? cur.head, payee = data.payee ?? cur.payee, unit = data.unit_no ?? cur.unit_no;
+        if (/cancel.*refund|refund/i.test(head || '') && ('payee' in data || 'head' in data || 'unit_no' in data || !id)) {
+          const cn = await db.q('select client from acc_cancellations where book = $1 and unit_no = $2', [acc.BOOK, String(unit || '').toUpperCase()]);
+          const okName = cn.some((c) => cancellations.sameName(c.client, payee));
+          if (!okName && !require('../lib/changes').isApprover(u)) throw fail(409, !unit ? 'A refund needs the flat (Unit).' : !cn.length ? `${unit} is not on Cancelled flats: add the cancellation there first.` : `A refund on ${unit} can be paid only to the cancelled buyer (${cn.map((c) => c.client).join(' or ')}), not to ${payee || 'someone else'}. Rafi Sir or Sameer can allow an exception.`);
+        }
+      }
       const dk = reg.dateKey;
       const prev = id && dk ? await db.one(`select ${dk} as d from ${reg.table} where id = $1 and book = $2`, [id, acc.BOOK]) : null;
       const closedOn = dk ? await guardClosed(u, b.reg, [data[dk], prev && prev.d], b.reason) : null;
@@ -324,6 +334,29 @@ module.exports = route({
       need('accounts.manage');
       const name = str(b.name, 120); if (!name) throw fail(400, 'Give the bank account name as it should appear in Receipts and Payments Out.');
       await db.tx(async (t) => { await t.q("insert into acc_banks (book, name, account_no) values ('signature', $1, $2) on conflict (book, name) do update set account_no = excluded.account_no", [name, str(b.accountNo, 40) || null]); await audit.record(t.q, { user: u, action: 'bank', entity: 'acc-bank', entityId: name, after: b }); });
+      return res.json({ ok: true });
+    }
+    if (b.action === 'move-receipt') {
+      // a Tally receipt that belongs to another flat (Tally vs CRM): the flat on the ERP row is changed; Tally is corrected by Accounts too
+      need('accounts.enter');
+      const id = intOr(b.id), unit = str(b.unit, 12).toUpperCase().replace(/\s+/g, ''), reason = str(b.reason, 300);
+      if (!/^[AB]-\d{3,4}$/.test(unit)) throw fail(400, 'Type the flat as A-1001.');
+      if (!reason) throw fail(400, 'Say why it belongs to that flat.');
+      const r = await db.one('select * from acc_receipts where id = $1 and book = $2', [id, acc.BOOK]); if (!r) throw fail(404, 'Receipt not found.');
+      if (!(await db.one("select 1 as x from units u join projects p on p.id = u.project_id where p.code = 'SIGNATURE' and u.unit_no = $1", [unit]))) throw fail(400, `${unit} is not a flat of Dream Signature.`);
+      await db.tx(async (t) => {
+        await t.q("update acc_receipts set unit_no = $2, head = case when coalesce(head, '') in ('', 'Not given in Tally') or head !~* 'transfer' then 'Receipts From Customers' else head end, payer_type = 'Current buyer', updated_by = $3, updated_at = now(), remark = concat_ws(' · ', nullif(remark, ''), $4::text) where id = $1", [id, unit, u.id, `Moved from ${r.unit_no || 'no flat'} to ${unit}: ${reason}`]);
+        await audit.record(t.q, { user: u, action: 'move-receipt', entity: 'acc-receipts', entityId: id, before: { unit_no: r.unit_no }, after: { unit_no: unit }, note: reason });
+      });
+      return res.json({ ok: true });
+    }
+    if (b.action === 'same-person') {
+      // two spellings of one person (Tally ledger and CRM buyer)
+      if (!has(u, 'accounts.enter') && !has(u, 'booking.approve')) throw fail(403, 'Your role does not allow this.');
+      const name = str(b.name, 200), same = str(b.sameAs, 200);
+      if (!name || !same) throw fail(400, 'Both names are needed.');
+      await db.q('insert into name_aliases (book, unit_no, name, same_as, created_by) values ($1, $2, $3, $4, $5)', [acc.BOOK, str(b.unit, 12) || null, name.replace(/^\s*[AB]\s*[-/. ]?\s*\d{3,4}\s*[-–]?\s*/i, ''), same, u.id]);
+      await audit.record(db.q, { user: u, action: 'name-alias', entity: 'accounts', entityId: 'signature', after: { name, sameAs: same, unit: b.unit || null } });
       return res.json({ ok: true });
     }
     if (b.action === 'tally-split') {

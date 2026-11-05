@@ -301,6 +301,7 @@
     { key: 'collections', label: 'Collections', show: () => can('ledger.view') },
     { key: 'dues', label: 'Dues & actions', show: () => anyOf('ledger.view', 'accounts.view') },
     { key: 'reports', label: 'Reports', show: () => can('reports.view') },
+    { key: 'changes', label: 'Change approvals', show: () => anyOf('booking.approve', 'receipt.approve', 'accounts.manage') },
     { key: 'demands', label: 'Stages & demands', show: () => anyOf('demand.raise', 'demand.approve', 'ledger.view') },
     { key: 'stages', label: 'Construction stages', show: () => can('stage.record'), sub: true },
     { key: 'letters', label: 'Demand letters (many flats)', show: () => anyOf('demand.raise', 'ledger.view') },
@@ -444,7 +445,7 @@
     if ($('#proj')) $('#proj').onchange = (e) => { proj = +e.target.value; store.set('erp_project', proj); shell(); };
     if (page === 'reg-cancellations' && arg !== 'full' && anyOf('accounts.view', 'audit.tabs')) { try { await cancelledView(); } catch (e) { $('#page').innerHTML = `<div class="err">${esc(e.message)}</div>`; } return; }
     if (/^reg-/.test(page || '') && (can('accounts.view') || (can('audit.tabs') && ['reg-recon', 'reg-cancellations'].includes(page)))) { try { await accRegister(page.slice(4)); } catch (e) { $('#page').innerHTML = `<div class="err">${esc(e.message)}</div>`; } return; }
-    const fn = { stages: () => demands(true), home, mgmt, marketing: () => window.Marketing.render({ api, dialog, toast, me }, (/^\d+$/.test(location.hash.split('/')[2] || '') ? location.hash.split('/')[2] : null) || store.get('erp_mkt_scope') || null), telemarketing: () => window.Telemarketing.render({ api, dialog, toast, me }), ca: caPage, accdash, collections, flats, custdocs, comms, team: teamPage, accteam: teamPage, sdr: sdrPage, cp: cpPage, cpportal: cpPortalPage, project: projectHome, crmtodo: () => dailyTodo('crm'), acctodo: () => dailyTodo('accounts'), training, projects, plans, users, audit, units, bookings, demands, receipts, ledgers, letters, followups, verify, prices, partners, balances: accBalances, bankauto: bankAuto, bookscrm: booksCrm, accreports: accReports, checks: accChecks, queries: openQueries, dues: duesPage, reports: reportsHub, report: () => reportView(location.hash.split('/')[2]), accsetup: accSetup, import: importPage, booking: bookingPage, statement: statementPage, run: runPage, pre: prePage, parking: parkingPage };
+    const fn = { stages: () => demands(true), home, mgmt, marketing: () => window.Marketing.render({ api, dialog, toast, me }, (/^\d+$/.test(location.hash.split('/')[2] || '') ? location.hash.split('/')[2] : null) || store.get('erp_mkt_scope') || null), telemarketing: () => window.Telemarketing.render({ api, dialog, toast, me }), ca: caPage, accdash, collections, flats, custdocs, comms, team: teamPage, accteam: teamPage, sdr: sdrPage, cp: cpPage, cpportal: cpPortalPage, project: projectHome, crmtodo: () => dailyTodo('crm'), acctodo: () => dailyTodo('accounts'), training, projects, plans, users, audit, units, bookings, demands, receipts, ledgers, letters, followups, verify, prices, partners, balances: accBalances, bankauto: bankAuto, bookscrm: booksCrm, accreports: accReports, checks: accChecks, queries: openQueries, dues: duesPage, changes: changesPage, reports: reportsHub, report: () => reportView(location.hash.split('/')[2]), accsetup: accSetup, import: importPage, booking: bookingPage, statement: statementPage, run: runPage, pre: prePage, parking: parkingPage };
     const key = DETAIL[page] && arg ? page : cur.key;
     try { await fn[key](arg ? +arg : undefined); } catch (e) { $('#page').innerHTML = `<div class="err">${esc(e.message)}</div>`; }
   }
@@ -1364,7 +1365,7 @@
           if (ap.map(sig).join('#') !== d.applicants.map(sig).join('#')) body.applicants = ap;
         }
         const r = await api('/api/bookings', body);
-        toast(`Saved: ${r.changed.length ? r.changed.length + ' field(s) changed' : 'buyer details updated'}${r.demandsReworked ? `, ${r.demandsReworked} demand(s) re-worked` : ''}.`);
+        toast(`${r.changed.length || (body.applicants && !r.pendingApproval) ? `Saved: ${r.changed.length ? r.changed.length + ' field(s) changed' : 'buyer details updated'}${r.demandsReworked ? `, ${r.demandsReworked} demand(s) re-worked` : ''}. ` : ''}${r.pendingApproval ? 'The agreement value / buyer name change is sent to Rafi Sir and Sameer for approval; it is made once approved.' : ''}`);
         bookingPage(id);
       });
       dl.classList.add('wide');
@@ -1456,6 +1457,7 @@
         <td>${chequeCell(r)}</td><td>${rStatus(r)}</td><td>${esc(r.created_by_name || 'Import / sample')}</td>
         <td class="num row-acts">${r.status === 'pending' && can('receipt.approve') ? `<button class="small" data-ok="${r.id}">Approve</button> <button class="ghost small" data-no="${r.id}">Reject</button>` : ''}
           ${r.status === 'approved' && can('receipt.approve') ? `<button class="danger small" data-bounce="${r.id}">Bounced</button> <button class="ghost small" data-resplit="${r.id}" title="Correct how the amount is split (AV, GST, TDS…)">Correct split</button>` : ''}
+          ${['pending', 'approved'].includes(r.status) && anyOf('booking.approve', 'receipt.approve', 'accounts.manage') ? `<button class="ghost small" data-chg="${r.id}" title="Change the amount, date or split: made once Rafi Sir or Sameer approves">Change…</button>` : ''}
           ${r.status === 'bounced' && can('receipt.approve') ? `<button class="ghost small" data-unbounce="${r.id}" title="Marked bounced by mistake">Not bounced</button>` : ''}
           ${r.mode === 'cheque' && !r.bank_status && ['pending', 'approved'].includes(r.status) ? `${!r.handed_on && !r.deposited_on && can('receipt.enter') ? `<button class="ghost small" data-hand="${r.id}">Given to Accounts</button>` : ''}${!r.acc_received_at && !r.deposited_on && canDep ? ` <button class="ghost small" data-rcv="${r.id}" title="The cheque has reached Accounts">Received</button>` : ''}${!r.deposited_on && canDep ? ` <button class="ghost small" data-dep="${r.id}">Deposited</button>` : ''}` : ''}
           ${['pending', 'approved'].includes(r.status) && !r.opening ? `<button class="ghost small" data-doc="${r.id}" title="${r.receipt_no ? 'Receipt ' + esc(r.receipt_no) + (r.receipt_sent_at ? ', emailed' : '') : 'Give the buyer a payment receipt'}">${r.receipt_no ? 'Receipt ✓' : 'Receipt'}</button>` : ''}
@@ -1483,12 +1485,21 @@
     if ($('#bankNow')) $('#bankNow').onclick = async () => { try { const o = await api('/api/receipts', { action: 'bankcheck' }); toast(`Found in the bank: ${o.linked} (${o.approved} approved by the bank statement, ${o.waiting} for Head Accounts). Returned: ${o.bounced}.`); receipts(); } catch (e) { alert(e.message); } };
     document.querySelectorAll('[data-bounce]').forEach((x) => (x.onclick = () => { const r = prompt('Mark as bounced. Reason (e.g. cheque returned, insufficient funds):'); if (r) act({ action: 'bounce', id: +x.dataset.bounce, reason: r }, 'Marked as bounced; the buyer\'s balance is updated.'); }));
     document.querySelectorAll('[data-unbounce]').forEach((x) => (x.onclick = () => { const r = prompt('Put this receipt back as approved. Why did the cheque not bounce?'); if (r) act({ action: 'unbounce', id: +x.dataset.unbounce, reason: r }, 'Back to approved; the buyer\'s balance is updated.'); }));
+    document.querySelectorAll('[data-chg]').forEach((x) => (x.onclick = () => {
+      const r = d.rows.find((y) => y.id === +x.dataset.chg); if (!r) return;
+      dialog(`<h2>Change a receipt · ${esc(r.unit_no || '')}</h2><p class="small muted">Nothing changes until Rafi Sir or Sameer approves. They get an email; the change and the reason are kept in the audit log.</p>
+        <div class="row"><div><label>Amount (₹)</label><input name="amount" inputmode="decimal" value="${toNum(r.amount)}"></div><div><label>Date received</label><input type="date" name="date" value="${String(r.received_on).slice(0, 10)}" max="${todayIso()}"></div></div>
+        <p class="small muted" style="margin:8px 0 4px">Split (must add up to the amount)</p>
+        <div class="row3">${Object.keys(HEAD).map((h) => `<div><label>${esc(HEAD[h])}</label><input name="s_${h}" inputmode="decimal" value="${r.splits[h] != null ? toNum(r.splits[h]) : ''}"></div>`).join('')}</div>
+        <label>Reason</label><input name="reason" required maxlength="300" placeholder="e.g. the bank statement shows ₹1,00,000 on 12 Aug">`,
+      async (y) => { const splits = {}; for (const h of Object.keys(HEAD)) splits[h] = y['s_' + h] || ''; await api('/api/changes', { action: 'receipt', id: r.id, amount: y.amount, date: y.date, splits, reason: y.reason }); toast('Sent to Rafi Sir and Sameer for approval.'); receipts(); });
+    }));
     document.querySelectorAll('[data-resplit]').forEach((x) => (x.onclick = () => {
       const r = d.rows.find((y) => y.id === +x.dataset.resplit); if (!r) return;
       dialog(`<h2>Correct the split · ${esc(r.unit_no || '')} · ${inr(r.amount, 2)}</h2><p class="small muted">The receipt and its number stay the same; the old and new split are kept in the audit log.</p>
         <div class="row3">${Object.keys(HEAD).map((h) => `<div><label>${esc(HEAD[h])}</label><input name="s_${h}" inputmode="decimal" value="${r.splits[h] != null ? toNum(r.splits[h]) : ''}"></div>`).join('')}</div>
         <label>Reason</label><input name="reason" required maxlength="300" placeholder="e.g. ₹23,810 of it was GST">`,
-      async (y) => { const splits = {}; for (const h of Object.keys(HEAD)) if (y['s_' + h]) splits[h] = y['s_' + h]; await api('/api/receipts', { action: 'resplit', id: r.id, splits, reason: y.reason }); toast('Split corrected.'); receipts(); });
+      async (y) => { const splits = {}; for (const h of Object.keys(HEAD)) if (y['s_' + h]) splits[h] = y['s_' + h]; const o = await api('/api/receipts', { action: 'resplit', id: r.id, splits, reason: y.reason }); toast(o.pendingApproval ? 'Sent to Rafi Sir and Sameer for approval; the split changes once approved.' : 'Split corrected.'); receipts(); });
     }));
     if ($('#new')) $('#new').onclick = async () => {
       const b = await api(`/api/bookings?project=${proj}`);
@@ -3295,12 +3306,21 @@
       dl.innerHTML = `<form method="dialog"><h2>${esc(unit)} · ${esc(x.booking.buyer || '')}</h2><p class="muted">Agreement value ${inr(x.booking.av)} · ${esc(x.booking.status || '')}. ${x.unmatched.books} receipts in the books and ${x.unmatched.crm} in the CRM have no match on the other side.</p>
         ${x.cancelled && x.cancelled.length ? `<h3>Cancelled bookings on this flat (${x.cancelled.length})</h3><div class="table-wrap acc-grid"><table><tr><th>Cancelled</th><th>Client</th><th class="num">Received (refund list)</th><th>Refund status</th></tr>${x.cancelled.map((c) => `<tr><td>${fmtD(c.cancel_date)}</td><td>${esc(c.client || '')}</td><td class="num">${inr(c.received)}</td><td>${esc(c.refund_status || '')}</td></tr>`).join('')}</table></div>` : ''}
         <h3>In the books (${bk.length})</h3><div class="table-wrap acc-grid"><table><tr><th>Date</th><th>ID</th><th>Bank</th><th>Head</th><th class="num">Amount</th><th>Ledger / payer</th><th></th></tr>
-        ${bk.map((r) => `<tr><td>${fmtD(r.date)}</td><td class="small">${esc(r.ref || '')}</td><td class="small">${esc(r.bank)}</td><td>${esc(r.head)}</td><td class="num">${inr(r.amount)}</td><td class="small">${esc(r.payer || r.desc || '')}</td><td>${r.bounced ? '<span class="pill grey">bounced</span>' : r.returnedOn ? `<span class="pill grey">came back ${fmtD(r.returnedOn)}</span>` : r.cancelledBuyer ? `<span class="pill grey">cancelled buyer${r.oldName ? ' (' + esc(r.oldName) + ')' : ''}</span>` : r.other ? '<span class="pill grey">earlier buyer</span>' : tag(r)}</td></tr>`).join('') || '<tr><td colspan="7" class="muted">None.</td></tr>'}</table></div>
+        ${bk.map((r) => `<tr><td>${fmtD(r.date)}</td><td class="small">${esc(r.ref || '')}</td><td class="small">${esc(r.bank)}</td><td>${esc(r.head)}</td><td class="num">${inr(r.amount)}</td><td class="small">${esc(r.payer || r.desc || '')}</td><td>${r.bounced ? '<span class="pill grey">bounced</span>' : r.returnedOn ? `<span class="pill grey">came back ${fmtD(r.returnedOn)}</span>` : r.cancelledBuyer ? `<span class="pill grey">cancelled buyer${r.oldName ? ' (' + esc(r.oldName) + ')' : ''}</span>` : r.other ? '<span class="pill grey">earlier buyer</span>' : tag(r)}${!r.pair && !r.bounced && !r.returnedOn ? `<div class="no-print" style="margin-top:4px">${can('accounts.enter') ? `<button type="button" class="ghost small" data-mv="${r.id}">Move to flat…</button> ` : ''}${(can('accounts.enter') || can('booking.approve')) && x.booking.buyer && r.payer ? `<button type="button" class="ghost small" data-sp="${r.id}" title="The Tally ledger name and the CRM buyer are the same person">Same person as ${esc(x.booking.buyer.split(' ')[0])}</button>` : ''}</div>` : ''}</td></tr>`).join('') || '<tr><td colspan="7" class="muted">None.</td></tr>'}</table></div>
         ${x.paid.length ? `<h3>Paid to this flat's ledger in the books (${x.paid.length})</h3><div class="table-wrap acc-grid"><table><tr><th>Date</th><th>ID</th><th>Bank</th><th>Head</th><th class="num">Amount</th></tr>${x.paid.map((p) => `<tr><td>${fmtD(p.date)}</td><td class="small">${esc(p.ref || '')}</td><td class="small">${esc(p.bank)}</td><td>${esc(p.head)}${p.isReturn ? ' <span class="pill grey">cheque came back</span>' : ''}</td><td class="num">${inr(p.amount)}</td></tr>`).join('')}</table></div>` : ''}
         <h3>In the CRM ledger (${cr.length})</h3><div class="table-wrap acc-grid"><table><tr><th>Date</th><th>Mode</th><th>Bank</th><th>Cheque / UTR</th><th class="num">Amount (without TDS)</th><th>Split</th><th></th></tr>
         ${cr.map((r) => `<tr><td>${fmtD(r.date)}</td><td>${esc(r.mode || '')}</td><td class="small">${esc(r.bank || '')}</td><td class="small">${esc(r.ref || '')}</td><td class="num">${inr(r.amount)}</td><td class="small">${esc(r.split || '')}</td><td>${r.status !== 'approved' ? `<span class="pill grey">${esc(r.status)}</span>` : r.oldBuyer ? `<span class="pill bad">cancelled buyer's payment${r.oldBuyer !== true ? ' (' + esc(r.oldBuyer) + ')' : ''}</span>` : r.amount > 0 ? tag(r) : ''}</td></tr>`).join('') || '<tr><td colspan="7" class="muted">None.</td></tr>'}</table></div>
         <div class="actions"><button value="cancel">Close</button></div></form>`;
       document.body.appendChild(dl); dl.addEventListener('close', () => dl.remove()); dl.showModal();
+      dl.querySelectorAll('[data-mv]').forEach((bt) => (bt.onclick = async () => {
+        const r = bk.find((y) => y.id === +bt.dataset.mv); const to = prompt(`Move this ${inr(r.amount)} receipt of ${fmtD(r.date)} to which flat? (e.g. A-1001)`); if (!to) return;
+        const why = prompt('Why does it belong to that flat? (kept in the audit log)'); if (!why) return;
+        try { await api('/api/accounts', { action: 'move-receipt', id: r.id, unit: to, reason: why }); toast(`Moved to ${to.toUpperCase()}. Correct it in Tally as well.`); dl.close(); booksCrm(); } catch (e) { alert(e.message); }
+      }));
+      dl.querySelectorAll('[data-sp]').forEach((bt) => (bt.onclick = async () => {
+        const r = bk.find((y) => y.id === +bt.dataset.sp);
+        try { await api('/api/accounts', { action: 'same-person', name: r.payer, sameAs: x.booking.buyer, unit }); toast(`Noted: "${r.payer}" is ${x.booking.buyer}.`); dl.close(); booksCrm(); } catch (e) { alert(e.message); }
+      }));
     }
   }
 
@@ -3374,6 +3394,23 @@
     };
     $('#page').innerHTML = '<p class="muted">Working it out…</p>';
     await load();
+  }
+
+  // Changes waiting for approval (receipt amount, date or split; agreement value; buyer name).
+  async function changesPage() {
+    const tab = store.get('erp_chg') || 'pending';
+    const d = await api('/api/changes?status=' + tab);
+    const L = { pending: 'Waiting for approval', approved: 'Approved', rejected: 'Rejected', all: 'All' };
+    $('#page').innerHTML = `<div class="page-head"><div><h1>Change approvals</h1><p class="muted">${d.approver ? 'Changes asked for by Head CRM and Head Accounts. Nothing changes until you approve; each one is kept in the audit log.' : 'The changes you asked for. Rafi Sir or Sameer approves each one; nothing changes before that.'}</p></div></div>
+      <div class="tabs">${Object.keys(L).map((k) => `<button class="tab ${k === tab ? 'on' : ''}" data-t="${k}">${L[k]}${k === 'pending' && d.pending ? ` (${d.pending})` : ''}</button>`).join('')}</div>
+      <div class="panel table-wrap"><table><tr><th>Asked</th><th>Flat</th><th>What</th><th>Change</th><th>Reason</th><th>Asked by</th><th>Status</th><th></th></tr>
+      ${d.rows.map((c) => `<tr><td class="small">${fmtDate(c.requested_at)}</td><td><b>${esc(c.unit_no || '')}</b></td><td>${esc({ receipt: 'Receipt', 'booking-av': 'Agreement value', 'buyer-name': 'Buyer name' }[c.kind] || c.kind)}</td>
+        <td class="small" style="white-space:pre-line">${esc(c.summary || '')}</td><td class="small">${esc(c.reason)}</td><td>${esc(c.requested_by_name || '')}</td>
+        <td>${c.status === 'pending' ? '<span class="pill warn">Waiting</span>' : c.status === 'approved' ? `<span class="pill good">Approved</span><div class="small muted">${esc(c.decided_by_name || '')}</div>` : `<span class="pill bad">Rejected</span><div class="small muted">${esc(c.decided_by_name || '')}${c.decision_note ? ': ' + esc(c.decision_note) : ''}</div>`}</td>
+        <td class="row-acts">${c.status === 'pending' && d.approver ? `<button class="small" data-ap="${c.id}">Approve</button> <button class="ghost small" data-rj="${c.id}">Reject</button>` : ''}${c.booking_id ? ` <a class="btn link small" href="#/booking/${c.booking_id}">Flat</a>` : ''}</td></tr>`).join('') || '<tr><td colspan="8" class="muted">Nothing here.</td></tr>'}</table></div>`;
+    document.querySelectorAll('.tab[data-t]').forEach((t) => (t.onclick = () => { store.set('erp_chg', t.dataset.t); changesPage(); }));
+    document.querySelectorAll('[data-ap]').forEach((x) => (x.onclick = async () => { x.disabled = true; try { await api('/api/changes', { action: 'decide', id: +x.dataset.ap, approve: true }); toast('Approved: the change is made.'); changesPage(); } catch (e) { alert(e.message); x.disabled = false; } }));
+    document.querySelectorAll('[data-rj]').forEach((x) => (x.onclick = async () => { const note = prompt('Why is it rejected? (the person who asked sees this)'); if (note === null) return; try { await api('/api/changes', { action: 'decide', id: +x.dataset.rj, approve: false, note }); toast('Rejected.'); changesPage(); } catch (e) { alert(e.message); } }));
   }
 
   async function duesPage() {

@@ -246,6 +246,27 @@ module.exports = route({
       const changed = Object.keys(set).filter((c) => norm(cur[c]) !== norm(set[c]) && !(c === 'booking_date' && norm(cur[c]).slice(0, 10) === norm(set[c])));
       const people = Array.isArray(b.applicants) ? cleanApplicants(b.applicants) : null;
       if (people && !has(u, 'buyer.kyc')) throw fail(403, 'Your role cannot change buyer details.');
+      // the agreement value and buyers' names change only once the Chairman or Sameer approves (meeting of 5 Nov 2026)
+      const C = require('../lib/changes'), asked = [];
+      if (!C.isApprover(u)) {
+        if (changed.includes('agreement_value')) {
+          const r = await C.create({ user: u, kind: 'booking-av', entityId: bk.id, projectId: bk.project_id, bookingId: bk.id, title: `the agreement value of ${bk.unit_no || 'the flat'}`,
+            summary: `Agreement value ₹${Number(cur.agreement_value).toLocaleString('en-IN')} → ₹${Number(set.agreement_value).toLocaleString('en-IN')} (the demands are worked out again)`, before: { agreement_value: Number(cur.agreement_value) }, after: { agreement_value: Number(set.agreement_value) }, reason });
+          asked.push(r.id);
+          for (const c of ['agreement_value', ...(!('brokerage' in b) && !('brokeragePct' in b) ? ['brokerage'] : [])]) { const i = changed.indexOf(c); if (i >= 0) changed.splice(i, 1); }
+        }
+        if (people) {
+          const ex = await db.q('select ap.seq, y.id, y.name from booking_applicants ap join buyers y on y.id = ap.buyer_id where ap.booking_id = $1 order by ap.seq', [bk.id]);
+          const names = [];
+          people.forEach((v, i) => { const e = ex[i]; if (e && String(v.name || '').trim() && String(v.name).trim() !== String(e.name || '').trim()) { names.push({ buyer_id: e.id, from: e.name, name: String(v.name).trim() }); v.name = e.name; } });
+          if (names.length) {
+            const r = await C.create({ user: u, kind: 'buyer-name', entityId: bk.id, projectId: bk.project_id, bookingId: bk.id, title: `the buyer's name on ${bk.unit_no || 'the flat'}`,
+              summary: names.map((x) => `${x.from} → ${x.name}`).join('\n'), before: { names: names.map((x) => ({ buyer_id: x.buyer_id, name: x.from })) }, after: { names: names.map((x) => ({ buyer_id: x.buyer_id, name: x.name })) }, reason });
+            asked.push(r.id);
+          }
+        }
+        if (asked.length && !changed.length && !(people && people.length)) return res.json({ ok: true, changed: [], pendingApproval: asked.length, ...(await detail(u, bk.id)) });
+      }
       if (!changed.length && !people) throw fail(400, 'Nothing was changed.');
       const before = Object.fromEntries(changed.map((c) => [c, cur[c]])), after = Object.fromEntries(changed.map((c) => [c, set[c]]));
       let redone = 0;
@@ -268,7 +289,7 @@ module.exports = route({
         }
         await audit.record(t.q, { user: u, action: 'edit', entity: 'booking', entityId: bk.id, projectId: bk.project_id, before, after: { ...after, demandsReworked: redone }, note: reason });
       });
-      return res.json({ ok: true, changed, demandsReworked: redone, ...(await detail(u, bk.id)) });
+      return res.json({ ok: true, changed, demandsReworked: redone, pendingApproval: asked.length, ...(await detail(u, bk.id)) });
     }
 
     // the registration appointment to the buyer on WhatsApp (registration_appointment template): name, flat, date, time and place
