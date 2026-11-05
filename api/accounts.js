@@ -398,6 +398,22 @@ module.exports = route({
       r.cheques = await require('../lib/cheque-match').run({ user: u, trigger: 'tally' }).catch((e) => ({ error: e.message }));
       return res.json({ ok: true, summary: p.summary, problems: p.problems, ...r });
     }
+    if (b.action === 'cancel-payments') {
+      // The cancelled buyers' payments (Developer Tracker → Cancellation Payment), replacing the list loaded before.
+      need('accounts.manage');
+      const rows = (Array.isArray(b.rows) ? b.rows : []).slice(0, 5000).map((r) => ({ unit_no: str(r.unit_no, 12).toUpperCase(), old_unit: str(r.old_unit, 12) || null, name: str(r.name, 200) || null,
+        amount: Number(r.amount) || 0, pay_date: DATE.test(r.pay_date || '') ? r.pay_date : null, deposit_date: DATE.test(r.deposit_date || '') ? r.deposit_date : null, txn: str(r.txn, 80) || null, mode: str(r.mode, 40) || null, status: str(r.status, 40) || null }))
+        .filter((r) => /^[AB]-\d{3,4}$/.test(r.unit_no) && r.amount > 0);
+      if (!rows.length) throw fail(400, 'No payments in the list.');
+      const out = await db.tx(async (t) => {
+        const removed = (await t.q('delete from acc_cancel_payments where book = $1 returning 1 as x', [acc.BOOK])).length;
+        const C = ['unit_no', 'old_unit', 'name', 'amount', 'pay_date', 'deposit_date', 'txn', 'mode', 'status'];
+        await t.q(`insert into acc_cancel_payments (book, created_by, ${C.join(', ')}) select $1, $2, ${C.map((c) => 'x.' + c).join(', ')} from json_to_recordset($3::json) as x(unit_no text, old_unit text, name text, amount numeric, pay_date date, deposit_date date, txn text, mode text, status text)`, [acc.BOOK, u.id, JSON.stringify(rows)]);
+        await audit.record(t.q, { user: u, action: 'import-cancel-payments', entity: 'accounts', entityId: 'signature', after: { rows: rows.length, removed } });
+        return { rows: rows.length, removed };
+      });
+      return res.json({ ok: true, ...out });
+    }
     if (b.action === 'refunds-preview' || b.action === 'refunds-import') {
       need('accounts.manage');
       const f = (Array.isArray(b.files) ? b.files : [])[0];
