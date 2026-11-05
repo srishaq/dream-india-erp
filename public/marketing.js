@@ -165,7 +165,8 @@
     $('#page').innerHTML = `<div class="mk"><div class="mk-hero"><span class="mk-eyebrow">${S.scope === 'company' ? 'All projects' : 'Project'}</span><h1>Sales &amp; Marketing</h1><p>Every channel of the project in one place: ads, portals, print, website, IVR, telemarketing and channel partners, from lead to booking.</p>
       <div class="mk-sync">${on.length ? `Live from ${on.join(', ')}${sync ? ' · ' + when(sync.at) : ''}` : 'Channels not connected yet (Set-up)'}${SO.meta.error || SO.youtube.error ? '<br><b style="color:#FECDCA">A channel needs connecting again (Set-up)</b>' : ''}</div>
       <div class="mk-pick"><label for="mkProj">Project</label><select id="mkProj">${projOpt.map(([k, l]) => `<option value="${k}" ${String(S.scope) === k ? 'selected' : ''}>${esc(l)}</option>`).join('')}${D.can.admin ? '<option value="__add">+ Add a project…</option>' : ''}</select>
-        <button type="button" class="mk-gear" data-tab="setup" aria-pressed="${S.tab === 'setup'}">⚙ Set-up</button></div></div>
+        <button type="button" class="mk-gear" data-tab="setup" aria-pressed="${S.tab === 'setup'}">⚙ Set-up</button>
+        <a class="mk-gear" style="text-decoration:none;background:linear-gradient(180deg,#F5A524,#FF7A1A);color:#1A1206;border-color:transparent;font-weight:700" href="/agents#${S.scope === 'company' || !S.scope ? 'company' : esc(String(S.scope))}">✦ AI Agent Team</a></div></div>
       <nav class="ff-tabs no-print mk-main" role="tablist">${GROUPS.map(([k, l, subs]) => `<button type="button" role="tab" data-tab="${subs[0][0]}" aria-selected="${G && G[0] === k}">${l}</button>`).join('')}</nav>
       ${G && G[2].length > 1 ? `<div class="mk-chips mk-subs">${G[2].map(([k, l]) => `<button type="button" data-tab="${k}" aria-pressed="${S.tab === k}">${l}</button>`).join('')}</div>` : ''}
       <div id="mkBody"></div></div>`;

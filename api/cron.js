@@ -7,6 +7,7 @@
 //   /api/cron?job=dpr   12:30 UTC = 6:00 pm IST  the site team is emailed if today's daily progress report is not in
 //   /api/cron?job=summary 04:30 UTC = 10:00 am IST the 10 am summary to Admin and Management (lib/staff-alerts.js)
 //   /api/cron?job=evening 14:30 UTC = 8:00 pm IST  the day reports to Head CRM, Head Accounts and Management (lib/day-report.js)
+//   /api/cron?job=agents every 10 minutes          the AI marketing agent team: comment-to-DM funnels, comment notes, the Orchestrator
 //   /api/cron?job=mail  every 5 minutes           buyers' email replies into their Communication record; automatic demand letters still to email;
 //                                                  purchase requests to Management for approval, and those waiting 24 hours up to the Admin
 // Vercel sends "Authorization: Bearer <CRON_SECRET>" when CRON_SECRET is set; then nothing else may run these.
@@ -39,7 +40,7 @@ async function run(req, res, job) {
     if (secret) { if (req.headers.authorization !== `Bearer ${secret}`) throw fail(401, 'Not allowed.'); }
     // No CRON_SECRET in Vercel yet: only Vercel's own scheduler, and only at each job's hour (a stopgap; add CRON_SECRET)
     else if (!/^vercel-cron\//.test(String(req.headers['user-agent'] || ''))) throw fail(403, 'Not allowed.');
-    else if (job !== 'mail' && !(job === 'mkt' && istHour() === 9) && !(job === 'backup' && istHour() === 2) && !(job === 'bank' && [12, 19].includes(istHour())) && !((job === 'pdc' || job === 'morning') && istHour() === 9) && !(job === 'summary' && istHour() === 10) && !(job === 'evening' && istHour() === 20) && !(job === 'dpr' && istHour() === 18)) throw fail(403, 'Not the time for this job.');
+    else if (job !== 'mail' && job !== 'agents' && !(job === 'mkt' && istHour() === 9) && !(job === 'backup' && istHour() === 2) && !(job === 'bank' && [12, 19].includes(istHour())) && !((job === 'pdc' || job === 'morning') && istHour() === 9) && !(job === 'summary' && istHour() === 10) && !(job === 'evening' && istHour() === 20) && !(job === 'dpr' && istHour() === 18)) throw fail(403, 'Not the time for this job.');
     const st = await status();
     if (st.pending.length && st.applied.length) await migrate(); // a new release deployed overnight: its tables first
     if (job === 'bank') {
@@ -70,6 +71,7 @@ async function run(req, res, job) {
       out.mktDigest = await require('../lib/mkt-money').digest({}).catch((e) => ({ error: e.message })); // Mondays: last week in Marketing
       return res.json({ ok: true, ...out });
     }
+    if (job === 'agents') return res.json({ ok: true, ...(await require('../lib/agents').tick()) }); // the AI marketing agent team, every 10 minutes
     if (job === 'backup') return res.json({ ok: true, ...(await require('../lib/backup').run({ trigger: 'schedule' })) }); // the nightly backup to Google Drive
     if (job === 'dpr') return res.json({ ok: true, ...(await require('../lib/staff-alerts').dprReminder()) });
     if (job === 'summary') return res.json({ ok: true, ...(await require('../lib/staff-alerts').sendSummary({ trigger: 'schedule' })) });

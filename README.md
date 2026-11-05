@@ -50,6 +50,15 @@ The person who enters something can never approve it.
 - With `ANTHROPIC_API_KEY`: "Catch me up" summaries, and voice notes written out in English.
 - `chat.dreamindiarealty.com` opens DreamComm directly once the domain is added to the Vercel project.
 
+## AI Agent Team (`/agents`, Rafi Sir, 6 Nov 2026)
+- One marketing command centre for the company, used project by project: the drop-down at the start picks the company or a project; owner input, knowledge files, drafts, funnels, feed and counters belong to that choice.
+- Signals → System of record → Owner input → The Brain (Claude) → Orchestrator (collects, scores, briefs, drafts, schedules, approves or calls the owner) → Knowledge layer (10 files; a project's own copy wins over the company's) → eight departments → Engage. Tools that are not connected show as waiting, never as running.
+- What interrupts the loop: keyword comments, a lead at night, a lead not called in 2 hours, a thin content calendar (Content Engine drafts), a post taking off (repurpose; a boost goes to the owner), a complaint in the comments, comments without replies, cost per lead jumping. Search spikes and Google reviews wait for Search Console / Google Business.
+- Drafts go to the Content calendar as Waiting for approval (Management approves; "routine posts ship without me" approves drafts with no price or offer). Nothing is published or spent from here; approved posts go out through the usual Marketing flow once a design is attached.
+- Pre-RERA: a project without a MahaRERA number gets area and brand content only. Registered: every draft ends with the MahaRERA line.
+- Comment-to-DM funnels: a comment with the keyword on a recent Instagram / Facebook post gets a private DM; a mobile number sent back becomes a lead (source Instagram/Facebook, the project), goes to sales and gets the WhatsApp welcome. A new funnel DMs only its test accounts until Management switches it to live. Needs the Meta app's instagram_manage_messages and pages_messaging permissions (Facebook / Instagram connected again after they are added).
+- Cron `job=agents` every 10 minutes (funnels, comment notes, each switched-on scope every 30 minutes). Kill switch (Management) stops every agent. `AGENT_MODEL` (default claude-sonnet-5-5) and `ANTHROPIC_API_KEY` in Vercel.
+
 ## Technology
 - No outside packages. `lib/pg.js` is a small PostgreSQL client (TLS, SCRAM-SHA-256, parameterised queries).
 - Database: Postgres (Neon, added from Vercel → Storage). Its address arrives as `DATABASE_URL`.
