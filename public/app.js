@@ -2146,9 +2146,14 @@
     const d = await api('/api/accounts?reg=cancellations&limit=1000&filter=');
     const isDone = (s) => /^(done|nothing to refund)/i.test(String(s || '').trim());
     const rows = d.rows.map((r) => {
-      const paid = toNum(r.received), back = Math.max(toNum(r.books_refunded), toNum(r.refund_rtgs) + toNum(r.refund_white)), left = toNum(r.to_refund);
+      // paid: the list's figure, or what the books show the old buyer paid; due: the refund decided (RTGS + WHITE, or the
+      // refund due), else what was paid; refunded: what the books show paid back to the old buyer
       const st = isDone(r.refund_status) ? 'Refunded' : /chq|cheque|issued/i.test(r.refund_status || '') ? 'Cheque issued' : 'To refund';
-      return { r, paid, back, left, st };
+      const paid = toNum(r.received) || toNum(r.books_received);
+      const due = toNum(r.refund_rtgs) + toNum(r.refund_white) || (r.refund_due != null && r.refund_due !== '' ? toNum(r.refund_due) : paid);
+      const back = toNum(r.books_refunded);
+      const left = st === 'Refunded' ? 0 : Math.max(0, due - back);
+      return { r, paid, due, back, left, st };
     });
     const T = (f) => rows.filter(f);
     const sum = (a, k) => a.reduce((x, y) => x + y[k], 0);
@@ -2158,19 +2163,19 @@
       const list = (tab === 'pend' ? pend : tab === 'done' ? done : rows).filter((x) => !q || `${x.r.unit_no} ${x.r.client} ${x.r.cp || ''}`.toLowerCase().includes(q))
         .sort((a, b) => b.left - a.left || String(b.r.cancel_date || '').localeCompare(String(a.r.cancel_date || '')));
       const pill = (x) => x.st === 'Refunded' ? '<span class="pill good">Refunded</span>' : x.st === 'Cheque issued' ? '<span class="pill warn">Cheque issued</span>' : '<span class="pill bad">To refund</span>';
-      $('#cvT').innerHTML = `<table><tr><th>Flat</th><th>Old buyer</th><th>Cancelled on</th><th class="num">Paid by buyer</th><th class="num">Refunded</th><th class="num">Still to refund</th><th>Status</th><th>Flat now</th></tr>
+      $('#cvT').innerHTML = `<table><tr><th>Flat</th><th>Old buyer</th><th>Cancelled on</th><th class="num">Paid by buyer</th><th class="num">Refund due</th><th class="num">Refunded (books)</th><th class="num">Still to refund</th><th>Status</th><th>Flat now</th></tr>
         ${list.map((x) => `<tr class="clickable" data-u="${esc(x.r.unit_no)}"><td><b>${esc(x.r.unit_no)}</b></td><td>${esc(x.r.client || '')}</td><td class="small">${x.r.cancel_date ? fmtD(String(x.r.cancel_date).slice(0, 10)) : ''}</td>
-          <td class="num">${inr(x.paid)}</td><td class="num">${x.back ? inr(x.back) : '—'}</td><td class="num">${x.left ? `<b class="bad-t">${inr(x.left)}</b>` : '—'}</td><td>${pill(x)}</td><td class="small muted">${esc(String(x.r.crm_now || '').replace(/ — CRM not cancelled/, ' (CRM not cancelled!)'))}</td></tr>`).join('') || '<tr><td colspan="8" class="muted">None.</td></tr>'}
-        <tr class="total"><td colspan="3"><b>${list.length} flats</b></td><td class="num"><b>${inr(sum(list, 'paid'))}</b></td><td class="num"><b>${inr(sum(list, 'back'))}</b></td><td class="num"><b>${inr(sum(list, 'left'))}</b></td><td colspan="2"></td></tr></table>`;
+          <td class="num">${x.paid ? inr(x.paid) : '—'}</td><td class="num">${inr(x.due)}</td><td class="num">${x.back ? inr(x.back) : '—'}</td><td class="num">${x.left ? `<b class="bad-t">${inr(x.left)}</b>` : '—'}</td><td>${pill(x)}</td><td class="small muted">${esc(String(x.r.crm_now || '').replace(/ — CRM not cancelled/, ' (CRM not cancelled!)'))}</td></tr>`).join('') || '<tr><td colspan="9" class="muted">None.</td></tr>'}
+        <tr class="total"><td colspan="3"><b>${list.length} flats</b></td><td class="num"><b>${inr(sum(list, 'paid'))}</b></td><td class="num"><b>${inr(sum(list, 'due'))}</b></td><td class="num"><b>${inr(sum(list, 'back'))}</b></td><td class="num"><b>${inr(sum(list, 'left'))}</b></td><td colspan="2"></td></tr></table>`;
       document.querySelectorAll('#cvT tr[data-u]').forEach((tr) => (tr.onclick = () => { store.set('erp_acc_cancellations', JSON.stringify({ q: tr.dataset.u, filter: '' })); go('#/reg-cancellations/full'); }));
       document.querySelectorAll('#cvTabs button').forEach((b) => b.classList.toggle('ghost', b.dataset.t !== tab));
     };
-    $('#page').innerHTML = `<div class="page-head"><div><h1>Cancelled flats & refunds</h1><p class="muted">Every cancelled booking: what the old buyer paid, what has been refunded and what is still to refund. Tap a flat to see or edit all its details.</p></div>
+    $('#page').innerHTML = `<div class="page-head"><div><h1>Cancelled flats & refunds</h1><p class="muted">Every cancelled booking: what the old buyer paid, the refund due (RTGS + WHITE as decided), what the books (Tally) show paid back to them, and what is still to refund. Tap a flat to see or edit all its details.</p></div>
         <div class="actions" style="margin:0"><a class="btn ghost" href="#/reg-cancellations/full">Full register (edit, Excel)</a></div></div>
       <div class="panel"><div class="kpis">
         <div class="kpi"><b>${rows.length}</b><span>cancelled flats</span></div>
         <div class="kpi"><b>${inr(sum(rows, 'paid'))}</b><span>paid by the old buyers</span></div>
-        <div class="kpi"><b class="good-t">${done.length}</b><span>refunded (${inr(sum(rows, 'back'))})</span></div>
+        <div class="kpi"><b class="good-t">${done.length}</b><span>refunded</span></div>
         <div class="kpi bad"><b>${pend.length}</b><span>still to refund</span></div>
         <div class="kpi bad"><b>${inr(sum(rows, 'left'))}</b><span>still to refund (₹)</span></div></div></div>
       <div class="panel"><div class="row" style="grid-template-columns:auto 1fr;align-items:center;gap:12px">
