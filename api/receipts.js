@@ -171,7 +171,11 @@ module.exports = route({
       // Decided 5 Nov 2026: cheques and transfers are approved by the bank statement (12 noon and 7 pm runs). Head Accounts
       // approves one by hand only once the statement shows it (a match on flat and amount, which needs a person to confirm),
       // and receipts that never pass through the bank (TDS, other).
-      if (status === 'approved' && ['cheque', 'bank'].includes(r.mode) && !r.bank_acc_id && !r.opening)
+      // A receipt dated before the statements are checked from (a missing old one entered while correcting the CRM) can never
+      // appear on a run, so Head Accounts approves it by hand against Tally.
+      const stStart = await require('../lib/bank-auto').setting('statement_start', '2026-10-01');
+      const oldOne = String(r.received_on instanceof Date ? r.received_on.toISOString() : r.received_on).slice(0, 10) < String(stStart).replace(/"/g, '').slice(0, 10);
+      if (status === 'approved' && ['cheque', 'bank'].includes(r.mode) && !r.bank_acc_id && !r.opening && !oldOne)
         throw fail(409, 'Cheques and transfers are approved by the bank statement (12 noon and 7 pm). This one is not on the statement yet, so it cannot be approved by hand.');
       if (status === 'approved') { const st = await db.one('select status from bookings where id = $1', [r.booking_id]); if (!st || !['active', 'pending'].includes(st.status)) throw fail(409, `This flat's booking is ${st ? st.status : 'gone'}: the receipt cannot be approved on it. Reject it, or record it against the refund in Accounts.`); }
       await db.tx(async (t) => {
