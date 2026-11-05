@@ -653,3 +653,5 @@ h2.ff-sec { font-size: 13px; letter-spacing: .1em; text-transform: uppercase; co
 #cvT tr.clickable { cursor: pointer; }
 #cvT tr.clickable:hover td { background: var(--brand-tint); }
 #cvT tr.total td { border-top: 2px solid var(--line, #ddd); background: var(--bg-2, #f6f6f8); }
+tr.clickable { cursor: pointer; }
+tr.clickable:hover td { background: var(--brand-tint); }

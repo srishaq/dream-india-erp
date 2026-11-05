@@ -299,6 +299,7 @@
     { key: 'team', label: 'Dream Chat', show: () => anyOf('ledger.view', 'receipt.enter') && !(can('accounts.enter') && !can('demand.raise') && !can('booking.create')) },
     { group: 'CRM tools' },
     { key: 'collections', label: 'Collections', show: () => can('ledger.view') },
+    { key: 'dues', label: 'Dues & actions', show: () => anyOf('ledger.view', 'accounts.view') },
     { key: 'demands', label: 'Stages & demands', show: () => anyOf('demand.raise', 'demand.approve', 'ledger.view') },
     { key: 'stages', label: 'Construction stages', show: () => can('stage.record'), sub: true },
     { key: 'letters', label: 'Demand letters (many flats)', show: () => anyOf('demand.raise', 'ledger.view') },
@@ -442,7 +443,7 @@
     if ($('#proj')) $('#proj').onchange = (e) => { proj = +e.target.value; store.set('erp_project', proj); shell(); };
     if (page === 'reg-cancellations' && arg !== 'full' && anyOf('accounts.view', 'audit.tabs')) { try { await cancelledView(); } catch (e) { $('#page').innerHTML = `<div class="err">${esc(e.message)}</div>`; } return; }
     if (/^reg-/.test(page || '') && (can('accounts.view') || (can('audit.tabs') && ['reg-recon', 'reg-cancellations'].includes(page)))) { try { await accRegister(page.slice(4)); } catch (e) { $('#page').innerHTML = `<div class="err">${esc(e.message)}</div>`; } return; }
-    const fn = { stages: () => demands(true), home, mgmt, marketing: () => window.Marketing.render({ api, dialog, toast, me }, (/^\d+$/.test(location.hash.split('/')[2] || '') ? location.hash.split('/')[2] : null) || store.get('erp_mkt_scope') || null), telemarketing: () => window.Telemarketing.render({ api, dialog, toast, me }), ca: caPage, accdash, collections, flats, custdocs, comms, team: teamPage, accteam: teamPage, sdr: sdrPage, cp: cpPage, cpportal: cpPortalPage, project: projectHome, crmtodo: () => dailyTodo('crm'), acctodo: () => dailyTodo('accounts'), training, projects, plans, users, audit, units, bookings, demands, receipts, ledgers, letters, followups, verify, prices, partners, balances: accBalances, bankauto: bankAuto, bookscrm: booksCrm, accreports: accReports, checks: accChecks, queries: openQueries, accsetup: accSetup, import: importPage, booking: bookingPage, statement: statementPage, run: runPage, pre: prePage, parking: parkingPage };
+    const fn = { stages: () => demands(true), home, mgmt, marketing: () => window.Marketing.render({ api, dialog, toast, me }, (/^\d+$/.test(location.hash.split('/')[2] || '') ? location.hash.split('/')[2] : null) || store.get('erp_mkt_scope') || null), telemarketing: () => window.Telemarketing.render({ api, dialog, toast, me }), ca: caPage, accdash, collections, flats, custdocs, comms, team: teamPage, accteam: teamPage, sdr: sdrPage, cp: cpPage, cpportal: cpPortalPage, project: projectHome, crmtodo: () => dailyTodo('crm'), acctodo: () => dailyTodo('accounts'), training, projects, plans, users, audit, units, bookings, demands, receipts, ledgers, letters, followups, verify, prices, partners, balances: accBalances, bankauto: bankAuto, bookscrm: booksCrm, accreports: accReports, checks: accChecks, queries: openQueries, dues: duesPage, accsetup: accSetup, import: importPage, booking: bookingPage, statement: statementPage, run: runPage, pre: prePage, parking: parkingPage };
     const key = DETAIL[page] && arg ? page : cur.key;
     try { await fn[key](arg ? +arg : undefined); } catch (e) { $('#page').innerHTML = `<div class="err">${esc(e.message)}</div>`; }
   }
@@ -508,15 +509,15 @@
     'reg-receipts': 'Every receipt as it came into the bank', 'reg-payments': 'Every payment out, by head', 'reg-pdc': 'Post-dated cheques and their reminders',
     'reg-tds': 'TDS deducted and challans paid', sdr: 'Stamp duty and registration challans, one per flat (a second one is blocked)', 'reg-recon': 'Items the bank and the books do not yet agree on', 'reg-compliance': 'GST, TDS and RERA due dates',
     'reg-tenants': 'SRA tenants and their rent', 'reg-rentLinks': 'Rent payment links for each tenant', 'reg-cancellations': 'Cancelled flats and refunds still to pay',
-    accreports: 'Reports and the Tally import', checks: 'Daily checks on the registers', queries: 'Every correction still to make in the CRM and Accounts, with who fixes it', bookscrm: 'Tally receipts flat by flat against the CRM',
+    accreports: 'Reports and the Tally import', checks: 'Daily checks on the registers', dues: 'Balance due by follow-up status, flat by flat, with search and Excel', queries: 'Every correction still to make in the CRM and Accounts, with who fixes it', bookscrm: 'Tally receipts flat by flat against the CRM',
     ca: 'GST, TDS payable, RERA quarterly and cash flow, for the CA', accsetup: 'Bank accounts, heads, statement folders and imports', audit: 'Who changed what, and when',
   };
   const PICON = { parking: 'grid', 'acc-bank': 'rupee', 'acc-money': 'book', 'acc-tax': 'check', 'acc-sra': 'users', collections: 'chart', flats: 'users', 'sc-calls': 'phone', 'sc-dues': 'book', 'sc-appr': 'check', comms: 'mail', team: 'users', accteam: 'users', sdr: 'rupee', custdocs: 'book', site: 'tower', crmtodo: 'check', acctodo: 'check', training: 'book', dashboard: 'chart', units: 'grid', bookings: 'book', demands: 'tower', receipts: 'rupee', ledgers: 'book', letters: 'mail', followups: 'phone', verify: 'check', prices: 'rupee', partners: 'users',
-    accdash: 'chart', balances: 'rupee', bankauto: 'check', 'reg-cancellations': 'users', bookscrm: 'check', checks: 'check', queries: 'check', audit: 'book', ca: 'chart', accsetup: 'grid' };
+    accdash: 'chart', balances: 'rupee', bankauto: 'check', 'reg-cancellations': 'users', bookscrm: 'check', checks: 'check', queries: 'check', dues: 'rupee', audit: 'book', ca: 'chart', accsetup: 'grid' };
   const DEPTS = [
     { key: 'crm', title: 'Sales & CRM', sub: 'Today’s work, every flat and buyer in one place, receipts, collections and the inbox', icon: 'chart', tone: '#2B5C8A', group: 'CRM', more: 'CRM tools',
       sections: [['Every day', ['crmtodo', 'flats', 'receipts', 'comms', 'team']], ['Sales', ['units', 'parking', 'sc-appr', 'prices', 'partners']],
-        ['Collections', ['collections', 'demands', 'letters']], ['Records and checks', ['custdocs', 'verify']]] },
+        ['Collections', ['dues', 'collections', 'demands', 'letters']], ['Records and checks', ['custdocs', 'verify']]] },
     { key: 'accounts', title: 'Accounts', sub: 'Bank, receipts, payments, PDC, TDS, SRA rent, GST, SDR and Tally', icon: 'book', tone: '#117A65', group: 'Accounts', skip: ['ca', 'bookscrm', 'checks'],
       sections: [['Every day', ['acctodo', 'acc-bank', 'acc-money', 'accteam']], ['Taxes & compliance', ['acc-tax']], ['Refunds, partners & tenants', ['reg-cancellations', 'cpacc', 'acc-sra']], ['Reports & set-up', ['accdash', 'accreports', 'accsetup']]] },
     { key: 'audit', title: 'CRM/Accounts Audit', sub: 'Tally against the CRM, checks, reconciling items and cancelled flats', icon: 'check', tone: '#0E8C9B', pages: ['queries', 'bookscrm', 'checks', 'reg-recon', 'reg-cancellations', 'verify', 'audit'] },
@@ -3299,6 +3300,50 @@
         <div class="actions"><button value="cancel">Close</button></div></form>`;
       document.body.appendChild(dl); dl.addEventListener('close', () => dl.remove()); dl.showModal();
     }
+  }
+
+  // Dues & actions: balances due grouped by the CRM follow-up status (as on the old dashboard), then every flat with search.
+  async function duesPage() {
+    const d = await api(`/api/dues?project=${proj || ''}`);
+    const R = d.rows;
+    const st0 = JSON.parse(store.get('erp_dues') || '{}');
+    const f = { q: '', status: '', wing: '', due: st0.due ?? true, sort: st0.sort || 'due' };
+    const cr2 = (v) => cr(v);
+    const by = {}; for (const r of R) { if (!r.due) continue; const x = (by[r.status] ||= { A: 0, B: 0, n: 0, due: 0 }); x[r.wing] = (x[r.wing] || 0) + 1; x.n++; x.due += r.due; }
+    const groups = Object.entries(by).sort((a, b) => b[1].due - a[1].due);
+    const tone = (s) => /defaulter/i.test(s) ? 'bad' : /follow|pending|part|pdc/i.test(s) ? 'warn' : 'grey';
+    const tot = groups.reduce((a, [, x]) => ({ A: a.A + (x.A || 0), B: a.B + (x.B || 0), n: a.n + x.n, due: a.due + x.due }), { A: 0, B: 0, n: 0, due: 0 });
+    const statuses = [...new Set(R.map((r) => r.status))].sort();
+    $('#page').innerHTML = `<div class="page-head"><div><h1>Dues &amp; actions</h1><p class="muted">Outstanding balances grouped by the CRM follow-up status, and every flat with what is due. Tap a status to see its flats.</p></div>
+        <div class="actions" style="margin:0"><a class="btn ghost" id="duX" href="#">Export to Excel</a><button class="ghost" id="duP">Print</button></div></div>
+      <div class="panel"><h2>Outstanding by follow-up status</h2><div class="table-wrap"><table><tr><th>Status</th><th class="num">Wing A</th><th class="num">Wing B</th><th class="num">Units</th><th class="num">Balance due</th></tr>
+        ${groups.map(([k, x]) => `<tr class="clickable" data-s="${esc(k)}"><td><span class="pill ${tone(k)}">${esc(k)}</span></td><td class="num">${x.A || 0}</td><td class="num">${x.B || 0}</td><td class="num">${x.n}</td><td class="num"><b>${cr2(x.due)}</b></td></tr>`).join('')}
+        <tr class="total"><td><b>Total</b></td><td class="num"><b>${tot.A}</b></td><td class="num"><b>${tot.B}</b></td><td class="num"><b>${tot.n}</b></td><td class="num"><b>${cr2(tot.due)}</b></td></tr></table></div></div>
+      <div class="panel" id="duList"><h2>Flats</h2>
+        <div class="row no-print" style="grid-template-columns:2fr 1fr 110px auto;gap:10px;align-items:end">
+          <div><label>Search</label><input id="duQ" placeholder="Flat, buyer, mobile or partner"></div>
+          <div><label>Follow-up status</label><select id="duS"><option value="">All statuses</option>${statuses.map((x) => `<option>${esc(x)}</option>`).join('')}</select></div>
+          <div><label>Wing</label><select id="duW"><option value="">Both</option><option>A</option><option>B</option></select></div>
+          <label class="small" style="display:flex;gap:6px;align-items:center;margin-bottom:10px"><input type="checkbox" id="duD" ${f.due ? 'checked' : ''} style="width:auto"> Only flats with a balance due</label></div>
+        <p class="small muted" id="duN" style="margin:8px 0"></p><div class="table-wrap" id="duT"></div></div>`;
+    const cols = [['unit', 'Flat'], ['status', 'Follow-up status'], ['buyer', 'Buyer'], ['phone', 'Mobile'], ['cp', 'Channel partner'], ['av', 'Agreement value', 1], ['demanded', 'Demanded', 1], ['received', 'Received', 1], ['avDue', 'AV due', 1], ['gstDue', 'GST due', 1], ['due', 'Balance due', 1], ['lastReceipt', 'Last receipt']];
+    const list = () => R.filter((r) => (!f.status || r.status === f.status) && (!f.wing || r.wing === f.wing) && (!f.due || r.due > 0) && (!f.q || `${r.unit} ${r.buyer} ${r.phone} ${r.cp} ${r.status}`.toLowerCase().includes(f.q)));
+    const draw = () => {
+      const L = list().sort((a, b) => { const k = f.sort, m = cols.find((c) => c[0] === k); return m && m[2] ? b[k] - a[k] : String(a[k]).localeCompare(String(b[k])); });
+      $('#duN').textContent = `${L.length} flats · balance due ${cr2(L.reduce((a, r) => a + r.due, 0))} · tap a column heading to sort, a flat to open it`;
+      $('#duT').innerHTML = `<table><tr>${cols.map(([k, l, m]) => `<th class="${m ? 'num' : ''}" data-k="${k}" style="cursor:pointer">${esc(l)}${f.sort === k ? ' ▾' : ''}</th>`).join('')}</tr>
+        ${L.slice(0, 600).map((r) => `<tr class="clickable" data-b="${r.id}">${cols.map(([k, , m]) => `<td class="${m ? 'num' : ''}">${k === 'unit' ? `<b>${esc(r.unit)}</b>` : k === 'status' ? `<span class="pill ${tone(r.status)}">${esc(r.status)}</span>` : k === 'lastReceipt' ? (r.lastReceipt ? fmtD(r.lastReceipt) : '—') : m ? (r[k] ? inr(r[k]) : '—') : esc(r[k] || '')}</td>`).join('')}</tr>`).join('') || `<tr><td colspan="${cols.length}" class="muted">None.</td></tr>`}</table>${L.length > 600 ? '<p class="small muted">Showing 600; the Excel file has them all.</p>' : ''}`;
+      $('#duT').querySelectorAll('th[data-k]').forEach((th) => (th.onclick = () => { f.sort = th.dataset.k; store.set('erp_dues', JSON.stringify({ due: f.due, sort: f.sort })); draw(); }));
+      $('#duT').querySelectorAll('tr[data-b]').forEach((tr) => (tr.onclick = () => go('#/booking/' + tr.dataset.b)));
+      $('#duX').href = `/api/dues?${new URLSearchParams({ project: proj || '', export: 'xlsx', q: f.q, status: f.status, wing: f.wing, due: f.due ? '1' : '' })}`;
+    };
+    $('#duQ').oninput = (e) => { f.q = e.target.value.trim().toLowerCase(); draw(); };
+    $('#duS').onchange = (e) => { f.status = e.target.value; draw(); };
+    $('#duW').onchange = (e) => { f.wing = e.target.value; draw(); };
+    $('#duD').onchange = (e) => { f.due = e.target.checked; store.set('erp_dues', JSON.stringify({ due: f.due, sort: f.sort })); draw(); };
+    $('#duP').onclick = () => print();
+    document.querySelectorAll('tr[data-s]').forEach((tr) => (tr.onclick = () => { f.status = tr.dataset.s; $('#duS').value = f.status; draw(); $('#duList').scrollIntoView({ behavior: 'smooth' }); }));
+    draw();
   }
 
   async function openQueries() {
