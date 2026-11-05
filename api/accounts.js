@@ -369,7 +369,7 @@ module.exports = route({
           const cur = new Map((await t.q(`select * from ${table} where book = $1 and source = 'Tally'`, [acc.BOOK])).map((r) => [r.ref_id, r]));
           for (const r of rows) {
             const x = cur.get(r.ref_id); if (!x || Math.abs(Number(x.amount) - Number(r.amount)) > 0.01) continue;
-            const diff = cols.filter((c) => String(x[c] ?? '') !== String(r[c] ?? ''));
+            const diff = cols.filter((c) => c in r && String(x[c] ?? '') !== String(r[c] ?? ''));
             if (!diff.length) continue;
             if (x.updated_by && x.updated_by !== u.id) { res2.skipped++; continue; }
             await t.q(`update ${table} set ${diff.map((c, i) => `${c} = $${i + 2}`).join(', ')}, updated_by = $${diff.length + 2}, updated_at = now() where id = $1`, [x.id, ...diff.map((c) => r[c] ?? null), u.id]);
