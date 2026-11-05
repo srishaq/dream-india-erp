@@ -7,14 +7,13 @@ const { write } = require('../lib/xlsx-write');
 const { route, fail, str, intOr } = require('../lib/http');
 
 const DATE = /^\d{4}-\d{2}-\d{2}$/;
-// who may open which section (Management and Admin see everything)
-const SEE = { Sales: ['ledger.view', 'inventory.view', 'accounts.view'], Collections: ['ledger.view', 'accounts.view'], Customer: ['ledger.view', 'accounts.view'], Accounts: ['accounts.view'], 'Tax & compliance': ['accounts.view', 'ca.view'] };
 
 module.exports = route({
   GET: async (req, res) => {
     const u = await auth.guard(req, res, null); if (!u) return;
     const q = req.query || {};
-    const ok = (section) => (SEE[section] || ['accounts.view']).some((p) => has(u, p));
+    if (!has(u, 'reports.view')) throw fail(403, 'Reports are open to Management, Head CRM, Head Accounts and the people given access.');
+    const ok = () => true; // everyone with Reports sees every report (5 Nov 2026)
     if (q.list) return res.json({ reports: R.list().filter((r) => ok(r.section)) });
     const meta = R.list().find((r) => r.key === q.name);
     if (!meta) throw fail(404, 'Unknown report.');

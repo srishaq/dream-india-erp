@@ -300,7 +300,7 @@
     { group: 'CRM tools' },
     { key: 'collections', label: 'Collections', show: () => can('ledger.view') },
     { key: 'dues', label: 'Dues & actions', show: () => anyOf('ledger.view', 'accounts.view') },
-    { key: 'reports', label: 'Reports', show: () => anyOf('ledger.view', 'accounts.view', 'ca.view') },
+    { key: 'reports', label: 'Reports', show: () => can('reports.view') },
     { key: 'demands', label: 'Stages & demands', show: () => anyOf('demand.raise', 'demand.approve', 'ledger.view') },
     { key: 'stages', label: 'Construction stages', show: () => can('stage.record'), sub: true },
     { key: 'letters', label: 'Demand letters (many flats)', show: () => anyOf('demand.raise', 'ledger.view') },
