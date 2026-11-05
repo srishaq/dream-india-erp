@@ -3307,18 +3307,18 @@
     const d = await api(`/api/dues?project=${proj || ''}`);
     const R = d.rows;
     const st0 = JSON.parse(store.get('erp_dues') || '{}');
-    const f = { q: '', status: '', wing: '', due: st0.due ?? true, sort: st0.sort || 'due' };
+    const f = { q: '', status: '', wing: '', due: st0.due ?? true, sort: st0.sort || 'avDue' };
     const cr2 = (v) => cr(v);
-    const by = {}; for (const r of R) { if (!r.due) continue; const x = (by[r.status] ||= { A: 0, B: 0, n: 0, due: 0 }); x[r.wing] = (x[r.wing] || 0) + 1; x.n++; x.due += r.due; }
+    const by = {}; for (const r of R) { if (!r.avDue) continue; const x = (by[r.status] ||= { A: 0, B: 0, n: 0, due: 0, gst: 0 }); x[r.wing] = (x[r.wing] || 0) + 1; x.n++; x.due += r.avDue; x.gst += r.gstDue; }
     const groups = Object.entries(by).sort((a, b) => b[1].due - a[1].due);
     const tone = (s) => /defaulter/i.test(s) ? 'bad' : /follow|pending|part|pdc/i.test(s) ? 'warn' : 'grey';
-    const tot = groups.reduce((a, [, x]) => ({ A: a.A + (x.A || 0), B: a.B + (x.B || 0), n: a.n + x.n, due: a.due + x.due }), { A: 0, B: 0, n: 0, due: 0 });
+    const tot = groups.reduce((a, [, x]) => ({ A: a.A + (x.A || 0), B: a.B + (x.B || 0), n: a.n + x.n, due: a.due + x.due, gst: a.gst + x.gst }), { A: 0, B: 0, n: 0, due: 0, gst: 0 });
     const statuses = [...new Set(R.map((r) => r.status))].sort();
     $('#page').innerHTML = `<div class="page-head"><div><h1>Dues &amp; actions</h1><p class="muted">Outstanding balances grouped by the CRM follow-up status, and every flat with what is due. Tap a status to see its flats.</p></div>
         <div class="actions" style="margin:0"><a class="btn ghost" id="duX" href="#">Export to Excel</a><button class="ghost" id="duP">Print</button></div></div>
-      <div class="panel"><h2>Outstanding by follow-up status</h2><div class="table-wrap"><table><tr><th>Status</th><th class="num">Wing A</th><th class="num">Wing B</th><th class="num">Units</th><th class="num">Balance due</th></tr>
-        ${groups.map(([k, x]) => `<tr class="clickable" data-s="${esc(k)}"><td><span class="pill ${tone(k)}">${esc(k)}</span></td><td class="num">${x.A || 0}</td><td class="num">${x.B || 0}</td><td class="num">${x.n}</td><td class="num"><b>${cr2(x.due)}</b></td></tr>`).join('')}
-        <tr class="total"><td><b>Total</b></td><td class="num"><b>${tot.A}</b></td><td class="num"><b>${tot.B}</b></td><td class="num"><b>${tot.n}</b></td><td class="num"><b>${cr2(tot.due)}</b></td></tr></table></div></div>
+      <div class="panel"><h2>Outstanding by follow-up status</h2><div class="table-wrap"><table><tr><th>Status</th><th class="num">Wing A</th><th class="num">Wing B</th><th class="num">Units</th><th class="num">Balance due (AV)</th><th class="num">GST due</th></tr>
+        ${groups.map(([k, x]) => `<tr class="clickable" data-s="${esc(k)}"><td><span class="pill ${tone(k)}">${esc(k)}</span></td><td class="num">${x.A || 0}</td><td class="num">${x.B || 0}</td><td class="num">${x.n}</td><td class="num"><b>${cr2(x.due)}</b></td><td class="num">${cr2(x.gst)}</td></tr>`).join('')}
+        <tr class="total"><td><b>Total</b></td><td class="num"><b>${tot.A}</b></td><td class="num"><b>${tot.B}</b></td><td class="num"><b>${tot.n}</b></td><td class="num"><b>${cr2(tot.due)}</b></td><td class="num"><b>${cr2(tot.gst)}</b></td></tr></table></div></div>
       <div class="panel" id="duList"><h2>Flats</h2>
         <div class="row no-print" style="grid-template-columns:2fr 1fr 110px auto;gap:10px;align-items:end">
           <div><label>Search</label><input id="duQ" placeholder="Flat, buyer, mobile or partner"></div>
@@ -3326,11 +3326,11 @@
           <div><label>Wing</label><select id="duW"><option value="">Both</option><option>A</option><option>B</option></select></div>
           <label class="small" style="display:flex;gap:6px;align-items:center;margin-bottom:10px"><input type="checkbox" id="duD" ${f.due ? 'checked' : ''} style="width:auto"> Only flats with a balance due</label></div>
         <p class="small muted" id="duN" style="margin:8px 0"></p><div class="table-wrap" id="duT"></div></div>`;
-    const cols = [['unit', 'Flat'], ['status', 'Follow-up status'], ['buyer', 'Buyer'], ['phone', 'Mobile'], ['cp', 'Channel partner'], ['av', 'Agreement value', 1], ['demanded', 'Demanded', 1], ['received', 'Received', 1], ['avDue', 'AV due', 1], ['gstDue', 'GST due', 1], ['due', 'Balance due', 1], ['lastReceipt', 'Last receipt']];
-    const list = () => R.filter((r) => (!f.status || r.status === f.status) && (!f.wing || r.wing === f.wing) && (!f.due || r.due > 0) && (!f.q || `${r.unit} ${r.buyer} ${r.phone} ${r.cp} ${r.status}`.toLowerCase().includes(f.q)));
+    const cols = [['unit', 'Flat'], ['status', 'Follow-up status'], ['buyer', 'Buyer'], ['phone', 'Mobile'], ['cp', 'Channel partner'], ['av', 'Agreement value', 1], ['demanded', 'Demanded', 1], ['received', 'Received', 1], ['avDue', 'AV due', 1], ['gstDue', 'GST due', 1], ['due', 'AV + GST due', 1], ['lastReceipt', 'Last receipt']];
+    const list = () => R.filter((r) => (!f.status || r.status === f.status) && (!f.wing || r.wing === f.wing) && (!f.due || r.avDue > 0) && (!f.q || `${r.unit} ${r.buyer} ${r.phone} ${r.cp} ${r.status}`.toLowerCase().includes(f.q)));
     const draw = () => {
       const L = list().sort((a, b) => { const k = f.sort, m = cols.find((c) => c[0] === k); return m && m[2] ? b[k] - a[k] : String(a[k]).localeCompare(String(b[k])); });
-      $('#duN').textContent = `${L.length} flats · balance due ${cr2(L.reduce((a, r) => a + r.due, 0))} · tap a column heading to sort, a flat to open it`;
+      $('#duN').textContent = `${L.length} flats · AV due ${cr2(L.reduce((a, r) => a + r.avDue, 0))} · GST due ${cr2(L.reduce((a, r) => a + r.gstDue, 0))} · tap a column heading to sort, a flat to open it`;
       $('#duT').innerHTML = `<table><tr>${cols.map(([k, l, m]) => `<th class="${m ? 'num' : ''}" data-k="${k}" style="cursor:pointer">${esc(l)}${f.sort === k ? ' ▾' : ''}</th>`).join('')}</tr>
         ${L.slice(0, 600).map((r) => `<tr class="clickable" data-b="${r.id}">${cols.map(([k, , m]) => `<td class="${m ? 'num' : ''}">${k === 'unit' ? `<b>${esc(r.unit)}</b>` : k === 'status' ? `<span class="pill ${tone(r.status)}">${esc(r.status)}</span>` : k === 'lastReceipt' ? (r.lastReceipt ? fmtD(r.lastReceipt) : '—') : m ? (r[k] ? inr(r[k]) : '—') : esc(r[k] || '')}</td>`).join('')}</tr>`).join('') || `<tr><td colspan="${cols.length}" class="muted">None.</td></tr>`}</table>${L.length > 600 ? '<p class="small muted">Showing 600; the Excel file has them all.</p>' : ''}`;
       $('#duT').querySelectorAll('th[data-k]').forEach((th) => (th.onclick = () => { f.sort = th.dataset.k; store.set('erp_dues', JSON.stringify({ due: f.due, sort: f.sort })); draw(); }));

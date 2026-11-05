@@ -31,11 +31,11 @@ module.exports = route({
     const all = await rows(needProject(u, intOr(q.project)));
     if (q.export === 'xlsx') {
       const w = str(q.q, 80).toLowerCase(), st = str(q.status, 80), wing = str(q.wing, 4);
-      const list = all.filter((r) => (!st || r.status === st) && (!wing || r.wing === wing) && (q.due !== '1' || r.due > 0) && (!w || `${r.unit} ${r.buyer} ${r.phone} ${r.cp} ${r.status}`.toLowerCase().includes(w)));
-      const head = ['Flat', 'Wing', 'Type', 'Follow-up status', 'Buyer', 'Mobile', 'Channel partner', 'Agreement value', 'Demanded (with GST)', 'Received (with GST)', 'AV due', 'GST due', 'Balance due', 'Overdue now', 'Last receipt', 'Last demand', 'Booked on', 'Registration'];
+      const list = all.filter((r) => (!st || r.status === st) && (!wing || r.wing === wing) && (q.due !== '1' || r.avDue > 0) && (!w || `${r.unit} ${r.buyer} ${r.phone} ${r.cp} ${r.status}`.toLowerCase().includes(w)));
+      const head = ['Flat', 'Wing', 'Type', 'Follow-up status', 'Buyer', 'Mobile', 'Channel partner', 'Agreement value', 'Demanded (with GST)', 'Received (with GST)', 'AV due', 'GST due', 'AV + GST due', 'Overdue now', 'Last receipt', 'Last demand', 'Booked on', 'Registration'];
       const body = list.map((r) => [r.unit, r.wing, r.typology, r.status, r.buyer, r.phone, r.cp, r.av, r.demanded, r.received, r.avDue, r.gstDue, r.due, r.overdue, r.lastReceipt, r.lastDemand, r.booked, r.registration]);
-      const by = {}; for (const r of list) { const x = (by[r.status] ||= { A: 0, B: 0, n: 0, due: 0 }); x[r.wing] = (x[r.wing] || 0) + 1; x.n++; x.due += r.due; }
-      const sum = [['Follow-up status', 'Wing A', 'Wing B', 'Units', 'Balance due'], ...Object.entries(by).sort((a, b) => b[1].due - a[1].due).map(([k, x]) => [k, x.A || 0, x.B || 0, x.n, x.due])];
+      const by = {}; for (const r of list) { if (!r.avDue) continue; const x = (by[r.status] ||= { A: 0, B: 0, n: 0, due: 0, gst: 0 }); x[r.wing] = (x[r.wing] || 0) + 1; x.n++; x.due += r.avDue; x.gst += r.gstDue; }
+      const sum = [['Follow-up status', 'Wing A', 'Wing B', 'Units', 'Balance due (AV)', 'GST due'], ...Object.entries(by).sort((a, b) => b[1].due - a[1].due).map(([k, x]) => [k, x.A || 0, x.B || 0, x.n, x.due, x.gst])];
       const day = new Date(Date.now() + 5.5 * 3600e3).toISOString().slice(0, 10);
       res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
       res.setHeader('Content-Disposition', `attachment; filename="Dues_and_actions_${day}.xlsx"`);
