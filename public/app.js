@@ -336,6 +336,7 @@
     { key: 'cpportal', label: 'Partner portal: firms & merges', show: () => anyOf('accounts.manage', 'accounts.enter', 'tm.manage'), sub: true },
     { key: 'accreports', label: 'Reports & Tally', show: () => can('accounts.view') },
     { key: 'checks', label: 'Checks', show: () => can('accounts.view') },
+    { key: 'queries', label: 'Open queries', show: () => anyOf('accounts.view', 'ledger.view') },
     { key: 'bookscrm', label: 'Tally vs CRM', show: () => anyOf('accounts.view', 'ledger.view') },
     { key: 'ca', label: 'CA / Tax', show: () => can('ca.view') },
     { key: 'accsetup', label: 'Banks, heads & import', show: () => can('accounts.manage') },
@@ -435,7 +436,7 @@
     $('#cpw').onclick = () => changePassword(false);
     if ($('#proj')) $('#proj').onchange = (e) => { proj = +e.target.value; store.set('erp_project', proj); shell(); };
     if (/^reg-/.test(page || '') && can('accounts.view')) { try { await accRegister(page.slice(4)); } catch (e) { $('#page').innerHTML = `<div class="err">${esc(e.message)}</div>`; } return; }
-    const fn = { stages: () => demands(true), home, mgmt, marketing: () => window.Marketing.render({ api, dialog, toast, me }, (/^\d+$/.test(location.hash.split('/')[2] || '') ? location.hash.split('/')[2] : null) || store.get('erp_mkt_scope') || null), telemarketing: () => window.Telemarketing.render({ api, dialog, toast, me }), ca: caPage, accdash, collections, flats, custdocs, comms, team: teamPage, accteam: teamPage, sdr: sdrPage, cp: cpPage, cpportal: cpPortalPage, project: projectHome, crmtodo: () => dailyTodo('crm'), acctodo: () => dailyTodo('accounts'), training, projects, plans, users, audit, units, bookings, demands, receipts, ledgers, letters, followups, verify, prices, partners, balances: accBalances, bankauto: bankAuto, bookscrm: booksCrm, accreports: accReports, checks: accChecks, accsetup: accSetup, import: importPage, booking: bookingPage, statement: statementPage, run: runPage, pre: prePage, parking: parkingPage };
+    const fn = { stages: () => demands(true), home, mgmt, marketing: () => window.Marketing.render({ api, dialog, toast, me }, (/^\d+$/.test(location.hash.split('/')[2] || '') ? location.hash.split('/')[2] : null) || store.get('erp_mkt_scope') || null), telemarketing: () => window.Telemarketing.render({ api, dialog, toast, me }), ca: caPage, accdash, collections, flats, custdocs, comms, team: teamPage, accteam: teamPage, sdr: sdrPage, cp: cpPage, cpportal: cpPortalPage, project: projectHome, crmtodo: () => dailyTodo('crm'), acctodo: () => dailyTodo('accounts'), training, projects, plans, users, audit, units, bookings, demands, receipts, ledgers, letters, followups, verify, prices, partners, balances: accBalances, bankauto: bankAuto, bookscrm: booksCrm, accreports: accReports, checks: accChecks, queries: openQueries, accsetup: accSetup, import: importPage, booking: bookingPage, statement: statementPage, run: runPage, pre: prePage, parking: parkingPage };
     const key = DETAIL[page] && arg ? page : cur.key;
     try { await fn[key](arg ? +arg : undefined); } catch (e) { $('#page').innerHTML = `<div class="err">${esc(e.message)}</div>`; }
   }
@@ -494,18 +495,18 @@
     'reg-receipts': 'Every receipt as it came into the bank', 'reg-payments': 'Every payment out, by head', 'reg-pdc': 'Post-dated cheques and their reminders',
     'reg-tds': 'TDS deducted and challans paid', sdr: 'Stamp duty and registration challans, one per flat (a second one is blocked)', 'reg-recon': 'Items the bank and the books do not yet agree on', 'reg-compliance': 'GST, TDS and RERA due dates',
     'reg-tenants': 'SRA tenants and their rent', 'reg-rentLinks': 'Rent payment links for each tenant', 'reg-cancellations': 'Cancelled flats and refunds still to pay',
-    accreports: 'Reports and the Tally import', checks: 'Daily checks on the registers', bookscrm: 'Tally receipts flat by flat against the CRM',
+    accreports: 'Reports and the Tally import', checks: 'Daily checks on the registers', queries: 'Every correction still to make in the CRM and Accounts, with who fixes it', bookscrm: 'Tally receipts flat by flat against the CRM',
     ca: 'GST, TDS payable, RERA quarterly and cash flow, for the CA', accsetup: 'Bank accounts, heads, statement folders and imports', audit: 'Who changed what, and when',
   };
   const PICON = { parking: 'grid', 'acc-bank': 'rupee', 'acc-money': 'book', 'acc-tax': 'check', 'acc-sra': 'users', collections: 'chart', flats: 'users', 'sc-calls': 'phone', 'sc-dues': 'book', 'sc-appr': 'check', comms: 'mail', team: 'users', accteam: 'users', sdr: 'rupee', custdocs: 'book', site: 'tower', crmtodo: 'check', acctodo: 'check', training: 'book', dashboard: 'chart', units: 'grid', bookings: 'book', demands: 'tower', receipts: 'rupee', ledgers: 'book', letters: 'mail', followups: 'phone', verify: 'check', prices: 'rupee', partners: 'users',
-    accdash: 'chart', balances: 'rupee', bankauto: 'check', 'reg-cancellations': 'users', bookscrm: 'check', checks: 'check', audit: 'book', ca: 'chart', accsetup: 'grid' };
+    accdash: 'chart', balances: 'rupee', bankauto: 'check', 'reg-cancellations': 'users', bookscrm: 'check', checks: 'check', queries: 'check', audit: 'book', ca: 'chart', accsetup: 'grid' };
   const DEPTS = [
     { key: 'crm', title: 'Sales & CRM', sub: 'Today’s work, every flat and buyer in one place, receipts, collections and the inbox', icon: 'chart', tone: '#2B5C8A', group: 'CRM', more: 'CRM tools',
       sections: [['Every day', ['crmtodo', 'flats', 'receipts', 'comms', 'team']], ['Sales', ['units', 'parking', 'sc-appr', 'prices', 'partners']],
         ['Collections', ['collections', 'demands', 'letters']], ['Records and checks', ['custdocs', 'verify']]] },
     { key: 'accounts', title: 'Accounts', sub: 'Bank, receipts, payments, PDC, TDS, SRA rent, GST, SDR and Tally', icon: 'book', tone: '#117A65', group: 'Accounts', skip: ['ca', 'bookscrm', 'checks'],
       sections: [['Every day', ['acctodo', 'acc-bank', 'acc-money', 'accteam']], ['Taxes & compliance', ['acc-tax']], ['Refunds, partners & tenants', ['reg-cancellations', 'cpacc', 'acc-sra']], ['Reports & set-up', ['accdash', 'accreports', 'accsetup']]] },
-    { key: 'audit', title: 'CRM/Accounts Audit', sub: 'Tally against the CRM, checks, reconciling items and cancelled flats', icon: 'check', tone: '#0E8C9B', pages: ['bookscrm', 'checks', 'reg-recon', 'reg-cancellations', 'verify', 'audit'] },
+    { key: 'audit', title: 'CRM/Accounts Audit', sub: 'Tally against the CRM, checks, reconciling items and cancelled flats', icon: 'check', tone: '#0E8C9B', pages: ['queries', 'bookscrm', 'checks', 'reg-recon', 'reg-cancellations', 'verify', 'audit'] },
     { key: 'cpdept', title: 'Channel Partners', sub: 'Every partner firm: brokerage earned, bills, pass back, payments and what is still owed', icon: 'users', tone: '#0E8C9B', direct: 'partners' },
     { key: 'ca', title: 'CA / Tax', sub: 'GST, TDS payable, RERA quarterly, cash flow and compliance', icon: 'chart', tone: '#7A5C99', direct: 'ca' },
     { key: 'construction', title: 'Construction', sub: 'Site Office: slab cycle, daily progress reports, hindrances, materials and stages', icon: 'hammer', tone: '#B7791F', pages: ['site', 'stages'], later: ['Contractor billing'] },
@@ -3234,6 +3235,26 @@
         <div class="actions"><button value="cancel">Close</button></div></form>`;
       document.body.appendChild(dl); dl.addEventListener('close', () => dl.remove()); dl.showModal();
     }
+  }
+
+  async function openQueries() {
+    $('#page').innerHTML = '<div class="page-head"><div><h1>Open queries</h1><p class="muted">Working it out… (about half a minute)</p></div></div>';
+    const d = await api(`/api/queries?project=${proj || ''}`);
+    const amt = (v) => v == null || v === '' ? '' : inr(Math.round(v));
+    const teams = ['All', 'CRM', 'Accounts'];
+    const sec = (s, i) => `<details class="panel" ${s.count && i < 2 ? 'open' : ''} data-team="${esc(s.team)}"><summary style="cursor:pointer;display:flex;gap:10px;align-items:center;flex-wrap:wrap"><b>${esc(s.title)}</b><span class="pill ${s.count ? 'bad' : 'good'}">${s.count ? s.count.toLocaleString('en-IN') + ' open' : 'None'}</span><span class="pill grey">${esc(s.team)}</span>${s.amount ? `<span class="small muted">${inr(s.amount)}</span>` : ''}</summary>
+      <p class="small muted" style="margin:8px 0">${esc(s.fix)} <a href="${s.where}">Open where it is fixed →</a>${s.asOf ? ` · comparison of ${fmtD(String(s.asOf).slice(0, 10))}` : ''}</p>
+      ${s.count ? `<div class="table-wrap"><table><tr><th>#</th><th>Flat</th><th>Bank</th><th>Date</th><th>Item</th><th>Detail</th><th class="num">Amount</th></tr>
+      ${s.rows.slice(0, 300).map((r, k) => `<tr><td>${k + 1}</td><td>${r.unit ? `<b>${esc(r.unit)}</b>` : esc(r.ref || '')}</td><td class="small">${esc(r.bank || '')}</td><td class="small">${r.date ? fmtD(r.date) : ''}</td><td>${esc(r.item || '')}</td><td class="small">${esc(r.detail || '')}</td><td class="num">${amt(r.amount)}</td></tr>`).join('')}</table></div>${s.count > 300 ? `<p class="small muted">Showing 300 of ${s.count.toLocaleString('en-IN')}; the Excel file has them all.</p>` : ''}` : ''}</details>`;
+    $('#page').innerHTML = `<div class="page-head"><div><h1>Open queries</h1><p class="muted">${d.total.toLocaleString('en-IN')} corrections still open across the CRM and Accounts. Each list says who fixes it and where; an item drops off by itself once it is corrected.</p></div>
+      <div class="actions no-print"><a class="btn ghost" href="/api/queries?project=${proj || ''}&export=xlsx">Excel</a><button class="ghost" id="oqP">Print</button></div></div>
+      <div class="panel no-print"><div class="hubtabs" id="oqT">${teams.map((t, i) => `<button type="button" class="${i ? 'ghost' : ''}" data-t="${esc(t)}">${esc(t)}</button>`).join('')}</div>
+      <div class="table-wrap" style="margin-top:10px"><table><tr><th>Team</th><th>Query</th><th class="num">Open</th><th class="num">Amount</th></tr>${d.sections.map((s) => `<tr><td>${esc(s.team)}</td><td>${esc(s.title)}</td><td class="num">${s.count.toLocaleString('en-IN')}</td><td class="num">${s.amount ? inr(s.amount) : ''}</td></tr>`).join('')}</table></div></div>
+      ${d.sections.map(sec).join('')}`;
+    $('#oqP').onclick = () => print();
+    $('#oqT').onclick = (e) => { const b = e.target.closest('button'); if (!b) return; const t = b.dataset.t;
+      $('#oqT').querySelectorAll('button').forEach((x) => x.classList.toggle('ghost', x !== b));
+      document.querySelectorAll('details[data-team]').forEach((x) => { x.hidden = t !== 'All' && !x.dataset.team.includes(t); }); };
   }
 
   async function accChecks() {
