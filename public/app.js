@@ -440,7 +440,8 @@
     wireInstall();
     $('#cpw').onclick = () => changePassword(false);
     if ($('#proj')) $('#proj').onchange = (e) => { proj = +e.target.value; store.set('erp_project', proj); shell(); };
-    if (/^reg-/.test(page || '') && can('accounts.view')) { try { await accRegister(page.slice(4)); } catch (e) { $('#page').innerHTML = `<div class="err">${esc(e.message)}</div>`; } return; }
+    if (page === 'reg-cancellations' && arg !== 'full' && anyOf('accounts.view', 'audit.tabs')) { try { await cancelledView(); } catch (e) { $('#page').innerHTML = `<div class="err">${esc(e.message)}</div>`; } return; }
+    if (/^reg-/.test(page || '') && (can('accounts.view') || (can('audit.tabs') && ['reg-recon', 'reg-cancellations'].includes(page)))) { try { await accRegister(page.slice(4)); } catch (e) { $('#page').innerHTML = `<div class="err">${esc(e.message)}</div>`; } return; }
     const fn = { stages: () => demands(true), home, mgmt, marketing: () => window.Marketing.render({ api, dialog, toast, me }, (/^\d+$/.test(location.hash.split('/')[2] || '') ? location.hash.split('/')[2] : null) || store.get('erp_mkt_scope') || null), telemarketing: () => window.Telemarketing.render({ api, dialog, toast, me }), ca: caPage, accdash, collections, flats, custdocs, comms, team: teamPage, accteam: teamPage, sdr: sdrPage, cp: cpPage, cpportal: cpPortalPage, project: projectHome, crmtodo: () => dailyTodo('crm'), acctodo: () => dailyTodo('accounts'), training, projects, plans, users, audit, units, bookings, demands, receipts, ledgers, letters, followups, verify, prices, partners, balances: accBalances, bankauto: bankAuto, bookscrm: booksCrm, accreports: accReports, checks: accChecks, queries: openQueries, accsetup: accSetup, import: importPage, booking: bookingPage, statement: statementPage, run: runPage, pre: prePage, parking: parkingPage };
     const key = DETAIL[page] && arg ? page : cur.key;
     try { await fn[key](arg ? +arg : undefined); } catch (e) { $('#page').innerHTML = `<div class="err">${esc(e.message)}</div>`; }
@@ -2139,6 +2140,48 @@
   function accGroupsPanel(G, amount, total, when) {
     return `<div class="panel table-wrap"><h2>Total by ${esc(G.label)} <span class="small muted">(${G.rows.length}; tap one to see its rows)</span></h2>${accGroupsTable(G, amount, total, when, false)}</div>`;
   }
+  // Cancelled flats, the simple view: what each old buyer paid, what was refunded and what is still to refund.
+  // The full register (every column, editing) is at #/reg-cancellations/full.
+  async function cancelledView() {
+    const d = await api('/api/accounts?reg=cancellations&limit=1000&filter=');
+    const isDone = (s) => /^(done|nothing to refund)/i.test(String(s || '').trim());
+    const rows = d.rows.map((r) => {
+      const paid = toNum(r.received), back = Math.max(toNum(r.books_refunded), toNum(r.refund_rtgs) + toNum(r.refund_white)), left = toNum(r.to_refund);
+      const st = isDone(r.refund_status) ? 'Refunded' : /chq|cheque|issued/i.test(r.refund_status || '') ? 'Cheque issued' : 'To refund';
+      return { r, paid, back, left, st };
+    });
+    const T = (f) => rows.filter(f);
+    const sum = (a, k) => a.reduce((x, y) => x + y[k], 0);
+    const pend = T((x) => x.st !== 'Refunded'), done = T((x) => x.st === 'Refunded');
+    let tab = store.get('erp_cv_tab') || 'pend', q = '';
+    const draw = () => {
+      const list = (tab === 'pend' ? pend : tab === 'done' ? done : rows).filter((x) => !q || `${x.r.unit_no} ${x.r.client} ${x.r.cp || ''}`.toLowerCase().includes(q))
+        .sort((a, b) => b.left - a.left || String(b.r.cancel_date || '').localeCompare(String(a.r.cancel_date || '')));
+      const pill = (x) => x.st === 'Refunded' ? '<span class="pill good">Refunded</span>' : x.st === 'Cheque issued' ? '<span class="pill warn">Cheque issued</span>' : '<span class="pill bad">To refund</span>';
+      $('#cvT').innerHTML = `<table><tr><th>Flat</th><th>Old buyer</th><th>Cancelled on</th><th class="num">Paid by buyer</th><th class="num">Refunded</th><th class="num">Still to refund</th><th>Status</th><th>Flat now</th></tr>
+        ${list.map((x) => `<tr class="clickable" data-u="${esc(x.r.unit_no)}"><td><b>${esc(x.r.unit_no)}</b></td><td>${esc(x.r.client || '')}</td><td class="small">${x.r.cancel_date ? fmtD(String(x.r.cancel_date).slice(0, 10)) : ''}</td>
+          <td class="num">${inr(x.paid)}</td><td class="num">${x.back ? inr(x.back) : '—'}</td><td class="num">${x.left ? `<b class="bad-t">${inr(x.left)}</b>` : '—'}</td><td>${pill(x)}</td><td class="small muted">${esc(String(x.r.crm_now || '').replace(/ — CRM not cancelled/, ' (CRM not cancelled!)'))}</td></tr>`).join('') || '<tr><td colspan="8" class="muted">None.</td></tr>'}
+        <tr class="total"><td colspan="3"><b>${list.length} flats</b></td><td class="num"><b>${inr(sum(list, 'paid'))}</b></td><td class="num"><b>${inr(sum(list, 'back'))}</b></td><td class="num"><b>${inr(sum(list, 'left'))}</b></td><td colspan="2"></td></tr></table>`;
+      document.querySelectorAll('#cvT tr[data-u]').forEach((tr) => (tr.onclick = () => { store.set('erp_acc_cancellations', JSON.stringify({ q: tr.dataset.u, filter: '' })); go('#/reg-cancellations/full'); }));
+      document.querySelectorAll('#cvTabs button').forEach((b) => b.classList.toggle('ghost', b.dataset.t !== tab));
+    };
+    $('#page').innerHTML = `<div class="page-head"><div><h1>Cancelled flats & refunds</h1><p class="muted">Every cancelled booking: what the old buyer paid, what has been refunded and what is still to refund. Tap a flat to see or edit all its details.</p></div>
+        <div class="actions" style="margin:0"><a class="btn ghost" href="#/reg-cancellations/full">Full register (edit, Excel)</a></div></div>
+      <div class="panel"><div class="kpis">
+        <div class="kpi"><b>${rows.length}</b><span>cancelled flats</span></div>
+        <div class="kpi"><b>${inr(sum(rows, 'paid'))}</b><span>paid by the old buyers</span></div>
+        <div class="kpi"><b class="good-t">${done.length}</b><span>refunded (${inr(sum(rows, 'back'))})</span></div>
+        <div class="kpi bad"><b>${pend.length}</b><span>still to refund</span></div>
+        <div class="kpi bad"><b>${inr(sum(rows, 'left'))}</b><span>still to refund (₹)</span></div></div></div>
+      <div class="panel"><div class="row" style="grid-template-columns:auto 1fr;align-items:center;gap:12px">
+        <div class="hubtabs" id="cvTabs"><button type="button" data-t="pend">Still to refund (${pend.length})</button><button type="button" data-t="done">Refunded (${done.length})</button><button type="button" data-t="all">All (${rows.length})</button></div>
+        <input id="cvQ" placeholder="Search flat, buyer or partner"></div>
+        <div class="table-wrap" id="cvT" style="margin-top:10px"></div></div>`;
+    $('#cvTabs').onclick = (e) => { const b = e.target.closest('button'); if (!b) return; tab = b.dataset.t; store.set('erp_cv_tab', tab); draw(); };
+    $('#cvQ').oninput = (e) => { q = e.target.value.trim().toLowerCase(); draw(); };
+    draw();
+  }
+
   async function accRegister(key, opts = {}) {
     const st = JSON.parse(store.get('erp_acc_' + key) || '{}');
     const f0 = ACC_FILTERS[key] ? ACC_FILTERS[key][0][0] : '';

@@ -649,3 +649,7 @@ h2.ff-sec { font-size: 13px; letter-spacing: .1em; text-transform: uppercase; co
 @media (max-width: 600px) { .mg-tbl td, .mg-tbl th { padding: 10px 8px; font-size: 14px; } }
 /* grid pages (home, management, collections): a wide table scrolls inside its box instead of widening the page */
 .hm > *, .hm .mpanel, .hm section { min-width: 0; max-width: 100%; }
+/* Cancelled flats, simple view */
+#cvT tr.clickable { cursor: pointer; }
+#cvT tr.clickable:hover td { background: var(--brand-tint); }
+#cvT tr.total td { border-top: 2px solid var(--line, #ddd); background: var(--bg-2, #f6f6f8); }
