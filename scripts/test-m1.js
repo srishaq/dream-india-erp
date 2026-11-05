@@ -131,9 +131,17 @@ const n = (v) => Number(v);
     assert.equal(r.ok, true); rc = r.id;
     assert.equal((await acc('/api/receipts', { action: 'create', bookingId: b1, receivedOn: '2026-10-10', amount: '2040150', instrumentNo: 'UTR1', splits: { av: '1923570', tds: '19430', gst: '97150' } })).status, 409);
   });
-  await step('Pending receipt does not count; Accounts cannot approve; Head Accounts can', async () => {
+  await step('Pending receipt does not count; a transfer is approved by the bank statement, not by hand', async () => {
     let l = await crm(`/api/ledger?project=${sig.id}`); assert.equal(n(l.rows.find((r) => r.booking_id === b1).outstanding), 1943000);
     assert.equal((await acc('/api/receipts', { action: 'approve', id: rc })).status, 403);
+    const hand = await headacc('/api/receipts', { action: 'approve', id: rc });
+    assert.equal(hand.status, 409); assert.match(hand.error, /bank statement/);
+    const db = require('../lib/db');
+    // the statement shows it, matched on flat and amount (the reference is too short to match): Head Accounts confirms it
+    const unit = (await db.one('select u.unit_no from bookings b join units u on u.id = b.unit_id where b.id = $1', [b1])).unit_no;
+    await db.q("insert into acc_receipts (book, ref_id, txn_date, bank, description, reference, amount, unit_no) values ('signature', 'T-UTR1', '2026-10-10', 'HDFC', 'NEFT UTR1', 'UTR1', 2020720, $1)", [unit]);
+    await require('../lib/cheque-match').run({ trigger: 'test' });
+    assert.equal((await db.one('select status, bank_match from receipts where id = $1', [rc])).bank_match, 'flat and amount');
     assert.equal((await headacc('/api/receipts', { action: 'approve', id: rc })).ok, true);
     l = await crm(`/api/ledger?project=${sig.id}`); const row = l.rows.find((r) => r.booking_id === b1);
     assert.equal(n(row.outstanding), 0); assert.equal(n(row.gst_outstanding), 0); assert.equal(n(row.overdue), 0);

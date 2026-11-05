@@ -479,7 +479,7 @@
   const SUB = {
     dashboard: 'Daily collections, dues, tower status, channel partners', collections: 'Today’s and this month’s collections, what is due and coming in, wing by wing', units: 'Every unit, floor by floor, both wings side by side',
     bookings: 'Bookings, applicants, cancellations and transfers', demands: 'Construction stages and the demands raised on them', stages: 'Record each construction stage as it is completed, with who certified it',
-    receipts: 'Enter receipts; Head Accounts approves them', ledgers: 'Each buyer’s statement of demands and payments',
+    receipts: 'Enter receipts; the bank statement approves them', ledgers: 'Each buyer’s statement of demands and payments',
     letters: 'Stage demands and reminders, by email or courier', followups: 'Calls, WhatsApps and promises to pay',
     parking: 'Total, allotted and free parking spaces', comms: 'Buyers\' email replies and WhatsApps, and messages to link to a flat', team: 'Dream Chat: CRM and Accounts, about a flat or a cheque', accteam: 'Dream Chat: CRM and Accounts, about a flat or a cheque', custdocs: 'Signed and scanned papers for every flat and SRA tenant, kept in Google Drive', verify: 'Items from the import still to check and close', prices: 'Rates, floor rise and the cost sheet', partners: 'Each partner firm: brokerage, bills, pass back, payments and balance',
     site: 'Slab cycle, daily progress reports, hindrances, materials and floor-wise works', purchase: 'Purchase requests from request to payment', drawings: 'The drawing register from Google Drive', hr: 'Staff records, leave, letters and HR policies',

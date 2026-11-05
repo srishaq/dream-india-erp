@@ -168,6 +168,11 @@ module.exports = route({
       if (r.status !== 'pending') throw fail(409, 'This receipt is not waiting for approval.');
       notOwn(u, r.created_by);
       const status = b.action === 'approve' ? 'approved' : 'rejected';
+      // Decided 5 Nov 2026: cheques and transfers are approved by the bank statement (12 noon and 7 pm runs). Head Accounts
+      // approves one by hand only once the statement shows it (a match on flat and amount, which needs a person to confirm),
+      // and receipts that never pass through the bank (TDS, other).
+      if (status === 'approved' && ['cheque', 'bank'].includes(r.mode) && !r.bank_acc_id && !r.opening)
+        throw fail(409, 'Cheques and transfers are approved by the bank statement (12 noon and 7 pm). This one is not on the statement yet, so it cannot be approved by hand.');
       if (status === 'approved') { const st = await db.one('select status from bookings where id = $1', [r.booking_id]); if (!st || !['active', 'pending'].includes(st.status)) throw fail(409, `This flat's booking is ${st ? st.status : 'gone'}: the receipt cannot be approved on it. Reject it, or record it against the refund in Accounts.`); }
       await db.tx(async (t) => {
         const done = await t.one("update receipts set status = $2, approved_by = $3, approved_at = now(), reverse_reason = $4 where id = $1 and status = 'pending' returning id", [r.id, status, u.id, b.action === 'reject' ? str(b.reason, 300) || null : null]);
