@@ -417,7 +417,7 @@
         ${(() => { const prev = trail[trail.length - 1], pp = prev ? prev.replace('#/', '').split('?')[0].split('/') : null;
           if (prev && pp[0] && pp[0] !== 'home' && prev !== location.hash) {
             const lab = pp[0] === 'project' ? ((DEPTS.find((x) => x.key === pp[2]) || {}).title || 'Back') : ((PAGES.find((x) => x.key === (DETAIL[pp[0]] || pp[0])) || {}).label || 'Back');
-            return `<div class="crumb no-print"><a href="${esc(prev)}">← ${esc(pp[1] && pp[0] !== 'project' && DETAIL[pp[0]] ? lab + ' ' + decodeURIComponent(pp[1]) : lab)}</a><a href="#/home">Home</a></div>`;
+            return `<div class="crumb no-print"><a href="${esc(prev)}">← ${esc(pp[0] === 'report' ? 'Report' : pp[1] && pp[0] !== 'project' && DETAIL[pp[0]] ? lab + ' ' + decodeURIComponent(pp[1]) : lab)}</a><a href="#/home">Home</a></div>`;
           }
           const g = groupOf(DETAIL[page] && arg ? DETAIL[page] : cur.key), dest = { CRM: [`#/project/${proj}/crm`, 'Sales & CRM'], 'CRM tools': [`#/project/${proj}/crm`, 'Sales & CRM'], Accounts: [`#/project/${proj}/accounts`, 'Accounts'], 'Site & purchase': [`#/project/${proj}/construction`, 'Construction'], 'Set-up': ['#/home', 'Home'] }[g];
           return dest && proj && !['home', 'project'].includes(page || 'home') ? `<div class="crumb no-print"><a href="${dest[0]}">← ${esc(dest[1])}</a>${dest[0] === '#/home' ? '' : '<a href="#/home">Home</a>'}</div>` : ''; })()}
