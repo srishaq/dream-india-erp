@@ -351,6 +351,33 @@ module.exports = route({
       });
       return res.json({ ok: true, ...out });
     }
+    if (b.action === 'tally-reclassify') {
+      // The same Tally files again, read with the corrected rules (a narration line is not a party, a contra is a transfer):
+      // only the flat, heads, payer and description of rows already in the ERP are corrected, matched on the Tally ID and
+      // amount. Nothing is added or removed, and rows someone else has edited since are left as they are.
+      need('accounts.manage');
+      const files = (Array.isArray(b.files) ? b.files : []).filter((f) => f && f.data).slice(0, 4).map((f) => ({ name: str(f.name, 200), buffer: Buffer.from(String(f.data || ''), 'base64') }));
+      if (files.length < 2) throw fail(400, 'Choose the Tally files.');
+      const p = tally.parse(files, today());
+      const out = await db.tx(async (t) => {
+        const res2 = { receipts: 0, payments: 0, skipped: 0, examples: [] };
+        for (const [table, rows, cols] of [['acc_receipts', p.receipts, ['unit_no', 'head', 'payment_head', 'payer_type', 'payer_name', 'description']], ['acc_payments', p.payments, ['unit_no', 'head', 'payee', 'description']]]) {
+          const cur = new Map((await t.q(`select * from ${table} where book = $1 and source = 'Tally'`, [acc.BOOK])).map((r) => [r.ref_id, r]));
+          for (const r of rows) {
+            const x = cur.get(r.ref_id); if (!x || Math.abs(Number(x.amount) - Number(r.amount)) > 0.01) continue;
+            const diff = cols.filter((c) => String(x[c] ?? '') !== String(r[c] ?? ''));
+            if (!diff.length) continue;
+            if (x.updated_by && x.updated_by !== u.id) { res2.skipped++; continue; }
+            await t.q(`update ${table} set ${diff.map((c, i) => `${c} = $${i + 2}`).join(', ')}, updated_by = $${diff.length + 2}, updated_at = now() where id = $1`, [x.id, ...diff.map((c) => r[c] ?? null), u.id]);
+            res2[table === 'acc_receipts' ? 'receipts' : 'payments']++;
+            if (diff.includes('unit_no') && res2.examples.length < 20) res2.examples.push(`${r.ref_id}: flat ${x.unit_no || '—'} → ${r.unit_no || '—'} (${r.head})`);
+          }
+        }
+        await audit.record(t.q, { user: u, action: 'tally-reclassify', entity: 'accounts', entityId: 'signature', after: res2, note: 'Tally rows re-read: narration lines are not parties; contra vouchers are transfers.' });
+        return res2;
+      });
+      return res.json({ ok: true, ...out });
+    }
     if (b.action === 'tally-preview' || b.action === 'tally-import') {
       // Test version: the registers are replaced with the Receipt and Payment Registers exported from Tally.
       need('accounts.manage');
