@@ -155,7 +155,11 @@
     },
     {
       "path": "/api/cron?job=bank",
-      "schedule": "40 9 * * *"
+      "schedule": "30 6 * * *"
+    },
+    {
+      "path": "/api/cron?job=bank",
+      "schedule": "30 13 * * *"
     },
     {
       "path": "/api/cron?job=pdc",
