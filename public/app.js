@@ -2146,7 +2146,11 @@
     // column filters (m_head=Salary|Rent) and "totals by" (by=head | month): the same on screen, in print and in Excel
     const mqs = () => Object.fromEntries([...Object.entries(state.m).filter(([, v]) => v).map(([k, v]) => ['m_' + k, v]), ...(state.by ? [['by', state.by]] : [])]);
     const qs = new URLSearchParams({ reg: key, q: state.q, from: state.from, to: state.to, filter: state.filter, limit: state.limit, ...mqs() });
-    const d = await api('/api/accounts?' + qs);
+    let d = await api('/api/accounts?' + qs);
+    // the first tab (e.g. "Not refunded yet") is empty and nobody chose it: show All instead of an empty list
+    if (!d.rows.length && st.filter === undefined && opts.filter === undefined && f0 && state.filter === f0 && !state.q && !state.from && !state.to) {
+      state.filter = ''; qs.set('filter', ''); d = await api('/api/accounts?' + qs);
+    }
     const R = d.reg, cols = R.cols, show = ACC_SHOW[key] ? ACC_SHOW[key].map((k) => (k === 'ref_id' ? { key: 'ref_id', label: R.idLabel, type: 'text' } : cols.find((c) => c.key === k))) : [...(R.prefix ? [{ key: 'ref_id', label: R.idLabel, type: 'text' }] : []), ...cols];
     $('#page').innerHTML = `<div class="page-head"><div><h1>${esc(R.title)}</h1><p class="muted">${esc(R.help)}</p></div>
         ${d.can.enter ? `<div class="actions" style="margin:0"><button id="accNew">Add a row</button></div>` : ''}</div>
