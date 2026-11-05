@@ -326,7 +326,9 @@
       [r.muted ? '🔔' : '🔕', r.muted ? 'Unmute' : 'Mute notifications', 'mute'],
       r.unread ? ['✔️', 'Mark as read', 'read'] : null,
       [r.hidden ? '👁️' : '🙈', r.hidden ? 'Show in the list again' : 'Hide chat (comes back when a new message arrives)', 'hide'],
+      S.me.canDeleteChat ? ['🗑️', 'Delete chat (from my list only)', 'del'] : null,
     ])}`, (el, close) => bindActions(el, close, {
+      del: async () => { if (!confirm(`Delete the chat with ${r.name} from your list? Its messages go from your screen; the others keep theirs. A new message starts it again.`)) return; await api('', { action: 'pref', room: r.id, deleteChat: true }); if (S.room && S.room.id === r.id) location.hash = ''; loadRooms(); },
       pin: async () => { await api('', { action: 'pref', room: r.id, pinned: !r.pinned }); loadRooms(); },
       mute: () => (r.muted ? api('', { action: 'pref', room: r.id, mute: 0 }).then(loadRooms) : muteSheet(r)),
       read: async () => { await api('', { action: 'read', room: r.id, upto: r.last ? r.last.id : 0 }); loadRooms(); },

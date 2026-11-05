@@ -28,6 +28,7 @@ const intList = (v) => (Array.isArray(v) ? v : String(v || '').replace(/[{}]/g, 
 const ids = (a) => [...new Set((Array.isArray(a) ? a : []).map((x) => intOr(x)).filter((x) => x > 0))].slice(0, 500);
 
 // ---------- reading messages ----------
+const CAN_DELETE_CHAT = (u) => ['rafi', 'ishaq'].includes(u.username); // only the Chairman's logins (5 Nov 2026)
 const MSG_SQL = `select m.id, m.room_id, m.user_id, m.kind, m.body, m.forwarded, m.mentions, m.mention_all, m.card, m.created_at, m.edited_at, m.deleted_at, m.reply_to,
     s.name as user_name, f.id as f_id, f.name as f_name, f.mime as f_mime, f.size as f_size, f.width as f_w, f.height as f_h, f.seconds as f_sec, f.transcript as f_text,
     r.id as r_id, r.kind as r_kind, r.body as r_body, r.deleted_at as r_deleted, rs.name as r_name,
@@ -68,7 +69,7 @@ async function marks(roomId, meId) {
 
 async function roomList(u) {
   await db.q('update chat_members m set last_delivered = r.last_msg_id from chat_rooms r where r.id = m.room_id and m.user_id = $1 and m.last_delivered < r.last_msg_id', [u.id]);
-  const rows = await db.q(`select r.id, r.kind, r.name, r.about, r.auto_key, r.archived, r.last_at, m.role, m.pinned, m.hidden, m.muted_until, m.last_read,
+  const rows = await db.q(`select r.id, r.kind, r.name, r.about, r.auto_key, r.archived, r.last_at, m.role, m.pinned, m.hidden, m.muted_until, m.last_read, m.cleared_upto, r.last_msg_id,
       (select count(*)::int from chat_members x where x.room_id = r.id) as members,
       (select count(*)::int from chat_messages x where x.room_id = r.id and x.id > m.last_read and x.thread_root is null and x.deleted_at is null and (x.user_id is null or x.user_id <> $1)) as unread,
       (select count(*)::int from chat_messages x where x.room_id = r.id and x.id > m.last_read and x.deleted_at is null and (x.mention_all or $1 = any(x.mentions)) and x.user_id <> $1) as mentioned,
@@ -79,7 +80,7 @@ async function roomList(u) {
     left join chat_messages l on l.id = r.last_msg_id left join users ls on ls.id = l.user_id
     where m.user_id = $1 order by m.pinned desc, r.last_at desc`, [u.id]);
   const now = Date.now();
-  return rows.map((r) => ({
+  return rows.filter((r) => !(Number(r.cleared_upto) > 0 && Number(r.cleared_upto) >= Number(r.last_msg_id || 0))).map((r) => ({
     id: r.id, kind: r.kind, name: r.kind === 'dm' ? r.o_name || 'Former staff' : r.name, about: r.about, dept: !!r.auto_key, archived: r.archived,
     role: r.role, pinned: r.pinned, hidden: r.hidden, muted: !!(r.muted_until && Date.parse(r.muted_until) > now), members: r.members,
     unread: r.unread, mentioned: r.mentioned, at: r.last_at, canPost: C.canPost({ ...r, kind: r.kind }, u) && !r.o_off,
@@ -142,7 +143,7 @@ module.exports = route({
 
     if (q.me) {
       const row = await db.one('select chat_status, chat_status_until, chat_dnd, designation from users where id = $1', [u.id]);
-      return res.json({ me: { id: u.id, name: u.name, role: u.role, designation: row.designation, boss: C.isBoss(u), admin: u.role === 'admin', status: statusOf(row.chat_status, row.chat_status_until), dnd: row.chat_dnd, flats: has(u, 'inventory.view') || has(u, 'ledger.view'), desk: has(u, 'ledger.view') || has(u, 'accounts.view') || has(u, 'receipt.enter') }, ai: AI.configured(), vapid: await require('../lib/webpush').publicKey() });
+      return res.json({ me: { id: u.id, name: u.name, role: u.role, designation: row.designation, boss: C.isBoss(u), admin: u.role === 'admin', canDeleteChat: CAN_DELETE_CHAT(u), status: statusOf(row.chat_status, row.chat_status_until), dnd: row.chat_dnd, flats: has(u, 'inventory.view') || has(u, 'ledger.view'), desk: has(u, 'ledger.view') || has(u, 'accounts.view') || has(u, 'receipt.enter') }, ai: AI.configured(), vapid: await require('../lib/webpush').publicKey() });
     }
     if (q.rooms) {
       const rooms = await roomList(u);
@@ -155,7 +156,7 @@ module.exports = route({
     if (q.room && !q.poll) {
       const mem = await needMember(u, q.room);
       const before = intOr(q.before);
-      const rows = await db.q(`${MSG_SQL} where m.room_id = $2 and m.thread_root is null ${before ? 'and m.id < $3' : ''} order by m.id desc limit ${PAGE}`, before ? [u.id, mem.room_id, before] : [u.id, mem.room_id]);
+      const rows = await db.q(`${MSG_SQL} where m.room_id = $2 and m.thread_root is null and m.id > ${Number(mem.cleared_upto) || 0} ${before ? 'and m.id < $3' : ''} order by m.id desc limit ${PAGE}`, before ? [u.id, mem.room_id, before] : [u.id, mem.room_id]);
       const list = (await roomList(u)).find((r) => r.id === mem.room_id);
       const pins = await db.q(`select p.message_id as id, m.body, m.kind, s.name from chat_pins p join chat_messages m on m.id = p.message_id left join users s on s.id = m.user_id where p.room_id = $1 and m.deleted_at is null order by p.at desc limit 5`, [mem.room_id]);
       return res.json({ room: list, msgs: rows.reverse().map((m) => shape(m, u.id)), more: rows.length === PAGE, marks: await marks(mem.room_id, u.id), lastRead: mem.last_read, pins: pins.map((p) => ({ id: p.id, name: p.name || SYS, text: C.preview(p.kind, p.body) })), now: new Date().toISOString() });
@@ -166,7 +167,7 @@ module.exports = route({
       if (q.room) {
         const mem = await needMember(u, q.room);
         const after = intOr(q.after) || 0, since = q.since && !isNaN(Date.parse(q.since)) ? q.since : now;
-        const rows = await db.q(`${MSG_SQL} where m.room_id = $2 and m.thread_root is null and (m.id > $3 or (m.touched_at > $4 and m.id <= $3)) order by m.id limit 200`, [u.id, mem.room_id, after, since]);
+        const rows = await db.q(`${MSG_SQL} where m.room_id = $2 and m.thread_root is null and m.id > ${Number(mem.cleared_upto) || 0} and (m.id > $3 or (m.touched_at > $4 and m.id <= $3)) order by m.id limit 200`, [u.id, mem.room_id, after, since]);
         out.msgs = rows.map((m) => shape(m, u.id));
         out.marks = await marks(mem.room_id, u.id);
         const pins = await db.q(`select p.message_id as id, m.body, m.kind, s.name from chat_pins p join chat_messages m on m.id = p.message_id left join users s on s.id = m.user_id where p.room_id = $1 and m.deleted_at is null order by p.at desc limit 5`, [mem.room_id]);
@@ -478,6 +479,10 @@ module.exports = route({
       }
       if (b.pinned !== undefined) await db.q('update chat_members set pinned = $3 where room_id = $1 and user_id = $2', [mem.room_id, u.id, !!b.pinned]);
       if (b.hidden !== undefined) await db.q('update chat_members set hidden = $3 where room_id = $1 and user_id = $2', [mem.room_id, u.id, !!b.hidden]);
+      if (b.deleteChat) {
+        if (!CAN_DELETE_CHAT(u)) throw fail(403, 'Deleting a chat is not open to your login.');
+        await db.q('update chat_members m set cleared_upto = coalesce(r.last_msg_id, 0), pinned = false, hidden = false, last_read = greatest(m.last_read, coalesce(r.last_msg_id, 0)) from chat_rooms r where r.id = m.room_id and m.room_id = $1 and m.user_id = $2', [mem.room_id, u.id]);
+      }
       return res.json({ ok: true });
     }
     if (a === 'status') {
