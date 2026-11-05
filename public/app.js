@@ -3392,7 +3392,7 @@
     const amt = (v) => (v ? Math.round(v).toLocaleString('en-IN') : '0');
     const grid = (title, B, reg, col) => `<div class="panel"><h2>${esc(title)}</h2><div class="table-wrap acc-grid byhead"><table>
       <tr><th>Cash Flow Head</th>${d.months.map((m) => `<th class="num">${ml(m)}</th>`).join('')}<th class="num">Total ${ml(d.from)} to ${ml(d.to)}</th><th class="num">Project till date</th></tr>
-      ${[...B.rows, B.total].map((x) => { const tot = x.head === 'Total'; return `<tr class="${tot ? 'tot' : ''}"><td>${tot ? '<b>Total</b>' : esc(x.head)}</td>${d.months.map((m) => `<td class="num">${!tot && x.months[m] ? `<a href="#" class="bh" data-reg="${reg}" data-col="${col}" data-h="${esc(x.head)}" data-m="${m}">${amt(x.months[m])}</a>` : amt(x.months[m])}</td>`).join('')}<td class="num"><b>${amt(x.total)}</b></td><td class="num"><b>${amt(x.tillDate)}</b></td></tr>`; }).join('')}
+      ${[...B.rows, B.total].map((x) => { const tot = x.head === 'Total'; return `<tr class="${tot ? 'tot' : ''}"><td>${tot ? '<b>Total</b>' : `<a href="#" class="bhl" data-reg="${reg}" data-col="${col}" data-h="${esc(x.head)}" title="Open this head's ledger for the months shown">${esc(x.head)}</a>`}</td>${d.months.map((m) => `<td class="num">${!tot && x.months[m] ? `<a href="#" class="bh" data-reg="${reg}" data-col="${col}" data-h="${esc(x.head)}" data-m="${m}">${amt(x.months[m])}</a>` : amt(x.months[m])}</td>`).join('')}<td class="num"><b>${amt(x.total)}</b></td><td class="num"><b>${amt(x.tillDate)}</b></td></tr>`; }).join('')}
       </table></div></div>`;
     out.innerHTML = `<div class="panel"><div class="row" style="grid-template-columns:repeat(auto-fill,minmax(170px,1fr));align-items:end;gap:10px">
         <div><label>From month</label><input type="month" id="bhf" value="${esc(d.from)}"></div><div><label>To month</label><input type="month" id="bht" value="${esc(d.to)}"></div>
@@ -3401,12 +3401,20 @@
       <div class="tabs" style="margin:10px 0 0"><button class="tab" data-p="fy">This year (Apr ${fy}–Mar ${fy + 1})</button><button class="tab" data-p="lfy">Last year</button><button class="tab" data-p="m">This month</button><button class="tab" data-p="all">All months</button></div>
       <div style="display:flex;gap:10px;align-items:center;margin-top:10px"><p class="small muted" style="margin:0;flex:1">Live from Receipts and Payments Out. Bounced cheques are left out of the receipts. "Project till date" is everything since the first entry${d.bank ? ' in this bank' : ''}, whatever months are shown. Tap an amount to see those entries.</p>
         <button class="ghost small" id="bhp">Print</button><a class="btn ghost small" href="/api/accounts?${new URLSearchParams({ ...Object.fromEntries(qs), export: 'xlsx' })}">Export to Excel</a></div></div>
+      <div class="panel no-print" style="padding:10px 16px"><input id="bhq" placeholder="Search a head (for example Salary, SRA, Mandal)"></div>
       <div id="bhgrids">${grid('PAYMENTS (money out)', d.payments, 'payments', 'head')}${grid('RECEIPTS (money in, excluding bounced cheques)', d.receipts, 'receipts', 'head')}${grid('CUSTOMER RECEIPTS BY PAYMENT HEAD (AV / GST / SDR)', d.customer, 'receipts', 'payment_head')}</div>`;
     const save = (o) => { store.set('erp_byhead', JSON.stringify({ ...st, ...o })); accByHead(out); };
     $('#bhgo').onclick = () => save({ from: $('#bhf').value, to: $('#bht').value, bank: $('#bhb').value });
     $('#bhb').onchange = () => $('#bhgo').click();
     const mm = t.slice(0, 7);
     document.querySelectorAll('.tab[data-p]').forEach((b) => (b.onclick = () => save(b.dataset.p === 'fy' ? { from: `${fy}-04`, to: `${fy + 1}-03` } : b.dataset.p === 'lfy' ? { from: `${fy - 1}-04`, to: `${fy}-03` } : b.dataset.p === 'm' ? { from: mm, to: mm } : { from: '', to: '' })));
+    $('#bhq').oninput = (e) => { const w = e.target.value.trim().toLowerCase(); document.querySelectorAll('#bhgrids tr').forEach((tr) => { if (tr.querySelector('th') || tr.classList.contains('tot')) return; tr.hidden = !!w && !tr.textContent.toLowerCase().includes(w); }); };
+    document.querySelectorAll('a.bhl').forEach((a) => (a.onclick = (e) => {
+      e.preventDefault(); const [y, mo] = d.to.split('-').map(Number), last = new Date(Date.UTC(y, mo, 0)).getUTCDate();
+      const k = 'erp_acc_' + a.dataset.reg, cur = JSON.parse(store.get(k) || '{}');
+      store.set(k, JSON.stringify({ ...cur, q: '', filter: '', from: d.from ? `${d.from}-01` : '', to: d.to ? `${d.to}-${String(last).padStart(2, '0')}` : '', m: { ...(d.bank ? { bank: d.bank } : {}), [a.dataset.col]: a.dataset.h === '(no head)' ? '(blank)' : a.dataset.h }, by: '' }));
+      location.hash = '#/reg-' + a.dataset.reg;
+    }));
     document.querySelectorAll('a.bh').forEach((a) => (a.onclick = (e) => {
       e.preventDefault(); const [y, mo] = a.dataset.m.split('-').map(Number), last = new Date(Date.UTC(y, mo, 0)).getUTCDate();
       const k = 'erp_acc_' + a.dataset.reg, cur = JSON.parse(store.get(k) || '{}');
@@ -3420,6 +3428,13 @@
       w.document.close(); setTimeout(() => w.print(), 300);
     };
   }
+  // Opens a register (Receipts, Payments Out) filtered to one payee, head or flat: that payee's or head's ledger.
+  function openLedger(reg, col, v, from = '', to = '') {
+    const k = 'erp_acc_' + reg, cur = JSON.parse(store.get(k) || '{}');
+    const m = col === 'unit_no' ? {} : { [col]: v === '(no payee)' || v === '(no head)' ? '(blank)' : v };
+    store.set(k, JSON.stringify({ ...cur, q: col === 'unit_no' ? v : '', filter: '', from, to, m, by: '' }));
+    location.hash = '#/reg-' + reg;
+  }
   async function accReports() {
     const tab0 = store.get('erp_accrep'), tab = ['units', 'tds', 'bounced'].includes(tab0) || !tab0 ? 'byHead' : tab0;
     const T = [['byHead', 'Payments by head'], ['gst', 'GST report'], ['sdr', 'SDR report'], ['payees', 'Payees'], ['partners', 'Channel partner accounts'], ['vendorBills', 'Vendor bills'], ['register', 'Salary & expense register'], ['tally', 'Tally export']];
@@ -3427,9 +3442,20 @@
       <div class="tabs">${T.map(([k, l]) => `<button class="tab ${k === tab ? 'on' : ''}" data-t="${k}">${l}</button>`).join('')}</div><div id="rep"><div class="panel muted">Loading…</div></div>`;
     document.querySelectorAll('.tab[data-t]').forEach((b) => (b.onclick = () => { store.set('erp_accrep', b.dataset.t); accReports(); }));
     const out = $('#rep');
-    const table = (cols, rows, opts = {}) => `<div class="panel">${opts.head || ''}<div class="table-wrap acc-grid"><table><tr>${cols.map(([l, , t]) => `<th class="${t ? 'num' : ''}">${esc(l)}</th>`).join('')}</tr>
-      ${rows.slice(0, opts.limit || 1500).map((r) => `<tr>${cols.map(([, f, t]) => { const v = f(r); return `<td class="${t ? 'num' : ''}">${t === 'm' ? (v ? inr(v) : '—') : t === 'n' ? (v ?? '') : esc(v ?? '')}</td>`; }).join('')}</tr>`).join('')}</table></div>${rows.length > (opts.limit || 1500) ? `<p class="small muted">Showing ${opts.limit || 1500} of ${rows.length}.</p>` : ''}</div>`;
+    // a column with a 4th item {reg, col} links each value to that register filtered to it (the payee's or head's ledger)
+    const cell = (v, t, L) => { const txt = t === 'm' ? (v ? inr(v) : '—') : t === 'n' ? (v ?? '') : esc(v ?? ''); return L && v && v !== 'Total' ? `<a href="#" class="led" data-reg="${L.reg}" data-col="${L.col}" data-v="${esc(v)}" title="Open the ledger">${txt}</a>` : txt; };
+    const table = (cols, rows, opts = {}) => `<div class="panel">${opts.head || ''}<div class="row no-print" style="grid-template-columns:1fr auto;align-items:center;margin:0 0 8px"><input class="repq" placeholder="Search this report"><span class="small muted repn">${rows.length} rows</span></div><div class="table-wrap acc-grid"><table><tr>${cols.map(([l, , t]) => `<th class="${t ? 'num' : ''}">${esc(l)}</th>`).join('')}</tr>
+      ${rows.slice(0, opts.limit || 1500).map((r) => `<tr>${cols.map(([, f, t, L]) => `<td class="${t ? 'num' : ''}">${cell(f(r), t, L)}</td>`).join('')}</tr>`).join('')}</table></div>${rows.length > (opts.limit || 1500) ? `<p class="small muted">Showing ${opts.limit || 1500} of ${rows.length}.</p>` : ''}</div>`;
     const P = proj || '';
+    const wire = () => {
+      out.querySelectorAll('a.led').forEach((x) => (x.onclick = (e) => { e.preventDefault(); openLedger(x.dataset.reg, x.dataset.col, x.dataset.v); }));
+      out.querySelectorAll('.repq').forEach((q) => (q.oninput = () => {
+        const w = q.value.trim().toLowerCase(), tb = q.closest('.panel').querySelector('table'); let k = 0;
+        tb.querySelectorAll('tr').forEach((tr, i) => { if (!i) return; const show = !w || tr.textContent.toLowerCase().includes(w); tr.hidden = !show; if (show) k++; });
+        q.parentElement.querySelector('.repn').textContent = `${k} rows`;
+      }));
+    };
+    new MutationObserver(() => wire()).observe(out, { childList: true });
     if (tab === 'byHead') return accByHead(out);
     if (tab === 'tally') {
       const m0 = todayIso().slice(0, 8) + '01';
@@ -3446,14 +3472,14 @@
       const mlab = (m) => new Date(m + '-01T00:00:00').toLocaleDateString('en-IN', { month: 'short', year: '2-digit' });
       out.innerHTML = `<div class="panel"><div class="row" style="grid-template-columns:1fr 1fr"><div><label>Cash flow head</label><select id="rh">${L.lists.paymentHead2.map((h) => `<option ${h === head ? 'selected' : ''}>${esc(h)}</option>`).join('')}</select></div>
         <div><label>Financial year starting April</label><input id="ry" type="number" value="${fy}"></div></div><p class="small muted">Straight from Payments Out. Salary paid through another person shows under that person; payments with no payee show as "(no payee)". Use this for Form 16 and the 24Q TDS return.</p></div>` +
-        table([['Payee', (r) => r.payee], ['PAN', (r) => r.pan], ...d.months.map((m) => [mlab(m), (r) => r[m] || 0, 'm']), ['Total for the year', (r) => r.total, 'm']], [{ payee: 'Total', pan: '', ...Object.fromEntries(d.months.map((m) => [m, d.rows.reduce((a, r) => a + (r[m] || 0), 0)])), total: d.rows.reduce((a, r) => a + r.total, 0) }, ...d.rows]);
+        table([['Payee', (r) => r.payee, '', { reg: 'payments', col: 'payee' }], ['PAN', (r) => r.pan], ...d.months.map((m) => [mlab(m), (r) => r[m] || 0, 'm']), ['Total for the year', (r) => r.total, 'm']], [{ payee: 'Total', pan: '', ...Object.fromEntries(d.months.map((m) => [m, d.rows.reduce((a, r) => a + (r[m] || 0), 0)])), total: d.rows.reduce((a, r) => a + r.total, 0) }, ...d.rows]);
       $('#rh').onchange = (e) => { store.set('erp_reghead', e.target.value); accReports(); };
       $('#ry').onchange = (e) => { store.set('erp_regfy', e.target.value); accReports(); };
       return;
     }
     const d = await api(`/api/accounts?view=report&name=${tab}&project=${P}`);
-    if (tab === 'gst') out.innerHTML = table([['Unit', (r) => r.unit], ['Applicant', (r) => r.applicant], ['Status', (r) => r.status], ['Agreement value', (r) => r.av, 'm'], ['GST payable', (r) => r.gstPayable, 'm'], ['AV received (bank)', (r) => r.avReceived, 'm'], ['GST due on AV received', (r) => r.gstDueOnReceived, 'm'], ['GST received (bank)', (r) => r.gstReceived, 'm'], ['Shortfall on received', (r) => r.shortfall, 'm'], ['GST outstanding (full)', (r) => r.outstanding, 'm'], ['GST per CRM (ERP)', (r) => r.crm, 'm'], ['Status', (r) => r.state]], d.rows);
-    else if (tab === 'sdr') out.innerHTML = table([['Unit', (r) => r.unit], ['Applicant', (r) => r.applicant], ['Status', (r) => r.status], ['Registration', (r) => r.registration], ['Stamp duty', (r) => r.stampDuty, 'm'], ['Registration fee', (r) => r.registrationFee, 'm'], ['SDR payable', (r) => r.payable, 'm'], ['SDR received (bank)', (r) => r.received, 'm'], ['SDR paid out (challans)', (r) => r.paidOut, 'm'], ['Held (received − paid)', (r) => r.held, 'm'], ['To collect', (r) => r.toCollect, 'm'], ['SDR per CRM (ERP)', (r) => r.crm, 'm'], ['Status', (r) => r.state]], d.rows);
+    if (tab === 'gst') out.innerHTML = table([['Unit', (r) => r.unit, '', { reg: 'receipts', col: 'unit_no' }], ['Applicant', (r) => r.applicant], ['Status', (r) => r.status], ['Agreement value', (r) => r.av, 'm'], ['GST payable', (r) => r.gstPayable, 'm'], ['AV received (bank)', (r) => r.avReceived, 'm'], ['GST due on AV received', (r) => r.gstDueOnReceived, 'm'], ['GST received (bank)', (r) => r.gstReceived, 'm'], ['Shortfall on received', (r) => r.shortfall, 'm'], ['GST outstanding (full)', (r) => r.outstanding, 'm'], ['GST per CRM (ERP)', (r) => r.crm, 'm'], ['Status', (r) => r.state]], d.rows);
+    else if (tab === 'sdr') out.innerHTML = table([['Unit', (r) => r.unit, '', { reg: 'receipts', col: 'unit_no' }], ['Applicant', (r) => r.applicant], ['Status', (r) => r.status], ['Registration', (r) => r.registration], ['Stamp duty', (r) => r.stampDuty, 'm'], ['Registration fee', (r) => r.registrationFee, 'm'], ['SDR payable', (r) => r.payable, 'm'], ['SDR received (bank)', (r) => r.received, 'm'], ['SDR paid out (challans)', (r) => r.paidOut, 'm'], ['Held (received − paid)', (r) => r.held, 'm'], ['To collect', (r) => r.toCollect, 'm'], ['SDR per CRM (ERP)', (r) => r.crm, 'm'], ['Status', (r) => r.state]], d.rows);
     else if (tab === 'partners') {
       const cols = [['CP firm', (r) => r.firm], ['Flats', (r) => r.flats, 'n'], ['Agreement value', (r) => r.av, 'm'], ['Brokerage agreed', (r) => r.agreed, 'm'], ['Billed by CP', (r) => r.billed, 'm'],
         ['Paid as per CRM', (r) => r.paidCrm, 'm'], ['Paid as per books', (r) => r.paidBooks, 'm'], ['TDS deducted (books)', (r) => r.tdsBooks, 'm'], ['Books less CRM', (r) => r.difference, 'm'], ['Check', (r) => r.state],
@@ -3469,8 +3495,8 @@
         const a = document.createElement('a'); a.href = URL.createObjectURL(new Blob(['\ufeff' + csv], { type: 'text/csv' })); a.download = `channel-partner-accounts-${todayIso()}.csv`; a.click(); setTimeout(() => URL.revokeObjectURL(a.href), 2000);
       };
     }
-    else if (tab === 'payees') out.innerHTML = table([['Payee', (r) => r.payee], ['Type', (r) => r.type], ['PAN', (r) => r.pan], ['GSTIN', (r) => r.gstin], ['TDS section', (r) => r.tdsSection], ['Usual cash flow head', (r) => r.usualHead], ['Needs invoice?', (r) => r.needsInvoice], ['No. of payments', (r) => r.n, 'n'], ['Total paid', (r) => r.paid, 'm'], ['Total billed', (r) => r.billed, 'm'], ['TDS on bills', (r) => r.tds, 'm']], d.rows);
-    else if (tab === 'vendorBills') out.innerHTML = table([['Payment ID', (r) => r.ref_id], ['Paid on', (r) => fmtD(r.txn_date)], ['Payee', (r) => r.payee], ['Head', (r) => r.head], ['Bill date', (r) => (r.bill_date ? fmtD(r.bill_date) : '')], ['Vendor PAN', (r) => r.vendor_pan], ['Bill no.', (r) => r.bill_no], ['Taxable', (r) => r.taxable_value, 'm'], ['GST', (r) => r.gst_on_bill, 'm'], ['Total bill', (r) => r.total_bill, 'm'], ['TDS section', (r) => r.tds_section || r.tdsSectionUsual], ['TDS deducted', (r) => r.tds_deducted, 'm'], ['Paid', (r) => r.amount, 'm'], ['Challan', (r) => r.tds_challan], ['What staff need to add', (r) => r.needs]], d.rows);
+    else if (tab === 'payees') out.innerHTML = table([['Payee', (r) => r.payee, '', { reg: 'payments', col: 'payee' }], ['Type', (r) => r.type], ['PAN', (r) => r.pan], ['GSTIN', (r) => r.gstin], ['TDS section', (r) => r.tdsSection], ['Usual cash flow head', (r) => r.usualHead, '', { reg: 'payments', col: 'head' }], ['Needs invoice?', (r) => r.needsInvoice], ['No. of payments', (r) => r.n, 'n'], ['Total paid', (r) => r.paid, 'm'], ['Total billed', (r) => r.billed, 'm'], ['TDS on bills', (r) => r.tds, 'm']], d.rows);
+    else if (tab === 'vendorBills') out.innerHTML = table([['Payment ID', (r) => r.ref_id], ['Paid on', (r) => fmtD(r.txn_date)], ['Payee', (r) => r.payee, '', { reg: 'payments', col: 'payee' }], ['Head', (r) => r.head, '', { reg: 'payments', col: 'head' }], ['Bill date', (r) => (r.bill_date ? fmtD(r.bill_date) : '')], ['Vendor PAN', (r) => r.vendor_pan], ['Bill no.', (r) => r.bill_no], ['Taxable', (r) => r.taxable_value, 'm'], ['GST', (r) => r.gst_on_bill, 'm'], ['Total bill', (r) => r.total_bill, 'm'], ['TDS section', (r) => r.tds_section || r.tdsSectionUsual], ['TDS deducted', (r) => r.tds_deducted, 'm'], ['Paid', (r) => r.amount, 'm'], ['Challan', (r) => r.tds_challan], ['What staff need to add', (r) => r.needs]], d.rows);
   }
 
   async function accSetup() {
