@@ -188,6 +188,38 @@ module.exports = route({
       });
       return res.json({ ok: true, ...out });
     }
+    // TDS Tracker from the TDS portal only (26AS / Annual Tax Statement, Part IV: buyers' TDS on flat purchases):
+    // every row now in the tracker is replaced by the portal's entries, one per TDS certificate.
+    if (b.action === 'tds-portal-replace') {
+      need('accounts.manage');
+      if (b.confirm !== 'REPLACE') throw fail(400, 'Type REPLACE to confirm.');
+      const rows = Array.isArray(b.rows) ? b.rows : [];
+      if (!rows.length || rows.length > 5000) throw fail(400, 'No portal rows sent.');
+      const D = /^\d{4}-\d{2}-\d{2}$/;
+      const clean = rows.map((r, i) => {
+        const x = { paid_on: D.test(r.paid_on || '') ? r.paid_on : null, unit_no: str(r.unit_no, 20).toUpperCase() || null, customer: str(r.customer, 160) || null, demand: str(r.demand, 160) || null,
+          demand_amount: Number(r.demand_amount) || null, tds_amount: Number(r.tds_amount), challan_no: str(r.challan_no, 60) || null, cert_no: str(r.cert_no, 60) || null,
+          source: str(r.source, 120) || 'TDS portal', remark: str(r.remark, 400) || null };
+        if (!x.paid_on || !(x.tds_amount > 0)) throw fail(400, `Row ${i + 1}: date or TDS amount missing.`);
+        return x;
+      });
+      const out = await db.tx(async (t) => {
+        const before = await t.one('select count(*)::int as n, coalesce(sum(tds_amount), 0) as amt from acc_tds_entries where book = $1', [acc.BOOK]);
+        await t.q('delete from acc_tds_entries where book = $1', [acc.BOOK]);
+        clean.sort((a, z) => a.paid_on.localeCompare(z.paid_on));
+        let k = 0;
+        for (const x of clean) {
+          k++;
+          await t.q(`insert into acc_tds_entries (book, ref_id, paid_on, unit_no, customer, demand, demand_amount, tds_amount, challan_no, cert_no, source, remark, imported, created_by)
+                     values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, false, $13)`,
+          [acc.BOOK, 'TDS' + String(k).padStart(4, '0'), x.paid_on, x.unit_no, x.customer, x.demand, x.demand_amount, x.tds_amount, x.challan_no, x.cert_no, x.source, x.remark, u.id]);
+        }
+        const after = { n: clean.length, amt: Math.round(clean.reduce((a, x) => a + x.tds_amount, 0) * 100) / 100, noFlat: clean.filter((x) => !x.unit_no).length };
+        await audit.record(t.q, { user: u, action: 'tds-portal-replace', entity: 'acc-tds', entityId: 'signature', before: { rows: before.n, tds: Number(before.amt) }, after, note: 'TDS Tracker replaced with the TDS portal entries' });
+        return { before: { rows: before.n, tds: Number(before.amt) }, after };
+      });
+      return res.json({ ok: true, ...out });
+    }
     if (b.action === 'delete') {
       need('accounts.manage');
       const reg = REGISTERS[b.reg]; if (!reg) throw fail(400, 'Unknown register.');
