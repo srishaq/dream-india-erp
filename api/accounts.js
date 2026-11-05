@@ -324,6 +324,31 @@ module.exports = route({
       await db.tx(async (t) => { await t.q("insert into acc_banks (book, name, account_no) values ('signature', $1, $2) on conflict (book, name) do update set account_no = excluded.account_no", [name, str(b.accountNo, 40) || null]); await audit.record(t.q, { user: u, action: 'bank', entity: 'acc-bank', entityId: name, after: b }); });
       return res.json({ ok: true });
     }
+    if (b.action === 'tally-split') {
+      // Tally vouchers holding several flats, brought in as one row each: one row per flat (lib/tally-split.js). Safe to run again.
+      need('accounts.manage');
+      const { split } = require('../lib/tally-split');
+      const out = await db.tx(async (t) => {
+        const rows = await t.q("select * from acc_receipts where book = $1 and source = 'Tally' and unit_no is null and coalesce(head, '') <> 'Internal transfer' and ref_id not like '%/%' and description like '%;%'", [acc.BOOK]);
+        let vouchers = 0, made = 0;
+        const C = ['ref_id', 'amount', 'unit_no', 'payer_name', 'head', 'payment_head', 'payer_type', 'remark'];
+        for (const r of rows) {
+          const ps = split({ ...r, txn_date: r.txn_date instanceof Date ? r.txn_date.toISOString().slice(0, 10) : r.txn_date });
+          if (!ps) continue;
+          vouchers++;
+          const [first, ...rest] = ps;
+          await t.q(`update acc_receipts set ${C.map((c, i) => `${c} = $${i + 2}`).join(', ')}, updated_by = $${C.length + 2}, updated_at = now() where id = $1`, [r.id, ...C.map((c) => first[c]), u.id]);
+          for (const x of rest) {
+            const K = ['book', 'txn_date', 'bank', 'description', 'reference', 'cheque_status', 'source', 'on_statement', ...C];
+            await t.q(`insert into acc_receipts (${K.join(', ')}, created_by) values (${K.map((_, i) => '$' + (i + 1)).join(', ')}, $${K.length + 1})`, [...K.map((c) => (c in x ? x[c] : r[c])), u.id]);
+            made++;
+          }
+        }
+        await audit.record(t.q, { user: u, action: 'tally-split', entity: 'acc-receipts', after: { vouchers, rowsAdded: made }, note: 'Tally vouchers holding several flats split into one row per flat.' });
+        return { vouchers, rowsAdded: made };
+      });
+      return res.json({ ok: true, ...out });
+    }
     if (b.action === 'tally-preview' || b.action === 'tally-import') {
       // Test version: the registers are replaced with the Receipt and Payment Registers exported from Tally.
       need('accounts.manage');

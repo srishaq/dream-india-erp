@@ -29,6 +29,7 @@ module.exports = route({
   POST: async (req, res, b) => {
     const u = await auth.guard(req, res); if (!u) return;
     if (!canResolve(u)) throw fail(403, 'Only Head CRM, Head Accounts, Management or Admin can close these.');
+    if (b.action === 'auto-clear') return res.json(await require('../lib/auto-clear').run({ projectId: needProject(u, intOr(b.project)), user: u, dry: b.dry !== false }));
     const row = await db.one('select * from import_issues where id = $1', [intOr(b.id)]);
     if (!row) throw fail(404, 'Item not found.');
     needProject(u, row.project_id);
