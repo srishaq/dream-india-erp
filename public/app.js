@@ -3124,7 +3124,7 @@
     const run = runId ? (await api('/api/bank-auto?run=' + runId)).run : d.last;
     const S = d.settings || {};
     const ist = (t) => (t ? new Date(t).toLocaleString('en-IN', { day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit', timeZone: 'Asia/Kolkata' }) : '');
-    const trig = { schedule: '12 noon / 7 pm (automatic)', drive: 'Run from Drive', upload: 'Uploaded', compare: 'Comparison' };
+    const trig = { schedule: 'automatic', drive: 'Run from Drive', upload: 'Uploaded', compare: 'Comparison' };
     const amt = (v) => (v == null || v === '' ? '' : inr(v));
     const dd = (v) => (/^\d{4}-\d{2}-\d{2}$/.test(String(v || '')) ? fmtD(v) : esc(v || ''));
     const list = (rows, empty) => rows && rows.length ? `<div class="table-wrap acc-grid"><table><tr><th>What</th><th>Bank</th><th>Date</th><th class="num">Amount</th><th>Bank description</th><th>Where</th><th>What to do</th></tr>
