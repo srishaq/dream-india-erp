@@ -398,6 +398,28 @@ module.exports = route({
       r.cheques = await require('../lib/cheque-match').run({ user: u, trigger: 'tally' }).catch((e) => ({ error: e.message }));
       return res.json({ ok: true, summary: p.summary, problems: p.problems, ...r });
     }
+    if (b.action === 'file-part') {
+      // a large Excel file sent in parts (each request is limited in size); kept for an hour until it is used
+      need('accounts.manage');
+      const id = str(b.id, 40).replace(/[^a-z0-9-]/gi, ''), part = intOr(b.part), of = intOr(b.of);
+      if (!id || !(part >= 0) || !(of > 0) || of > 20) throw fail(400, 'Bad file part.');
+      await db.q("delete from job_marks where key like 'upload:%' and done_at < now() - interval '1 hour'");
+      await db.q("insert into job_marks (key, info) values ($1, $2) on conflict (key) do update set info = excluded.info, done_at = now()", [`upload:${id}:${part}`, { of, data: String(b.data || '') }]);
+      return res.json({ ok: true });
+    }
+    if (b.action === 'cancel-payments' && b.fileId) {
+      need('accounts.manage');
+      const id = str(b.fileId, 40).replace(/[^a-z0-9-]/gi, '');
+      const parts = await db.q("select key, info from job_marks where key like $1", [`upload:${id}:%`]);
+      const of = parts[0] ? parts[0].info.of : 0;
+      if (!of || parts.length !== of) throw fail(400, 'The file did not arrive completely. Upload it again.');
+      const buf = Buffer.from(parts.sort((x, y) => +x.key.split(':')[2] - +y.key.split(':')[2]).map((x) => x.info.data).join(''), 'base64');
+      await db.q("delete from job_marks where key like $1", [`upload:${id}:%`]);
+      const tabs = require('../lib/xlsx').read(buf);
+      const t = tabs.find((x) => /cancellation\s*payment/i.test(x.name));
+      if (!t) throw fail(400, 'The file has no "Cancellation Payment" tab.');
+      b.rows = cancellations.parsePayments(t.rows);
+    }
     if (b.action === 'cancel-payments' && b.sheetId) {
       // read straight from the Developer Tracker in Google Sheets (shared with the ERP's service account)
       need('accounts.manage');
