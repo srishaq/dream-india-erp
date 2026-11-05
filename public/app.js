@@ -3239,7 +3239,7 @@
     async function flat(unit) {
       const x = await api(`/api/books-crm?project=${proj || ''}&unit=${encodeURIComponent(unit)}`);
       const bk = x.books, cr = x.crm;
-      const tag = (r) => r.pair ? (Math.abs(r.days) > 7 ? `<span class="pill grey">matched, ${Math.abs(r.days)} days apart</span>` : '<span class="pill good">matched</span>') : '<span class="pill bad">not on the other side</span>';
+      const tag = (r) => r.pair ? r.split ? `<span class="pill good">matched (${r.split} entries together)</span>` : (Math.abs(r.days) > 7 ? `<span class="pill grey">matched, ${Math.abs(r.days)} days apart</span>` : '<span class="pill good">matched</span>') : '<span class="pill bad">not on the other side</span>';
       const dl = document.createElement('dialog'); dl.className = 'wide';
       dl.innerHTML = `<form method="dialog"><h2>${esc(unit)} · ${esc(x.booking.buyer || '')}</h2><p class="muted">Agreement value ${inr(x.booking.av)} · ${esc(x.booking.status || '')}. ${x.unmatched.books} receipts in the books and ${x.unmatched.crm} in the CRM have no match on the other side.</p>
         ${x.cancelled && x.cancelled.length ? `<h3>Cancelled bookings on this flat (${x.cancelled.length})</h3><div class="table-wrap acc-grid"><table><tr><th>Cancelled</th><th>Client</th><th class="num">Received (refund list)</th><th>Refund status</th></tr>${x.cancelled.map((c) => `<tr><td>${fmtD(c.cancel_date)}</td><td>${esc(c.client || '')}</td><td class="num">${inr(c.received)}</td><td>${esc(c.refund_status || '')}</td></tr>`).join('')}</table></div>` : ''}
