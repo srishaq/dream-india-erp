@@ -102,6 +102,7 @@ async function periods(projectId, nets) {
 }
 
 async function overview(u, scope, req) {
+  await require('../lib/social').ensureChoice().catch((e) => console.error('social choice', e.message)); // only Dream India Realty's pages
   const set = await settings();
   const projectId = pid(scope);
   const inScope = (col = 'project_id') => (projectId ? `${col} = ${+projectId}` : 'true');
@@ -871,6 +872,10 @@ const handler = route({
       return res.json({ ok: true });
     }
     if (a === 'sync') { editOnly(); return res.json({ ok: true, ...(await require('../lib/social').sync({ full: !!d.full, only: require('../lib/social').PARTS.includes(d.part) ? d.part : null })) }); }
+    if (a === 'social-choose') { // which Facebook pages (with their Instagram) and ad accounts are Dream India Realty's
+      editOnly(); const r = await require('../lib/social').choose({ pages: d.pages, ads: d.ads });
+      await log('social-choose', 'social', 'meta', { pages: r.meta.pages.map((p) => p.name), ads: r.meta.ads.map((x) => x.name) }); return res.json({ ok: true });
+    }
     if (a === 'disconnect') { editOnly(); if (!['meta', 'youtube'].includes(d.net)) throw fail(400, 'Which one?'); await require('../lib/social').disconnect(d.net); await log('disconnect', 'social', d.net); return res.json({ ok: true }); }
 
     if (a === 'plan.save') {
