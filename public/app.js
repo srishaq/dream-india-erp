@@ -326,7 +326,7 @@
     { key: 'home', label: 'Home', show: () => true },
     { key: 'mgmt', label: 'Management dashboard', show: () => can('mgmt.view') },
     { key: 'marketing', label: 'Sales & Marketing', show: () => can('marketing.view') },
-    { key: 'telemarketing', label: 'Telemarketing & partners', show: () => anyOf('tm.view', 'tm.manage', 'tm.entry') && !can('marketing.view') },
+    { key: 'telemarketing', label: 'Telemarketing', show: () => anyOf('tm.view', 'tm.manage', 'tm.entry') },
     { key: 'training', label: 'Training videos', show: () => true },
     { group: 'CRM' },
     { key: 'crmtodo', label: 'Today', show: () => anyOf('demand.raise', 'booking.create', 'booking.approve', 'ledger.view') },
@@ -605,9 +605,9 @@
     if (!act.some((p) => /aspire/i.test(p.name))) projTiles.push({ title: 'Dream Aspire', sub: 'Lokhandwala, Andheri West · commercial · not in the ERP yet', icon: 'building', tone: '#0E8C9B', soon: true });
     const mgmtTiles = [
       can('mgmt.view') && { title: 'Management', sub: 'Cash, collections, dues, site, purchase, approvals, compliance and taxes on one screen', icon: 'chart', tone: '#140C59', href: '#/mgmt' },
-      can('marketing.view') && { title: 'Sales & Marketing', sub: 'Project by project: plan and budget, ads, portals, website, telemarketing, channel partners and leads to bookings', icon: 'megaphone', tone: '#C2185B', href: '#/marketing' },
+      can('marketing.view') && { title: 'Sales & Marketing', sub: 'Project by project: plan and budget, ads, portals, website and leads to bookings', icon: 'megaphone', tone: '#C2185B', href: '#/marketing' },
       can('marketing.view') && { title: 'AI Agent Team', sub: 'The marketing command centre: signals, orchestrator, eight departments and comment-to-DM leads, project by project', icon: 'megaphone', tone: '#D97706', href: '/agents' },
-      !can('marketing.view') && anyOf('tm.view', 'tm.manage', 'tm.entry') && { title: 'Telemarketing & partners', sub: 'Channel partner sign-ups and client uploads, call sheets, telecaller results and costs', icon: 'handshake', tone: '#0E8C9B', href: '#/telemarketing' },
+      anyOf('tm.view', 'tm.manage', 'tm.entry') && { title: 'Telemarketing', sub: 'Everything for telemarketing: partner sign-ups and their client lists, telecallers, call sheets and results, costs, project by project', icon: 'handshake', tone: '#0E8C9B', href: '#/telemarketing' },
       sec('hr') ? { title: 'HR & Admin', sub: 'Staff records, leave, letters and HR policies', icon: 'users', tone: '#7A5C99', href: '/hr' } : { title: 'HR & Admin', sub: 'Staff records, leave, letters and HR policies', icon: 'users', tone: '#7A5C99', soon: true },
       { title: 'Project feasibility', sub: 'SRA Feasibility Desk · analyse Reg. 33(10) sites and keep the register', icon: 'grid', tone: '#2B5C8A', href: 'https://claude.ai/artifact/EnCX84ZBXUSRTzQ52qf4D6', ext: true },
     ].filter(Boolean);

@@ -157,7 +157,6 @@
       ['campaigns', 'Campaigns', [['campaigns', 'Plans & spend'], ['active', 'Running now']]],
       ['content', 'Content', [['calendar', 'Calendar'], ['library', 'Design library'], ['inbox', 'Comments'], ['tasks', 'Tasks']]],
       ['leads', 'Leads', [['leads', 'Leads']]],
-      ...(tmOk ? [['tele', 'Telemarketing', [['tele', 'Telemarketing']]], ['cps', 'Channel partners', [['cps', 'Channel partners']]]] : []),
       ['report', 'Reports', [['report', '12-month report']]]];
     if (S.tab === 'setup') { /* Set-up opens from the button at the top */ } else if (!GROUPS.some((g) => g[2].some(([k]) => k === S.tab))) S.tab = 'overview';
     const G = GROUPS.find((g) => g[2].some(([k]) => k === S.tab));
@@ -172,7 +171,7 @@
       <div id="mkBody"></div></div>`;
     $('#mkProj').onchange = async (e) => { if (e.target.value === '__add') { location.hash = '#/projects'; return; } S.scope = e.target.value; S.lib = null; await load(); paint(); };
     $$('#page [data-tab]').forEach((b) => (b.onclick = () => { S.tab = b.dataset.tab; paint(); }));
-    ({ overview, plan, active, report, calendar, leads, tele, cps, inbox, campaigns, library, tasks, setup }[S.tab] || overview)();
+    (S.tab === 'tele' || S.tab === 'cps' ? (location.hash = '#/telemarketing') : ({ overview, plan, active, report, calendar, leads, inbox, campaigns, library, tasks, setup }[S.tab] || overview)());
   }
   const body = (h) => ($('#mkBody').innerHTML = h);
 

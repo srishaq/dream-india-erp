@@ -66,7 +66,7 @@
     }
     const T = tabs();
     $('#page').innerHTML = `<div class="tm">
-      <div class="tm-hero"><div class="tm-eb">Management</div><h1>Partner &amp; Telemarketing</h1>
+      <div class="tm-hero"><div class="tm-eb">Management</div><h1>Telemarketing</h1>
         <p>Channel partners register and upload their clients; numbers are checked for duplicates and owners, called from printed sheets, and every result comes back here.</p>
         ${can('tm.view') || can('tm.manage') ? `<div class="tm-link">Partner portal link: <code>${esc(PORTAL)}</code><button type="button" id="tmCopy">Copy link</button></div>` : ''}</div>
       <nav class="ff-tabs no-print" role="tablist">${T.map(([k, l]) => `<button type="button" role="tab" data-t="${k}" aria-selected="${k === tab}">${esc(l)}</button>`).join('')}</nav>
