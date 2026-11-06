@@ -136,6 +136,30 @@
       ]
     }
   ],
+  "redirects": [
+    {
+      "source": "/",
+      "has": [
+        {
+          "type": "host",
+          "value": "partners.dreamindiarealty.com"
+        }
+      ],
+      "destination": "/partner",
+      "permanent": false
+    },
+    {
+      "source": "/index.html",
+      "has": [
+        {
+          "type": "host",
+          "value": "partners.dreamindiarealty.com"
+        }
+      ],
+      "destination": "/partner",
+      "permanent": false
+    }
+  ],
   "crons": [
     {
       "path": "/api/cron?job=agents",
