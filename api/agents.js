@@ -140,6 +140,16 @@ module.exports = route({
       const set = await A.settingsOf(scope);
       return res.json({ ok: true, templates: await T.canvaTemplates(), chosen: (set.owner && set.owner.templates) || {} });
     }
+    if (a === 'canva.starter') {
+      own();
+      const T = require('../lib/mkt-tools'), st = await T.canvaStatus();
+      if (!st.connected) throw fail(409, 'Connect Canva first: Sales & Marketing → Set-up → Connect Canva.');
+      const out = [];
+      for (const [k, f] of Object.entries(require('../lib/canva-starter'))) out.push({ kind: k, ...(await T.canvaImport(Buffer.from(f.pptx, 'base64'), f.title, 'application/vnd.openxmlformats-officedocument.presentationml.presentation')) });
+      await A.say('company', 'creative', 'owner', `Starter Canva templates imported: ${out.map((x) => x.title || x.kind).join(', ')}. Publish them as brand templates in Canva, then pick them under Canva templates.`);
+      await log('canva-starter', 'agents', 'company', { designs: out.map((x) => x.id) });
+      return res.json({ ok: true, designs: out });
+    }
     if (a === 'templates.save') {
       edit(); inScope();
       const cur = await A.settingsOf(scope), t = d.templates || {}, templates = {};
