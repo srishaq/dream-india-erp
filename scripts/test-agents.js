@@ -16,7 +16,7 @@ const fake = http.createServer(async (req, res) => {
   if (P === '/claude/v1/messages') {
     const text = JSON.parse(body).messages[0].content; prompts.push(text);
     if (/read comments/.test(text)) { const lines = [...text.matchAll(/^(\d+)\. [^:]*: (.*)$/gm)]; return J({ content: [{ text: JSON.stringify({ notes: lines.map(([, i, t]) => ({ i: +i, kind: /No reply/.test(t) ? 'complaint' : 'question', reply: 'Thanks, we have sent you a DM.' })) }) }] }); }
-    if (/what worked for Dream India/.test(text)) return J({ content: [{ text: JSON.stringify({ markdown: '## Summary\n- Reels about redevelopment families did best (12 posts).\n' + 'x '.repeat(150) }) }] });
+    if (/what worked for Dream India/.test(text)) return J({ content: [{ text: '## Summary\n- Reels about redevelopment families did best (12 posts).\n' + 'x '.repeat(150) }] });
     const n = +(text.match(/Write (\d+) social/) || [])[1] || 1;
     return J({ content: [{ text: JSON.stringify({ posts: Array.from({ length: n }, (_, i) => ({ title: `Draft ${i + 1} ${Date.now() % 1000}`, kind: i % 2 ? 'carousel' : 'reel', channels: ['instagram', 'facebook'], hook: 'Hook ' + i, caption: 'Life in the neighbourhood, story ' + i + '. Comment UPDATES for news. #mumbai', visual: 'Site at sunset', day: i })) }) }] });
   }
