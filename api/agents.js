@@ -43,6 +43,19 @@ module.exports = route({
     const own = () => { if (!canOwn(u)) throw fail(403, 'Only Management (the owner) sets this.'); };
     const inScope = () => { if (!scopeOk(u, scope)) throw fail(403, 'That project is not on your login.'); };
 
+    // Learn from our past posts: import two years of Instagram and Facebook, then the Brain writes what worked.
+    if (a === 'history.import') { own(); const r = await require('../lib/agents-history').importHistory({ months: Math.max(1, Math.min(36, intOr(d.months, 24))) }); await log('history', 'agents', 'company', r); return res.json({ ok: true, ...r }); }
+    if (a === 'history.analyse') { own(); const r = await require('../lib/agents-history').analyseHistory({ months: Math.max(1, Math.min(36, intOr(d.months, 24))) }); await log('analyse', 'agents', 'company', { posts: r.posts }); return res.json({ ok: true, ...r }); }
+    if (a === 'history.rera') { own(); return res.json({ ok: true, rera: await require('../lib/agents-history').reraSeen() }); }
+    // Plan a stream's calendar for a date window (two weeks at a time); festivals come from /content/festivals.md.
+    if (a === 'plan.window') {
+      own(); inScope();
+      const from = String(d.from || ''), to = String(d.to || '');
+      if (!/^\d{4}-\d{2}-\d{2}$/.test(from) || !/^\d{4}-\d{2}-\d{2}$/.test(to) || to < from || Date.parse(to) - Date.parse(from) > 16 * 864e5) throw fail(400, 'Give a window of at most two weeks (from, to as YYYY-MM-DD).');
+      const r = await require('../lib/agents-plan').planWindow(scope, from, to, u, { design: false });
+      await log('plan', 'agents', scope, { from, to, drafted: r.drafted });
+      return res.json({ ok: true, ...r });
+    }
     if (a === 'run') { edit(); inScope(); const r = await A.run(scope, { trigger: 'run now by ' + u.name, user: u }); await log('run', 'agents', scope, r); return res.json({ ok: true, ...r }); }
     if (a === 'draft') {
       edit(); inScope();
@@ -122,8 +135,11 @@ module.exports = route({
       if (a === 'post.approve') {
         if (p.created_by === u.id) throw fail(403, 'Someone other than the person who asked for it approves it.');
         const m = await require('../lib/mkt-tools').reraMissing(p); if (m) throw fail(400, m);
-        await db.q("update mkt_posts set status = 'approved', approved_by = $2, approved_at = now(), review_note = null, updated_at = now() where id = $1", [p.id, u.id]);
-        await A.say(sc, 'owner', 'publishing', `${u.name} approved "${p.title}". It goes out once the design is attached and it is scheduled.`);
+        // approved with a date and a design: straight onto the calendar, and the publisher posts it at that time
+        const r = await db.one(`update mkt_posts set status = case when publish_at > now() and exists (select 1 from mkt_post_files f where f.post_id = mkt_posts.id) then 'scheduled' else 'approved' end,
+            approved_by = $2, approved_at = now(), review_note = null, updated_at = now() where id = $1 returning status, publish_at`, [p.id, u.id]);
+        const when = r.publish_at ? new Date(r.publish_at).toLocaleString('en-IN', { weekday: 'short', day: 'numeric', month: 'short', hour: 'numeric', minute: '2-digit', timeZone: 'Asia/Kolkata' }) : null;
+        await A.say(sc, 'owner', 'publishing', r.status === 'scheduled' ? `${u.name} approved "${p.title}". Scheduled: it is posted ${when}.` : `${u.name} approved "${p.title}". It is scheduled as soon as its design is attached${when ? ` (planned for ${when})` : ''}.`);
       } else {
         const note = str(d.note, 1000); if (!note) throw fail(400, 'Write what should change.');
         await db.q("update mkt_posts set status = 'draft', review_note = $2, approved_by = null, approved_at = null, updated_at = now() where id = $1", [p.id, `${u.name}: ${note}`]);

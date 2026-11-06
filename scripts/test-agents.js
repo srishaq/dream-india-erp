@@ -16,6 +16,7 @@ const fake = http.createServer(async (req, res) => {
   if (P === '/claude/v1/messages') {
     const text = JSON.parse(body).messages[0].content; prompts.push(text);
     if (/read comments/.test(text)) { const lines = [...text.matchAll(/^(\d+)\. [^:]*: (.*)$/gm)]; return J({ content: [{ text: JSON.stringify({ notes: lines.map(([, i, t]) => ({ i: +i, kind: /No reply/.test(t) ? 'complaint' : 'question', reply: 'Thanks, we have sent you a DM.' })) }) }] }); }
+    if (/what worked for Dream India/.test(text)) return J({ content: [{ text: JSON.stringify({ markdown: '## Summary\n- Reels about redevelopment families did best (12 posts).\n' + 'x '.repeat(150) }) }] });
     const n = +(text.match(/Write (\d+) social/) || [])[1] || 1;
     return J({ content: [{ text: JSON.stringify({ posts: Array.from({ length: n }, (_, i) => ({ title: `Draft ${i + 1} ${Date.now() % 1000}`, kind: i % 2 ? 'carousel' : 'reel', channels: ['instagram', 'facebook'], hook: 'Hook ' + i, caption: 'Life in the neighbourhood, story ' + i + '. Comment UPDATES for news. #mumbai', visual: 'Site at sunset', day: i })) }) }] });
   }
@@ -81,7 +82,7 @@ const cron = () => fetch(BASE + '/api/cron?job=agents', { headers: { Authorizati
     const g = await rupali('/api/agents?scope=company');
     assert.equal(g.status, 200, g.error);
     assert.ok(g.projects.some((p) => p.id === gor.id) && g.projects.some((p) => p.id === sig.id));
-    assert.equal(g.departments.length, 8); assert.equal(g.knowledge.length, 10); assert.equal(g.triggers.length, 10);
+    assert.equal(g.departments.length, 8); assert.equal(g.knowledge.length, 12); assert.equal(g.triggers.length, 10);
     assert.ok(g.agents.on < g.agents.of, 'tools that are not connected are not shown as running');
     assert.equal(g.connections.brain, false); assert.equal(g.me.edit, true); assert.equal(g.me.own, false);
     assert.equal((await crm('/api/agents?scope=company')).status, 403);
@@ -214,6 +215,26 @@ const cron = () => fetch(BASE + '/api/cron?job=agents', { headers: { Authorizati
     const old = await db.one("select id from mkt_posts where project_id = $1 and agent is not null order by id limit 1", [gor.id]);
     const d = await A(rupali, 'post.design', { id: old.id });
     assert.equal(d.ok, true, d.error); assert.equal(canvaFills[canvaFills.length - 1].data.rera_line.text.trim(), '', 'the sample RERA line is blanked, never left on the design');
+  });
+
+  await step('Learning and planning: past posts become what-worked; the brand calendar plans festival greetings; approved and designed means scheduled', async () => {
+    for (let i = 0; i < 8; i++) await db.q("insert into mkt_media (network, ext_id, account, posted_at, kind, caption, likes, comments) values ('instagram', $1, 'dreamindiarealty', now() - ($2 || ' days')::interval, 'reel', $3, $4, $5)", ['H' + i, String(30 + i * 40), 'Old post ' + i + ' MahaRERA No.: P51800054321 Dream Signature', 10 * i, i]);
+    assert.equal((await A(rupali, 'history.analyse')).status, 403);
+    const h = await A(sameer, 'history.analyse');
+    assert.equal(h.ok, true, h.error); assert.ok(h.posts >= 8); assert.ok(h.rera.some((x) => x.rera === 'P51800054321' && x.names['Dream Signature']));
+    assert.match(prompts[prompts.length - 1], /TOP 40 POSTS/);
+    const k = await rupali('/api/agents?scope=company');
+    assert.match(k.knowledge.find((x) => x.path === '/brand-brain/what-worked.md').body, /redevelopment families/);
+    const pl = await A(sameer, 'plan.window', { from: '2026-12-21', to: '2027-01-03' });
+    assert.equal(pl.ok, true, pl.error); assert.ok(pl.drafted >= 1);
+    const pr = prompts[prompts.length - 1];
+    assert.match(pr, /2026-12-25 Christmas/); assert.match(pr, /between 2026-12-21 and 2027-01-03/); assert.match(pr, /redevelopment families/, 'the Content Engine reads what worked');
+    assert.equal((await A(sameer, 'plan.window', { from: '2026-12-01', to: '2027-02-01' })).status, 400, 'two weeks at a time');
+    // a designed draft, once approved, goes straight onto the calendar
+    const q = await db.one("select p.id from mkt_posts p where p.agent is not null and p.status = 'review' and p.publish_at > now() and exists (select 1 from mkt_post_files f where f.post_id = p.id) limit 1");
+    assert.ok(q, 'a designed draft is waiting');
+    assert.equal((await A(sameer, 'post.approve', { id: q.id })).ok, true);
+    assert.equal((await db.one('select status from mkt_posts where id = $1', [q.id])).status, 'scheduled');
   });
 
   await step('Kill switch: Management only; every agent and funnel stops', async () => {
