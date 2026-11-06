@@ -3162,6 +3162,14 @@
     $('#tdd').onchange = (e) => { store.set('erp_todo_date_' + dept, e.target.value === d.today ? '' : e.target.value); dailyTodo(dept, e.target.value); };
     document.querySelectorAll('.tab[data-f]').forEach((b) => (b.onclick = () => { store.set('erp_todo_f_' + dept, b.dataset.f); dailyTodo(dept, d.date); }));
     const act = async (body) => { try { await api('/api/tasks', body); dailyTodo(dept, d.date); } catch (x) { alert(x.message); } };
+    // a link to a register with ?filter= or ?q= opens that register already filtered (the IDs in the line)
+    document.querySelectorAll('.td-title a[href*="?"]').forEach((a) => (a.onclick = (e) => {
+      const [h, qs] = a.getAttribute('href').split('?'); const p = new URLSearchParams(qs), reg = h.replace('#/reg-', '');
+      if (!/^#\/reg-/.test(h)) return; e.preventDefault();
+      const k = 'erp_acc_' + reg, cur = JSON.parse(store.get(k) || '{}');
+      store.set(k, JSON.stringify({ ...cur, filter: p.get('filter') || '', q: p.get('q') || '', from: '', to: '', m: {}, by: '' }));
+      location.hash = h;
+    }));
     document.querySelectorAll('.tk').forEach((c) => (c.onchange = () => { const note = document.querySelector(`.note[data-id="${c.dataset.id}"]`); act(c.checked ? { action: 'done', id: +c.dataset.id, note: note ? note.value : '' } : { action: 'undo', id: +c.dataset.id }); }));
     document.querySelectorAll('.asg').forEach((s) => (s.onchange = () => act({ action: 'assign', id: +s.dataset.id, userId: s.value || null })));
     document.querySelectorAll('.rm').forEach((b) => (b.onclick = () => act({ action: 'remove', id: +b.dataset.id })));
