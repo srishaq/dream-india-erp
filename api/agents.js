@@ -71,6 +71,7 @@ module.exports = route({
       own(); inScope();
       const cur = await A.settingsOf(scope), o = d.owner || {};
       const owner = {
+        ...cur.owner,
         voice: str(o.voice ?? cur.owner.voice, 1000), positioning: str(o.positioning ?? cur.owner.positioning, 1000),
         budgetCap: o.budgetCap === undefined ? (cur.owner.budgetCap ?? null) : o.budgetCap === '' || o.budgetCap == null ? null : Math.max(0, Math.round(+String(o.budgetCap).replace(/[,₹\s]/g, '')) || 0),
         templates: cur.owner.templates || {},
