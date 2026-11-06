@@ -40,7 +40,7 @@
   function tabs() {
     const all = [
       ['overview', 'Overview', can('tm.view') || can('tm.manage')], ['reports', 'Reports', can('tm.view') || can('tm.manage') || can('mgmt.view')], ['partners', 'Partners', can('tm.view') || can('tm.manage')],
-      ['launches', 'Projects', can('tm.view') || can('tm.manage')], ['sheets', 'Call sheets', true], ['lookup', 'Customer lookup', can('tm.view') || can('tm.manage')],
+      ['launches', 'Projects', can('tm.view') || can('tm.manage')], ['sheets', 'Call sheets', true], ['campaigns', 'SMS & AI calls', can('tm.view') || can('tm.manage')], ['lookup', 'Customer lookup', can('tm.view') || can('tm.manage')],
       ['callers', 'Telecallers', can('tm.view') || can('tm.manage')], ['import', 'Import earlier numbers', can('tm.manage')], ['settings', 'Settings', can('tm.manage')],
     ].filter((t) => t[2]);
     if (!all.some((t) => t[0] === tab)) tab = all[0][0];
@@ -60,7 +60,7 @@
         ${T.length > 1 ? `<div class="mk-chips">${T.map(([k, l]) => `<button type="button" data-t="${k}" aria-pressed="${k === tab}">${esc(l)}</button>`).join('')}</div>` : ''}
         <div id="tmBody"><p class="muted">Loading…</p></div></div>`;
       $$('[data-t]', O.host).forEach((b) => (b.onclick = () => { tab = b.dataset.t; render(C, O); }));
-      try { await ({ overview, reports, partners, launches, sheets, lookup, callers, import: importTab, settings })[tab](); }
+      try { await ({ overview, reports, partners, launches, sheets, campaigns, lookup, callers, import: importTab, settings })[tab](); }
       catch (e) { $('#tmBody').innerHTML = `<div class="err">${esc(e.message)}</div>`; }
       return;
     }
@@ -73,7 +73,7 @@
       <div id="tmBody"><p class="muted">Loading…</p></div></div>`;
     $$('[data-t]').forEach((b) => (b.onclick = () => { tab = b.dataset.t; render(C); }));
     if ($('#tmCopy')) $('#tmCopy').onclick = () => { navigator.clipboard.writeText(PORTAL).then(() => C.toast('Link copied.')); };
-    try { await ({ overview, reports, partners, launches, sheets, lookup, callers, import: importTab, settings })[tab](); }
+    try { await ({ overview, reports, partners, launches, sheets, campaigns, lookup, callers, import: importTab, settings })[tab](); }
     catch (e) { $('#tmBody').innerHTML = `<div class="err">${esc(e.message)}</div>`; }
   }
   const body = (h) => { $('#tmBody').innerHTML = h; };
@@ -194,7 +194,7 @@
     const projs = pr ? pr.rows.filter((p) => p.status !== 'closed' || p.history) : [];
     body(`${can('tm.manage') ? `<div class="panel"><h2>Make today's call sheets</h2>
       ${active.length && projs.length ? `<form id="tmMk"><div class="row"><div><label>Project</label><select name="projectId">${projOpts(projs, '')}</select></div><div><label>Date</label><input type="date" name="date" value="${today()}"></div></div>
-        <label>Callers working today</label><div class="tm-legend">${active.map((c) => `<label class="check" style="margin:0"><input type="checkbox" name="c" value="${c.id}" checked> ${esc(c.name)}</label>`).join('')}</div>
+        <label>Callers working today ${active.some((c) => String(c.roster_on || '').slice(0, 10) === today()) ? '<span class="muted small">(ticked: on today\'s agency list)</span>' : ''}</label><div class="tm-legend">${(() => { const onList = active.some((c) => String(c.roster_on || '').slice(0, 10) === today()); return active.map((c) => `<label class="check" style="margin:0"><input type="checkbox" name="c" value="${c.id}" ${!onList || String(c.roster_on || '').slice(0, 10) === today() ? 'checked' : ''}> ${esc(c.name)}${c.agency ? ` <span class="muted small">${esc(c.agency)}</span>` : ''}</label>`).join(''); })()}</div>
         <div class="row"><div><label>Numbers per caller</label><input type="number" name="per" value="100" min="1" max="300"></div><div></div></div>
         <p class="muted small">Call-backs that are due come first, then numbers not reachable last time (after a gap), then fresh numbers. Numbers on a sheet that is still out, and do-not-call numbers, are never given twice.</p>
         <div class="actions"><button>Make sheets</button></div><div id="tmMkM"></div></form>` : `<p class="muted">${active.length ? 'Add a project first (Projects tab).' : 'Add your telecallers first (Telecallers tab).'}</p>`}</div>` : ''}
@@ -231,7 +231,10 @@
     body(`<p class="crumbs"><a href="#" id="tmBack">← Call sheets</a></p>
       <div class="panel"><h2>Sheet #${d.sheet.id} · ${esc(d.sheet.caller)}</h2><p class="muted">${esc(d.sheet.project)} · ${dd(d.sheet.sheet_date)} · ${d.leads.length} numbers</p>
       <div class="tm-legend">${Object.entries(CODES).map(([k, v]) => `<span><b>${k}</b> ${v}</span>`).join('')}<span><b>blank</b> not called</span></div>
-      ${locked ? '' : '<p class="muted small">Type the number the caller wrote. Enter moves to the next row. For 3 (call back) you can set the date.</p>'}
+      ${locked ? '' : `<div class="tm-scan" style="border:1px dashed #0E8C9B;border-radius:12px;padding:12px 14px;margin:0 0 12px;background:#F2FBFC">
+        <b>Scan the filled sheet</b> <span class="muted small">Take a straight photo of each page (or upload the scan / PDF). The outcomes are read and filled in below for you to check, then press Save.</span>
+        <div class="actions" style="margin-top:8px"><label class="btn" style="cursor:pointer"><input type="file" id="tmScanF" accept="image/*,application/pdf" capture="environment" multiple hidden>Photo or scan of the sheet…</label><span class="muted small" id="tmScanM"></span></div></div>
+        <p class="muted small">Or type the number the caller wrote. Enter moves to the next row. For 3 (call back) you can set the date.</p>`}
       <div class="table-wrap"><table><thead><tr><th>#</th><th>Name</th><th>Mobile</th><th>Outcome</th><th>Remarks</th><th>Call back on</th></tr></thead><tbody>
       ${d.leads.map((l, i) => { const e = l.entered; return `<tr data-l="${l.id}" class="${e ? 'done' : ''}"><td>${i + 1}</td><td>${esc(l.name)}<span class="tm-cd">${esc([l.config, l.locality].filter(Boolean).join(' · '))}</span></td><td>${esc(l.mobile)}</td>
         <td class="code"><input inputmode="numeric" maxlength="1" value="${e ? e.code : ''}" ${locked ? 'disabled' : ''}><span class="tm-cd lab">${e ? CODES[e.code] : ''}</span></td>
@@ -246,6 +249,34 @@
       inp.onkeydown = (e) => { if (e.key === 'Enter') { e.preventDefault(); (codes[i + 1] || inp).focus(); } };
     });
     count(); if (codes[0]) codes[0].focus();
+    // a photo: made smaller (long side 2000 px) so several pages fit in one request
+    const shrink = (file) => new Promise((ok, no) => {
+      if (file.type === 'application/pdf') { if (file.size > 3.5e6) return no(new Error('That PDF is too large; scan at a lower resolution or send photos.')); const r = new FileReader(); r.onload = () => ok(r.result); r.onerror = () => no(new Error('Could not read the file.')); return r.readAsDataURL(file); }
+      const img = new Image(), url = URL.createObjectURL(file);
+      img.onload = () => { const k = Math.min(1, 2000 / Math.max(img.width, img.height)), c = document.createElement('canvas'); c.width = Math.round(img.width * k); c.height = Math.round(img.height * k); c.getContext('2d').drawImage(img, 0, 0, c.width, c.height); URL.revokeObjectURL(url); ok(c.toDataURL('image/jpeg', 0.82)); };
+      img.onerror = () => no(new Error('That file is not a photo.')); img.src = url;
+    });
+    $('#tmScanF').onchange = async (e) => {
+      const fs = [...e.target.files]; if (!fs.length) return;
+      $('#tmScanM').textContent = `Reading ${fs.length} page${fs.length === 1 ? '' : 's'}… this takes up to a minute.`;
+      try {
+        const files = await Promise.all(fs.map(shrink));
+        if (files.reduce((a, f) => a + f.length, 0) > 4.2e6) throw new Error('The pages are too large together. Send fewer pages at a time.');
+        const r = await C.api('/api/tm', { action: 'sheet-scan', sheetId: id, files });
+        let filled = 0, unsure = 0;
+        for (const x of r.rows) {
+          const tr = $(`tr[data-l="${x.leadId}"]`); if (!tr) continue;
+          const ci = $('td.code input', tr);
+          if (x.code) { ci.value = String(x.code); $('.lab', ci.parentNode).textContent = CODES[x.code] || ''; filled++; }
+          if (x.remark) $('.rm', tr).value = x.remark;
+          if (x.callback) $('.nx', tr).value = x.callback;
+          tr.style.background = x.sure ? '#EAF7EE' : '#FFF4D6'; if (!x.sure) unsure++;
+        }
+        count();
+        $('#tmScanM').innerHTML = `<b>${filled}</b> outcomes read and filled in.${unsure ? ` <b>${unsure}</b> rows in yellow were not clear: check them against the paper.` : ''} ${r.unclear ? esc(r.unclear) : ''} Check, correct, then press Save.`;
+      } catch (x) { $('#tmScanM').innerHTML = `<span class="bad-t">${esc(x.message)}</span>`; }
+      e.target.value = '';
+    };
     $('#tmSave').onclick = async (e) => {
       const entries = $$('tr[data-l]').map((tr) => ({ leadId: tr.dataset.l, code: $('td.code input', tr).value, remark: $('.rm', tr).value, nextCall: $('.nx', tr).value }));
       const n = entries.filter((x) => x.code).length;
@@ -275,28 +306,127 @@
   // ---------- Telecallers ----------
   async function callers() {
     const d = await C.api('/api/tm?callers=1');
-    body(`<div class="tm-tools">${can('tm.manage') ? '<button id="tmAddC">Add a telecaller</button>' : ''}</div>
-      <div class="panel"><div class="table-wrap"><table><thead><tr><th>Name</th><th>Mobile</th><th class="num">Daily rate</th><th>Joined</th><th class="num">Days</th><th class="num">Calls</th><th class="num">Site visits</th><th>Status</th><th></th></tr></thead><tbody>
-      ${d.rows.map((c) => `<tr><td>${esc(c.name)}</td><td>${esc(c.mobile)}</td><td class="num">${rs(c.daily_rate)}</td><td>${dd(c.joined_on)}</td><td class="num">${c.days}</td><td class="num">${nf(c.calls)}</td><td class="num">${c.visits}</td>
-        <td>${c.active ? '<span class="pill good">Working</span>' : '<span class="pill grey">Left</span>'}</td><td>${can('tm.manage') ? `<button class="small ghost" data-ec="${c.id}">Edit</button>` : ''}</td></tr>`).join('') || '<tr><td colspan="9" class="muted">No telecallers yet.</td></tr>'}</tbody></table></div></div>`);
+    const td = today(), ags = [...new Set(d.rows.map((c) => c.agency).filter(Boolean))].sort();
+    let F = { q: '', show: 'working' };
+    body(`<div class="tm-tools">${can('tm.manage') ? '<button id="tmUpC">Upload the agency\'s list</button><button class="ghost" id="tmAddC">Add one telecaller</button>' : ''}
+        <input id="tmCQ" placeholder="Search name, mobile or agency" style="min-width:240px">
+        <select id="tmCS"><option value="working">Working</option><option value="today">On today's list</option><option value="all">Everyone</option><option value="left">Left</option></select>
+        <span class="muted small" id="tmCN"></span></div>
+      <div class="panel"><div class="table-wrap"><table><thead><tr><th>Name</th><th>Mobile</th><th>Agency</th><th class="num">Daily rate</th><th>Last on list</th><th class="num">Days</th><th class="num">Calls</th><th class="num">Site visits</th><th>Status</th><th></th></tr></thead><tbody id="tmCT"></tbody></table></div></div>`);
+    const draw = () => {
+      const q = F.q.toLowerCase();
+      const rows = d.rows.filter((c) => (F.show === 'all' || (F.show === 'working' && c.active) || (F.show === 'left' && !c.active) || (F.show === 'today' && String(c.roster_on || '').slice(0, 10) === td))
+        && (!q || [c.name, c.mobile, c.agency].join(' ').toLowerCase().includes(q)));
+      $('#tmCN').textContent = `${rows.length} of ${d.rows.length}`;
+      $('#tmCT').innerHTML = rows.map((c) => `<tr><td>${esc(c.name)}</td><td>${esc(c.mobile)}</td><td>${esc(c.agency || '')}</td><td class="num">${rs(c.daily_rate)}</td><td>${c.roster_on ? dd(c.roster_on) : ''}</td><td class="num">${c.days}</td><td class="num">${nf(c.calls)}</td><td class="num">${c.visits}</td>
+        <td>${c.active ? '<span class="pill good">Working</span>' : '<span class="pill grey">Left</span>'}</td><td>${can('tm.manage') ? `<button class="small ghost" data-ec="${c.id}">Edit</button>` : ''}</td></tr>`).join('') || '<tr><td colspan="10" class="muted">No telecallers here.</td></tr>';
+      $$('[data-ec]').forEach((b) => (b.onclick = () => form(d.rows.find((x) => x.id === +b.dataset.ec))));
+    };
+    $('#tmCQ').oninput = (e) => { F.q = e.target.value.trim(); draw(); };
+    $('#tmCS').onchange = (e) => { F.show = e.target.value; draw(); };
     const form = (c) => C.dialog(`<h2>${c ? 'Edit telecaller' : 'Add a telecaller'}</h2><label>Name</label><input name="name" required value="${esc(c?.name)}">
       <div class="row"><div><label>Mobile</label><input name="mobile" value="${esc(c?.mobile)}"></div><div><label>Pay per day (₹)</label><input type="number" name="dailyRate" value="${c ? c.daily_rate : 1000}" min="0"></div></div>
-      <div class="row"><div><label>Joined on</label><input type="date" name="joinedOn" value="${esc(c?.joined_on || today())}"></div><div></div></div>
+      <div class="row"><div><label>Agency</label><input name="agency" list="tmAgL" value="${esc(c?.agency || '')}" placeholder="Our own staff, or the agency's name"><datalist id="tmAgL">${ags.map((a) => `<option value="${esc(a)}">`).join('')}</datalist></div><div><label>Joined on</label><input type="date" name="joinedOn" value="${esc(c?.joined_on || today())}"></div></div>
       <label class="check"><input type="checkbox" name="active" ${!c || c.active ? 'checked' : ''}> Working now</label>`,
     async (x) => { await C.api('/api/tm', { action: 'caller-save', id: c?.id, ...x, active: x.active === 'on' }); callers(); });
     if ($('#tmAddC')) $('#tmAddC').onclick = () => form(null);
-    $$('[data-ec]').forEach((b) => (b.onclick = () => form(d.rows.find((x) => x.id === +b.dataset.ec))));
+    if ($('#tmUpC')) $('#tmUpC').onclick = () => {
+      const dl = C.dialog(`<h2>Upload the agency's list of telecallers</h2>
+        <p class="muted small">An Excel or CSV file from the agency, one row per caller: name and mobile (agency and pay per day if they are in the file). Callers already here (same mobile) are updated, not added twice. Everyone on the list is marked as working on the day you choose, and is ticked when you make that day's call sheets.</p>
+        <div class="row"><div><label>Working on</label><input type="date" name="date" value="${today()}"></div><div><label>Agency (if not in the file)</label><input name="agency" list="tmAgL2"><datalist id="tmAgL2">${ags.map((a) => `<option value="${esc(a)}">`).join('')}</datalist></div></div>
+        <div class="row"><div><label>Pay per day (₹, if not in the file)</label><input type="number" name="rate" min="0" placeholder="1000"></div><div><label>File (.xlsx or .csv)</label><input type="file" id="tmCF" accept=".xlsx,.csv,.txt"></div></div>
+        <div id="tmCM"></div>`, async (x, f) => {
+        if (!f._recs) throw new Error('Choose the file first.');
+        const r = await C.api('/api/tm', { action: 'callers-import', rows: f._recs(), date: x.date, agency: x.agency, dailyRate: x.rate, fileName: f._name });
+        C.toast(`${r.added} callers added and ${r.updated} updated for ${dd(r.date)}.${r.skipped.length ? ` ${r.skipped.length} rows skipped (no name or repeated).` : ''}`, 7000);
+        callers();
+      });
+      $('#tmCF', dl).onchange = async (e) => {
+        const file = e.target.files[0], f = $('form', dl); if (!file) return;
+        $('#tmCM', dl).innerHTML = '<p class="muted">Reading…</p>';
+        try {
+          const { rows } = await C.api('/api/tm', { action: 'parse', file: await b64(file), name: file.name });
+          if (rows.length < 2) throw new Error('The file has no rows under the header.');
+          const h = rows[0], data = rows.slice(1).filter((r) => r.some((v) => String(v || '').trim()));
+          const cols = [['name', 'Name *', /name/i], ['mobile', 'Mobile', /mob|phone|contact|number|cell/i], ['agency', 'Agency', /agency|company|vendor|firm/i], ['dailyRate', 'Pay per day', /rate|pay|salary|wage|amount/i]];
+          const opt = (sel) => '<option value="-1">— not in the file —</option>' + h.map((v, i) => `<option value="${i}" ${i === sel ? 'selected' : ''}>${esc(v || 'Column ' + (i + 1))}</option>`).join('');
+          $('#tmCM', dl).innerHTML = `<p><b>${nf(data.length)}</b> callers in ${esc(file.name)}. Match the columns:</p><div class="row">${cols.map(([k, l, re]) => `<div><label>${l}</label><select data-cc="${k}">${opt(guess(h, re))}</select></div>`).join('')}</div>`;
+          f._name = file.name;
+          f._recs = () => { const map = Object.fromEntries($$('[data-cc]', dl).map((x) => [x.dataset.cc, +x.value])); if (map.name < 0) throw new Error('Choose the name column.'); return data.map((r) => Object.fromEntries(Object.entries(map).map(([k, i]) => [k, i >= 0 ? r[i] : '']))); };
+        } catch (x) { $('#tmCM', dl).innerHTML = `<div class="err">${esc(x.message)}</div>`; }
+      };
+    };
+    draw();
   }
 
   // ---------- Reports: the full report of a project, every figure opens to its rows (public/tcperf.js) ----------
   let rproj = null;
+  let rview = 'daily', P = null;
   async function reports() {
     const pr = (await C.api('/api/tm?projects=1')).rows;
+    const sw = `<div class="tm-tools" style="margin:0 0 12px"><button type="button" class="${rview === 'daily' ? '' : 'ghost'}" data-rv="daily">Daily performance</button><button type="button" class="${rview === 'project' ? '' : 'ghost'}" data-rv="project">Project report</button></div>`;
+    if (rview === 'daily') { body(sw + '<div id="tmRep"></div>'); hookRv(); return daily(pr); }
     if (!pr.some((p) => String(p.id) === String(rproj))) rproj = (pr.find((p) => p.history) || pr[0] || {}).id;
-    if (!rproj) return body('<div class="panel"><p class="muted">No projects yet.</p></div>');
-    body(`<div class="tm-tools"><label class="small muted">Project</label><select id="tmRP">${projOpts(pr, rproj)}</select></div><div id="tmRep"></div>`);
+    if (!rproj) return body(sw + '<div class="panel"><p class="muted">No projects yet.</p></div>');
+    body(sw + `<div class="tm-tools"><label class="small muted">Project</label><select id="tmRP">${projOpts(pr, rproj)}</select></div><div id="tmRep"></div>`);
+    hookRv();
     $('#tmRP').onchange = (e) => { rproj = e.target.value; reports(); };
     await window.TcPerf.render({ api: C.api, can }, { host: $('#tmRep'), project: rproj });
+  }
+  const hookRv = () => $$('[data-rv]').forEach((b) => (b.onclick = () => { rview = b.dataset.rv; reports(); }));
+  // Daily performance: the whole campaign day by day, every caller and every agency, from the sheets entered
+  async function daily(pr) {
+    P = P || { from: '', to: '', project: '', caller: '', sort: 'visits' };
+    const qs = new URLSearchParams({ perf: 1, from: P.from, to: P.to, project: P.project });
+    const d = await C.api('/api/tm?' + qs);
+    P.from = d.from; P.to = d.to;
+    const T = d.total, pc = (v) => Math.round(v * 100) + '%', money = (v) => (v == null ? '–' : rs(v));
+    const COLS = [['calls', 'Calls'], ['connected', 'Connected'], ['interested', 'Interested'], ['visits', 'Site visits'], ['callbacks', 'Call back'], ['not_interested', 'Not interested'], ['not_reachable', 'Not reachable'], ['wrong', 'Wrong no.'], ['dnc', 'Do not call']];
+    const nums = (r) => COLS.map(([k]) => `<td class="num">${nf(r[k])}</td>`).join('');
+    const rates = (r) => `<td class="num">${pc(r.connectRate)}</td><td class="num">${rs(r.cost)}</td><td class="num">${money(r.perInterested)}</td><td class="num">${money(r.perVisit)}</td>`;
+    const head = (first) => `<tr>${first}${COLS.map(([, l]) => `<th class="num">${l}</th>`).join('')}<th class="num">Connect %</th><th class="num">Cost</th><th class="num">Per interested</th><th class="num">Per visit</th></tr>`;
+    const sortK = P.sort;
+    const callers = [...d.callers].sort((a, b) => (sortK === 'name' ? a.name.localeCompare(b.name) : (b[sortK] || 0) - (a[sortK] || 0)));
+    const ai = {}; for (const c of d.campaigns || []) { ai[c.kind] = ai[c.kind] || {}; ai[c.kind][c.status] = c.n; }
+    const aiCalls = ai.call || {}, sms = ai.sms || {};
+    $('#tmRep').innerHTML = `<div class="tm-tools"><label class="small muted">From</label><input type="date" id="pfF" value="${P.from}"><label class="small muted">To</label><input type="date" id="pfT" value="${P.to}">
+        <button class="ghost small" data-pd="0">Today</button><button class="ghost small" data-pd="1">Yesterday</button><button class="ghost small" data-pd="7">Last 7 days</button><button class="ghost small" data-pd="30">Last 30 days</button>
+        <select id="pfP"><option value="">All projects</option>${projOpts(pr.filter((p) => !p.history), P.project)}</select>
+        <button class="ghost small" id="pfX">Download for Excel</button></div>
+      <div class="tm-k">
+        <div><b>${nf(T.callers)}</b><span>Callers worked</span><small>${nf(T.callerDays)} caller-days</small></div>
+        <div><b>${nf(T.calls)}</b><span>Calls made</span><small>${Math.round(T.callsPerDay)} a caller a day${T.given ? ` · ${pc(T.calls / T.given)} of numbers given` : ''}</small></div>
+        <div><b>${nf(T.connected)}</b><span>Connected</span><small>${pc(T.connectRate)} of calls</small></div>
+        <div><b>${nf(T.interested)}</b><span>Interested</span><small>${pc(T.interestRate)} of connected (with visits)</small></div>
+        <div><b>${nf(T.visits)}</b><span>Site visits booked</span><small>${T.callerDays ? (T.visits / T.callerDays).toFixed(2) : 0} a caller a day</small></div>
+        <div><b>${rs(T.cost)}</b><span>Telecaller cost</span><small>${money(T.perInterested)} per interested · ${money(T.perVisit)} per visit</small></div>
+        ${aiCalls && Object.keys(aiCalls).length ? `<div><b>${nf(aiCalls.pressed1 || 0)}</b><span>Pressed 1 on AI calls</span><small>${nf(Object.values(aiCalls).reduce((a, v) => a + v, 0))} AI calls</small></div>` : ''}
+        ${sms && Object.keys(sms).length ? `<div><b>${nf((sms.delivered || 0) + (sms.sent || 0))}</b><span>SMS sent</span><small>${nf(sms.failed || 0)} failed</small></div>` : ''}
+      </div>
+      <div class="panel"><h2>Day by day</h2>${d.days.length ? `<div class="table-wrap"><table><thead>${head('<th>Day</th><th class="num">Callers</th>')}</thead><tbody>
+        ${d.days.map((r) => `<tr class="clickable" data-day="${r.date}"><td>${dd(r.date)}</td><td class="num">${r.callers}</td>${nums(r)}${rates(r)}</tr>`).join('')}
+        <tr class="tot"><td>Total</td><td class="num">${nf(T.callers)}</td>${nums(T)}${rates(T)}</tr></tbody></table></div><p class="small muted">Tap a day to see only that day's callers.</p>` : '<p class="muted">No call sheets entered in these days.</p>'}</div>
+      <div class="panel"><h2>Each telecaller ${P.from === P.to ? '· ' + dd(P.from) : `· ${dd(P.from)} to ${dd(P.to)}`}</h2>
+        <div class="tm-tools"><label class="small muted">Rank by</label><select id="pfS">${[['visits', 'Site visits'], ['interested', 'Interested'], ['connected', 'Connected'], ['calls', 'Calls'], ['connectRate', 'Connect %'], ['name', 'Name']].map(([k, l]) => `<option value="${k}" ${k === sortK ? 'selected' : ''}>${l}</option>`).join('')}</select><input id="pfQ" placeholder="Search caller or agency"></div>
+        ${callers.length ? `<div class="table-wrap"><table><thead>${head('<th>#</th><th>Caller</th><th>Agency</th><th class="num">Days</th>')}</thead><tbody id="pfCB">
+        ${callers.map((r, i) => `<tr data-cq="${esc((r.name + ' ' + r.agency).toLowerCase())}"><td>${i + 1}</td><td>${esc(r.name)}</td><td>${esc(r.agency)}</td><td class="num">${r.callerDays}</td>${nums(r)}${rates(r)}</tr>`).join('')}</tbody></table></div>` : '<p class="muted">No calls entered.</p>'}</div>
+      ${d.agencies.length > 1 ? `<div class="panel"><h2>Each agency</h2><div class="table-wrap"><table><thead>${head('<th>Agency</th><th class="num">Callers</th>')}</thead><tbody>
+        ${d.agencies.map((r) => `<tr><td>${esc(r.agency)}</td><td class="num">${r.callers}</td>${nums(r)}${rates(r)}</tr>`).join('')}</tbody></table></div></div>` : ''}`;
+    const go = () => daily(pr);
+    $('#pfF').onchange = (e) => { P.from = e.target.value; go(); };
+    $('#pfT').onchange = (e) => { P.to = e.target.value; go(); };
+    $('#pfP').onchange = (e) => { P.project = e.target.value; go(); };
+    $('#pfS').onchange = (e) => { P.sort = e.target.value; go(); };
+    if ($('#pfQ')) $('#pfQ').oninput = (e) => { const q = e.target.value.trim().toLowerCase(); $$('#pfCB tr').forEach((tr) => (tr.hidden = !!q && !tr.dataset.cq.includes(q))); };
+    $$('[data-pd]').forEach((b) => (b.onclick = () => { const k = +b.dataset.pd, t = today(); const back = (n) => new Date(Date.parse(t + 'T00:00:00Z') - n * 864e5).toISOString().slice(0, 10);
+      if (k === 0) { P.from = P.to = t; } else if (k === 1) { P.from = P.to = back(1); } else { P.from = back(k - 1); P.to = t; } go(); }));
+    $$('[data-day]').forEach((tr) => (tr.onclick = () => { P.from = P.to = tr.dataset.day; go(); }));
+    $('#pfX').onclick = () => {
+      const H = ['Day', 'Caller', 'Agency', 'Pay per day', ...COLS.map(([, l]) => l), 'Numbers given'];
+      const rows = d.lines.map((l) => [l.call_date, l.name || '', l.agency || '', l.rate, ...COLS.map(([k]) => l[k]), l.given]);
+      const csv = [H, ...rows].map((r) => r.map((v) => `"${String(v == null ? '' : v).replace(/"/g, '""')}"`).join(',')).join('\r\n');
+      const a = document.createElement('a'); a.href = URL.createObjectURL(new Blob(['﻿' + csv], { type: 'text/csv' })); a.download = `telecaller-performance-${P.from}-to-${P.to}.csv`; a.click();
+    };
   }
 
   // ---------- Import earlier numbers ----------
@@ -351,10 +481,108 @@
     };
   }
 
+  // ---------- SMS & AI calls ----------
+  const CST = { draft: ['Draft: waiting for approval', 'warn'], approved: ['Approved: not started', 'warn'], running: ['Sending', 'good'], paused: ['Paused', 'grey'], done: ['Finished', 'good'], cancelled: ['Cancelled', 'grey'] };
+  let cproj = '';
+  async function campaigns() {
+    const [K, pr] = await Promise.all([C.api('/api/tm?campaigns=1' + (cproj ? '&project=' + cproj : '')), C.api('/api/tm?projects=1')]);
+    const projs = pr.rows.filter((p) => !p.history);
+    const R = K.ready, sum = (r, ks) => ks.reduce((a, k) => a + ((r.by_status || {})[k] || 0), 0);
+    const miss = (k) => (R[k].length ? `<span class="pill warn">Not ready</span> <span class="small muted">needs ${esc(R[k].join('; '))}</span>` : '<span class="pill good">Ready</span>');
+    body(`<div class="panel"><h2>SMS and AI calls to partner numbers</h2>
+      <p class="muted">Send an SMS, or an AI voice call that introduces Dream India and the project and asks: <b>press 1</b> if interested, <b>press 2</b> if not. Everyone who presses 1 goes to the top of the next call sheets for the telecallers.</p>
+      <p class="small muted">Only numbers a partner uploaded with the consent declaration are used. Never: people on the do-not-contact list (${nf(K.dnc)} numbers), existing customers, or anyone sent the same kind of campaign in the last 30 days. Every campaign is approved by Rafi Sir or Sameer before it starts, and sends only within the hours in Settings.</p>
+      <div class="tm-k" style="margin-top:10px"><div><b>SMS</b><span>${miss('sms')}</span></div><div><b>AI calls</b><span>${miss('call')}</span></div></div>
+      ${can('tm.manage') ? `<div class="actions"><button id="cNewS">New SMS campaign</button><button id="cNewC">New AI call campaign</button><button class="ghost" id="cDnc">Add to do-not-contact</button></div>` : ''}</div>
+      <div class="tm-tools"><label class="small muted">Project</label><select id="cP"><option value="">All projects</option>${projOpts(projs, cproj)}</select></div>
+      <div class="panel"><div class="table-wrap"><table><thead><tr><th>Campaign</th><th>Type</th><th>Project</th><th class="num">Numbers</th><th class="num">Sent / called</th><th class="num">Pressed 1</th><th class="num">Pressed 2</th><th>Status</th><th></th></tr></thead><tbody>
+      ${K.rows.map((r) => `<tr class="clickable" data-cv="${r.id}"><td><b>${esc(r.name)}</b><div class="small muted">by ${esc(r.created_by_name || '')} · ${dd(r.created_at)}</div></td><td>${r.kind === 'sms' ? 'SMS' : 'AI call'}</td><td>${esc(r.project)}</td>
+        <td class="num">${nf(r.targets)}</td><td class="num">${nf(r.targets - sum(r, ['queued']))}</td><td class="num">${r.kind === 'call' ? nf(sum(r, ['pressed1'])) : ''}</td><td class="num">${r.kind === 'call' ? nf(sum(r, ['pressed2'])) : ''}</td>
+        <td><span class="pill ${CST[r.status][1]}">${CST[r.status][0]}</span>${r.note ? `<div class="small bad-t">${esc(r.note)}</div>` : ''}</td><td><button class="small ghost" data-cv="${r.id}">Open</button></td></tr>`).join('') || '<tr><td colspan="9" class="muted">No campaigns yet.</td></tr>'}</tbody></table></div></div>`);
+    $('#cP').onchange = (e) => { cproj = e.target.value; campaigns(); };
+    $$('[data-cv]').forEach((b) => (b.onclick = (e) => { e.stopPropagation(); campaign(+b.dataset.cv); }));
+    if ($('#cNewS')) $('#cNewS').onclick = () => campForm('sms', null, projs);
+    if ($('#cNewC')) $('#cNewC').onclick = () => campForm('call', null, projs);
+    if ($('#cDnc')) $('#cDnc').onclick = () => C.dialog(`<h2>Add to do-not-contact</h2><p class="muted small">These numbers are never sent an SMS or AI call, never put on a call sheet, and no partner can upload them again.</p>
+      <label>Mobile numbers (one per line, or separated by commas)</label><textarea name="numbers" rows="8" required></textarea><label>Reason</label><input name="reason" placeholder="e.g. asked on WhatsApp not to be contacted">`,
+      async (x) => { const r = await C.api('/api/tm', { action: 'dnc-add', ...x }); C.toast(`${r.added} added${r.already ? `, ${r.already} were already on the list` : ''}.`); campaigns(); });
+  }
+  function campForm(kind, c, projs) {
+    const p0 = c ? c.tm_project_id : projs[0] && projs[0].id;
+    const proj = (id) => projs.find((p) => String(p.id) === String(id)) || {};
+    const defScript = (p) => `Namaste. This is a call from Dream India Realty, Mumbai. We are launching our new residential project ${p.name || ''}${p.location ? ' in ' + p.location : ''}. You are receiving this call because you shared your interest in property with our channel partner. If you would like to know more, or visit the site, please press 1. If you are not interested, please press 2. Thank you.`;
+    const ST = [['fresh', 'Not called yet'], ['not_reachable', 'Not reachable last time'], ['callback', 'Asked to call back'], ['interested', 'Interested']];
+    const f = (c && c.filters) || {}, st = f.statuses || (kind === 'sms' ? ['fresh', 'not_reachable', 'callback', 'interested'] : ['fresh', 'not_reachable']);
+    const dl = C.dialog(`<h2>${c ? 'Edit' : 'New'} ${kind === 'sms' ? 'SMS' : 'AI call'} campaign</h2>
+      <div class="row"><div><label>Project</label><select name="projectId">${projOpts(projs, p0)}</select></div><div><label>Name</label><input name="name" value="${esc(c ? c.name : '')}" placeholder="e.g. Pre-launch intro, week 1"></div></div>
+      ${kind === 'sms' ? `<label>SMS text <span class="muted small">(word for word your template approved on DLT; promotional SMS go only to numbers not on DND)</span></label><textarea name="message" rows="4" maxlength="480" required>${esc(c ? c.message : '')}</textarea>
+        <div class="row"><div><label>DLT template ID of this text</label><input name="templateId" value="${esc(c ? c.template_id || '' : '')}"></div><div><label>Most a day</label><input type="number" name="dailyCap" value="${c ? c.daily_cap : 2000}" min="50" max="20000"></div></div>`
+      : `<label>What the AI voice says <span class="muted small">(it must end with press 1 / press 2)</span></label><textarea name="script" rows="6" maxlength="2000" required>${esc(c ? c.script : defScript(proj(p0)))}</textarea>
+        <div class="row"><div><label>Most calls a day</label><input type="number" name="dailyCap" value="${c ? c.daily_cap : 500}" min="50" max="20000"><p class="small muted">Start small (about 500) and watch the complaints for a few days before you raise it.</p></div><div></div></div>`}
+      <label>Which numbers</label><div class="tm-legend">${ST.map(([k, l]) => `<label class="check" style="margin:0"><input type="checkbox" name="st" value="${k}" ${st.includes(k) ? 'checked' : ''}> ${l}</label>`).join('')}</div>
+      <label class="check"><input type="checkbox" name="legacy" ${f.includeLegacy ? 'checked' : ''}> Also numbers uploaded before 6 Nov 2026 <span class="muted small">(the partner ticked a shorter declaration then)</span></label>
+      <div id="cPrev" class="small" style="margin-top:8px"></div>`,
+    async (x, form) => {
+      const filters = { statuses: $$('[name=st]:checked', form).map((i) => i.value), includeLegacy: !!$('[name=legacy]', form).checked };
+      const r = await C.api('/api/tm', { action: 'campaign-save', id: c ? c.id : undefined, kind, projectId: +x.projectId, name: x.name, message: x.message, templateId: x.templateId, script: x.script, dailyCap: +x.dailyCap, filters });
+      C.toast('Saved as a draft. Rafi Sir or Sameer approves it before it starts.', 6000); campaign(r.id);
+    });
+    const prev = async () => {
+      const form = $('form', dl), filters = { statuses: $$('[name=st]:checked', form).map((i) => i.value), includeLegacy: !!$('[name=legacy]', form).checked };
+      $('#cPrev', dl).textContent = 'Counting…';
+      try { const r = await C.api('/api/tm', { action: 'campaign-preview', kind, projectId: +form.projectId.value, filters });
+        $('#cPrev', dl).innerHTML = `<b>${nf(r.count)}</b> numbers would get this now, out of ${nf(r.partnerNumbers)} numbers partners uploaded for this project.${r.legacy && !filters.includeLegacy ? ` ${nf(r.legacy)} from before the full declaration are left out.` : ''}${r.customersLeftOut ? ` ${nf(r.customersLeftOut)} existing customers left out.` : ''}`; }
+      catch (e) { $('#cPrev', dl).innerHTML = `<span class="bad-t">${esc(e.message)}</span>`; }
+    };
+    dl.addEventListener('change', (e) => { if (e.target.name === 'projectId' && kind === 'call' && !c) { const ta = $('[name=script]', dl); ta.value = defScript(proj(e.target.value)); } prev(); });
+    prev();
+  }
+  async function campaign(id) {
+    const d = await C.api('/api/tm?campaign=' + id), c = d.campaign, B = d.byStatus || {}, L = d.labels;
+    const total = Object.values(B).reduce((a, v) => a + v, 0);
+    const sent = total - (B.queued || 0) - (B.sending || 0);
+    const acts = [];
+    if (c.status === 'draft' && can('tm.manage')) acts.push('<button class="ghost" data-ca="edit">Edit</button>');
+    if (c.status === 'draft' && d.canApprove) acts.push('<button data-ca="approve">Approve</button>');
+    if (['approved', 'paused'].includes(c.status) && can('tm.manage')) acts.push(`<button data-ca="start">${c.status === 'paused' ? 'Carry on sending' : 'Start sending'}</button>`);
+    if (c.status === 'running' && can('tm.manage')) acts.push('<button class="ghost" data-ca="pause">Pause</button>');
+    if (!['done', 'cancelled'].includes(c.status) && can('tm.manage')) { acts.push('<button class="ghost" data-ca="test">Send a test to my phone</button>'); acts.push('<button class="danger" data-ca="cancel">Cancel</button>'); }
+    body(`<p class="crumbs"><a href="#" id="cBack">← SMS & AI calls</a></p>
+      <div class="panel"><h2>${esc(c.name)}</h2><p class="muted">${c.kind === 'sms' ? 'SMS' : 'AI call'} · ${esc(c.project)} · <span class="pill ${CST[c.status][1]}">${CST[c.status][0]}</span> · most ${nf(c.daily_cap)} a day</p>
+      ${c.note ? `<div class="err">${esc(c.note)}</div>` : ''}
+      <div style="background:#F6F7FB;border-radius:12px;padding:12px 14px;margin:10px 0;white-space:pre-wrap">${esc(c.kind === 'sms' ? c.message : c.script)}</div>
+      ${c.kind === 'sms' ? `<p class="small muted">DLT template ID: ${esc(c.template_id || 'not given yet')}</p>` : ''}
+      ${c.status === 'draft' ? `<p class="small muted">${d.canApprove ? 'Check the words and the numbers, then approve. The list of numbers is fixed when you approve.' : 'Waiting for Rafi Sir or Sameer to approve.'}</p>` : ''}
+      <div class="actions">${acts.join('')}</div><div id="cM"></div></div>
+      ${total ? `<div class="tm-k">${[['Numbers', total], ['Sent / called', sent], ...(c.kind === 'call' ? [['Pressed 1', B.pressed1 || 0], ['Pressed 2', B.pressed2 || 0], ['No answer', B.no_answer || 0], ['Answered, no key', B.no_input || 0]] : [['Delivered', B.delivered || 0], ['On DND', B.dnd || 0]]), ['Failed', B.failed || 0], ['Waiting', B.queued || 0]]
+        .map(([l, v]) => `<div><b>${nf(v)}</b><span>${l}</span></div>`).join('')}</div>
+      <div class="panel"><h2>Every status</h2><table>${Object.entries(B).map(([k, v]) => `<tr><td>${esc(L[k] || k)}</td><td class="num"><b>${nf(v)}</b></td></tr>`).join('')}</table></div>` : ''}
+      ${d.days.length ? `<div class="panel"><h2>Day by day</h2><table><tr><th>Day</th><th class="num">Sent / called</th>${c.kind === 'call' ? '<th class="num">Pressed 1</th><th class="num">Pressed 2</th>' : ''}<th class="num">Failed / DND</th></tr>
+        ${d.days.map((x) => `<tr><td>${dd(x.sent_on)}</td><td class="num">${nf(x.n)}</td>${c.kind === 'call' ? `<td class="num">${nf(x.p1)}</td><td class="num">${nf(x.p2)}</td>` : ''}<td class="num">${nf(x.bad)}</td></tr>`).join('')}</table></div>` : ''}
+      ${c.kind === 'call' && d.pressed.length ? `<div class="panel"><h2>Pressed 1: interested (${nf(d.pressed.length)})</h2><p class="muted small">They are at the top of the next call sheets. Make today's sheets to give them to the telecallers.</p>
+        <div class="table-wrap"><table><tr><th>When</th><th>Name</th><th>Mobile</th><th>Partner</th><th>Now</th></tr>${d.pressed.map((p) => `<tr><td>${dd(p.updated_at)}</td><td>${esc(p.name || '')}</td><td>${esc(p.mobile)}</td><td>${esc(p.partner || '')}</td><td>${esc(p.status)}</td></tr>`).join('')}</table></div></div>` : ''}`);
+    $('#cBack').onclick = (e) => { e.preventDefault(); campaigns(); };
+    $$('[data-ca]').forEach((b) => (b.onclick = async () => {
+      const a = b.dataset.ca;
+      try {
+        if (a === 'edit') { const pr = await C.api('/api/tm?projects=1'); return campForm(c.kind, c, pr.rows.filter((p) => !p.history)); }
+        if (a === 'test') return C.dialog(`<h2>Send a test</h2><p class="muted small">One ${c.kind === 'sms' ? 'SMS' : 'call'} to a staff phone, to check ${c.kind === 'sms' ? 'the text' : 'how it sounds and that pressing 1 and 2 works'}. Not counted.</p><label>Mobile</label><input name="mobile" required inputmode="numeric">`,
+          async (x) => { await C.api('/api/tm', { action: 'campaign-test', id, mobile: x.mobile }); C.toast('Test sent.'); });
+        if (a === 'approve' && !confirm(`Approve "${c.name}"? The numbers that qualify now will get this ${c.kind === 'sms' ? 'SMS' : 'call'} once it is started.`)) return;
+        if (a === 'start' && !confirm(`Start sending? Up to ${nf(c.daily_cap)} a day, only within the hours in Settings.`)) return;
+        if (a === 'cancel' && !confirm('Cancel this campaign? Numbers not yet sent will not get it.')) return;
+        const r = await C.api('/api/tm', { action: 'campaign-' + a, id });
+        if (a === 'approve') C.toast(`Approved for ${nf(r.targets)} numbers.`);
+        campaign(id);
+      } catch (x) { $('#cM').innerHTML = `<div class="err">${esc(x.message)}</div>`; }
+    }));
+  }
+
   // ---------- Settings ----------
   let PEOPLE = [], AGR = '';
   async function settings() {
-    const { settings: s, people, agreement } = await C.api('/api/tm?settings=1'); PEOPLE = people; AGR = agreement;
+    const [{ settings: s, people, agreement }, K] = await Promise.all([C.api('/api/tm?settings=1'), C.api('/api/tm?campaigns=1').catch(() => ({}))]); PEOPLE = people; AGR = agreement;
+    const sc = s.campaigns || {}, hooks = K.ready && K.ready.hooks;
     body(`<div class="panel"><h2>Rules</h2><form id="tmS">
       <div class="row"><div><label>A partner keeps a client for (days)</label><input type="number" name="ownershipDays" value="${s.ownershipDays}" min="7" max="365"><p class="muted small">A site visit booked on a call starts the period again.</p></div>
       <div><label>Numbers we already called earlier</label><select name="historyPolicy"><option value="reject" ${s.historyPolicy !== 'accept' ? 'selected' : ''}>Stay with Dream India (partner is told)</option><option value="accept" ${s.historyPolicy === 'accept' ? 'selected' : ''}>Go to the partner who uploads them</option></select></div></div>
@@ -366,9 +594,17 @@
       <h3>WhatsApp messages to partners</h3><p class="muted small">Approved template names in Click Connect. Until these are set, codes and the CP ID go by email.</p>
       <div class="row"><div><label>Verification code template (1 value: the code)</label><input name="waOtpTemplate" value="${esc(s.waOtpTemplate)}"></div><div><label>Welcome template (2 values: name, CP ID)</label><input name="waWelcomeTemplate" value="${esc(s.waWelcomeTemplate)}"></div></div>
       <div class="row"><div><label>Invitation template (2 values: name, link)</label><input name="waInviteTemplate" value="${esc(s.waInviteTemplate || '')}"></div><div></div></div>
+      <h3>SMS and AI calls (Exotel)</h3><p class="muted small">The Exotel keys go in Vercel (EXOTEL_SID, EXOTEL_API_KEY, EXOTEL_API_TOKEN). The rest comes from your DLT registration and Exotel. Campaigns send only between these hours (the law allows 9 am to 9 pm).</p>
+      <div class="row"><div><label>SMS sender name (DLT header, 6 letters)</label><input name="c_smsSender" value="${esc(sc.smsSender || '')}" maxlength="11" placeholder="DREAMI"></div><div><label>DLT entity ID (Dream India Realty)</label><input name="c_dltEntityId" value="${esc(sc.dltEntityId || '')}"></div></div>
+      <div class="row"><div><label>Calls go out from (140-series number, declared to the operator)</label><input name="c_callerId" value="${esc(sc.callerId || '')}" placeholder="140xxxxxxx"></div><div><label>Exotel call flow (app) ID</label><input name="c_callAppId" value="${esc(sc.callAppId || '')}" placeholder="the number in the flow's link"></div></div>
+      <div class="row"><div><label>Send from (hour, 24h)</label><input type="number" name="c_fromHour" value="${sc.fromHour ?? 10}" min="9" max="20"></div><div><label>Stop at (hour, 24h)</label><input type="number" name="c_toHour" value="${sc.toHour ?? 19}" min="10" max="21"></div></div>
+      ${hooks ? `<details><summary class="small"><b>Links to put in the Exotel call flow</b></summary><div class="small" style="margin-top:6px;line-height:1.7">
+        Greeting (text to speech from a URL): <code>${esc(hooks.say)}</code><br>Gather (press 1 / press 2) passthru: <code>${esc(hooks.digits)}</code><br>
+        Call status callback and SMS status callback are sent by the ERP with each call or SMS. Keep these links private.</div></details>` : ''}
       <div class="actions"><button>Save</button></div><div id="tmSM"></div></form></div>`);
     $('#tmS').onsubmit = async (e) => {
       e.preventDefault(); const x = Object.fromEntries(new FormData(e.target)); x.approvers = $$('[name=approver]:checked', e.target).map((i) => +i.value); delete x.approver;
+      x.campaigns = {}; for (const k of Object.keys(x)) if (k.startsWith('c_')) { x.campaigns[k.slice(2)] = x[k]; delete x[k]; }
       try { await C.api('/api/tm', { action: 'settings-save', settings: x }); $('#tmSM').innerHTML = '<div class="ok">Saved.</div>'; }
       catch (er) { $('#tmSM').innerHTML = `<div class="err">${esc(er.message)}</div>`; }
     };

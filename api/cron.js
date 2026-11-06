@@ -89,6 +89,7 @@ async function run(req, res, job) {
       r.website = await require('./marketing').webAggregate().catch((e) => ({ error: e.message })); // today's website visits into the figures
       r.leadsOverdue = await require('../lib/mkt-leads').overdue({}).catch((e) => ({ error: e.message })); // new leads nobody called for 2 hours
       r.leadStages = await require('../lib/mkt-leads').capi({}).catch((e) => ({ error: e.message })); // lead stages back to Meta
+      r.tmCampaigns = await require('../lib/tm-campaigns').tick().catch((e) => ({ error: e.message })); // the next batch of SMS / AI calls (within the hours)
       // Click Connect: once the key is in Vercel, point its webhook at the ERP by itself (once; again if the key changes)
       r.whatsappHook = await (async () => {
         const wa = require('../lib/whatsapp'); if (!wa.ccm()) return null;

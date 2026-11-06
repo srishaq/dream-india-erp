@@ -374,15 +374,21 @@
       v.innerHTML = `<div class="card">${stp(2)}<h2>Match your columns</h2><p class="muted">${esc(U.fileName)} · ${nf(data.length)} rows · for <b>${esc(p.name)}</b></p>
         <div class="map">${COLS.map(([k, l, req, re]) => `<div><label>${l}${req ? ' *' : ''}</label><select data-c="${k}">${opt(g(re))}</select></div>`).join('')}</div>
         <h3 style="margin-top:18px">First rows</h3><div class="tw"><table><tr>${h.map((x) => `<th>${esc(x)}</th>`).join('')}</tr>${data.slice(0, 4).map((r) => `<tr>${h.map((_, i) => `<td>${esc(r[i] || '')}</td>`).join('')}</tr>`).join('')}</table></div>
-        <label class="check" style="margin-top:18px"><input type="checkbox" id="cs"><span>I confirm these clients have agreed to be contacted about Dream India projects.</span></label>
+        <div class="consent" style="margin-top:18px;border:1px solid #E3C770;background:#FFF9E6;border-radius:12px;padding:14px 16px">
+          <b>Consent declaration (required)</b>
+          <p style="margin:6px 0 10px;font-size:14px;line-height:1.5">${esc((H.consent || {}).text || '')}</p>
+          <label class="check" style="margin:0 0 10px"><input type="checkbox" id="cs"><span>I have read this and I confirm it for all ${nf(data.length)} people in this file.</span></label>
+          <label style="font-size:13px">Your full name (as the person confirming)</label><input id="csn" autocomplete="name" maxlength="80" placeholder="Type your name" style="max-width:360px">
+          <p class="hint" style="margin:8px 0 0">Your name, the date and time, and this wording are kept with the upload. Dream India uses these numbers only for its own projects.</p></div>
         <div class="actions"><button class="ghost" id="bk">Choose another file</button><button id="go">Upload ${nf(data.length)} clients</button></div><div id="m"></div></div>${SECURE}`;
       $('#bk').onclick = () => { U = { projectId: U.projectId }; upload(v); };
       $('#go').onclick = (e) => {
         const map = Object.fromEntries($$('[data-c]').map((s) => [s.dataset.c, +s.value]));
         if (map.mobile < 0) return showErr($('#m'), 'Choose the column with mobile numbers.');
-        if (!$('#cs').checked) return showErr($('#m'), 'Please confirm your clients agreed to be contacted.');
+        if (!$('#cs').checked) return showErr($('#m'), 'Please tick the consent declaration.');
+        if ($('#csn').value.trim().length < 3) return showErr($('#m'), 'Please type your full name under the declaration.');
         const rows = data.map((r) => Object.fromEntries(Object.entries(map).map(([k, i]) => [k, i >= 0 ? r[i] || '' : ''])));
-        busy(e.target, async () => { try { U.result = await api('/api/cp-portal', { action: 'upload', projectId: U.projectId, rows, fileName: U.fileName, consent: true }); upload(v); } catch (x) { showErr($('#m'), x); } });
+        busy(e.target, async () => { try { U.result = await api('/api/cp-portal', { action: 'upload', projectId: U.projectId, rows, fileName: U.fileName, consent: { agreed: true, version: (H.consent || {}).version, name: $('#csn').value.trim() } }); upload(v); } catch (x) { showErr($('#m'), x); } });
       };
       return;
     }

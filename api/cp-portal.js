@@ -65,7 +65,7 @@ module.exports = route({
       const projects = (await TM.openProjects()).map((p) => ({ id: p.id, name: p.name, location: p.location, rera: p.rera_no, until: TM.iso(p.upload_until) }));
       const docs = await require('../lib/cp-docs').status(c.id);
       return res.json({ docs, profile: profile(c), projects, stats: { leads, active, uploads: uploads.length, bookings: bk.c, status },
-        uploads: uploads.map((u) => ({ id: u.id, at: u.created_at, file: u.file_name, received: u.received, accepted: u.accepted, project: u.project })), areas: AREAS, maxRows: Math.min(TM.MAX_ROWS, +(await TM.settings()).partnerDailyRows || TM.PARTNER_DAILY_ROWS) });
+        uploads: uploads.map((u) => ({ id: u.id, at: u.created_at, file: u.file_name, received: u.received, accepted: u.accepted, project: u.project })), areas: AREAS, consent: { text: TM.CONSENT_TEXT, version: TM.CONSENT_VERSION }, maxRows: Math.min(TM.MAX_ROWS, +(await TM.settings()).partnerDailyRows || TM.PARTNER_DAILY_ROWS) });
     }
     if (Q.docs) { const D2 = require('../lib/cp-docs'); const text = await D2.agreementText(); return res.json({ ...(await D2.status(c.id)), agreement: text, fingerprint: D2.fingerprint(text), rera: c.rera_no, pan: c.pan, gstin: c.gstin }); }
     if (Q.bookings) { approved(c); return res.json(await require('../lib/cp').firmView(c.id)); }
@@ -197,8 +197,11 @@ module.exports = route({
     if (a === 'parse') return res.json({ rows: parseFile(b.file, b.name, TM.MAX_ROWS) });
     if (a === 'upload') {
       if (c.portal_status !== 'approved') throw fail(403, 'Your account is waiting for approval by Dream India. You can upload once it is approved.');
-      if (!b.consent) throw fail(400, 'Please confirm that your clients agreed to be contacted.');
-      const r = await TM.upload({ cpId: c.id, projectId: intOr(b.projectId), rows: b.rows, fileName: b.fileName });
+      const cs = b.consent && typeof b.consent === 'object' ? b.consent : {};
+      const ip = String(req.headers['x-forwarded-for'] || req.socket?.remoteAddress || '').split(',')[0].trim();
+      const r = await TM.upload({ cpId: c.id, projectId: intOr(b.projectId), rows: b.rows, fileName: b.fileName,
+        consent: { agreed: cs.agreed === true && cs.version === TM.CONSENT_VERSION, name: cs.name, ip, device: req.headers['user-agent'] } });
+      await audit.record(db.q, { user: null, action: 'partner-upload-consent', entity: 'channel-partner', entityId: c.id, after: { uploadId: r.uploadId, rows: r.received, name: String(cs.name || '').slice(0, 80) }, note: TM.CONSENT_TEXT });
       return res.json(r); // the partner's view: "Not registered" for numbers that are ours or another partner's
     }
     if (a === 'doc-upload') { const r = await require('../lib/cp-docs').upload(c, { kind: b.kind, number: b.number, file: b.file }); await audit.record(db.q, { user: null, action: 'partner-doc', entity: 'channel-partner', entityId: c.id, after: { kind: b.kind } }); return res.json(r); }

@@ -27,7 +27,7 @@ async function sheetRows(where, params) {
     from tm_sheets s join tm_callers c on c.id = s.caller_id join tm_projects p on p.id = s.tm_project_id where ${where} order by s.sheet_date desc, s.id desc limit 300`, params);
 }
 
-module.exports = route({
+const staff = route({
   GET: async (req, res) => {
     const Q = req.query || {};
     // Reports: the full report of one project (from its loaded telecalling sheet, or from the calls entered in the ERP),
@@ -43,6 +43,17 @@ module.exports = route({
       // Dream Signature's analysis as it was finalised (areas from remarks, re-use tiers): shown until its sheet is loaded
       const fixed = p.history && /signature/i.test(p.name) ? require('../lib/data/ds-telecalling.json') : null;
       return res.json({ project: p, loaded: await R.loaded(pid), report: sm.empty ? null : sm, source: sm.source, fixed, rate: R.DEFAULT_RATE, canLoad: has(u, 'tm.manage') });
+    }
+    if (Q.campaigns || Q.campaign) {
+      const u = await who(req, res, VIEW); if (!u) return;
+      const K = require('../lib/tm-campaigns');
+      if (Q.campaign) return res.json({ ...(await K.detail(intOr(Q.campaign), has(u, 'tm.manage'))), labels: K.TARGET, canApprove: require('../lib/changes').isApprover(u) });
+      return res.json({ rows: await K.list(Q.project), labels: K.TARGET, ready: await K.readiness(), canApprove: require('../lib/changes').isApprover(u), defaults: K.DEFAULT_STATUSES,
+        dnc: (await db.one('select count(*)::int as n from tm_dnc')).n, consentText: TM.CONSENT_TEXT });
+    }
+    if (Q.perf) { // daily performance: per day, per caller and per agency
+      const u = await who(req, res, ['tm.view', 'tm.manage', 'mgmt.view']); if (!u) return;
+      return res.json(await TM.performance({ from: Q.from, to: Q.to, projectId: Q.project }));
     }
     if (Q.sheets || Q.sheet) {
       if (!(await who(req, res, ENTRY))) return;
@@ -113,7 +124,41 @@ module.exports = route({
       await audit.record(db.q, { user: u, action: 'tm-outcomes', entity: 'tm-sheet', entityId: intOr(b.sheetId), after: r });
       return res.json(r);
     }
+    if (a === 'sheet-scan') { // read a photo / scan of the filled sheet; nothing is saved until staff press Save
+      const u = await who(req, res, ['tm.entry', 'tm.manage']); if (!u) return;
+      const s = (await sheetRows('s.id = $1', [intOr(b.sheetId)]))[0];
+      if (!s) throw fail(404, 'Call sheet not found.');
+      const leads = await db.q('select id, mobile, name from tm_leads where sheet_id = $1 order by id', [s.id]);
+      const r = await require('../lib/tm-scan').read({ sheet: { ...s, sheet_date: TM.iso(s.sheet_date) }, leads, files: b.files });
+      await audit.record(db.q, { user: u, action: 'tm-sheet-scan', entity: 'tm-sheet', entityId: s.id, after: { read: r.rows.length, pages: (b.files || []).length } });
+      return res.json(r);
+    }
     const u = await who(req, res, MANAGE); if (!u) return;
+    if (a === 'campaign-preview') return res.json(await require('../lib/tm-campaigns').preview({ projectId: intOr(b.projectId), kind: b.kind, filters: b.filters }));
+    if (a === 'campaign-save') {
+      const r = await require('../lib/tm-campaigns').save(u, { ...b, id: intOr(b.id) });
+      await audit.record(db.q, { user: u, action: b.id ? 'tm-campaign-edit' : 'tm-campaign-add', entity: 'tm-campaign', entityId: r.id, after: { kind: b.kind, name: b.name, message: b.message, script: b.script } });
+      return res.json(r);
+    }
+    if (a === 'campaign-approve') {
+      const r = await require('../lib/tm-campaigns').approve(u, intOr(b.id));
+      await audit.record(db.q, { user: u, action: 'tm-campaign-approve', entity: 'tm-campaign', entityId: intOr(b.id), after: r });
+      return res.json(r);
+    }
+    if (['campaign-start', 'campaign-pause', 'campaign-cancel'].includes(a)) {
+      const r = await require('../lib/tm-campaigns').setStatus(u, intOr(b.id), a.slice(9));
+      await audit.record(db.q, { user: u, action: 'tm-' + a, entity: 'tm-campaign', entityId: intOr(b.id) });
+      return res.json(r);
+    }
+    if (a === 'campaign-test') return res.json(await require('../lib/tm-campaigns').test(u, intOr(b.id), b.mobile));
+    if (a === 'dnc-add') { // numbers that must never be contacted again (SMS, AI calls, telecallers, partner uploads)
+      const ms = [...new Set(String(b.numbers || '').split(/[\s,;]+/).map(TM.mobile).filter(Boolean))].slice(0, 5000);
+      if (!ms.length) throw fail(400, 'Type or paste 10-digit mobile numbers.');
+      const r = await db.q("insert into tm_dnc (mobile, reason) select m, $2 from unnest($1::text[]) m on conflict do nothing returning mobile", [ms, str(b.reason, 120) || 'Added by staff']);
+      await db.q("update tm_campaign_targets set status = 'skipped', updated_at = now() where status = 'queued' and mobile = any($1::text[])", [ms]);
+      await audit.record(db.q, { user: u, action: 'tm-dnc-add', entity: 'tm-dnc', entityId: null, after: { added: r.length, given: ms.length } });
+      return res.json({ added: r.length, already: ms.length - r.length });
+    }
     if (a === 'partner-status') {
       const st = ['approved', 'rejected', 'blocked', 'pending'].includes(b.status) ? b.status : null;
       if (!st) throw fail(400, 'Choose a status.');
@@ -145,11 +190,18 @@ module.exports = route({
     if (a === 'caller-save') {
       const name = str(b.name, 80);
       if (!name) throw fail(400, 'Enter the caller\'s name.');
-      const vals = [name, TM.mobile(b.mobile) || null, Number(b.dailyRate) >= 0 ? Number(b.dailyRate) : TM.DEFAULT_RATE, b.active !== false, DATE.test(b.joinedOn || '') ? b.joinedOn : null];
+      const vals = [name, TM.mobile(b.mobile) || null, Number(b.dailyRate) >= 0 ? Number(b.dailyRate) : TM.DEFAULT_RATE, b.active !== false, DATE.test(b.joinedOn || '') ? b.joinedOn : null, str(b.agency, 80) || null];
+      const dup = vals[1] ? await db.one('select id, name from tm_callers where mobile = $1 and id <> $2', [vals[1], intOr(b.id) || 0]) : null;
+      if (dup) throw fail(409, `${dup.name} already has this mobile number.`);
       const r = b.id
-        ? await db.one('update tm_callers set name = $1, mobile = $2, daily_rate = $3, active = $4, joined_on = coalesce($5, joined_on) where id = $6 returning id', [...vals, intOr(b.id)])
-        : await db.one('insert into tm_callers (name, mobile, daily_rate, active, joined_on) values ($1, $2, $3, $4, coalesce($5::date, current_date)) returning id', vals);
+        ? await db.one('update tm_callers set name = $1, mobile = $2, daily_rate = $3, active = $4, joined_on = coalesce($5, joined_on), agency = $6 where id = $7 returning id', [...vals, intOr(b.id)])
+        : await db.one('insert into tm_callers (name, mobile, daily_rate, active, joined_on, agency, roster_on) values ($1, $2, $3, $4, coalesce($5::date, current_date), $6, current_date) returning id', vals);
       return res.json({ id: r.id });
+    }
+    if (a === 'callers-import') { // the agency's list of callers coming to work
+      const r = await TM.importCallers({ rows: b.rows, date: b.date, agency: b.agency, dailyRate: b.dailyRate });
+      await audit.record(db.q, { user: u, action: 'tm-callers-import', entity: 'tm-callers', entityId: null, after: { added: r.added, updated: r.updated, date: r.date }, note: str(b.fileName, 120) || null });
+      return res.json(r);
     }
     if (a === 'sheets-make') {
       const r = await TM.makeSheets({ projectId: intOr(b.projectId), callerIds: b.callerIds, perCaller: b.perCaller, date: b.date, userId: u.id });
@@ -198,6 +250,11 @@ module.exports = route({
         waOtpTemplate: str(s.waOtpTemplate, 80), waWelcomeTemplate: str(s.waWelcomeTemplate, 80), waInviteTemplate: str(s.waInviteTemplate != null ? s.waInviteTemplate : cur.waInviteTemplate, 80),
         approvers: Array.isArray(s.approvers) ? s.approvers.map(intOr).filter(Boolean).slice(0, 5) : cur.approvers || [],
         agreementText: s.agreementText != null ? (String(s.agreementText).trim().slice(0, 20000) || null) : cur.agreementText || null,
+        hookKey: cur.hookKey || require('crypto').randomBytes(16).toString('hex'),
+        campaigns: s.campaigns ? (() => { const c = s.campaigns, hr = (v, d) => { const x = parseInt(v, 10); return x >= 0 && x <= 23 ? x : d; };
+          const from = hr(c.fromHour, 10), to = Math.max(hr(c.toHour, 19), from + 1);
+          if (from < 9 || to > 21) throw fail(400, 'Promotional calls and SMS are allowed only between 9 am and 9 pm.');
+          return { smsSender: str(c.smsSender, 11).toUpperCase(), dltEntityId: str(c.dltEntityId, 30), callerId: str(c.callerId, 20).replace(/[^\d+]/g, ''), callAppId: str(c.callAppId, 20).replace(/\D/g, ''), fromHour: from, toHour: to }; })() : cur.campaigns || {},
       };
       await db.q("insert into settings (key, value) values ('tm', $1) on conflict (key) do update set value = excluded.value", [next]);
       await audit.record(db.q, { user: u, action: 'tm-settings', entity: 'settings', entityId: 'tm', before: cur, after: next });
@@ -206,3 +263,20 @@ module.exports = route({
     throw fail(400, 'Unknown request.');
   },
 });
+
+// Exotel calls back here (SMS delivery, call status, the digit pressed, the words to say). No staff login: the secret
+// hook key in the link (Telemarketing → Settings) is the check. Exotel sends GET (passthru) or POST (form) requests.
+module.exports = async (req, res) => {
+  const q = req.query || {};
+  if (!q.hook) return staff(req, res);
+  try {
+    let b = req.body; if (Buffer.isBuffer(b)) b = b.toString('utf8');
+    if (typeof b === 'string') b = Object.fromEntries(new URLSearchParams(b));
+    const r = await require('../lib/tm-campaigns').hook(String(q.hook), { ...(b && typeof b === 'object' ? b : {}), ...q });
+    res.setHeader('Cache-Control', 'no-store');
+    if (r.text != null) { res.setHeader('Content-Type', 'text/plain; charset=utf-8'); return res.status(200).end(r.text); }
+    res.setHeader('Content-Type', 'application/json'); return res.status(200).end(JSON.stringify(r));
+  } catch (e) {
+    res.setHeader('Content-Type', 'application/json'); return res.status(e.status || 500).end(JSON.stringify({ error: e.status ? e.message : 'error' }));
+  }
+};

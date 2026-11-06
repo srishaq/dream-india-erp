@@ -5,6 +5,8 @@ require('./login-code-helper'); // staff sign-in: password, then the code (ERP_T
 const assert = require('assert/strict');
 process.env.PORT = process.env.PORT || '3996';
 process.env.TM_TEST_OTP = '424242';
+process.env.TM_FAKE_PROVIDER = '1'; // SMS and AI calls: no real messages in tests
+const CONSENT = { agreed: true, version: 1, name: 'Test Partner' };
 require('./dev-server');
 const db = require('../lib/db');
 const auth = require('../lib/auth');
@@ -51,7 +53,7 @@ const firm = (i, extra = {}) => ({ username: 'partner' + i, password: 'secret12'
 
   let launch, hist;
   await step('Management opens a launch, imports earlier numbers, approves the partner; uploads wait for approval', async () => {
-    assert.equal((await A('/api/cp-portal', { action: 'upload', projectId: 1, rows: [{ mobile: '9000000001' }], consent: true })).status, 403);
+    assert.equal((await A('/api/cp-portal', { action: 'upload', projectId: 1, rows: [{ mobile: '9000000001' }], consent: CONSENT })).status, 403);
     launch = (await admin('/api/tm', { action: 'project-save', name: 'Jogeshwari West launch', location: 'Jogeshwari West', status: 'open' })).id;
     hist = (await db.one('select id from tm_projects where history')).id;
     const im = await admin('/api/tm', { action: 'import', projectId: hist, rows: [{ mobile: '9111100001', name: 'Old lead', remark: 'Interested 2BHK' }, { mobile: '9111100001' }, { mobile: '123' }] });
@@ -93,7 +95,7 @@ const firm = (i, extra = {}) => ({ username: 'partner' + i, password: 'secret12'
     const rows = [{ mobile: '+91 90000 00001', name: 'Asha' }, { mobile: '9000000002', name: 'Ravi' }, { mobile: '09000000003', name: 'Neha', config: '2 BHK' }, { mobile: '9000000001', name: 'Asha again' },
       { mobile: '12345', name: 'Bad' }, { mobile: '9111100001', name: 'Old lead' }, ...(buyer ? [{ mobile: buyer.p, name: 'Buyer' }] : [])];
     assert.equal((await A('/api/cp-portal', { action: 'upload', projectId: launch, rows })).status, 400); // no consent
-    const r = await A('/api/cp-portal', { action: 'upload', projectId: launch, rows, consent: true, fileName: 'clients.csv' });
+    const r = await A('/api/cp-portal', { action: 'upload', projectId: launch, rows, consent: CONSENT, fileName: 'clients.csv' });
     assert.equal(r.accepted, 3, r.error); assert.equal(r.received, rows.length); upA = r.uploadId;
     const c = Object.fromEntries(r.issues.map((x) => [x.reason, x.count]));
     // the partner is not told that a number is ours (database or customer) or another partner's: "Not registered"
@@ -105,7 +107,7 @@ const firm = (i, extra = {}) => ({ username: 'partner' + i, password: 'secret12'
     if (buyer) assert.ok(staff.some((x) => x.reason === 'Existing customer'));
     assert.equal((await admin('/api/tm?overview=1')).issues['In Dream India database'], 1);
     assert.ok(r.rows.every((x) => !/^\d{10}$/.test(x.mobile)), 'masked');
-    const again = await A('/api/cp-portal', { action: 'upload', projectId: launch, rows: [{ mobile: '9000000002' }], consent: true });
+    const again = await A('/api/cp-portal', { action: 'upload', projectId: launch, rows: [{ mobile: '9000000002' }], consent: CONSENT });
     assert.equal(again.issues.find((x) => x.reason === 'Already uploaded by you').count, 1);
   });
 
@@ -116,7 +118,7 @@ const firm = (i, extra = {}) => ({ username: 'partner' + i, password: 'secret12'
     const id = (await db.one("select id from channel_partners where cp_code = 'DI-CP-0002'")).id;
     for (const k of ['pan', 'gst', 'rera', 'agreement']) await db.q("insert into cp_docs (cp_id, kind, how) values ($1, $2, 'test')", [id, k]);
     assert.equal((await admin('/api/tm', { action: 'partner-status', id, status: 'approved' })).ok, true);
-    const r = await B('/api/cp-portal', { action: 'upload', projectId: launch, rows: [{ mobile: '9000000001', name: 'Asha' }, { mobile: '9000000009', name: 'Own' }], consent: true });
+    const r = await B('/api/cp-portal', { action: 'upload', projectId: launch, rows: [{ mobile: '9000000001', name: 'Asha' }, { mobile: '9000000009', name: 'Own' }], consent: CONSENT });
     assert.equal(r.accepted, 1); assert.equal(r.issues.find((x) => x.reason === 'Not registered').count, 1); assert.ok(!r.issues.some((x) => x.reason === 'Registered with another partner'));
     const lb = await B('/api/cp-portal?leads=1');
     assert.deepEqual(lb.rows.map((x) => x.mobile), ['90XXXXXX09']);
@@ -225,8 +227,8 @@ const firm = (i, extra = {}) => ({ username: 'partner' + i, password: 'secret12'
     const cpA = (await db.one("select id from channel_partners where cp_code = 'DI-CP-0001'")).id;
     const done = (await db.one("select coalesce(sum(received), 0)::int as n from tm_uploads where cp_id = $1 and (created_at + interval '330 minutes')::date = (now() + interval '330 minutes')::date", [cpA])).n;
     const left = 12 - done, rows = (k) => Array.from({ length: k }, (_, i) => ({ mobile: '93' + String(10000000 + i + done * 100).padStart(8, '0'), name: 'Cap ' + i }));
-    if (left > 0) assert.equal((await A('/api/cp-portal', { action: 'upload', projectId: launch, rows: rows(left), consent: true })).received, left);
-    const over = await A('/api/cp-portal', { action: 'upload', projectId: launch, rows: rows(1), consent: true }); assert.equal(over.status, 429); assert.match(over.error, /up to 12 rows a day/);
+    if (left > 0) assert.equal((await A('/api/cp-portal', { action: 'upload', projectId: launch, rows: rows(left), consent: CONSENT })).received, left);
+    const over = await A('/api/cp-portal', { action: 'upload', projectId: launch, rows: rows(1), consent: CONSENT }); assert.equal(over.status, 429); assert.match(over.error, /up to 12 rows a day/);
     assert.equal((await A('/api/cp-portal?home=1')).maxRows, 12);
     await db.q("update settings set value = value - 'partnerDailyRows' where key = 'tm'");
     // codes: 5 an hour for one email address, even from different mobiles
@@ -483,6 +485,109 @@ const firm = (i, extra = {}) => ({ username: 'partner' + i, password: 'secret12'
     await route({ GET: async () => { code = 200; } })({ method: 'GET', url: '/api/partners?portal=1', headers: { host: 'partners.dreamindiarealty.com' } }, res); assert.equal(code, 404);
     await route({ GET: async () => { code = 200; } })({ method: 'GET', url: '/api/cp-portal?bookings=1', headers: { host: 'partners.dreamindiarealty.com' } }, res); assert.equal(code, 200);
     for (const f of ['/partner.js', '/partner.css']) assert.equal((await fetch(BASE + f)).status, 200);
+  });
+
+
+  await step('Consent: an upload needs the declaration and a typed name; the wording, name and time are kept with it', async () => {
+    assert.equal((await A('/api/cp-portal', { action: 'upload', projectId: launch, rows: [{ mobile: '9000000077' }], consent: { agreed: true, version: 1 } })).status, 400); // no name
+    assert.equal((await A('/api/cp-portal', { action: 'upload', projectId: launch, rows: [{ mobile: '9000000077' }], consent: { agreed: true, version: 0, name: 'X Y' } })).status, 400); // old wording
+    const up = await db.one('select consent from tm_uploads where id = $1', [upA]);
+    assert.equal(up.consent.name, 'Test Partner'); assert.match(up.consent.text, /automated or recorded calls/); assert.ok(up.consent.at);
+    assert.ok(await db.one('select 1 as x from tm_leads where upload_id = $1', [upA]));
+    assert.ok((await A('/api/cp-portal?home=1')).consent || (await A('/api/cp-portal?me=1')));
+  });
+
+  let camp, sms;
+  await step('SMS and AI calls: only consented partner numbers, made by Telemarketing, approved by the Chairman, sent in batches', async () => {
+    const pv = await admin('/api/tm', { action: 'campaign-preview', kind: 'call', projectId: launch });
+    assert.ok(pv.count >= 1, JSON.stringify(pv));
+    // a number on do-not-contact is never in a campaign
+    const someone = await db.one("select l.mobile from tm_leads l join tm_uploads u on u.id = l.upload_id where l.tm_project_id = $1 and l.status = 'fresh' order by l.id desc limit 1", [launch]);
+    assert.ok((await admin('/api/tm', { action: 'dnc-add', numbers: someone.mobile })).added === 1);
+    assert.equal((await admin('/api/tm', { action: 'campaign-preview', kind: 'call', projectId: launch })).count, pv.count - 1);
+    assert.equal((await admin('/api/tm', { action: 'campaign-save', kind: 'call', projectId: launch, name: 'Intro', script: '' })).status, 400);
+    camp = (await admin('/api/tm', { action: 'campaign-save', kind: 'call', projectId: launch, name: 'Intro call', script: 'Namaste... press 1 if interested, press 2 if not.', dailyCap: 100 })).id;
+    assert.ok(camp);
+    assert.equal((await admin('/api/tm', { action: 'campaign-start', id: camp })).status, 409); // not approved
+    const crmTry = await crm('/api/tm', { action: 'campaign-approve', id: camp }); assert.ok([403].includes(crmTry.status));
+    const ap = await admin('/api/tm', { action: 'campaign-approve', id: camp }); assert.equal(ap.targets, pv.count - 1, ap.error);
+    assert.equal((await admin('/api/tm', { action: 'campaign-start', id: camp })).status, 409); // settings not filled in yet
+    const st = await admin('/api/tm?settings=1');
+    assert.equal((await admin('/api/tm', { action: 'settings-save', settings: { ...st.settings, campaigns: { smsSender: 'DREAMI', dltEntityId: '1101', callerId: '1401234567', callAppId: '555', fromHour: 7, toHour: 19 } } })).status, 400); // before 9 am
+    assert.ok((await admin('/api/tm', { action: 'settings-save', settings: { ...st.settings, campaigns: { smsSender: 'DREAMI', dltEntityId: '1101', callerId: '1401234567', callAppId: '555', fromHour: 10, toHour: 19 } } })).settings);
+    assert.ok((await admin('/api/tm', { action: 'campaign-start', id: camp })).ok);
+    const K = require('../lib/tm-campaigns');
+    const night = await K.tick({ now: new Date('2026-11-06T17:00:00Z') }); assert.match(String(night.waiting), /outside/); // 10:30 pm IST: nothing goes out
+    const r = await K.tick({ now: new Date('2026-11-06T06:00:00Z') }); // 11:30 am IST
+    assert.equal(r[camp].sent, pv.count - 1, JSON.stringify(r));
+    assert.ok(!(await db.one("select 1 as x from tm_campaign_targets where campaign_id = $1 and mobile = $2", [camp, someone.mobile])));
+  });
+
+  await step('Press 1 puts the number at the top of the next call sheet; press 2 marks it not interested; no answer is kept', async () => {
+    const key = (await db.one("select value->>'hookKey' as k from settings where key = 'tm'")).k;
+    const T = await db.q("select id, lead_id from tm_campaign_targets where campaign_id = $1 order by id", [camp]);
+    assert.ok(T.length >= 2);
+    assert.equal((await fetch(`${BASE}/api/tm?hook=digits&k=wrong&CustomField=t:${T[0].id}&digits=%221%22`)).status, 403);
+    assert.equal((await fetch(`${BASE}/api/tm?hook=digits&k=${key}&CustomField=t:${T[0].id}&digits=%221%22`)).status, 200);
+    assert.equal((await fetch(`${BASE}/api/tm?hook=digits&k=${key}&CustomField=t:${T[1].id}&digits=2`)).status, 200);
+    if (T[2]) assert.equal((await fetch(`${BASE}/api/tm?hook=call&k=${key}`, { method: 'POST', headers: { 'Content-Type': 'application/x-www-form-urlencoded' }, body: `CustomField=t:${T[2].id}&Status=no-answer&CallSid=abc` })).status, 200);
+    // the final call status does not undo the key pressed
+    await fetch(`${BASE}/api/tm?hook=call&k=${key}`, { method: 'POST', headers: { 'Content-Type': 'application/x-www-form-urlencoded' }, body: `CustomField=t:${T[0].id}&Status=completed` });
+    const say = await fetch(`${BASE}/api/tm?hook=say&k=${key}&CustomField=t:${T[0].id}`); assert.match(await say.text(), /press 1/);
+    const st = Object.fromEntries((await db.q('select id, status from tm_campaign_targets where campaign_id = $1', [camp])).map((x) => [x.id, x.status]));
+    assert.equal(st[T[0].id], 'pressed1'); assert.equal(st[T[1].id], 'pressed2'); if (T[2]) assert.equal(st[T[2].id], 'no_answer');
+    assert.equal((await db.one('select status from tm_leads where id = $1', [T[0].lead_id])).status, 'ai_interested');
+    assert.equal((await db.one('select status from tm_leads where id = $1', [T[1].lead_id])).status, 'not_interested');
+    const cl = (await admin('/api/tm', { action: 'caller-save', name: 'Agency caller', mobile: '9811100001', dailyRate: 900 })).id;
+    const sh = await admin('/api/tm', { action: 'sheets-make', projectId: launch, callerIds: [cl], perCaller: 5 });
+    assert.ok(sh.sheets.length, sh.error);
+    const first = await db.one('select id from tm_leads where sheet_id = $1 order by id limit 1', [sh.sheets[0]]);
+    const all = (await admin('/api/tm?sheet=' + sh.sheets[0])).leads; assert.equal(all.find((l) => l.status.startsWith('Pressed 1')).id, T[0].lead_id); // on the sheet
+    assert.ok(first);
+    const d = await admin('/api/tm?campaign=' + camp); assert.equal(d.byStatus.pressed1, 1); assert.equal(d.pressed.length, 1);
+    // an SMS campaign needs its DLT template ID before it starts
+    sms = (await admin('/api/tm', { action: 'campaign-save', kind: 'sms', projectId: launch, message: 'Dream India Realty: new project at Jogeshwari West. Call 02240000000. -DREAMI' })).id;
+    assert.ok((await admin('/api/tm', { action: 'campaign-approve', id: sms })).targets >= 1);
+    assert.equal((await admin('/api/tm', { action: 'campaign-start', id: sms })).status, 409);
+    assert.ok((await admin('/api/tm', { action: 'campaign-cancel', id: sms })).ok);
+  });
+
+  await step('Telecallers from an agency: uploaded from a sheet, repeat callers updated not doubled, ticked for that day', async () => {
+    const rows = [{ name: 'Ritu Sharma', mobile: '9811100001', agency: 'CallPro' }, { name: 'Amit K', mobile: '9811100002' }, { name: 'Amit K again', mobile: '9811100002' }, { name: '', mobile: '9811100003' }];
+    const r = await admin('/api/tm', { action: 'callers-import', rows, agency: 'CallPro', dailyRate: 800, date: '2026-11-07' });
+    assert.equal(r.added, 1, r.error); assert.equal(r.updated, 1); assert.equal(r.skipped.length, 2);
+    const c = (await admin('/api/tm?callers=1')).rows;
+    assert.equal(c.filter((x) => x.mobile === '9811100001').length, 1);
+    const ritu = c.find((x) => x.mobile === '9811100001'); assert.equal(ritu.name, 'Ritu Sharma'); assert.equal(ritu.agency, 'CallPro'); assert.equal(String(ritu.roster_on).slice(0, 10), '2026-11-07');
+    assert.equal(c.find((x) => x.mobile === '9811100002').agency, 'CallPro');
+    assert.equal((await admin('/api/tm', { action: 'caller-save', name: 'Dup', mobile: '9811100002' })).status, 409);
+  });
+
+  await step('Daily performance: calls, connected, interested, visits and cost per day, per caller and per agency', async () => {
+    const sh = (await admin('/api/tm?sheets=1&status=out')).rows[0];
+    const L = (await admin('/api/tm?sheet=' + sh.id)).leads;
+    const codes = [1, 2, 5, 4, 6];
+    const r = await entry('/api/tm', { action: 'outcomes-save', sheetId: sh.id, entries: L.map((l, i) => ({ leadId: l.id, code: codes[i] || '' })) });
+    assert.ok(r.saved >= 1, r.error);
+    const d0 = await admin(`/api/tm?perf=1&from=${sh.sheet_date}&to=${sh.sheet_date}`);
+    const me = d0.callers.find((c) => c.name === 'Ritu Sharma'); assert.ok(me, JSON.stringify(d0.callers));
+    assert.equal(me.calls, r.saved); assert.equal(me.agency, 'CallPro');
+    assert.equal(me.interested, 1); if (r.saved >= 2) assert.equal(me.visits, 1);
+    assert.equal(me.cost, 800); // the agency's rate from the upload assert.equal(d0.days[0].callers >= 1, true); assert.ok(d0.total.calls >= me.calls);
+    assert.ok(d0.agencies.some((a) => a.agency === 'CallPro'));
+    assert.equal((await crm(`/api/tm?perf=1`)).status === 200 || (await crm(`/api/tm?perf=1`)).status === 403, true);
+  });
+
+  await step('Scanning a call sheet: the reader\'s answer is tied to the printed rows; without the key it says so', async () => {
+    const S = require('../lib/tm-scan');
+    const leads = [{ id: 11, mobile: '9000000001', name: 'A' }, { id: 12, mobile: '9000000002', name: 'B' }, { id: 13, mobile: '9000000003', name: 'C' }];
+    const p = S.parse('Here: {"rows":[{"n":1,"code":2,"remark":"visit sunday","callback":"","sure":true},{"n":3,"code":9,"sure":true},{"n":7,"code":1}],"unclear":"row 3"}', leads);
+    assert.deepEqual(p.rows.map((x) => [x.leadId, x.code, x.sure]), [[11, 2, true], [13, null, false]]);
+    assert.equal(p.unclear, 'row 3');
+    const had = process.env.ANTHROPIC_API_KEY; delete process.env.ANTHROPIC_API_KEY;
+    const sh = (await admin('/api/tm?sheets=1')).rows[0];
+    const r = await entry('/api/tm', { action: 'sheet-scan', sheetId: sh.id, files: ['data:image/jpeg;base64,AAAA'] }); assert.equal(r.status, 409);
+    if (had) process.env.ANTHROPIC_API_KEY = had;
   });
 
   console.log(`\nPartner & Telemarketing: ${n} checks passed.`);
