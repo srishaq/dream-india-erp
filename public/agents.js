@@ -59,6 +59,7 @@
       <span class="live${off ? ' off' : ''}"><i></i>${d.killed ? 'Kill switch on' : !sc.enabled ? 'Agents off here' : sc.paused ? 'Paused' : `Live · ${d.agents.on} of ${d.agents.of} agents running`}</span>
       <span class="clock" id="clock"></span>
       ${me.edit ? `<button class="btn pri" id="runNow"${off ? ' disabled' : ''}>Run now</button>` : ''}
+      <a class="btn" href="/" style="text-decoration:none">⌂ ERP Home</a>
       <a class="back" href="/#/marketing${d.project ? '/' + d.project.id : ''}">← Sales &amp; Marketing</a>
     </header>
     ${d.killed ? `<div class="banner red">The kill switch is on: every agent in every project is stopped. ${me.own ? 'Switch it off under Knowledge layer → Kill switch.' : ''}</div>` : ''}
