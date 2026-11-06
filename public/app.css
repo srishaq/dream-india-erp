@@ -657,7 +657,8 @@ tr.clickable { cursor: pointer; }
 tr.clickable:hover td { background: var(--brand-tint); }
 /* Reports */
 .rp-sec { margin: 0 0 18px; }
-.rp-h { font-size: 15px; text-transform: uppercase; letter-spacing: .04em; color: var(--ink-3); margin: 18px 0 8px; }
+.rp-h { font-size: 17px; font-weight: 800; text-transform: uppercase; letter-spacing: .05em; color: #1D4ED8; margin: 22px 0 10px; padding-left: 10px; border-left: 4px solid #1D4ED8; }
+@media (prefers-color-scheme: dark) { .rp-h { color: #60A5FA; border-left-color: #60A5FA; } }
 .rp-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, 240px), 1fr)); gap: 10px; }
 .rp-card { display: block; background: var(--card, #fff); border: 1px solid var(--line, #e3e3ea); border-radius: 12px; padding: 12px 14px; text-decoration: none; color: inherit; }
 .rp-card:hover { border-color: var(--brand); background: var(--brand-tint); }
