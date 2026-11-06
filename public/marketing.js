@@ -154,9 +154,9 @@
     const tmOk = ['tm.view', 'tm.manage', 'tm.entry'].some((p) => (C.me.perms || []).includes(p));
     // eight tabs; the ones with several parts show them as small buttons underneath
     const GROUPS = [['overview', 'Overview', [['overview', 'Overview']]], ['plan', 'Plan & budget', [['plan', 'Plan & budget']]],
-      ['campaigns', 'Campaigns', [['campaigns', 'Plans & spend'], ['active', 'Running now']]],
+      ['campaigns', 'Campaigns', [['campaigns', 'Plans & spend'], ['active', 'Running now'], ['adplans', 'AI ad plans']]],
       ['content', 'Content', [['calendar', 'Calendar'], ['library', 'Design library'], ['inbox', 'Comments'], ['tasks', 'Tasks']]],
-      ['leads', 'Leads', [['leads', 'Leads']]],
+      ['leads', 'Leads', [['leads', 'Leads'], ['chats', 'Website chats']]],
       ['report', 'Reports', [['report', '12-month report']]]];
     if (S.tab === 'setup') { /* Set-up opens from the button at the top */ } else if (!GROUPS.some((g) => g[2].some(([k]) => k === S.tab))) S.tab = 'overview';
     const G = GROUPS.find((g) => g[2].some(([k]) => k === S.tab));
@@ -171,7 +171,7 @@
       <div id="mkBody"></div></div>`;
     $('#mkProj').onchange = async (e) => { if (e.target.value === '__add') { location.hash = '#/projects'; return; } S.scope = e.target.value; S.lib = null; await load(); paint(); };
     $$('#page [data-tab]').forEach((b) => (b.onclick = () => { S.tab = b.dataset.tab; paint(); }));
-    (S.tab === 'tele' || S.tab === 'cps' ? (location.hash = '#/telemarketing') : ({ overview, plan, active, report, calendar, leads, inbox, campaigns, library, tasks, setup }[S.tab] || overview)());
+    (S.tab === 'tele' || S.tab === 'cps' ? (location.hash = '#/telemarketing') : ({ overview, plan, active, report, calendar, leads, chats, adplans: () => window.AdPlans.render({ api: C.api, body, esc, inr, day, when, S, D, toast: C.toast, dialog: C.dialog }), inbox, campaigns, library, tasks, setup }[S.tab] || overview)());
   }
   const body = (h) => ($('#mkBody').innerHTML = h);
 
@@ -426,6 +426,25 @@
   }
 
   // ---------- leads ----------
+  // ---------- Website chats: every conversation of the chat assistant on the website ----------
+  async function chats() {
+    body('<div class="mk-card"><p class="muted">Loading…</p></div>');
+    const d = await C.api('/api/bot?chats=1' + (S.scope && S.scope !== 'company' ? '&project=' + S.scope : ''));
+    const snippet = `<script src="${location.origin}/bot.js" data-project="${S.scope && S.scope !== 'company' ? esc(String(S.scope)) : ''}" defer></script>`;
+    body(`<div class="mk-card"><h3>Website chat assistant</h3>
+        <p class="small muted">An AI assistant on dreamindiarealty.com answers visitors from the AI team's knowledge files (Facts, FAQ, Compliance), asks what they are looking for, takes the name and mobile once they agree to be contacted, and books a site visit. Every number becomes a lead here in Leads (source: Website), with the visit in the note. ${d.on ? '<span class="pill good">On</span>' : '<span class="pill warn">Offline: needs the Claude key in Vercel</span>'}</p>
+        <details><summary class="small"><b>Put it on the website</b></summary><p class="small muted">Paste this line before &lt;/body&gt; on the website pages (cPanel → File Manager, or your web designer). On a project's page, use that project's number (choose the project above first).</p><pre style="white-space:pre-wrap;background:#F6F7FB;padding:10px;border-radius:8px;font-size:12px">${esc(snippet)}</pre></details></div>
+      <div class="mk-card"><h3>Chats (${d.rows.length})</h3>${d.rows.length ? `<div class="table-wrap"><table><tr><th>When</th><th>Project</th><th>First message</th><th>Name</th><th>Mobile</th><th>Looking for</th><th>Site visit</th><th class="num">Messages</th><th></th></tr>
+        ${d.rows.map((r) => { const c = r.captured || {}; return `<tr class="clickable" data-chat="${esc(r.id)}"><td>${when(r.updated_at)}</td><td>${esc(r.project || 'Company')}</td><td>${esc(String(r.first || '').slice(0, 60))}</td><td>${esc(c.name || '')}</td><td>${esc(c.mobile || '')}</td><td>${esc([c.home, c.budget].filter(Boolean).join(' · '))}</td><td>${c.visit_date ? `<b>${esc(c.visit_date)}${c.visit_time ? ' ' + esc(c.visit_time) : ''}</b>` : ''}</td><td class="num">${r.n}</td><td>${r.lead_id ? '<span class="pill good">Lead</span>' : ''}</td></tr>`; }).join('')}</table></div>` : '<p class="muted">No chats yet. Put the assistant on the website (above).</p>'}</div>`);
+    $$('[data-chat]').forEach((tr) => (tr.onclick = async () => {
+      const c = await C.api('/api/bot?chat=' + encodeURIComponent(tr.dataset.chat)), cap = c.captured || {};
+      C.dialog(`<h2>Website chat · ${esc(c.project || 'Company')}</h2><p class="small muted">${when(c.created_at)}${c.page ? ' · ' + esc(c.page) : ''}${c.lead_id ? ' · became a lead' : ''}</p>
+        ${Object.keys(cap).length ? `<p class="small">${[['Name', cap.name], ['Mobile', cap.mobile], ['Looking for', cap.home], ['Budget', cap.budget], ['When', cap.timeline], ['For', cap.purpose], ['Site visit', cap.visit_date && cap.visit_date + (cap.visit_time ? ' ' + cap.visit_time : '')]].filter((x) => x[1]).map(([k, v]) => `<b>${k}:</b> ${esc(v)}`).join(' · ')}</p>` : ''}
+        <div style="max-height:55vh;overflow:auto;background:#F6F7FB;border-radius:10px;padding:10px">${(c.messages || []).map((m) => `<div style="margin:6px 0;text-align:${m.role === 'user' ? 'right' : 'left'}"><span style="display:inline-block;max-width:80%;padding:8px 11px;border-radius:12px;font-size:13px;background:${m.role === 'user' ? '#140C59;color:#fff' : '#fff;border:1px solid #E6E8F0'}">${esc(m.content)}</span></div>`).join('')}</div>`, async () => {});
+      const sv = document.querySelector('dialog[open] [value=save]'); if (sv) sv.remove();
+    }));
+  }
+
   function leads() {
     const q = S.leadQ.toLowerCase();
     const list = D.leads.filter((l) => (S.leadF === 'all' || l.status === S.leadF || (S.leadF === 'waiting' && l.status === 'new' && !l.first_contact_at) || (S.leadF === 'due' && l.next_date && l.next_date.slice(0, 10) <= iso(new Date()))) && (!q || [l.name, l.phone, l.email, l.note].some((v) => String(v || '').toLowerCase().includes(q))));

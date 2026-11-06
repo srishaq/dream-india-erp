@@ -254,7 +254,8 @@ const staff = route({
         campaigns: s.campaigns ? (() => { const c = s.campaigns, hr = (v, d) => { const x = parseInt(v, 10); return x >= 0 && x <= 23 ? x : d; };
           const from = hr(c.fromHour, 10), to = Math.max(hr(c.toHour, 19), from + 1);
           if (from < 9 || to > 21) throw fail(400, 'Promotional calls and SMS are allowed only between 9 am and 9 pm.');
-          return { smsSender: str(c.smsSender, 11).toUpperCase(), dltEntityId: str(c.dltEntityId, 30), callerId: str(c.callerId, 20).replace(/[^\d+]/g, ''), callAppId: str(c.callAppId, 20).replace(/\D/g, ''), fromHour: from, toHour: to }; })() : cur.campaigns || {},
+          return { smsSender: str(c.smsSender, 11).toUpperCase(), dltEntityId: str(c.dltEntityId, 30), callerId: str(c.callerId, 20).replace(/[^\d+]/g, ''), callAppId: str(c.callAppId, 20).replace(/\D/g, ''), fromHour: from, toHour: to,
+            agentId: str(c.agentId, 60).replace(/[^\w-]/g, ''), agentFrom: str(c.agentFrom, 20).replace(/[^\d+]/g, '') }; })() : cur.campaigns || {},
       };
       await db.q("insert into settings (key, value) values ('tm', $1) on conflict (key) do update set value = excluded.value", [next]);
       await audit.record(db.q, { user: u, action: 'tm-settings', entity: 'settings', entityId: 'tm', before: cur, after: next });
@@ -271,7 +272,7 @@ module.exports = async (req, res) => {
   if (!q.hook) return staff(req, res);
   try {
     let b = req.body; if (Buffer.isBuffer(b)) b = b.toString('utf8');
-    if (typeof b === 'string') b = Object.fromEntries(new URLSearchParams(b));
+    if (typeof b === 'string') { const t = b.trim(); try { b = t.startsWith('{') ? JSON.parse(t) : Object.fromEntries(new URLSearchParams(t)); } catch { b = {}; } }
     const r = await require('../lib/tm-campaigns').hook(String(q.hook), { ...(b && typeof b === 'object' ? b : {}), ...q });
     res.setHeader('Cache-Control', 'no-store');
     if (r.text != null) { res.setHeader('Content-Type', 'text/plain; charset=utf-8'); return res.status(200).end(r.text); }

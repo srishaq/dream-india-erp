@@ -492,17 +492,19 @@
     body(`<div class="panel"><h2>SMS and AI calls to partner numbers</h2>
       <p class="muted">Send an SMS, or an AI voice call that introduces Dream India and the project and asks: <b>press 1</b> if interested, <b>press 2</b> if not. Everyone who presses 1 goes to the top of the next call sheets for the telecallers.</p>
       <p class="small muted">Only numbers a partner uploaded with the consent declaration are used. Never: people on the do-not-contact list (${nf(K.dnc)} numbers), existing customers, or anyone sent the same kind of campaign in the last 30 days. Every campaign is approved by Rafi Sir or Sameer before it starts, and sends only within the hours in Settings.</p>
-      <div class="tm-k" style="margin-top:10px"><div><b>SMS</b><span>${miss('sms')}</span></div><div><b>AI calls</b><span>${miss('call')}</span></div></div>
-      ${can('tm.manage') ? `<div class="actions"><button id="cNewS">New SMS campaign</button><button id="cNewC">New AI call campaign</button><button class="ghost" id="cDnc">Add to do-not-contact</button></div>` : ''}</div>
+      <div class="tm-k" style="margin-top:10px"><div><b>SMS</b><span>${miss('sms')}</span></div><div><b>AI calls (press 1 / 2)</b><span>${miss('call')}</span></div><div><b>AI conversation calls</b><span>${miss('agent')}</span></div></div>
+      <p class="small muted"><b>AI conversation</b>: an AI voice that talks like a person (English or Hindi), answers basic questions from your briefing, asks what they want, and books the site visit. The ERP reads every call: visits booked, interested and call-backs go to the top of the telecallers' next sheets; "never call me" goes on the do-not-contact list.</p>
+      ${can('tm.manage') ? `<div class="actions"><button id="cNewS">New SMS campaign</button><button id="cNewC">New AI call (press 1 / 2)</button><button id="cNewA">New AI conversation campaign</button><button class="ghost" id="cDnc">Add to do-not-contact</button></div>` : ''}</div>
       <div class="tm-tools"><label class="small muted">Project</label><select id="cP"><option value="">All projects</option>${projOpts(projs, cproj)}</select></div>
-      <div class="panel"><div class="table-wrap"><table><thead><tr><th>Campaign</th><th>Type</th><th>Project</th><th class="num">Numbers</th><th class="num">Sent / called</th><th class="num">Pressed 1</th><th class="num">Pressed 2</th><th>Status</th><th></th></tr></thead><tbody>
-      ${K.rows.map((r) => `<tr class="clickable" data-cv="${r.id}"><td><b>${esc(r.name)}</b><div class="small muted">by ${esc(r.created_by_name || '')} · ${dd(r.created_at)}</div></td><td>${r.kind === 'sms' ? 'SMS' : 'AI call'}</td><td>${esc(r.project)}</td>
-        <td class="num">${nf(r.targets)}</td><td class="num">${nf(r.targets - sum(r, ['queued']))}</td><td class="num">${r.kind === 'call' ? nf(sum(r, ['pressed1'])) : ''}</td><td class="num">${r.kind === 'call' ? nf(sum(r, ['pressed2'])) : ''}</td>
+      <div class="panel"><div class="table-wrap"><table><thead><tr><th>Campaign</th><th>Type</th><th>Project</th><th class="num">Numbers</th><th class="num">Sent / called</th><th class="num">Interested / pressed 1</th><th class="num">Not interested</th><th>Status</th><th></th></tr></thead><tbody>
+      ${K.rows.map((r) => `<tr class="clickable" data-cv="${r.id}"><td><b>${esc(r.name)}</b><div class="small muted">by ${esc(r.created_by_name || '')} · ${dd(r.created_at)}</div></td><td>${{ sms: 'SMS', call: 'AI call', agent: 'AI conversation' }[r.kind]}</td><td>${esc(r.project)}</td>
+        <td class="num">${nf(r.targets)}</td><td class="num">${nf(r.targets - sum(r, ['queued']))}</td><td class="num">${r.kind === 'call' ? nf(sum(r, ['pressed1'])) : r.kind === 'agent' ? nf(sum(r, ['visit_booked', 'interested', 'callback'])) : ''}</td><td class="num">${r.kind === 'call' ? nf(sum(r, ['pressed2'])) : r.kind === 'agent' ? nf(sum(r, ['not_interested', 'dnc'])) : ''}</td>
         <td><span class="pill ${CST[r.status][1]}">${CST[r.status][0]}</span>${r.note ? `<div class="small bad-t">${esc(r.note)}</div>` : ''}</td><td><button class="small ghost" data-cv="${r.id}">Open</button></td></tr>`).join('') || '<tr><td colspan="9" class="muted">No campaigns yet.</td></tr>'}</tbody></table></div></div>`);
     $('#cP').onchange = (e) => { cproj = e.target.value; campaigns(); };
     $$('[data-cv]').forEach((b) => (b.onclick = (e) => { e.stopPropagation(); campaign(+b.dataset.cv); }));
     if ($('#cNewS')) $('#cNewS').onclick = () => campForm('sms', null, projs);
     if ($('#cNewC')) $('#cNewC').onclick = () => campForm('call', null, projs);
+    if ($('#cNewA')) $('#cNewA').onclick = () => campForm('agent', null, projs);
     if ($('#cDnc')) $('#cDnc').onclick = () => C.dialog(`<h2>Add to do-not-contact</h2><p class="muted small">These numbers are never sent an SMS or AI call, never put on a call sheet, and no partner can upload them again.</p>
       <label>Mobile numbers (one per line, or separated by commas)</label><textarea name="numbers" rows="8" required></textarea><label>Reason</label><input name="reason" placeholder="e.g. asked on WhatsApp not to be contacted">`,
       async (x) => { const r = await C.api('/api/tm', { action: 'dnc-add', ...x }); C.toast(`${r.added} added${r.already ? `, ${r.already} were already on the list` : ''}.`); campaigns(); });
@@ -510,13 +512,22 @@
   function campForm(kind, c, projs) {
     const p0 = c ? c.tm_project_id : projs[0] && projs[0].id;
     const proj = (id) => projs.find((p) => String(p.id) === String(id)) || {};
+    const defBrief = (p) => `Project: ${p.name || ''}${p.location ? ', ' + p.location : ''}.${p.rera_no ? ' MahaRERA No. ' + p.rera_no + '.' : ' Not yet RERA registered: do not give prices or take bookings, only register interest.'}
+Say: you are calling from Dream India Realty; they shared their interest in property with our channel partner.
+Find out: which home (1, 2 or 3 BHK), budget, when they plan to buy, to live in or invest.
+If interested, book a site visit: any day except Monday, 10 am to 7 pm. Confirm the day and time.
+Answer only from these facts. For anything else, say a sales advisor will call them. Never promise prices, offers or dates.
+If they ask not to be called again, apologise and end the call.`;
     const defScript = (p) => `Namaste. This is a call from Dream India Realty, Mumbai. We are launching our new residential project ${p.name || ''}${p.location ? ' in ' + p.location : ''}. You are receiving this call because you shared your interest in property with our channel partner. If you would like to know more, or visit the site, please press 1. If you are not interested, please press 2. Thank you.`;
     const ST = [['fresh', 'Not called yet'], ['not_reachable', 'Not reachable last time'], ['callback', 'Asked to call back'], ['interested', 'Interested']];
-    const f = (c && c.filters) || {}, st = f.statuses || (kind === 'sms' ? ['fresh', 'not_reachable', 'callback', 'interested'] : ['fresh', 'not_reachable']);
-    const dl = C.dialog(`<h2>${c ? 'Edit' : 'New'} ${kind === 'sms' ? 'SMS' : 'AI call'} campaign</h2>
+    const f = (c && c.filters) || {}, st = f.statuses || (kind === 'sms' ? ['fresh', 'not_reachable', 'callback', 'interested'] : kind === 'agent' ? ['fresh', 'not_reachable', 'ai_interested'] : ['fresh', 'not_reachable']);
+    if (kind === 'agent' && !ST.some((x) => x[0] === 'ai_interested')) ST.push(['ai_interested', 'Pressed 1 on an AI call']);
+    const dl = C.dialog(`<h2>${c ? 'Edit' : 'New'} ${{ sms: 'SMS', call: 'AI call', agent: 'AI conversation' }[kind]} campaign</h2>
       <div class="row"><div><label>Project</label><select name="projectId">${projOpts(projs, p0)}</select></div><div><label>Name</label><input name="name" value="${esc(c ? c.name : '')}" placeholder="e.g. Pre-launch intro, week 1"></div></div>
       ${kind === 'sms' ? `<label>SMS text <span class="muted small">(word for word your template approved on DLT; promotional SMS go only to numbers not on DND)</span></label><textarea name="message" rows="4" maxlength="480" required>${esc(c ? c.message : '')}</textarea>
         <div class="row"><div><label>DLT template ID of this text</label><input name="templateId" value="${esc(c ? c.template_id || '' : '')}"></div><div><label>Most a day</label><input type="number" name="dailyCap" value="${c ? c.daily_cap : 2000}" min="50" max="20000"></div></div>`
+      : kind === 'agent' ? `<label>Briefing for the AI caller <span class="muted small">(what it says about the project and what it finds out; it answers only from this)</span></label><textarea name="script" rows="9" maxlength="3000" required>${esc(c ? c.script : defBrief(proj(p0)))}</textarea>
+        <div class="row"><div><label>Most calls a day</label><input type="number" name="dailyCap" value="${c ? c.daily_cap : 300}" min="50" max="20000"><p class="small muted">Conversation calls cost per minute: start with about 300 a day.</p></div><div></div></div>`
       : `<label>What the AI voice says <span class="muted small">(it must end with press 1 / press 2)</span></label><textarea name="script" rows="6" maxlength="2000" required>${esc(c ? c.script : defScript(proj(p0)))}</textarea>
         <div class="row"><div><label>Most calls a day</label><input type="number" name="dailyCap" value="${c ? c.daily_cap : 500}" min="50" max="20000"><p class="small muted">Start small (about 500) and watch the complaints for a few days before you raise it.</p></div><div></div></div>`}
       <label>Which numbers</label><div class="tm-legend">${ST.map(([k, l]) => `<label class="check" style="margin:0"><input type="checkbox" name="st" value="${k}" ${st.includes(k) ? 'checked' : ''}> ${l}</label>`).join('')}</div>
@@ -534,7 +545,7 @@
         $('#cPrev', dl).innerHTML = `<b>${nf(r.count)}</b> numbers would get this now, out of ${nf(r.partnerNumbers)} numbers partners uploaded for this project.${r.legacy && !filters.includeLegacy ? ` ${nf(r.legacy)} from before the full declaration are left out.` : ''}${r.customersLeftOut ? ` ${nf(r.customersLeftOut)} existing customers left out.` : ''}`; }
       catch (e) { $('#cPrev', dl).innerHTML = `<span class="bad-t">${esc(e.message)}</span>`; }
     };
-    dl.addEventListener('change', (e) => { if (e.target.name === 'projectId' && kind === 'call' && !c) { const ta = $('[name=script]', dl); ta.value = defScript(proj(e.target.value)); } prev(); });
+    dl.addEventListener('change', (e) => { if (e.target.name === 'projectId' && kind !== 'sms' && !c) { const ta = $('[name=script]', dl); ta.value = (kind === 'agent' ? defBrief : defScript)(proj(e.target.value)); } prev(); });
     prev();
   }
   async function campaign(id) {
@@ -548,19 +559,19 @@
     if (c.status === 'running' && can('tm.manage')) acts.push('<button class="ghost" data-ca="pause">Pause</button>');
     if (!['done', 'cancelled'].includes(c.status) && can('tm.manage')) { acts.push('<button class="ghost" data-ca="test">Send a test to my phone</button>'); acts.push('<button class="danger" data-ca="cancel">Cancel</button>'); }
     body(`<p class="crumbs"><a href="#" id="cBack">← SMS & AI calls</a></p>
-      <div class="panel"><h2>${esc(c.name)}</h2><p class="muted">${c.kind === 'sms' ? 'SMS' : 'AI call'} · ${esc(c.project)} · <span class="pill ${CST[c.status][1]}">${CST[c.status][0]}</span> · most ${nf(c.daily_cap)} a day</p>
+      <div class="panel"><h2>${esc(c.name)}</h2><p class="muted">${{ sms: 'SMS', call: 'AI call', agent: 'AI conversation' }[c.kind]} · ${esc(c.project)} · <span class="pill ${CST[c.status][1]}">${CST[c.status][0]}</span> · most ${nf(c.daily_cap)} a day</p>
       ${c.note ? `<div class="err">${esc(c.note)}</div>` : ''}
       <div style="background:#F6F7FB;border-radius:12px;padding:12px 14px;margin:10px 0;white-space:pre-wrap">${esc(c.kind === 'sms' ? c.message : c.script)}</div>
       ${c.kind === 'sms' ? `<p class="small muted">DLT template ID: ${esc(c.template_id || 'not given yet')}</p>` : ''}
       ${c.status === 'draft' ? `<p class="small muted">${d.canApprove ? 'Check the words and the numbers, then approve. The list of numbers is fixed when you approve.' : 'Waiting for Rafi Sir or Sameer to approve.'}</p>` : ''}
       <div class="actions">${acts.join('')}</div><div id="cM"></div></div>
-      ${total ? `<div class="tm-k">${[['Numbers', total], ['Sent / called', sent], ...(c.kind === 'call' ? [['Pressed 1', B.pressed1 || 0], ['Pressed 2', B.pressed2 || 0], ['No answer', B.no_answer || 0], ['Answered, no key', B.no_input || 0]] : [['Delivered', B.delivered || 0], ['On DND', B.dnd || 0]]), ['Failed', B.failed || 0], ['Waiting', B.queued || 0]]
+      ${total ? `<div class="tm-k">${[['Numbers', total], ['Sent / called', sent], ...(c.kind === 'call' ? [['Pressed 1', B.pressed1 || 0], ['Pressed 2', B.pressed2 || 0], ['No answer', B.no_answer || 0], ['Answered, no key', B.no_input || 0]] : c.kind === 'agent' ? [['Site visits booked', B.visit_booked || 0], ['Interested', B.interested || 0], ['Call back', B.callback || 0], ['Not interested', B.not_interested || 0], ['Never call', B.dnc || 0], ['No answer', B.no_answer || 0]] : [['Delivered', B.delivered || 0], ['On DND', B.dnd || 0]]), ['Failed', B.failed || 0], ['Waiting', B.queued || 0]]
         .map(([l, v]) => `<div><b>${nf(v)}</b><span>${l}</span></div>`).join('')}</div>
       <div class="panel"><h2>Every status</h2><table>${Object.entries(B).map(([k, v]) => `<tr><td>${esc(L[k] || k)}</td><td class="num"><b>${nf(v)}</b></td></tr>`).join('')}</table></div>` : ''}
       ${d.days.length ? `<div class="panel"><h2>Day by day</h2><table><tr><th>Day</th><th class="num">Sent / called</th>${c.kind === 'call' ? '<th class="num">Pressed 1</th><th class="num">Pressed 2</th>' : ''}<th class="num">Failed / DND</th></tr>
         ${d.days.map((x) => `<tr><td>${dd(x.sent_on)}</td><td class="num">${nf(x.n)}</td>${c.kind === 'call' ? `<td class="num">${nf(x.p1)}</td><td class="num">${nf(x.p2)}</td>` : ''}<td class="num">${nf(x.bad)}</td></tr>`).join('')}</table></div>` : ''}
-      ${c.kind === 'call' && d.pressed.length ? `<div class="panel"><h2>Pressed 1: interested (${nf(d.pressed.length)})</h2><p class="muted small">They are at the top of the next call sheets. Make today's sheets to give them to the telecallers.</p>
-        <div class="table-wrap"><table><tr><th>When</th><th>Name</th><th>Mobile</th><th>Partner</th><th>Now</th></tr>${d.pressed.map((p) => `<tr><td>${dd(p.updated_at)}</td><td>${esc(p.name || '')}</td><td>${esc(p.mobile)}</td><td>${esc(p.partner || '')}</td><td>${esc(p.status)}</td></tr>`).join('')}</table></div></div>` : ''}`);
+      ${c.kind !== 'sms' && d.pressed.length ? `<div class="panel"><h2>${c.kind === 'agent' ? 'Site visits, interested and call-backs' : 'Pressed 1: interested'} (${nf(d.pressed.length)})</h2><p class="muted small">They are at the top of the next call sheets. Make today's sheets to give them to the telecallers.</p>
+        <div class="table-wrap"><table><tr><th>When</th><th>Name</th><th>Mobile</th><th>Partner</th>${c.kind === 'agent' ? '<th>AI call result</th><th>Site visit</th><th></th>' : ''}<th>Now</th></tr>${d.pressed.map((p) => `<tr><td>${dd(p.updated_at)}</td><td>${esc(p.name || '')}</td><td>${esc(p.mobile)}</td><td>${esc(p.partner || '')}</td>${c.kind === 'agent' ? `<td><b>${esc(p.outcome)}</b><div class="small muted">${esc(p.summary || '')}</div></td><td>${p.visit_date ? `<b>${dd(p.visit_date)}${p.visit_time ? ' ' + esc(p.visit_time) : ''}</b>` : ''}</td><td>${p.recording ? `<a href="${esc(p.recording)}" target="_blank" rel="noopener">Listen</a>` : ''}</td>` : ''}<td>${esc(p.status)}</td></tr>`).join('')}</table></div></div>` : ''}`);
     $('#cBack').onclick = (e) => { e.preventDefault(); campaigns(); };
     $$('[data-ca]').forEach((b) => (b.onclick = async () => {
       const a = b.dataset.ca;
@@ -598,6 +609,16 @@
       <div class="row"><div><label>SMS sender name (DLT header, 6 letters)</label><input name="c_smsSender" value="${esc(sc.smsSender || '')}" maxlength="11" placeholder="DREAMI"></div><div><label>DLT entity ID (Dream India Realty)</label><input name="c_dltEntityId" value="${esc(sc.dltEntityId || '')}"></div></div>
       <div class="row"><div><label>Calls go out from (140-series number, declared to the operator)</label><input name="c_callerId" value="${esc(sc.callerId || '')}" placeholder="140xxxxxxx"></div><div><label>Exotel call flow (app) ID</label><input name="c_callAppId" value="${esc(sc.callAppId || '')}" placeholder="the number in the flow's link"></div></div>
       <div class="row"><div><label>Send from (hour, 24h)</label><input type="number" name="c_fromHour" value="${sc.fromHour ?? 10}" min="9" max="20"></div><div><label>Stop at (hour, 24h)</label><input type="number" name="c_toHour" value="${sc.toHour ?? 19}" min="10" max="21"></div></div>
+      <h3>AI conversation calls (Bolna)</h3><p class="muted small">Bolna is the AI voice service that talks to people in English or Hindi and calls through our Exotel number. Put the Bolna key in Vercel (BOLNA_API_KEY). In Bolna, make one agent with Exotel as the call provider, paste the prompt below, and set its webhook to the link below.</p>
+      <div class="row"><div><label>Bolna agent ID</label><input name="c_agentId" value="${esc(sc.agentId || '')}" placeholder="the agent's ID in Bolna"></div><div><label>Call from (our Exotel number in Bolna, +91…)</label><input name="c_agentFrom" value="${esc(sc.agentFrom || '')}" placeholder="+91140xxxxxxx"></div></div>
+      ${hooks ? `<details><summary class="small"><b>Bolna: prompt and webhook</b></summary><div class="small" style="margin-top:6px;line-height:1.6">Webhook (in the agent's analytics / webhook setting): <code>${esc(hooks.agent)}</code><br>Agent prompt (Bolna fills the {words} for each call):
+        <textarea readonly rows="12" style="width:100%;font-size:12px">You are Priya, a friendly sales assistant calling from Dream India Realty, a Mumbai real estate developer. You are calling {name} about our project {project} in {location}.
+Speak in the language the person uses (English or Hindi), warmly and briefly, one question at a time, like a real person. Keep the call under 3 minutes.
+Follow this briefing exactly and answer only from it:
+{briefing}
+If they are interested, agree a site visit day and time and repeat it back to confirm. If they are busy, ask when to call back.
+Never invent prices, offers, possession dates or anything not in the briefing; say a sales advisor will call with those details.
+If they say they do not want calls, apologise, say you will not call again, and end the call politely.</textarea></div></details>` : ''}
       ${hooks ? `<details><summary class="small"><b>Links to put in the Exotel call flow</b></summary><div class="small" style="margin-top:6px;line-height:1.7">
         Greeting (text to speech from a URL): <code>${esc(hooks.say)}</code><br>Gather (press 1 / press 2) passthru: <code>${esc(hooks.digits)}</code><br>
         Call status callback and SMS status callback are sent by the ERP with each call or SMS. Keep these links private.</div></details>` : ''}
