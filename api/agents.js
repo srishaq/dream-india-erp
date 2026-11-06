@@ -190,6 +190,19 @@ module.exports = route({
       edit();
       const p = await db.one('select id, project_id, title from mkt_posts where id = $1', [intOr(d.id)]);
       if (!p || (p.project_id && !u.projects.includes(p.project_id))) throw fail(404, 'That post is not there any more.');
+      // or a Canva export download link (export-download.canva.com), for a design that lives in another Canva account
+      const xu = (() => { try { const x = new URL(String(d.url || '')); return x.protocol === 'https:' && x.hostname === 'export-download.canva.com' ? x : null; } catch { return null; } })();
+      if (xu) {
+        const r = await fetch(xu, { signal: AbortSignal.timeout(30000) }); const buf = Buffer.from(await r.arrayBuffer());
+        const mime = (r.headers.get('content-type') || '').split(';')[0];
+        if (!r.ok || !/^image\/(png|jpeg)$/.test(mime) || buf.length > 3 * 1024 * 1024) throw fail(400, 'That Canva export is not a PNG or JPG under 3 MB.');
+        await db.q("delete from mkt_post_files where post_id = $1 and name like $2", [p.id, `design-${p.id}%`]);
+        await db.q('insert into mkt_post_files (post_id, name, mime, size, data, created_by) values ($1, $2, $3, $4, $5, $6)', [p.id, `design-${p.id}.${mime === 'image/jpeg' ? 'jpg' : 'png'}`, mime, buf.length, buf, u.id]);
+        if (d.design && /^https:\/\/www\.canva\.com\//.test(String(d.design))) await db.q('update mkt_posts set canva_url = $2, updated_at = now() where id = $1', [p.id, String(d.design).slice(0, 500)]);
+        await A.say(p.project_id ? String(p.project_id) : 'company', 'creative', 'orchestrator', `${u.name} put a Canva design on "${p.title}".`);
+        await log('design', 'mkt-post', p.id, { canvaExport: true });
+        return res.json({ ok: true, added: 1 });
+      }
       const m = String(d.design || '').match(/(?:^|\/design\/)(D[A-Za-z0-9_-]{10})(?:\/|$)/) || String(d.design || '').match(/^(D[A-Za-z0-9_-]{10})$/);
       if (!m) throw fail(400, 'Paste the Canva design link (canva.com/design/D…/edit) or its ID.');
       const T = require('../lib/mkt-tools');
