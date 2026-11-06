@@ -29,9 +29,11 @@
   const SECURE = `<div class="secure">${I.shield}<span>Your client data is private to your firm. Other partners can never see it, mobile numbers are shown masked, and Dream India uses it only to call your clients for the project you choose. A client you register stays credited to your CP ID.</span></div>`;
 
   async function api(path, body) {
+    // Admin viewing a partner: every partner read carries that partner's id (view only on the server)
+    if (!body && AS && /^\/api\/cp-portal\?/.test(path) && !/[?&](me|admin)=/.test(path)) path += '&as=' + AS;
     const r = await fetch(path, body ? { method: 'POST', credentials: 'same-origin', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) } : { credentials: 'same-origin' });
     let j = {}; try { j = await r.json(); } catch {}
-    if (r.status === 401 && path.indexOf('me=1') < 0 && !(body && /^(login|register|forgot)/.test(body.action))) { start(); throw new Error(j.error || 'Please sign in again.'); }
+    if (r.status === 401 && path.indexOf('me=1') < 0 && !(body && /^(login|register|forgot|admin-)/.test(body.action))) { start(); throw new Error(j.error || 'Please sign in again.'); }
     if (!r.ok) throw new Error(j.error || 'Something went wrong. Please try again.');
     return j;
   }
@@ -39,14 +41,16 @@
   const showErr = (el, e) => { el.innerHTML = `<div class="err">${esc(e.message || e)}</div>`; };
 
   let ME = null, AREAS = [], view = 'home', H = null;
+  let ADMIN = null, AS = null; // an ERP Admin signed in here, and the partner they are viewing (id)
 
   async function start() {
     const inv = new URLSearchParams(location.search).get('invite');
     if (inv) return invited(inv);
     try {
       const r = await api('/api/cp-portal?me=1');
-      if (!r.signedIn) { AREAS = r.areas || []; return signIn(); }
-      ME = r.profile; portal();
+      if (!r.signedIn) { AREAS = r.areas || []; ADMIN = null; AS = null; return signIn(); }
+      if (r.admin) { ADMIN = r.admin; if (!AS) { ME = null; view = 'admin'; } return portal(); }
+      ADMIN = null; AS = null; ME = r.profile; portal();
     } catch (e) { app.innerHTML = `<div class="boot"><div class="err">${esc(e.message)}</div></div>`; }
   }
 
@@ -70,11 +74,40 @@
       <div class="actions"><button class="block">Sign in</button></div>
       <p class="small" style="margin-top:12px"><button type="button" class="link" id="fg">Forgot password?</button></p><div id="m">${msg ? `<div class="ok">${esc(msg)}</div>` : ''}</div></form>
       <hr style="border:0;border-top:1px solid var(--line);margin:22px 0">
-      <p>New partner? <button type="button" class="link" id="rg">Register your firm</button></p>${SECURE}`);
+      <p>New partner? <button type="button" class="link" id="rg">Register your firm</button></p>
+      <p class="small" style="margin-top:10px">Dream India Admin? <button type="button" class="link" id="ad">Sign in with your ERP login</button></p>${SECURE}`);
+    $('#ad').onclick = () => adminSignIn();
     $('#f').onsubmit = (e) => { e.preventDefault(); const f = e.target; busy($('button', f), async () => {
       try { await api('/api/cp-portal', { action: 'login', username: f.u.value, password: f.p.value }); start(); } catch (x) { showErr($('#m'), x); } }); };
     $('#rg').onclick = () => register(1, {});
     $('#fg').onclick = forgot;
+  }
+
+  // ---------- Admin: the ERP login (password, then the usual code) ----------
+  function adminSignIn(msg) {
+    authShell(`<h1>Admin sign in</h1><p class="muted">Use your Dream India ERP username and password. Only Admin logins can open this.</p>
+      <form id="f"><label>ERP username</label><input name="u" autocomplete="username" autocapitalize="none" required autofocus>
+      <label>ERP password</label><input name="p" type="password" autocomplete="current-password" required>
+      <div class="actions"><button class="block">Continue</button></div><div id="m">${msg ? `<div class="err">${esc(msg)}</div>` : ''}</div></form>
+      <p class="small" style="margin-top:14px">Forgot it? Use "Forgot password?" on the ERP sign-in page. · <button type="button" class="link" id="bk">Partner sign in</button></p>`);
+    $('#bk').onclick = () => signIn();
+    $('#f').onsubmit = (e) => { e.preventDefault(); const f = e.target; busy($('button', f), async () => {
+      try { const r = await api('/api/cp-portal', { action: 'admin-login', username: f.u.value.trim(), password: f.p.value }); if (r.ok) return start(); adminCode(r); } catch (x) { showErr($('#m'), x); } }); };
+  }
+  function adminCode(o) {
+    let token = o.token;
+    const say = (x) => (x.method === 'app' ? 'Enter the 6-digit code from your authenticator app.' : `Enter the 6-digit code sent to ${x.sentTo}. It expires in ${Math.round((x.expiresIn || 600) / 60)} minutes.`);
+    authShell(`<h1>Enter your code</h1><p class="muted" id="st">${esc(say(o))}</p>
+      <form id="f"><input name="otp" class="otp" inputmode="numeric" maxlength="6" autocomplete="one-time-code" required autofocus>
+      <label class="check" style="margin-top:12px"><input type="checkbox" name="remember" checked><span>Remember this device for 30 days</span></label>
+      <div class="actions"><button class="block">Verify and sign in</button></div><div id="m"></div></form>
+      <p class="small" style="margin-top:14px">${o.method === 'app' ? '' : '<button type="button" class="link" id="rs">Send a new code</button> · '}${o.canEmail ? '<button type="button" class="link" id="em">Email me a code</button> · ' : ''}<button type="button" class="link" id="bk">Back</button></p>`);
+    $('#bk').onclick = () => adminSignIn();
+    const again = (email) => async (e) => busy(e.target, async () => { try { const r = await api('/api/cp-portal', { action: 'admin-resend', token, email }); token = r.token; $('#st').textContent = say(r); $('#m').innerHTML = '<div class="ok">A new code has been sent.</div>'; } catch (x) { showErr($('#m'), x); } });
+    if ($('#rs')) $('#rs').onclick = again(false);
+    if ($('#em')) $('#em').onclick = again(true);
+    $('#f').onsubmit = (e) => { e.preventDefault(); const f = e.target; busy($('button', f), async () => {
+      try { await api('/api/cp-portal', { action: 'admin-otp', token, code: f.otp.value.trim(), remember: f.remember.checked }); start(); } catch (x) { showErr($('#m'), x); } }); };
   }
 
   function register(step, R) {
@@ -205,19 +238,27 @@
   const navFor = () => (ME && ME.approved ? NAV_ALL : NAV_ALL.filter(([k]) => k === 'docs' || k === 'profile'));
   let NAV = NAV_ALL, sub = 'upload';
   function portal() {
-    NAV = navFor(); if (!NAV.some(([k]) => k === view)) view = NAV[0][0];
-    const ini = (ME.firm || '?').split(/\s+/).map((w) => w[0]).join('').slice(0, 2).toUpperCase();
+    NAV = ADMIN ? [['admin', 'Admin: all partners', 'shield'], ...(AS && ME ? navFor() : [])] : navFor();
+    if (!NAV.some(([k]) => k === view)) view = NAV[0][0];
+    const viewing = ADMIN && AS && ME;
+    const T = viewing || !ADMIN ? { name: ME.firm, line: `${ME.cpCode} · ${ME.contact || ''}`, pill: viewing ? ['navy', 'Admin view · read only'] : [ME.approved ? 'good' : 'warn', ME.status] }
+      : { name: ADMIN.name || ADMIN.username, line: `Admin · ERP login ${ADMIN.username}`, pill: ['navy', 'Admin'] };
+    const ini = (T.name || '?').split(/\s+/).map((w) => w[0]).join('').slice(0, 2).toUpperCase();
     app.innerHTML = `<div class="shell"><aside class="side"><img src="/logo.svg" alt="Dream India Realty"><nav>${NAV.map(([k, l, ic]) => `<button data-v="${k}" aria-current="${k === view}">${I[ic]}${l}</button>`).join('')}
       <button id="so">${I.out}Sign out</button></nav><div class="sfoot">Partner Portal · Dream India Realty</div></aside>
-      <div class="main"><header class="top"><div class="who"><button class="ghost menu-b" id="mb" aria-label="Menu">${I.menu}</button><div class="av">${esc(ini)}</div><div style="min-width:0"><b>${esc(ME.firm)}</b><span>${esc(ME.cpCode)} · ${esc(ME.contact)}</span></div></div>
-      <span class="pill ${ME.approved ? 'good' : 'warn'}">${esc(ME.status)}</span></header><div class="wrap" id="v"></div></div></div>`;
+      <div class="main"><header class="top"><div class="who"><button class="ghost menu-b" id="mb" aria-label="Menu">${I.menu}</button><div class="av">${esc(ini)}</div><div style="min-width:0"><b>${esc(T.name)}</b><span>${esc(T.line)}</span></div></div>
+      <span class="pill ${T.pill[0]}">${esc(T.pill[1])}</span></header>
+      ${viewing ? `<div class="asbar">${I.shield}<span>You are seeing <b>${esc(ME.firm)}</b>'s portal exactly as they do. View only: uploads and changes can only be made by the partner.</span><button type="button" class="ghost" id="ab">Back to all partners</button></div>` : ''}
+      <div class="wrap" id="v"></div></div></div>`;
+    if ($('#ab')) $('#ab').onclick = () => { AS = null; ME = null; view = 'admin'; portal(); };
     $$('[data-v]').forEach((b) => (b.onclick = () => { view = b.dataset.v; $('.shell').classList.remove('open'); $$('[data-v]').forEach((x) => x.setAttribute('aria-current', x === b)); show(); }));
     $('#mb').onclick = () => $('.shell').classList.toggle('open');
-    $('#so').onclick = async () => { try { await api('/api/cp-portal', { action: 'logout' }); } catch {} ME = null; view = 'home'; signIn('You have signed out.'); };
+    $('#so').onclick = async () => { try { await api('/api/cp-portal', { action: ADMIN ? 'admin-logout' : 'logout' }); } catch {} ME = null; ADMIN = null; AS = null; view = 'home'; signIn('You have signed out.'); };
     show();
   }
   async function show() {
     const v = $('#v'); v.innerHTML = '<p class="muted">Loading…</p>';
+    if (view === 'admin') { try { await admin(v); window.scrollTo(0, 0); } catch (e) { showErr(v, e); } return; }
     try {
       H = await api('/api/cp-portal?home=1');
       const was = ME && ME.approved; ME = H.profile;
@@ -226,6 +267,36 @@
       ({ home, register: regClients, bookings, bills, docs, profile })[view](v);
       window.scrollTo(0, 0);
     } catch (e) { showErr(v, e); }
+  }
+  // ---------- Admin: every partner on the portal; open any partner's portal, view only ----------
+  const ERP = /dreamindiarealty\.com$/.test(location.hostname) ? 'https://erp.dreamindiarealty.com' : location.origin;
+  let AF = { q: '', st: 'all' };
+  async function admin(v) {
+    const d = await api('/api/cp-portal?admin=1'), T = d.totals;
+    const k = (val, l) => `<div class="kpi"><b>${val}</b><span>${esc(l)}</span></div>`;
+    const ST = [['all', 'All'], ['pending', 'Pending review'], ['approved', 'Approved'], ['closed', 'Rejected or blocked']];
+    v.innerHTML = `<div class="kpis">${k(nf(T.partners), 'Partners on the portal')}${k(nf(T.approved), 'Approved')}${k(nf(T.pending), 'Waiting for approval')}${k(nf(T.clients), 'Clients registered')}${k(nf(T.uploads7), 'Uploads in the last 7 days')}${k(nf(T.bookings), 'Bookings by partners')}</div>
+      <div class="card"><div class="proj-h"><h2>All partners</h2><span>Open any partner to see their portal exactly as they do. To approve, block or edit a partner, use <a href="${ERP}/#/telemarketing" target="_blank" rel="noopener">ERP → Telemarketing → Partners</a>.</span></div>
+        <div class="row" style="margin-bottom:6px"><div><input id="aq" placeholder="Search firm, CP ID, contact or area" value="${esc(AF.q)}"></div><div class="seg" style="margin:0">${ST.map(([s2, l]) => `<button type="button" data-st="${s2}" aria-pressed="${AF.st === s2}">${esc(l)}</button>`).join('')}</div></div>
+        <div id="al"></div></div>`;
+    const draw = () => {
+      const q = AF.q.trim().toLowerCase();
+      const rows = d.partners.filter((p) => (AF.st === 'all' || (AF.st === 'closed' ? ['rejected', 'blocked'].includes(p.state) : p.state === AF.st))
+        && (!q || [p.firm, p.cpCode, p.contact, p.area].some((x) => String(x || '').toLowerCase().includes(q))));
+      $('#al').innerHTML = rows.length ? `<div class="tw"><table class="atbl"><thead><tr><th>CP ID</th><th>Firm</th><th>Contact</th><th>Area</th><th>Status</th><th class="num">Clients</th><th class="num">Uploads</th><th>Last upload</th><th class="num">Bookings</th><th></th></tr></thead><tbody>
+        ${rows.map((p) => `<tr><td><b>${esc(p.cpCode || '—')}</b></td><td>${esc(p.firm)}${p.hasLogin ? '' : '<span class="why">No portal login yet</span>'}</td><td>${esc(p.contact || '')}<span class="why">${esc(p.mobile || '')}</span></td><td>${esc(p.area || '')}</td>
+          <td><span class="pill ${({ approved: 'good', pending: 'warn' })[p.state] || 'bad'}">${esc(p.status)}</span></td><td class="num">${nf(p.clients)}${p.clients ? `<span class="why">${nf(p.active)} still credited</span>` : ''}</td><td class="num">${nf(p.uploads)}</td><td>${p.lastUpload ? dd(p.lastUpload) : '—'}</td><td class="num">${nf(p.bookings)}</td>
+          <td><button type="button" class="ghost sm" data-as="${p.id}">Open portal</button></td></tr>`).join('')}</tbody></table></div>`
+        : '<div class="empty">No partners match.</div>';
+      $$('[data-as]', v).forEach((b) => (b.onclick = () => busy(b, async () => {
+        const p = d.partners.find((x) => String(x.id) === b.dataset.as);
+        await api('/api/cp-portal', { action: 'admin-view', cpId: p.id });
+        AS = p.id; ME = { firm: p.firm, cpCode: p.cpCode, contact: p.contact, approved: p.approved, status: p.status }; view = p.approved ? 'home' : 'docs'; portal();
+      }).catch((e) => showErr($('#al'), e))));
+    };
+    $('#aq').oninput = (e) => { AF.q = e.target.value; draw(); };
+    $$('[data-st]', v).forEach((b) => (b.onclick = () => { AF.st = b.dataset.st; $$('[data-st]', v).forEach((x) => x.setAttribute('aria-pressed', x === b)); draw(); }));
+    draw();
   }
   const go = (k) => {
     if (['upload', 'clients', 'history'].includes(k)) { sub = k; k = 'register'; }

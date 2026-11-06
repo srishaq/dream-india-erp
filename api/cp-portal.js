@@ -3,6 +3,9 @@
 // GET  ?me=1 · ?invite=TOKEN · ?home=1 · ?leads=1[&project=ID&q=…] · ?issues=UPLOAD_ID · ?docs=1 · ?bookings=1 · ?bills=1
 // POST {action}: register-start · register-verify · invite-start · invite-verify · login · logout · forgot-start · forgot-verify ·
 //      parse · upload · doc-upload · agreement-sign · bill-start · bill-part · bill-finish · profile · password
+// Admin view: an ERP Admin signs in here with the ERP login (password + the usual code): admin-login · admin-otp ·
+// admin-resend · admin-logout · admin-view. GET ?admin=1 lists the partners; any partner GET with &as=CP_ID shows that
+// partner's portal, view only (every change is refused). Opening a partner's view is audited.
 // Every signed-in request is scoped to the signed-in firm (c.id). Bookings & brokerage and bills: approved firms only,
 // and never anything about a buyer (lib/cp.js firmView keeps buyer fields out at the source).
 const db = require('../lib/db');
@@ -13,6 +16,8 @@ const CA = require('../lib/cp-auth');
 const CF = require('../lib/cp-firms');
 const CB = require('../lib/cp-bills');
 const RL = require('../lib/mkt-rate');
+const auth = require('../lib/auth');
+const OTP = require('../lib/staff-otp');
 const { route, fail, str, intOr } = require('../lib/http');
 
 const AREAS = ['Jogeshwari West', 'Jogeshwari East', 'Andheri West', 'Oshiwara', 'Lokhandwala', 'Versova', 'Andheri East', 'Goregaon West', 'Goregaon East',
@@ -26,7 +31,35 @@ function profile(c) {
     designation: c.designation, mobile: TM.mask(c.phone), alt: c.alt_phone, email: CA.maskEmail(c.email), rera: c.rera_no, callers: c.callers_in_team,
     status: statusLabel[c.portal_status] || 'Pending review', approved: c.portal_status === 'approved', registeredOn: TM.iso(c.registered_at) };
 }
-async function need(req) { const c = await CA.session(req); if (!c) throw fail(401, 'Please sign in.'); return c; }
+// an ERP Admin signed in on this site with the ERP login (their own staff session cookie)
+async function adminOf(req) { const u = await auth.session(req).catch(() => null); return u && u.role === 'admin' && !u.must_change ? u : null; }
+const VIEW_ONLY = 'View only: you are seeing this partner\'s portal as Admin. Uploads and changes can only be made by the partner.';
+async function need(req) {
+  const as = intOr((req.query || {}).as);
+  if (as) {
+    const u = await adminOf(req);
+    if (u) { const c = await db.one('select * from channel_partners where id = $1 and portal_status is not null', [as]); if (!c) throw fail(404, 'That partner was not found.'); return c; }
+  }
+  const c = await CA.session(req); if (!c) throw fail(401, 'Please sign in.'); return c;
+}
+async function adminList() {
+  const rows = await db.q(`select c.id, c.cp_code, c.name, c.contact_person, c.office_area, c.phone, c.portal_status, c.registered_at, c.username is not null as has_login,
+      (select count(*)::int from tm_leads l where l.cp_id = c.id) as clients,
+      (select count(*)::int from tm_leads l where l.cp_id = c.id and l.owner_until >= $1::date) as active,
+      (select count(*)::int from tm_uploads u where u.cp_id = c.id) as uploads,
+      (select count(*)::int from tm_uploads u where u.cp_id = c.id and u.created_at > now() - interval '7 days') as uploads7,
+      (select max(u.created_at) from tm_uploads u where u.cp_id = c.id) as last_upload,
+      (select count(*)::int from bookings b where b.cp_id = c.id and b.status = 'active') as bookings
+    from channel_partners c where c.portal_status is not null order by (c.portal_status = 'pending') desc, c.registered_at desc nulls last, c.id desc limit 2000`, [TM.istToday()]);
+  const sum = (k) => rows.reduce((a, r) => a + (r[k] || 0), 0);
+  return {
+    totals: { partners: rows.length, approved: rows.filter((r) => r.portal_status === 'approved').length, pending: rows.filter((r) => r.portal_status === 'pending').length,
+      clients: sum('clients'), active: sum('active'), uploads7: sum('uploads7'), bookings: sum('bookings') },
+    partners: rows.map((r) => ({ id: r.id, cpCode: r.cp_code, firm: r.name, contact: r.contact_person, area: r.office_area, mobile: TM.mask(TM.mobile(r.phone || '')),
+      status: statusLabel[r.portal_status] || 'Pending review', state: r.portal_status, approved: r.portal_status === 'approved', hasLogin: r.has_login,
+      registeredOn: TM.iso(r.registered_at), clients: r.clients, active: r.active, uploads: r.uploads, lastUpload: r.last_upload, bookings: r.bookings })),
+  };
+}
 const approved = (c) => { if (c.portal_status !== 'approved') throw fail(403, 'This opens once Dream India has approved your account.'); };
 const goneInvite = () => fail(404, 'This invitation link has expired or was already used. Please ask the Dream India office for a new one.');
 // The firm's details the invited partner confirms (the rest is already in the ERP).
@@ -48,7 +81,12 @@ const findBy = (who) => {
 module.exports = route({
   GET: async (req, res) => {
     const Q = req.query || {};
-    if (Q.me) { const c = await CA.session(req); return res.json(c ? { signedIn: true, profile: profile(c) } : { signedIn: false, areas: AREAS }); }
+    if (Q.me) {
+      const c = await CA.session(req); if (c) return res.json({ signedIn: true, profile: profile(c) });
+      const u = await adminOf(req); if (u) return res.json({ signedIn: true, admin: { name: u.name, username: u.username } });
+      return res.json({ signedIn: false, areas: AREAS });
+    }
+    if (Q.admin) { if (!(await adminOf(req))) throw fail(401, 'Please sign in.'); return res.json(await adminList()); }
     if (Q.invite) {
       if (!(await RL.allow('invite-ip', CA.ipOf(req), 60))) throw fail(429, 'Too many tries. Please wait an hour.');
       const f = await CF.inviteByToken(Q.invite); if (!f) throw goneInvite();
@@ -180,6 +218,32 @@ module.exports = route({
       return res.json({ ok: true });
     }
     if (a === 'logout') { await CA.clear(req, res); return res.json({ ok: true }); }
+    // ---- Admin, with the ERP login ----
+    if (a === 'admin-login') {
+      const r = await auth.authenticate(b.username, b.password, req);
+      if (r.error) throw fail(401, r.error);
+      if (r.user.role !== 'admin') throw fail(403, 'Only an Admin login of the ERP can open the partner portal admin view.');
+      if (r.user.must_change) throw fail(403, 'Please set a new password in the ERP first, then sign in here.');
+      const o = await OTP.afterPassword(req, res, r, 'erp', auth.issue);
+      if (o.method === 'add-email') throw fail(403, 'Your login has no email yet. Sign in to the ERP once to add it, then sign in here.');
+      if (o.ok) await audit.record(db.q, { user: r.user, action: 'partner-portal-admin', entity: 'user', entityId: r.user.id, note: 'Signed in to the Partner Portal as Admin' });
+      return res.json(o.ok ? { ok: true } : o);
+    }
+    if (a === 'admin-otp') {
+      const u = await OTP.afterCode(req, res, b, 'erp', auth.issue);
+      if (u.role !== 'admin') { auth.clear(req, res); throw fail(403, 'Only an Admin login of the ERP can open the partner portal admin view.'); }
+      await audit.record(db.q, { user: u, action: 'partner-portal-admin', entity: 'user', entityId: u.id, note: 'Signed in to the Partner Portal as Admin' });
+      return res.json({ ok: true });
+    }
+    if (a === 'admin-resend') return res.json(await OTP.resend(b.token, req, 'erp', b.email ? 'email' : 'auto'));
+    if (a === 'admin-logout') { auth.clear(req, res); return res.json({ ok: true }); }
+    if (a === 'admin-view') {
+      const u = await adminOf(req); if (!u) throw fail(401, 'Please sign in.');
+      const c = await db.one('select id, cp_code, name from channel_partners where id = $1 and portal_status is not null', [intOr(b.cpId)]);
+      if (!c) throw fail(404, 'That partner was not found.');
+      await audit.record(db.q, { user: u, action: 'partner-view-as', entity: 'channel-partner', entityId: c.id, note: `Opened ${c.name} (${c.cp_code})'s partner portal as Admin, view only` });
+      return res.json({ ok: true });
+    }
     if (a === 'forgot-start') {
       const c = await findBy(b.username);
       if (!c) return res.json({ token: 'none', sentTo: 'your registered mobile or email' });
@@ -193,7 +257,8 @@ module.exports = route({
       await CA.issue(req, res, code.payload.cpId);
       return res.json({ ok: true });
     }
-    const c = await need(req);
+    const c = await CA.session(req);
+    if (!c) { if (await adminOf(req)) throw fail(403, VIEW_ONLY); throw fail(401, 'Please sign in.'); }
     if (a === 'parse') return res.json({ rows: parseFile(b.file, b.name, TM.MAX_ROWS) });
     if (a === 'upload') {
       if (c.portal_status !== 'approved') throw fail(403, 'Your account is waiting for approval by Dream India. You can upload once it is approved.');

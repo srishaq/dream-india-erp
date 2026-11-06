@@ -143,3 +143,12 @@ tr.dim td { color: var(--ink-3); }
 .flatpick .check { font-size: 13.5px; }
 .bar { height: 8px; border-radius: 9px; background: var(--soft); overflow: hidden; margin-top: 10px; } .bar i { display: block; height: 100%; width: 0; background: var(--teal); transition: width .2s; }
 @media (max-width: 640px) { .kpis.money { grid-template-columns: 1fr 1fr; } .tools input, .tools select { min-width: 0; width: 100%; } }
+
+/* Admin viewing a partner's portal */
+.asbar { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; margin: 16px 32px 0; padding: 12px 16px; border-radius: 12px; background: #EEEBFF; color: var(--navy); border: 1px solid #D6D0FF; font-size: 14px; }
+.asbar svg { width: 20px; height: 20px; flex: none; }
+.asbar span { flex: 1; min-width: 220px; }
+.asbar button { padding: 8px 14px; font-size: 14px; }
+@media (max-width: 860px) { .asbar { margin: 12px 16px 0; } }
+.atbl td:first-child, .atbl td:last-child, .atbl td:nth-child(5) { white-space: nowrap; }
+.atbl button.sm { padding: 7px 12px; font-size: 13.5px; }
