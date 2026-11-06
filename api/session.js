@@ -67,6 +67,12 @@ module.exports = route({
         const u = await OTP.afterCode(req, res, b, 'erp', auth.issue);
         return res.json({ ok: true, user: auth.publicUser(u) });
       }
+      case 'forgot': // "Forgot password?": a code to the email on the login
+        return res.json(await OTP.forgotStart(b.username, req));
+      case 'forgot-finish': {
+        const u = await OTP.forgotFinish(req, res, b, auth.issue);
+        return res.json({ ok: true, user: auth.publicUser(u) });
+      }
       case 'login-resend':
         return res.json(await OTP.resend(b.token, req, 'erp', b.email ? 'email' : 'auto'));
       case 'login-email-add': // no email and no sign-in app yet: the code goes to the email typed, saved once it is right

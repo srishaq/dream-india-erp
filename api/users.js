@@ -9,6 +9,19 @@ const { ROLES } = require('../lib/roles');
 const OTP = require('../lib/staff-otp');
 const { route, fail, str, intOr } = require('../lib/http');
 
+// A reset also emails the new temporary password to the person's own email on the login (6 Nov 2026).
+async function mailTemp(u, temp) {
+  const mailer = require('../lib/mailer');
+  if (!u || !u.email || !mailer.configured() || (process.env.ERP_TEST_OTP && process.env.VERCEL !== '1')) return null;
+  const site = process.env.ERP_URL || 'https://erp.dreamindiarealty.com';
+  const text = `Hello ${u.name},\n\nYour Dream India ERP password has been reset.\n\nOpen: ${site}\nUsername: ${u.username}\nTemporary password: ${temp}\n\nWhen you sign in it will ask you to set your own new password. Keep "Remember this device for 30 days" ticked.\n\nIf you forget your password again, press "Forgot password?" on the sign-in page and a code will come to this email.\n\nPlease do not share your password with anyone.`;
+  try {
+    const cn = await mailer.connect();
+    try { await cn.send({ to: [u.email], fromName: 'Dream India ERP', subject: 'Your Dream India ERP password was reset', text, html: text.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/\n/g, '<br>') }); }
+    finally { await cn.close(); }
+    return u.email;
+  } catch (e) { console.error('reset mail', e.message); return null; }
+}
 const tempPassword = () => {
   const words = ['Mango', 'Tower', 'River', 'Cedar', 'Pearl', 'Falcon', 'Harbor', 'Lotus', 'Summit', 'Monsoon'];
   return `${words[crypto.randomInt(words.length)]}-${crypto.randomInt(1000, 9999)}-${crypto.randomBytes(3).toString('hex')}`;
@@ -54,7 +67,7 @@ module.exports = route({
       const ids = cleanIds(b.ids).filter((x) => x !== me.id);
       if (!ids.length) throw fail(400, 'Tick at least one login.');
       if (ids.length > 300) throw fail(400, 'At most 300 logins at once.');
-      const rows = await db.q('select id, username, name, role from users where id = any($1) and not disabled order by name', [ids]);
+      const rows = await db.q('select id, username, name, role, email from users where id = any($1) and not disabled order by name', [ids]);
       const out = [];
       await db.tx(async (t) => {
         for (const u of rows) {
@@ -65,6 +78,7 @@ module.exports = route({
           out.push({ id: u.id, name: u.name, username: u.username, role: u.role, tempPassword: temp });
         }
       });
+      for (const x of out) x.emailedTo = await mailTemp(rows.find((r) => r.id === x.id), x.tempPassword);
       return res.json({ ok: true, reset: out, ...(await list()) });
     }
     if (b.action === 'create') {
@@ -111,7 +125,8 @@ module.exports = route({
         const n = await OTP.revokeAll(t.q, id);
         await audit.record(t.q, { user: me, action: 'reset-password', entity: 'user', entityId: id, note: n ? `${n} remembered device(s) signed out` : null });
       });
-      return res.json({ ok: true, username: before.username, tempPassword: temp, ...(await list()) });
+      const emailedTo = await mailTemp(before, temp);
+      return res.json({ ok: true, username: before.username, tempPassword: temp, emailedTo, ...(await list()) });
     }
     if (b.action === 'disable' || b.action === 'enable') {
       const off = b.action === 'disable';

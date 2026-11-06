@@ -92,12 +92,51 @@
       <label>Username</label><input name="username" autocomplete="username" required autofocus value="${esc(username || '')}">
       <label>Password</label><input name="password" type="password" autocomplete="current-password" required>
       <div class="actions"><button>Sign in</button></div>
+      <p class="small"><a href="#" id="forgot">Forgot password?</a></p>
     </form></div>`;
+    $('#forgot').onclick = (e) => { e.preventDefault(); forgot($('#f').username.value.trim()); };
     $('#f').onsubmit = async (ev) => {
       ev.preventDefault();
       const f = ev.target, d = Object.fromEntries(new FormData(f)), btn = f.querySelector('button');
       btn.disabled = true;
       try { const r = await post({ action: 'login', ...d }); if (r.otp) return codeStep(r, d.username); start(); } catch (e) { btn.disabled = false; showErr(f, e); }
+    };
+  }
+  // "Forgot password?": username → a code to the email on the login → a new password (and signed in)
+  function forgot(username) {
+    app.innerHTML = `<div class="center"><form class="card" id="f">
+      ${brand()}
+      <h1>Forgot password</h1>
+      <p class="muted">Type your username. We will email a 6-digit code to the email on your login.</p>
+      <label>Username</label><input name="username" autocomplete="username" required autofocus value="${esc(username || '')}">
+      <div class="actions"><button>Email me a code</button><button type="button" class="ghost" id="back">Back</button></div>
+    </form></div>`;
+    $('#back').onclick = () => login(username);
+    $('#f').onsubmit = async (ev) => {
+      ev.preventDefault();
+      const f = ev.target, u = f.username.value.trim(), btn = f.querySelector('button');
+      btn.disabled = true;
+      try { forgotSet(await post({ action: 'forgot', username: u }), u); } catch (e) { btn.disabled = false; showErr(f, e); }
+    };
+  }
+  function forgotSet(o, username) {
+    app.innerHTML = `<div class="center"><form class="card" id="f" autocomplete="off">
+      ${brand()}
+      <h1>Set a new password</h1>
+      <p class="muted">If <b>${esc(username)}</b> has an email on its login, a 6-digit code was sent to ${esc(o.sentTo)}. It expires in ${Math.round((o.expiresIn || 600) / 60)} minutes. Check spam too. No email on your login? Ask the Admin.</p>
+      <label for="code">6-digit code</label><input id="code" name="code" inputmode="numeric" autocomplete="one-time-code" pattern="[0-9]{6}" maxlength="6" required autofocus class="otp">
+      <label>New password (at least 10 characters)</label><input name="password" type="password" autocomplete="new-password" required>
+      <label>New password again</label><input name="password2" type="password" autocomplete="new-password" required>
+      <div class="actions"><button>Save and sign in</button><button type="button" class="ghost" id="back">Back</button></div>
+    </form></div>`;
+    $('#back').onclick = () => forgot(username);
+    $('#f').onsubmit = async (ev) => {
+      ev.preventDefault();
+      const f = ev.target, d = Object.fromEntries(new FormData(f)), btn = f.querySelector('button');
+      if (d.password !== d.password2) return showErr(f, new Error('The two passwords do not match.'));
+      btn.disabled = true;
+      try { await post({ action: 'forgot-finish', token: o.token, code: d.code, password: d.password }); start(); }
+      catch (e) { btn.disabled = false; showErr(f, e); if (e.data && e.data.restart) setTimeout(() => forgot(username), 2500); }
     };
   }
   // the second step: the code from the sign-in app, a code sent by WhatsApp or email, or "Add your email" first
@@ -761,7 +800,7 @@
     const pick = (x, u) => ({ name: x.name, username: x.username, role: x.role, phone: x.phone ?? u?.phone, designation: x.designation, email: x.email ?? u?.email, allProjects: x.allProjects === 'on', projects: d.projects.filter((p) => x['p' + p.id] === 'on').map((p) => p.id) });
     const showTemp = (r) => {
       const dl = document.createElement('dialog');
-      dl.innerHTML = `<form method="dialog"><h2>Temporary password for ${esc(r.username)}</h2><p>Give this to the person. It is shown only once; they must choose their own password when they first sign in.</p>
+      dl.innerHTML = `<form method="dialog"><h2>Temporary password for ${esc(r.username)}</h2><p>${r.emailedTo ? `Emailed to ${esc(r.emailedTo)}. ` : 'No email on this login, so it was not emailed: give it to the person. '}It is shown only once; they must choose their own password when they first sign in.</p>
         <div class="temp">${esc(r.tempPassword)}</div><div class="actions"><button>Done</button></div></form>`;
       document.body.appendChild(dl); dl.addEventListener('close', () => dl.remove()); dl.showModal();
     };
