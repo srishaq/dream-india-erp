@@ -279,10 +279,10 @@
     const fst = d.funnelStatus && d.funnelStatus.info;
     const dl = dialog('Comment-to-DM funnels', `
       <p style="margin:0;color:var(--mut);font-size:13px">A post says “Comment <b>WORD</b> for the details”. Everyone who comments the word gets a private DM within about 10 minutes; whoever replies with a mobile number becomes a lead, goes to sales and gets the WhatsApp welcome. Only people who asked are contacted.
-      A new funnel DMs your test accounts only, until Management switches it to live.${!d.connections.meta ? '<br><b style="color:var(--amber)">Connect Facebook / Instagram in Sales &amp; Marketing → Set-up first.</b>' : ''}${fst && fst.errors && fst.errors.length ? `<br><b style="color:#FFB4B6">Last check: ${e(fst.errors[0])}</b>` : ''}</p>
+      A new funnel DMs your test accounts only, until Management switches it to live.${!d.connections.meta ? '<br><b style="color:#B26B00">Connect Facebook / Instagram in Sales &amp; Marketing → Set-up first.</b>' : ''}${fst && fst.errors && fst.errors.length ? `<br><b style="color:var(--red)">Last check: ${e(fst.errors[0])}</b>` : ''}</p>
       ${fs.map((f) => `<div class="fn"><div class="t"><b>${e(f.keyword)}</b><span class="pill">${e(f.network)}</span><span class="pill${f.active ? ' on' : ''}">${f.active ? 'On' : 'Off'}</span><span class="pill${f.live ? ' live' : ''}">${f.live ? 'Live: everyone' : 'Test accounts only'}</span>
           <span style="margin-left:auto;font:12px var(--mono);color:var(--mut)">${f.hits} comments · ${f.dms} DMs · ${f.leads} leads</span></div>
-        <div style="font-size:12.5px;color:#D7D3CA;white-space:pre-wrap">${e(f.dm_text)}</div>
+        <div style="font-size:12.5px;color:#3B414C;white-space:pre-wrap">${e(f.dm_text)}</div>
         <div style="display:flex;gap:6px;flex-wrap:wrap">${d.me.edit ? `<button class="btn sm" data-ft="${f.id}" data-on="${f.active ? 0 : 1}">${f.active ? 'Switch off' : 'Switch on'}</button><button class="btn sm" data-fe="${f.id}">Edit</button>` : ''}
           ${d.me.own ? `<button class="btn sm${f.live ? '' : ' pri'}" data-fl="${f.id}" data-on="${f.live ? 0 : 1}">${f.live ? 'Back to test accounts' : 'Go live'}</button>` : ''}${d.me.edit ? `<button class="btn sm danger" data-fd="${f.id}">Delete</button>` : ''}</div></div>`).join('') || '<div class="empty">No funnels yet.</div>'}
       ${d.me.edit ? '<button class="btn pri" data-new>New funnel</button>' : ''}`);
