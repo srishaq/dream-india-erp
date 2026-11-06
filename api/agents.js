@@ -185,6 +185,25 @@ module.exports = route({
       await log('design', 'mkt-post', p.id, { added: r.added });
       return res.json({ ok: true, ...r });
     }
+    // Use a design made in Canva by hand (or with Canva AI) for a post: the ERP exports it and it replaces the template design.
+    if (a === 'post.canva.attach') {
+      edit();
+      const p = await db.one('select id, project_id, title from mkt_posts where id = $1', [intOr(d.id)]);
+      if (!p || (p.project_id && !u.projects.includes(p.project_id))) throw fail(404, 'That post is not there any more.');
+      const m = String(d.design || '').match(/(?:^|\/design\/)(D[A-Za-z0-9_-]{10})(?:\/|$)/) || String(d.design || '').match(/^(D[A-Za-z0-9_-]{10})$/);
+      if (!m) throw fail(400, 'Paste the Canva design link (canva.com/design/D…/edit) or its ID.');
+      const T = require('../lib/mkt-tools');
+      // a photo-like design can be too big as a PNG: then a high-quality JPG
+      let files = (await T.canvaExport(m[1], 'png')).filter((f) => f.data.length <= 3 * 1024 * 1024);
+      if (!files.length) files = (await T.canvaExport(m[1], 'jpg')).filter((f) => f.data.length <= 3 * 1024 * 1024);
+      if (!files.length) throw fail(502, 'Canva did not export that design (or it is over 3 MB).');
+      await db.q("delete from mkt_post_files where post_id = $1 and name like $2", [p.id, `design-${p.id}%`]);
+      for (const [i, f] of files.entries()) await db.q('insert into mkt_post_files (post_id, name, mime, size, data, created_by) values ($1, $2, $3, $4, $5, $6)', [p.id, `design-${p.id}${files.length > 1 ? '-' + (i + 1) : ''}.${f.mime === 'image/jpeg' ? 'jpg' : 'png'}`, f.mime, f.data.length, f.data, u.id]);
+      await db.q('update mkt_posts set canva_url = $2, updated_at = now() where id = $1', [p.id, `https://www.canva.com/design/${m[1]}/edit`]);
+      await A.say(p.project_id ? String(p.project_id) : 'company', 'creative', 'orchestrator', `${u.name} put a Canva design on "${p.title}" (${files.length} image${files.length === 1 ? '' : 's'}).`);
+      await log('design', 'mkt-post', p.id, { canva: m[1] });
+      return res.json({ ok: true, added: files.length });
+    }
     if (a === 'owner.done') {
       own();
       const r = await db.one("update ag_interrupts set status = 'handled', handled_at = now(), handled_by = $2 where id = $1 and status = 'owner' returning scope, kind", [intOr(d.id), u.id]);
