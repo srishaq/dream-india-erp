@@ -59,6 +59,7 @@
       <span class="live${off ? ' off' : ''}"><i></i>${d.killed ? 'Kill switch on' : !sc.enabled ? 'Agents off here' : sc.paused ? 'Paused' : `Live · ${d.agents.on} of ${d.agents.of} agents running`}</span>
       <span class="clock" id="clock"></span>
       ${me.edit ? `<button class="btn pri" id="runNow"${off ? ' disabled' : ''}>Run now</button>` : ''}
+      ${d.queue.length ? `<button class="btn pri" id="toDrafts">Drafts to approve (${d.queue.length})</button>` : ''}
       <a class="btn" href="/" style="text-decoration:none">⌂ ERP Home</a>
       <a class="back" href="/#/marketing${d.project ? '/' + d.project.id : ''}">← Sales &amp; Marketing</a>
     </header>
@@ -137,9 +138,11 @@
       <div class="p" id="you"><div class="ph"><h3>Waiting for you</h3><span class="st">${queue + ownerOpen}</span></div>
         <p class="sub">All you have to do is check &amp; approve.</p>
         <div class="queue">
-          ${d.owner.map((x) => { const m = x.detail || {}; return `<div class="om"><b>${e(x.kind.replace(/_/g, ' '))}</b> · <span style="color:var(--mut)">${ago(x.at)}</span><div>${e(m.msg || '')}</div>${m.link ? `<a href="${e(m.link)}" target="_blank" rel="noopener">Open the post</a>` : ''}${me.own ? `<div class="acts"><button class="btn sm" data-done="${x.id}">Dealt with</button></div>` : ''}</div>`; }).join('')}
-          ${d.queue.map((p) => `<div class="q">${(() => { const f = (p.files || []).find((x) => /^image\//.test(x.mime)); return f ? `<img src="/api/marketing?pfile=${f.id}" alt="" loading="lazy" style="width:100%;max-height:180px;object-fit:cover;border-radius:8px;margin:0 0 6px">` : (p.files || []).length ? '' : '<div style="font-size:11.5px;color:#B54708;margin:0 0 4px">No design attached yet</div>'; })()}<h4>${e(p.title)}</h4><div class="meta">${e(p.kind)} · ${e((p.channels || []).join(', '))}${p.publish_at ? ' · ' + new Date(p.publish_at).toLocaleDateString('en-IN', { weekday: 'short', day: 'numeric', month: 'short' }) : ''}${p.agent ? ' · <span class="tag">AI draft</span>' : ''}</div><p>${e(p.caption || '')}</p>
+          ${d.queue.length ? `<div class="sub" style="margin:2px 0 0;font-weight:600;color:var(--ink,#101828)">Drafts to approve (${d.queue.length})</div>` : ''}
+          ${d.queue.map((p) => `<div class="q">${(() => { const f = (p.files || []).filter((x) => /^image\//.test(x.mime)).pop(); return f ? `<img src="/api/marketing?pfile=${f.id}" alt="" loading="lazy" style="width:100%;max-height:180px;object-fit:cover;border-radius:8px;margin:0 0 6px">` : (p.files || []).length ? '' : '<div style="font-size:11.5px;color:#B54708;margin:0 0 4px">No design attached yet</div>'; })()}<h4>${e(p.title)}</h4><div class="meta">${e(p.kind)} · ${e((p.channels || []).join(', '))}${p.publish_at ? ' · ' + new Date(p.publish_at).toLocaleDateString('en-IN', { weekday: 'short', day: 'numeric', month: 'short' }) : ''}${p.agent ? ' · <span class="tag">AI draft</span>' : ''}</div><p>${e(p.caption || '')}</p>
             <div class="acts">${me.own ? `<button class="btn sm pri" data-approve="${p.id}">Approve</button><button class="btn sm" data-back="${p.id}">Send back</button>` : ''}${me.edit && !(p.files || []).length ? `<button class="btn sm" data-design="${p.id}">Design in Canva</button>` : ''}<button class="btn sm" data-view="${p.id}">Read all</button></div></div>`).join('')}
+          ${d.owner.length ? `<div class="sub" style="margin:6px 0 0;font-weight:600;color:var(--ink,#101828)">Alerts (${d.owner.length})</div>` : ''}
+          ${d.owner.map((x) => { const m = x.detail || {}; return `<div class="om"><b>${e(x.kind.replace(/_/g, ' '))}</b> · <span style="color:var(--mut)">${ago(x.at)}</span><div>${e(m.msg || '')}</div>${m.link ? `<a href="${e(m.link)}" target="_blank" rel="noopener">Open the post</a>` : ''}${me.own ? `<div class="acts"><button class="btn sm" data-done="${x.id}">Dealt with</button></div>` : ''}</div>`; }).join('')}
           ${!d.queue.length && !d.owner.length ? '<div class="empty">Nothing waiting. The team is on routine work.</div>' : ''}
         </div></div>
     </section>
@@ -170,7 +173,7 @@
     on('runNow', async (ev) => { ev.target.disabled = true; ev.target.textContent = 'Running…'; try { const r = await api({ action: 'run' }); toast(r.skipped ? 'Skipped: ' + r.skipped : r.flagged.length ? `Handled: ${r.flagged.join(', ').replace(/_/g, ' ')}${r.drafts ? ` · ${r.drafts} drafts written` : ''}` : 'Nothing new needs a brief right now.'); } catch (x) { toast(x.message, true); } load(); });
     on('enableHere', () => saveScope({ enabled: true, paused: false }));
     on('ownerEdit', ownerDlg); on('aOwner', () => (d.me.own ? ownerDlg() : toast('Management sets the owner input.')));
-    on('aQueue', () => $('#you').scrollIntoView({ behavior: 'smooth' })); on('aAlerts', () => $('#you').scrollIntoView({ behavior: 'smooth' }));
+    on('aQueue', () => $('#you').scrollIntoView({ behavior: 'smooth' })); on('toDrafts', () => $('#you').scrollIntoView({ behavior: 'smooth' })); on('aAlerts', () => $('#you').scrollIntoView({ behavior: 'smooth' }));
     on('aFeed', () => { S.focus = null; render(); $('#focus').scrollIntoView({ behavior: 'smooth' }); });
     on('aPerm', permDlg); on('aKill', killDlg); on('brief', briefDlg); on('funnels', funnelsDlg);
     on('templates', templatesDlg);
