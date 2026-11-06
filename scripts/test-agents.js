@@ -7,7 +7,7 @@ const assert = require('assert/strict');
 const http = require('http');
 const crypto = require('crypto');
 process.env.PORT = process.env.PORT || '3996';
-const sent = [], prompts = [];
+const sent = [], prompts = [], canvaFills = [];
 let convo = [];
 const fake = http.createServer(async (req, res) => {
   let body = ''; for await (const c of req) body += c;
@@ -19,6 +19,17 @@ const fake = http.createServer(async (req, res) => {
     const n = +(text.match(/Write (\d+) social/) || [])[1] || 1;
     return J({ content: [{ text: JSON.stringify({ posts: Array.from({ length: n }, (_, i) => ({ title: `Draft ${i + 1} ${Date.now() % 1000}`, kind: i % 2 ? 'carousel' : 'reel', channels: ['instagram', 'facebook'], hook: 'Hook ' + i, caption: 'Life in the neighbourhood, story ' + i + '. Comment UPDATES for news. #mumbai', visual: 'Site at sunset', day: i })) }) }] });
   }
+  if (P.startsWith('/canva')) {
+    const c = P.replace(/^\/canva/, '');
+    if (c === '/oauth/token') return J({ access_token: 'CA', refresh_token: 'CR', expires_in: 3600 });
+    if (c === '/brand-templates') return J({ items: [{ id: 'T1', title: 'Dream post' }, { id: 'T2', title: 'Dream reel cover' }] });
+    if (c === '/brand-templates/T1/dataset' || c === '/brand-templates/T2/dataset') return J({ dataset: { headline: { type: 'text' }, subline: { type: 'text' }, rera_line: { type: 'text' }, photo: { type: 'image' } } });
+    if (c === '/autofills' && req.method === 'POST') { canvaFills.push(JSON.parse(body)); return J({ job: { id: 'AF1', status: 'in_progress' } }); }
+    if (c === '/autofills/AF1') return J({ job: { id: 'AF1', status: 'success', result: { type: 'create_design', design: { id: 'D1', urls: { edit_url: 'https://www.canva.com/design/D1/edit' } } } } });
+    if (c === '/exports' && req.method === 'POST') return J({ job: { id: 'E1', status: 'success', urls: ['http://127.0.0.1:2541/png/D1.png'] } });
+    return J({ error: 'unknown ' + c }, 404);
+  }
+  if (P.startsWith('/png/')) { res.setHeader('Content-Type', 'image/png'); return res.end(Buffer.from('89504e470d0a1a0a0000', 'hex')); }
   const g = P.replace(/^\/graph/, '');
   if (req.method === 'POST') { const f = Object.fromEntries(new URLSearchParams(body)); sent.push({ path: g, ...f }); return J({ id: 'x' + sent.length }); }
   if (g === '/IG1/media') return J({ data: [{ id: 'm1', timestamp: new Date().toISOString(), permalink: 'https://instagram.com/p/m1' }] });
@@ -36,7 +47,7 @@ const fake = http.createServer(async (req, res) => {
   if (g === '/P1/conversations') return J({ data: convo });
   return J({ error: { message: 'unknown ' + g } }, 404);
 }).listen(2541);
-Object.assign(process.env, { META_GRAPH: 'http://127.0.0.1:2541/graph', META_APP_ID: 'app1', META_APP_SECRET: 'appsecret', ANTHROPIC_API_URL: 'http://127.0.0.1:2541/claude', CRON_SECRET: 'cron-s' });
+Object.assign(process.env, { META_GRAPH: 'http://127.0.0.1:2541/graph', META_APP_ID: 'app1', META_APP_SECRET: 'appsecret', ANTHROPIC_API_URL: 'http://127.0.0.1:2541/claude', CRON_SECRET: 'cron-s', CANVA_API: 'http://127.0.0.1:2541/canva', CANVA_CLIENT_ID: 'cid', CANVA_CLIENT_SECRET: 'csec' });
 delete process.env.ANTHROPIC_API_KEY;
 require('./dev-server');
 const db = require('../lib/db');
@@ -184,6 +195,25 @@ const cron = () => fetch(BASE + '/api/cron?job=agents', { headers: { Authorizati
     const g = await sameer('/api/agents?scope=company');
     assert.ok(g.triggers.find((t) => t.kind === 'post_viral').count >= 1);
     assert.ok(g.ownerMsgs.some((m) => /your call/.test(m.text)));
+  });
+
+  await step('Creative Studio: drafts are designed from the chosen Canva brand template and the PNG is put on the post', async () => {
+    const cs = (t) => { const key = crypto.createHash('sha256').update('erp-canva:csec').digest(), iv = crypto.randomBytes(12), c = crypto.createCipheriv('aes-256-gcm', key, iv); const x = Buffer.concat([c.update(t, 'utf8'), c.final()]); return [iv, c.getAuthTag(), x].map((b) => b.toString('base64url')).join('.'); };
+    await db.q("insert into settings (key, value) values ('canva', $1) on conflict (key) do update set value = excluded.value", [JSON.stringify({ refresh: cs('CR'), name: 'Rafi' })]);
+    const t = await A(rupali, 'canva.templates', {}, String(sig.id));
+    assert.equal(t.ok, true, t.error); assert.equal(t.templates.length, 2);
+    assert.equal((await A(rupali, 'templates.save', { templates: { default: 'T1', reel: 'T2' } })).ok, true);
+    const r = await A(rupali, 'draft', { n: 1, angle: 'site progress' }, String(sig.id));
+    assert.equal(r.ok, true, r.error); assert.equal(r.posts[0].designed, true, JSON.stringify(r.posts[0]));
+    const f = canvaFills[canvaFills.length - 1];
+    assert.ok(['T1', 'T2'].includes(f.brand_template_id)); assert.match(f.data.rera_line.text, /P51800012345/); assert.ok(f.data.headline.text); assert.equal(f.data.photo, undefined);
+    const files = await db.q('select name, mime from mkt_post_files where post_id = $1', [r.posts[0].id]);
+    assert.equal(files.length, 1); assert.equal(files[0].mime, 'image/png');
+    assert.equal((await db.one('select canva_url from mkt_posts where id = $1', [r.posts[0].id])).canva_url, 'https://www.canva.com/design/D1/edit');
+    // pre-RERA: no RERA line or project name on the design; "Design in Canva" on an older draft
+    const old = await db.one("select id from mkt_posts where project_id = $1 and agent is not null order by id limit 1", [gor.id]);
+    const d = await A(rupali, 'post.design', { id: old.id });
+    assert.equal(d.ok, true, d.error); assert.equal(canvaFills[canvaFills.length - 1].data.rera_line, undefined);
   });
 
   await step('Kill switch: Management only; every agent and funnel stops', async () => {

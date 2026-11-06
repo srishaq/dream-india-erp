@@ -107,7 +107,7 @@
 
       <div class="col">
         <section class="p"><div class="ph"><span class="n">06</span><h3>Departments</h3><span class="st ${off ? 'no' : 'ok'}">${off ? 'Stopped' : 'Running'}</span></div>
-          <p class="sub">eight departments an owner recognises; the orchestrator hands each one its work${me.edit ? ' · <a href="#" id="brief">give the Content Engine a brief</a> · <a href="#" id="funnels">comment-to-DM funnels</a>' : ''}</p>
+          <p class="sub">eight departments an owner recognises; the orchestrator hands each one its work${me.edit ? ' · <a href="#" id="brief">give the Content Engine a brief</a> · <a href="#" id="funnels">comment-to-DM funnels</a> · <a href="#" id="templates">Canva templates</a>' : ''}</p>
           <div class="depts">${d.departments.map((x, i) => `<div class="dept" data-dept="${x.id}" aria-pressed="${S.focus === x.id}">
             <div class="ph"><span class="n">${String(i + 1).padStart(2, '0')}</span><h3>${e(x.name)}</h3><span class="st ${x.on === x.of ? 'ok' : x.on ? '' : 'no'}">${x.on}/${x.of}</span></div>
             <div class="tiles">${x.tools.map(tile).join('')}</div>
@@ -139,7 +139,7 @@
         <div class="queue">
           ${d.owner.map((x) => { const m = x.detail || {}; return `<div class="om"><b>${e(x.kind.replace(/_/g, ' '))}</b> · <span style="color:var(--mut)">${ago(x.at)}</span><div>${e(m.msg || '')}</div>${m.link ? `<a href="${e(m.link)}" target="_blank" rel="noopener">Open the post</a>` : ''}${me.own ? `<div class="acts"><button class="btn sm" data-done="${x.id}">Dealt with</button></div>` : ''}</div>`; }).join('')}
           ${d.queue.map((p) => `<div class="q">${(() => { const f = (p.files || []).find((x) => /^image\//.test(x.mime)); return f ? `<img src="/api/marketing?pfile=${f.id}" alt="" loading="lazy" style="width:100%;max-height:180px;object-fit:cover;border-radius:8px;margin:0 0 6px">` : (p.files || []).length ? '' : '<div style="font-size:11.5px;color:#B54708;margin:0 0 4px">No design attached yet</div>'; })()}<h4>${e(p.title)}</h4><div class="meta">${e(p.kind)} · ${e((p.channels || []).join(', '))}${p.publish_at ? ' · ' + new Date(p.publish_at).toLocaleDateString('en-IN', { weekday: 'short', day: 'numeric', month: 'short' }) : ''}${p.agent ? ' · <span class="tag">AI draft</span>' : ''}</div><p>${e(p.caption || '')}</p>
-            <div class="acts">${me.own ? `<button class="btn sm pri" data-approve="${p.id}">Approve</button><button class="btn sm" data-back="${p.id}">Send back</button>` : ''}<button class="btn sm" data-view="${p.id}">Read all</button></div></div>`).join('')}
+            <div class="acts">${me.own ? `<button class="btn sm pri" data-approve="${p.id}">Approve</button><button class="btn sm" data-back="${p.id}">Send back</button>` : ''}${me.edit && !(p.files || []).length ? `<button class="btn sm" data-design="${p.id}">Design in Canva</button>` : ''}<button class="btn sm" data-view="${p.id}">Read all</button></div></div>`).join('')}
           ${!d.queue.length && !d.owner.length ? '<div class="empty">Nothing waiting. The team is on routine work.</div>' : ''}
         </div></div>
     </section>
@@ -173,6 +173,8 @@
     on('aQueue', () => $('#you').scrollIntoView({ behavior: 'smooth' })); on('aAlerts', () => $('#you').scrollIntoView({ behavior: 'smooth' }));
     on('aFeed', () => { S.focus = null; render(); $('#focus').scrollIntoView({ behavior: 'smooth' }); });
     on('aPerm', permDlg); on('aKill', killDlg); on('brief', briefDlg); on('funnels', funnelsDlg);
+    on('templates', templatesDlg);
+    $$('[data-design]').forEach((el) => el.addEventListener('click', async () => { el.disabled = true; el.textContent = 'Designing…'; try { const r = await api({ action: 'post.design', id: +el.dataset.design }); toast(r.added ? 'Designed in Canva and attached.' : 'Made in Canva; open it there to export.'); } catch (x) { toast(x.message, true); } load(); }));
     on('unfocus', () => { S.focus = null; render(); });
     $$('.dept').forEach((el) => el.addEventListener('click', () => { S.focus = S.focus === el.dataset.dept ? null : el.dataset.dept; render(); if (S.focus) $('#focus').scrollIntoView({ behavior: 'smooth', block: 'nearest' }); }));
     $$('[data-kb]').forEach((el) => el.addEventListener('click', () => kbDlg(el.dataset.kb)));
@@ -278,6 +280,19 @@
     if (p) return `Hi! Thanks for asking about ${p.name} 🙂 Reply with your mobile number and our team will call you with the floor plans and prices. (By sharing it you agree Dream India Realty may call or WhatsApp you about its homes.)`;
     return `Hi! Thanks for your comment 🙂 Reply with your mobile number and our team will call you with details of our homes. (By sharing it you agree Dream India Realty may call or WhatsApp you about its homes.)`;
   }
+  // ---------- Creative Studio: which Canva brand template each kind of post is designed from ----------
+  async function templatesDlg() {
+    let r; try { r = await api({ action: 'canva.templates' }); } catch (x) { toast(x.message, true); return; }
+    const kinds = [['default', 'Any post (default)'], ['post', 'Single image post'], ['carousel', 'Carousel'], ['reel', 'Reel cover'], ['story', 'Story']];
+    const opt = (k) => `<option value="">${k === 'default' ? 'none' : 'use the default'}</option>` + r.templates.map((t) => `<option value="${e(t.id)}"${r.chosen[k] === t.id ? ' selected' : ''}>${e(t.title)}</option>`).join('');
+    const dl = dialog('Canva templates · ' + (S.d.project ? S.d.project.name : 'Company'), `
+      <p style="margin:0;color:var(--mut);font-size:13px">The Creative Studio fills the chosen Canva brand template with each draft's headline, line and call to action, then attaches the design to the post. ${r.templates.length ? '' : '<b style="color:#B54708">No brand templates with data fields yet: in Canva, make a design, name its text boxes in Apps → Data autofill (e.g. headline, subline, cta, rera), then publish it as a brand template.</b>'}${S.d.project ? ' A project without its own choice uses the company’s.' : ''}</p>
+      ${kinds.map(([k, l]) => `<div class="fld"><label>${l}</label><select data-k="${k}">${opt(k)}</select></div>`).join('')}`,
+      '<button class="btn" data-x2>Cancel</button><button class="btn pri" data-save>Save</button>');
+    $('[data-x2]', dl).addEventListener('click', () => dl.close());
+    $('[data-save]', dl).addEventListener('click', async () => { const templates = {}; $$('[data-k]', dl).forEach((s2) => { if (s2.value) templates[s2.dataset.k] = s2.value; }); try { await api({ action: 'templates.save', templates }); toast('Saved. New drafts are designed from these.'); dl.close(); load(); } catch (x) { toast(x.message, true); } });
+  }
+
   function funnelsDlg() {
     const d = S.d, fs = d.funnels;
     const fst = d.funnelStatus && d.funnelStatus.info;

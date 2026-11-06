@@ -59,7 +59,8 @@ module.exports = route({
       const cur = await A.settingsOf(scope), o = d.owner || {};
       const owner = {
         voice: str(o.voice ?? cur.owner.voice, 1000), positioning: str(o.positioning ?? cur.owner.positioning, 1000),
-        budgetCap: o.budgetCap === '' || o.budgetCap == null ? null : Math.max(0, Math.round(+String(o.budgetCap).replace(/[,₹\s]/g, '')) || 0),
+        budgetCap: o.budgetCap === undefined ? (cur.owner.budgetCap ?? null) : o.budgetCap === '' || o.budgetCap == null ? null : Math.max(0, Math.round(+String(o.budgetCap).replace(/[,₹\s]/g, '')) || 0),
+        templates: cur.owner.templates || {},
         approvalBar: ['all', 'routine'].includes(o.approvalBar) ? o.approvalBar : cur.owner.approvalBar,
         postsPerWeek: Math.max(1, Math.min(14, intOr(o.postsPerWeek, cur.owner.postsPerWeek))),
       };
@@ -130,6 +131,33 @@ module.exports = route({
       }
       await audit.record(db.q, { user: u, action: a === 'post.approve' ? 'approve' : 'send-back', entity: 'mkt-post', entityId: p.id, after: { from: 'agents' } });
       return res.json({ ok: true });
+    }
+    // ---------- Creative Studio: Canva brand templates for each kind of post, and designing a post now ----------
+    if (a === 'canva.templates') {
+      edit(); inScope();
+      const T = require('../lib/mkt-tools'), st = await T.canvaStatus();
+      if (!st.connected) throw fail(409, 'Connect Canva first: Sales & Marketing → Set-up → Connect Canva.');
+      const set = await A.settingsOf(scope);
+      return res.json({ ok: true, templates: await T.canvaTemplates(), chosen: (set.owner && set.owner.templates) || {} });
+    }
+    if (a === 'templates.save') {
+      edit(); inScope();
+      const cur = await A.settingsOf(scope), t = d.templates || {}, templates = {};
+      for (const k of ['default', 'post', 'carousel', 'reel', 'story']) if (t[k]) templates[k] = str(t[k], 80);
+      await db.q(`insert into ag_scope (scope, enabled, paused, owner, updated_by, updated_at) values ($1, $2, $3, $4, $5, now())
+          on conflict (scope) do update set owner = excluded.owner, updated_by = excluded.updated_by, updated_at = now()`, [scope, cur.enabled, cur.paused, { ...cur.owner, templates }, u.id]);
+      await A.say(scope, 'creative', null, `${u.name} chose the Canva templates: every new draft is designed from them.`);
+      await log('templates', 'agents', scope, { templates });
+      return res.json({ ok: true });
+    }
+    if (a === 'post.design') {
+      edit();
+      const p = await db.one('select id, project_id from mkt_posts where id = $1', [intOr(d.id)]);
+      if (!p || (p.project_id && !u.projects.includes(p.project_id))) throw fail(404, 'That post is not there any more.');
+      const r = await A.design(p.id, u);
+      if (r.skipped) throw fail(409, r.skipped);
+      await log('design', 'mkt-post', p.id, { added: r.added });
+      return res.json({ ok: true, ...r });
     }
     if (a === 'owner.done') {
       own();
