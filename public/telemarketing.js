@@ -40,8 +40,8 @@
   function tabs() {
     const all = [
       ['overview', 'Overview', can('tm.view') || can('tm.manage')], ['reports', 'Reports', can('tm.view') || can('tm.manage') || can('mgmt.view')], ['partners', 'Partners', can('tm.view') || can('tm.manage')],
-      ['launches', 'Projects', can('tm.view') || can('tm.manage')], ['sheets', 'Call sheets', true], ['campaigns', 'SMS & AI calls', can('tm.view') || can('tm.manage')], ['lookup', 'Customer lookup', can('tm.view') || can('tm.manage')],
-      ['callers', 'Telecallers', can('tm.view') || can('tm.manage')], ['import', 'Import earlier numbers', can('tm.manage')], ['settings', 'Settings', can('tm.manage')],
+      ['launches', 'Projects', can('tm.view') || can('tm.manage')], ['sheets', 'Call sheets', true], ['campaigns', 'SMS & AI calls', can('tm.view') || can('tm.manage')], ['lookup', 'Lookup', can('tm.view') || can('tm.manage')],
+      ['callers', 'Telecallers', can('tm.view') || can('tm.manage')], ['import', 'Earlier numbers', can('tm.manage')], ['settings', 'Settings', can('tm.manage')],
     ].filter((t) => t[2]);
     if (!all.some((t) => t[0] === tab)) tab = all[0][0];
     return all;

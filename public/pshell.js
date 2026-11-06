@@ -82,7 +82,9 @@
 
   function mountStyle() {
     if (document.getElementById('shl-style')) return;
-    const s = document.createElement('style'); s.id = 'shl-style'; s.textContent = css; document.head.appendChild(s);
+    const s = document.createElement('style'); s.id = 'shl-style'; s.textContent = css + '.shl-back{display:inline-flex;align-items:center;gap:4px;padding:6px 10px;margin-right:6px;border-radius:9px;font:600 13px/1.2 inherit;color:inherit;text-decoration:none;border:1px solid rgba(127,127,160,.35);white-space:nowrap}.shl-back:hover{background:rgba(127,127,160,.12)}@media (max-width:640px){.shl-back{padding:5px 8px;font-size:12px}}';
+    document.head.appendChild(s);
+    document.addEventListener('click', (e) => { const a = e.target.closest && e.target.closest('a.shl-back[data-hist]'); if (a && history.length > 1) { e.preventDefault(); history.back(); } });
   }
 
   function render(me, module, modsEl, userEl) {
@@ -94,7 +96,11 @@
     const home = me.role !== 'consultant' ? `<a class="shl-home" href="/#/project/1" ${onHome ? 'aria-current="page"' : ''} title="Dream Signature: all departments" aria-label="Dream Signature"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 10.5 12 3l9 7.5V21H3z"/><path d="M9 21v-6h6v6"/></svg><span class="t">Dream Signature</span></a>` : '';
     // Only the Home button: the departments are reached from the ERP's Home and its side menu, not a second bar here.
     const showTabs = false;
-    if (modsEl) modsEl.innerHTML = `<div class="shl-left">${home}${showTabs && mine.length > 1 && !onHome
+    // Back to the page the person came from (when it is in the ERP), and always the ERP's Home.
+    let back = '';
+    try { const r = document.referrer ? new URL(document.referrer) : null; if (r && r.origin === location.origin && r.pathname + r.hash !== location.pathname + location.hash) back = r.href; } catch {}
+    const nav = `<a class="shl-back" href="${back ? back.replace(/"/g, '&quot;') : '/#/home'}" ${back ? '' : 'data-hist="1"'} title="Back to the page you came from">← Back</a><a class="shl-back" href="/#/home" title="ERP Home">ERP Home</a>`;
+    if (modsEl) modsEl.innerHTML = `<div class="shl-left">${nav}${home}${showTabs && mine.length > 1 && !onHome
       ? `<nav class="shl-mods" aria-label="Departments">${mine.map(([k, l, href, short]) => `<a href="${href}" ${k === module ? 'aria-current="page"' : ''}>${short ? `<span class="f">${l}</span><span class="s">${short}</span>` : l}</a>`).join('')}</nav>` : ''}</div>`;
     if (!userEl) return;
     userEl.className = 'shl-user';

@@ -454,13 +454,19 @@
           <div class="who"><span><b>${esc(me.name)}</b> · ${esc(me.roleLabel)}</span>
             <a class="btn small dcomm" href="/chat" target="dreamcomm" id="dcomm" title="DreamComm: the company chat">💬 DreamComm<span class="chatn" id="dcommN" hidden></span></a>
             ${installButton()}<button class="ghost small" id="cpw">Change password</button><button class="ghost small" id="out">Sign out</button></div></div>
-        ${(() => { const prev = trail[trail.length - 1], pp = prev ? prev.replace('#/', '').split('?')[0].split('/') : null;
+        ${(() => {
+          // Every page (except Home) shows where to go back to: the screen you came from, else the page's section; and Home.
+          if (!page || page === 'home') return '';
+          const prev = trail[trail.length - 1], pp = prev ? prev.replace('#/', '').split('?')[0].split('/') : null;
+          let back = null;
           if (prev && pp[0] && pp[0] !== 'home' && prev !== location.hash) {
             const lab = pp[0] === 'project' ? ((DEPTS.find((x) => x.key === pp[2]) || {}).title || 'Back') : ((PAGES.find((x) => x.key === (DETAIL[pp[0]] || pp[0])) || {}).label || 'Back');
-            return `<div class="crumb no-print"><a href="${esc(prev)}">← ${esc(pp[0] === 'report' ? 'Report' : pp[1] && pp[0] !== 'project' && DETAIL[pp[0]] ? lab + ' ' + decodeURIComponent(pp[1]) : lab)}</a><a href="#/home">Home</a></div>`;
+            back = [prev, pp[0] === 'report' ? 'Report' : pp[1] && pp[0] !== 'project' && DETAIL[pp[0]] ? lab + ' ' + decodeURIComponent(pp[1]) : lab];
+          } else {
+            const g = groupOf(DETAIL[page] && arg ? DETAIL[page] : cur.key), dest = { CRM: [`#/project/${proj}/crm`, 'Sales & CRM'], 'CRM tools': [`#/project/${proj}/crm`, 'Sales & CRM'], Accounts: [`#/project/${proj}/accounts`, 'Accounts'], 'Site & purchase': [`#/project/${proj}/construction`, 'Construction'], 'Set-up': ['#/home', 'Home'] }[g];
+            if (dest && proj && page !== 'project' && dest[0] !== '#/home') back = dest;
           }
-          const g = groupOf(DETAIL[page] && arg ? DETAIL[page] : cur.key), dest = { CRM: [`#/project/${proj}/crm`, 'Sales & CRM'], 'CRM tools': [`#/project/${proj}/crm`, 'Sales & CRM'], Accounts: [`#/project/${proj}/accounts`, 'Accounts'], 'Site & purchase': [`#/project/${proj}/construction`, 'Construction'], 'Set-up': ['#/home', 'Home'] }[g];
-          return dest && proj && !['home', 'project'].includes(page || 'home') ? `<div class="crumb no-print"><a href="${dest[0]}">← ${esc(dest[1])}</a>${dest[0] === '#/home' ? '' : '<a href="#/home">Home</a>'}</div>` : ''; })()}
+          return `<div class="crumb no-print">${back ? `<a href="${esc(back[0])}">← ${esc(back[1])}</a>` : ''}<a href="#/home">${back ? 'Home' : '← Home'}</a></div>`; })()}
         ${hubTabs(cur.key)}<div class="page" id="page"><p class="muted">Loading…</p></div>
       </div></div>`;
     wireNav();
@@ -496,13 +502,15 @@
     api('/api/chat?poll=1').then((r) => paint(r.unread || 0)).catch(() => {});
     dcommT = setTimeout(dcommBadge, document.hidden ? 300000 : 60000);
   }
-  const trail = [];
+  const trail = (() => { try { const t = JSON.parse(sessionStorage.getItem('erp_trail') || '[]'); return Array.isArray(t) ? t.slice(-40) : []; } catch { return []; } })();
+  const saveTrail = () => { try { sessionStorage.setItem('erp_trail', JSON.stringify(trail)); } catch {} };
   const go = (h) => { if (location.hash === h) shell(); else location.hash = h; };
   // Where the user came from, so "←" goes back to that screen (the tab they were working in), not to the department.
   window.addEventListener('hashchange', (e) => {
     const from = '#' + (String(e.oldURL || '').split('#')[1] || '/home'), to = location.hash || '#/home';
     if (trail.length && trail[trail.length - 1] === to) trail.pop();
     else if (from !== to) { trail.push(from); if (trail.length > 40) trail.shift(); }
+    saveTrail();
     if (me) shell();
   });
 

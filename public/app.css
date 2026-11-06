@@ -402,7 +402,10 @@ button.link { background: none; border: 0; padding: 0; color: var(--brand); font
 .ff-menu a, .ff-menu button { all: unset; box-sizing: border-box; cursor: pointer; padding: 9px 12px; border-radius: 8px; font-weight: 600; font-size: 14px; color: var(--ink); }
 .ff-menu a:hover, .ff-menu button:hover { background: var(--brand-tint); }
 .ff-menu .bad-t { color: var(--bad, #b42318); }
-.ff-tabs { display: flex; gap: 8px; margin: 0 0 14px; overflow-x: auto; padding-bottom: 2px; }
+.ff-tabs { display: flex; flex-wrap: wrap; gap: 8px; margin: 0 0 14px; padding-bottom: 2px; }
+/* a bar with many tabs keeps each tab its own width, so a tab that wraps to the next row does not stretch across it */
+.ff-tabs:has(> :nth-child(9)) > button { flex: 0 1 auto; }
+@media (max-width: 860px) { .ff-tabs { flex-wrap: nowrap; overflow-x: auto; } }
 .ff-tabs button { all: unset; box-sizing: border-box; cursor: pointer; flex: 1 1 auto; text-align: center; justify-content: center; white-space: nowrap; display: inline-flex; gap: 8px; align-items: center;
   padding: 10px 14px; border: 1.5px solid #140C59; border-radius: 10px; background: #fff; color: #140C59; font-weight: 700; font-size: 14px; }
 .ff-tabs button:hover { background: #ECEBF6; }
