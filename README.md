@@ -58,6 +58,11 @@ The person who enters something can never approve it.
 - Pre-RERA: a project without a MahaRERA number gets area and brand content only. Registered: every draft ends with the MahaRERA line.
 - Comment-to-DM funnels: a comment with the keyword on a recent Instagram / Facebook post gets a private DM; a mobile number sent back becomes a lead (source Instagram/Facebook, the project), goes to sales and gets the WhatsApp welcome. A new funnel DMs only its test accounts until Management switches it to live. Needs the Meta app's instagram_manage_messages and pages_messaging permissions (Facebook / Instagram connected again after they are added).
 - Cron `job=agents` every 10 minutes (funnels, comment notes, each switched-on scope every 30 minutes). Kill switch (Management) stops every agent. `AGENT_MODEL` (default claude-sonnet-5-5) and `ANTHROPIC_API_KEY` in Vercel.
+- Learning (7 Nov 2026): `history.import` pulls two years of Instagram and Facebook posts with their figures into mkt_media; `history.analyse` has the Brain write `/brand-brain/what-worked.md` from the company accounts (owner `learnFrom`: dreamindiagroup, Dream India Group). The Content Engine reads it before every draft; the cron refreshes it monthly.
+- Planning: three streams (the brand, Dream Signature, Dream Aspire; posts a week in Owner input). `plan.window` drafts one stream for up to two weeks with dates; festivals come from `/content/festivals.md` (the brand posts the greeting). The cron keeps each stream planned 3 weeks ahead (a week at a time) and designs drafts without a design (2 per run).
+- Designs: Canva brand templates (post, carousel = one image per slide, reel cover) filled by autofill; `post.canva.attach` puts any Canva design (link, or an export link from another Canva account) on a post instead. A reel without a video goes out as an image post: attach the video for a real reel.
+- Approving a draft that has a date and a design schedules it; the publisher posts it at that time.
+- Canva library: `ag_canva_assets`; the cron copies past Instagram photos and videos of the learnFrom accounts into Canva Uploads (needs the asset:read/write scopes).
 
 ## Technology
 - No outside packages. `lib/pg.js` is a small PostgreSQL client (TLS, SCRAM-SHA-256, parameterised queries).
