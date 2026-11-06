@@ -336,6 +336,49 @@ module.exports = route({
       await db.tx(async (t) => { await t.q("insert into acc_banks (book, name, account_no) values ('signature', $1, $2) on conflict (book, name) do update set account_no = excluded.account_no", [name, str(b.accountNo, 40) || null]); await audit.record(t.q, { user: u, action: 'bank', entity: 'acc-bank', entityId: name, after: b }); });
       return res.json({ ok: true });
     }
+    if (b.action === 'split-row') {
+      // One Receipts / Payments Out row into several heads (6 Nov 2026: a Tally TDS payment holding 194J, 194I, 194C and 194H).
+      // The first part keeps the row; the others are new rows copying it. IDs become <id>/1, /2… so the bank match sees them as one line.
+      need('accounts.enter');
+      if (!['receipts', 'payments'].includes(b.reg)) throw fail(400, 'Only Receipts and Payments Out rows can be split.');
+      const reg = REGISTERS[b.reg], id = intOr(b.id);
+      const parts = (Array.isArray(b.parts) ? b.parts : []).map((x) => ({ head: str(x.head, 120), amount: Math.round(Number(String(x.amount ?? '').replace(/[,₹\s]/g, '')) * 100) / 100, unit_no: str(x.unit_no, 12).toUpperCase() || null, payee: str(x.payee, 200) || null })).filter((x) => x.head || x.amount);
+      if (parts.length < 2) throw fail(400, 'Give at least two parts.');
+      for (const x of parts) { if (!x.head) throw fail(400, 'Every part needs a head.'); if (!(x.amount > 0)) throw fail(400, `The amount for ${x.head} looks wrong.`); }
+      const row = await db.one(`select * from ${reg.table} where id = $1 and book = $2`, [id, acc.BOOK]); if (!row) throw fail(404, 'Row not found.');
+      const sum = Math.round(parts.reduce((a, x) => a + x.amount, 0) * 100) / 100;
+      if (Math.abs(sum - Number(row.amount)) > 0.009) throw fail(400, `The parts add up to ₹${sum.toLocaleString('en-IN')}, but the entry is ₹${Number(row.amount).toLocaleString('en-IN')}. They must match.`);
+      if (b.reg === 'receipts' && row.cheque_status === 'Bounced') throw fail(409, 'A bounced cheque is not split.');
+      const closedOn = await guardClosed(u, b.reg, [row[reg.dateKey]], b.reason);
+      const T = b.reg === 'payments' ? await acc.headTds() : {};
+      const out = await db.tx(async (t) => {
+        const base = String(row.ref_id || '').replace(/\/\d+$/, '');
+        const sib = row.ref_id && /\/\d+$/.test(row.ref_id) ? (await t.q(`select ref_id from ${reg.table} where book = $1 and ref_id like $2`, [acc.BOOK, base + '/%'])).map((x) => Number(String(x.ref_id).split('/').pop()) || 0) : [];
+        let next = Math.max(1, ...sib) + 1;
+        const firstRef = row.ref_id ? (/\/\d+$/.test(row.ref_id) ? row.ref_id : base + '/1') : null;
+        const note = `split ${parts.length} ways from ${row.ref_id || '#' + row.id} (₹${Number(row.amount).toLocaleString('en-IN')})`;
+        const tds = (h) => (T[h] ? { tds_section: T[h].sec, tds_rate: T[h].rate } : {});
+        const BILL = ['taxable_value', 'gst_on_bill', 'total_bill', 'tds_deducted', 'net_payable', 'bill_no', 'bill_ids', 'bill_date', 'tds_challan', 'tds_deposited_on'];
+        const ids = [];
+        const p0 = parts[0];
+        const set0 = { ref_id: firstRef, amount: p0.amount, head: p0.head, remark: [row.remark, `part 1 of ${note}`].filter(Boolean).join(' · '), ...(p0.unit_no ? { unit_no: p0.unit_no } : {}), ...(p0.payee ? { [b.reg === 'payments' ? 'payee' : 'payer_name']: p0.payee } : {}), ...(b.reg === 'payments' ? tds(p0.head) : {}) };
+        const k0 = Object.keys(set0);
+        await t.q(`update ${reg.table} set ${k0.map((c, i) => `${c} = $${i + 2}`).join(', ')}, updated_by = $${k0.length + 2}, updated_at = now() where id = $1`, [row.id, ...k0.map((c) => set0[c]), u.id]);
+        ids.push(firstRef);
+        const skip = new Set(['id', 'created_at', 'updated_at', 'updated_by', 'created_by', ...(b.reg === 'payments' ? BILL : [])]);
+        for (let i = 1; i < parts.length; i++) {
+          const x = parts[i], ref = row.ref_id ? `${base}/${next++}` : null;
+          const r = { ...Object.fromEntries(Object.entries(row).filter(([c]) => !skip.has(c))), ref_id: ref, amount: x.amount, head: x.head, remark: [row.remark, `part ${i + 1} of ${note}`].filter(Boolean).join(' · '),
+            ...(x.unit_no ? { unit_no: x.unit_no } : {}), ...(x.payee ? { [b.reg === 'payments' ? 'payee' : 'payer_name']: x.payee } : {}), ...(b.reg === 'payments' ? tds(x.head) : {}), created_by: u.id };
+          const c = Object.keys(r).filter((k) => r[k] !== null && r[k] !== undefined);
+          await t.q(`insert into ${reg.table} (${c.join(', ')}) values (${c.map((_, j) => '$' + (j + 1)).join(', ')})`, c.map((k) => (r[k] && typeof r[k] === 'object' && !(r[k] instanceof Date) ? JSON.stringify(r[k]) : r[k])));
+          ids.push(ref);
+        }
+        await audit.record(t.q, { user: u, action: closedOn ? 'split-closed-month' : 'split', entity: 'acc-' + b.reg, entityId: row.id, before: { ref_id: row.ref_id, amount: row.amount, head: row.head }, after: { parts: parts.map((x, i) => ({ ...x, ref_id: ids[i] })) }, note: closedOn ? `Books closed to ${closedOn}. Reason: ${str(b.reason, 300)}` : str(b.reason, 300) || null });
+        return ids;
+      });
+      return res.json({ ok: true, ids: out });
+    }
     if (b.action === 'move-receipt') {
       // a Tally receipt that belongs to another flat (Tally vs CRM): the flat on the ERP row is changed; Tally is corrected by Accounts too
       need('accounts.enter');

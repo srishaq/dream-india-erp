@@ -2302,6 +2302,31 @@
         setTimeout(() => w.print(), 300);
       } catch (e) { w.close(); alert(e.message); }
     };
+    // Split one row over several heads. For a Tally voucher with several ledgers the parts are filled in from it.
+    const splitRow = (row) => {
+      const total = Number(row.amount), headCol = cols.find((c) => c.key === 'head'), L = (headCol && d.lists[headCol.list]) || [];
+      const pre = String(row.description || '').split(' · ')[0].split('; ').map((p) => p.match(/^(.*\S) ₹([\d,]+(?:\.\d+)?)$/)).filter(Boolean).map((m) => ({ head: m[1], amount: Number(m[2].replace(/,/g, '')) }));
+      const fit = pre.length > 1 && Math.abs(pre.reduce((a, x) => a + x.amount, 0) - total) < 0.01;
+      const start = fit ? pre : [{ head: row.head || '', amount: total }, { head: '', amount: '' }];
+      const line = (x = {}) => `<tr><td><input name="h" list="dl_sph" value="${esc(x.head || '')}" style="min-width:260px"></td><td><input name="a" inputmode="decimal" value="${x.amount === '' || x.amount == null ? '' : esc(String(x.amount))}" style="width:140px"></td><td><button type="button" class="ghost sm" data-rm>✕</button></td></tr>`;
+      const dl = dialog(`<h2>Split ${esc(row.ref_id || '')} · ${inr(total)}</h2>
+        <p class="small muted">Each part becomes its own row (${esc(row.ref_id || '')}/1, /2 …) with the same date, bank and reference, so the bank statement still matches them as one line. The parts must add up to ${inr(total)}.${fit ? ' <b>Filled in from the Tally voucher.</b>' : ''}</p>
+        <datalist id="dl_sph">${L.slice(0, 3000).map((o) => `<option value="${esc(o)}">`).join('')}</datalist>
+        <div class="table-wrap"><table id="spT"><tr><th>Head</th><th class="num">Amount</th><th></th></tr>${start.map(line).join('')}</table></div>
+        <p><button type="button" class="ghost sm" id="spAdd">+ Add a part</button> <span id="spSum" class="small"></span></p>
+        <label>Reason (needed if the month is closed)</label><input name="reason">`,
+        async (x, f) => {
+          const parts = [...f.querySelectorAll('#spT tr')].slice(1).map((tr) => ({ head: tr.querySelector('[name=h]').value.trim(), amount: tr.querySelector('[name=a]').value.trim() })).filter((p) => p.head || p.amount);
+          const r = await api('/api/accounts', { action: 'split-row', reg: key, id: row.id, parts, reason: x.reason || '' });
+          toast(`Split into ${r.ids.length} rows: ${r.ids.join(', ')}`, 6000); accRegister(key, { limit: state.limit });
+        });
+      dl.classList.add('wide');
+      const sum = () => { const s = [...dl.querySelectorAll('[name=a]')].reduce((a, i) => a + (Number(String(i.value).replace(/[,₹\s]/g, "")) || 0), 0), left = Math.round((total - s) * 100) / 100; $('#spSum', dl).innerHTML = Math.abs(left) < 0.01 ? '<span class="good-t">Adds up to ' + inr(total) + '</span>' : `<span class="bad-t">${left > 0 ? inr(left) + ' still to give' : inr(-left) + ' too much'}</span>`; };
+      dl.addEventListener('input', sum);
+      dl.addEventListener('click', (e) => { if (e.target.closest('[data-rm]')) { e.target.closest('tr').remove(); sum(); } });
+      $('#spAdd', dl).onclick = () => { $('#spT', dl).insertAdjacentHTML('beforeend', line()); sum(); };
+      sum();
+    };
     const form = (row) => {
       const v = (c) => (row ? row[c.key] : c.key === R.cols.find((x) => x.type === 'date')?.key ? todayIso() : '');
       const field = (c) => {
@@ -2320,10 +2345,22 @@
       const dl = dialog(`<h2>${row ? esc(R.title) + (row.ref_id ? ' · ' + esc(row.ref_id) : '') : 'New row · ' + esc(R.title)}</h2>
         ${row && row.imported ? '<p class="small muted">Came in from the accounts sheet.</p>' : ''}
         <div class="acc-form">${main.map(field).join('')}</div>
-        ${bill.length ? `<details ${row && row.needs ? 'open' : ''}><summary><b>Bill details</b>${row && row.needs ? ` <span class="bad-t small">${esc(row.needs)}</span>` : ''}</summary><div class="acc-form">${bill.map(field).join('')}</div></details>` : ''}`,
+        ${bill.length ? `<details ${row && row.needs ? 'open' : ''}><summary><b>Bill details</b>${row && row.needs ? ` <span class="bad-t small">${esc(row.needs)}</span>` : ''}</summary><div class="acc-form">${bill.map(field).join('')}</div></details>` : ''}
+        ${d.can.enter && (row ? ['receipts', 'payments'].includes(key) : key === 'payments') ? `<p><button type="button" class="ghost" id="splitRow">${row ? 'Split into several heads…' : 'Save and split into several heads…'}</button> <span class="small muted">only when one amount goes to two or more heads, e.g. one TDS payment for 194J, 194I, 194C and 194H${row ? '' : '. Otherwise just press Save.'}</span></p>` : ''}`,
       async (x) => { if (!d.can.enter) return; const data = {}; for (const c of cols) if (!c.calc && c.key in x) data[c.key] = x[c.key]; const r = await api('/api/accounts', { action: 'save', reg: key, id: row ? row.id : undefined, data, poId: form.poId || undefined }); if (form.poId) toast(r.billPaid ? 'Purchase bill marked Paid.' : 'Saved, but the purchase bill could not be marked Paid: ' + (r.billError || ''), 6000); toast(row ? 'Saved.' : `Added${r.ref_id ? ' as ' + r.ref_id : ''}.`); accRegister(key, { limit: state.limit }); });
       dl.classList.add('wide');
       if (!d.can.enter) $('[value=save]', dl).remove();
+      if ($('#splitRow', dl)) $('#splitRow', dl).onclick = async () => {
+        if (row) { dl.close(); dl.remove(); return splitRow(row); }
+        // a new payment: save it as one row first (the full amount), then split it
+        const f = $('form', dl); if (!f.reportValidity()) return;
+        const x = Object.fromEntries(new FormData(f)), data = {}; for (const c of cols) if (!c.calc && c.key in x) data[c.key] = x[c.key];
+        try {
+          const r = await api('/api/accounts', { action: 'save', reg: key, data });
+          dl.close(); dl.remove();
+          splitRow({ id: r.id, ref_id: r.ref_id, amount: Number(String(data.amount || '').replace(/[,₹\s]/g, '')), head: data.head || '', description: data.description || '' });
+        } catch (e) { showErr(f, e); }
+      };
       form.poId = null;
       if (key === 'payments' && d.can.enter) payHelp(dl, row);
     };
