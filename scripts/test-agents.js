@@ -213,7 +213,7 @@ const cron = () => fetch(BASE + '/api/cron?job=agents', { headers: { Authorizati
     // pre-RERA: no RERA line or project name on the design; "Design in Canva" on an older draft
     const old = await db.one("select id from mkt_posts where project_id = $1 and agent is not null order by id limit 1", [gor.id]);
     const d = await A(rupali, 'post.design', { id: old.id });
-    assert.equal(d.ok, true, d.error); assert.equal(canvaFills[canvaFills.length - 1].data.rera_line, undefined);
+    assert.equal(d.ok, true, d.error); assert.equal(canvaFills[canvaFills.length - 1].data.rera_line.text.trim(), '', 'the sample RERA line is blanked, never left on the design');
   });
 
   await step('Kill switch: Management only; every agent and funnel stops', async () => {
