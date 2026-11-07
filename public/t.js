@@ -25,6 +25,10 @@
       if (navigator.sendBeacon) navigator.sendBeacon(url, body); else fetch(url, { method: 'POST', body: body, mode: 'no-cors', keepalive: true });
     };
     send('view');
+    // the website chat assistant: loaded from here so the website needs no other line (it shows only while switched on)
+    if (/(^|\.)dreamindiarealty\.com$/i.test(location.hostname) && !document.querySelector('script[src*="/bot.js"]')) {
+      var b = document.createElement('script'); b.src = base + '/bot.js'; b.defer = true; (document.body || document.head).appendChild(b);
+    }
     // clicks on call / WhatsApp
     document.addEventListener('click', function (e) {
       var a = e.target.closest && e.target.closest('a[href]'); if (!a) return;

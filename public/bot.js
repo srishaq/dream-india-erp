@@ -7,6 +7,12 @@
   var me = document.currentScript || document.querySelector('script[src*="/bot.js"]');
   var API = (me && me.src ? new URL(me.src).origin : '') + '/api/bot';
   var PROJECT = (me && me.getAttribute('data-project')) || '';
+  var FORCE = me && me.getAttribute('data-force') === '1'; // staff preview: show even while switched off
+  // the chat shows only while it is switched on in the ERP (Sales & Marketing -> Website chats)
+  if (!FORCE) {
+    fetch(API + '?cfg=1').then(function (r) { return r.json(); }).then(function (j) { if (j && j.on) init(); }).catch(function () {});
+  } else init();
+  function init() {
   var KEY = 'di_bot_sid_' + PROJECT;
   var get = function (k) { try { return localStorage.getItem(k); } catch (e) { return null; } };
   var set = function (k, v) { try { localStorage.setItem(k, v); } catch (e) {} };
@@ -79,4 +85,7 @@
   $('.fab').onclick = open; $('.x').onclick = close;
   $('form').onsubmit = function (e) { e.preventDefault(); ask(input.value); };
   (document.body || document.documentElement).appendChild(host);
+  // the website's older chat box makes way for this one
+  ['#chatToggle', '#chatBox'].forEach(function (q) { var e = document.querySelector(q); if (e) e.style.setProperty('display', 'none', 'important'); });
+  }
 })();

@@ -13,15 +13,31 @@ function cors(req, res) {
   return ok || !o;
 }
 const staff = route({
+  async POST(req, res) {
+    const u = await auth.session(req); if (!u) throw fail(401, 'Sign in.');
+    if (!(roles.has(u, 'marketing.edit') || u.role === 'admin')) throw fail(403, 'Only the marketing team changes this.');
+    const b = req.body || {};
+    if (b.action !== 'onoff') throw fail(400, 'Unknown action.');
+    const r = await B.setOn(!!b.on);
+    await require('../lib/audit').record(require('../lib/db').q, { user: u, action: b.on ? 'website-chat-on' : 'website-chat-off', entity: 'settings', entityId: 'bot' });
+    return res.json(r);
+  },
   async GET(req, res) {
     const u = await auth.session(req); if (!u) throw fail(401, 'Sign in.');
     if (!roles.has(u, 'marketing.view')) throw fail(403, 'Not allowed.');
     if (req.query.chat) return res.json(await B.one(String(req.query.chat)));
-    return res.json({ rows: await B.list({ projectId: parseInt(req.query.project, 10) || null }), on: B.configured() });
+    return res.json({ rows: await B.list({ projectId: parseInt(req.query.project, 10) || null }), on: B.configured(), live: (await B.cfg()).on });
   },
 });
 module.exports = async (req, res) => {
+  // the website asks whether to show the chat (no login; says only on or off)
+  if (req.method === 'GET' && req.query && req.query.cfg) {
+    cors(req, res); res.setHeader('Content-Type', 'application/json'); res.setHeader('Cache-Control', 'public, max-age=60');
+    try { return res.status(200).end(JSON.stringify({ on: (await B.cfg()).on && B.configured() })); } catch { return res.status(200).end('{"on":false}'); }
+  }
   if (req.method === 'GET') return staff(req, res);
+  // staff switching it on or off (same-origin, signed in)
+  if (req.method === 'POST' && req.body && typeof req.body === 'object' && req.body.action === 'onoff') return staff(req, res);
   const okOrigin = cors(req, res);
   if (req.method === 'OPTIONS') return res.status(204).end();
   res.setHeader('Content-Type', 'application/json'); res.setHeader('Cache-Control', 'no-store');
