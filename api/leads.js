@@ -39,7 +39,7 @@ async function list(u) {
   const rows = await db.q(`select l.id, l.name, l.phone, l.email, l.project_id, p.name as project, l.source, array_to_json(l.sources) as sources, l.status, l.assigned_to, a.name as assigned_name,
         l.handed_to, h.name as handed_name, l.handed_at, l.next_date, l.visit_date, l.qualify, l.created_at, l.first_contact_at, l.visit_at, l.booked_at, l.lost_reason, l.updated_at,
         (select count(*)::int from mkt_lead_events e where e.lead_id = l.id and e.kind = 'call') as calls,
-        (select e.note from mkt_lead_events e where e.lead_id = l.id and e.note is not null order by e.at desc limit 1) as last_note,
+        (select e.note from mkt_lead_events e where e.lead_id = l.id and e.note is not null and e.kind <> 'assign' order by e.at desc limit 1) as last_note,
         exists (select 1 from bookings b join booking_applicants ba on ba.booking_id = b.id join buyers y on y.id = ba.buyer_id
                 where right(regexp_replace(coalesce(y.phone, ''), '\\D', '', 'g'), 10) = l.phone and b.status in ('active', 'pending')) as is_buyer
       from mkt_leads l left join projects p on p.id = l.project_id left join users a on a.id = l.assigned_to left join users h on h.id = l.handed_to
