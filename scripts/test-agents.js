@@ -244,9 +244,13 @@ const cron = () => fetch(BASE + '/api/cron?job=agents', { headers: { Authorizati
     const P = require('../lib/agents-photos');
     const pr = await db.one('select id from projects order by id limit 1');
     await db.q("insert into ag_photos (project_id, url, tags, asset_id) values ($1, 'https://x/a.webp', 'tower exterior', 'A1'), ($1, 'https://x/b.webp', 'pool swimming amenities', 'A2'), (null, 'https://x/c.webp', 'mumbai skyline', 'A3')", [pr.id]);
-    assert.deepEqual(await P.pick({ project_id: pr.id, title: 'Weekend by the pool', caption: '' }), ['A2']);
-    assert.deepEqual(await P.pick({ project_id: pr.id, title: 'Site progress', caption: '' }), ['A1'], 'nothing matches: the least used of its own project');
+    const ids = (xs) => xs.map((x) => x.asset_id);
+    assert.deepEqual(ids(await P.pick({ project_id: pr.id, title: 'Weekend by the pool', caption: '' })), ['A2']);
+    assert.deepEqual(ids(await P.pick({ project_id: pr.id, title: 'Site progress', caption: '' })), ['A1'], 'nothing matches: the least used of its own project');
     assert.equal((await P.pick({ project_id: pr.id, title: 'Slides', caption: '' }, 3)).length, 3, 'a carousel gets one photo per slide');
+    // MahaRERA: a brand post shows a project's photo only when that project can carry its RERA number and QR
+    assert.deepEqual(ids(await P.pick({ project_id: null, title: 'Weekend by the pool', caption: '' }, 1, { projects: [] })), ['A3'], 'no project may lend: brand photos only');
+    assert.deepEqual(await P.pick({ project_id: null, title: 'Weekend by the pool', caption: '' }, 1, { projects: [pr.id] }), [{ asset_id: 'A2', project_id: pr.id }], 'the photo says which project it shows');
   });
 
   await step('Kill switch: Management only; every agent and funnel stops', async () => {
