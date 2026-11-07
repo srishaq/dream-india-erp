@@ -41,15 +41,16 @@
     'form{display:flex;gap:8px;padding:12px;border-top:1px solid #E6E8F0;background:#fff}' +
     'input{flex:1;border:1px solid #D5D8E4;border-radius:12px;padding:11px 12px;font-size:16px;outline:none}input:focus{border-color:#140C59}' +
     'button.s{background:#F5A524;color:#140C59;border:0;border-radius:12px;padding:0 16px;font-weight:700;font-size:14px;cursor:pointer}button.s:disabled{opacity:.5}' +
+    '.tease{position:fixed;right:14px;bottom:76px;z-index:2147483000;max-width:240px;background:#fff;color:#1d1d1f;border-radius:14px;padding:10px 13px;font-size:14px;line-height:1.4;box-shadow:0 10px 30px rgba(0,0,0,.25);cursor:pointer}' +
     '.ft{font-size:10.5px;color:#8a8ea0;text-align:center;padding:0 12px 8px;background:#fff}' +
     '@media (max-width:480px){.panel{right:0;bottom:0;width:100vw;max-width:100vw;height:100%;max-height:100%;border-radius:0}.fab{right:14px;bottom:14px}}' +
     '</style>' +
     '<button class="fab" type="button" aria-label="Chat with Dream India Realty"><span class="dot"></span>Chat with us</button>' +
     '<div class="panel" role="dialog" aria-label="Chat with Dream India Realty">' +
-    '<div class="hd"><div class="av">DI</div><div><b>Dream India Realty</b><small>Ask about homes, prices, site visits</small></div><button class="x" type="button" aria-label="Close">\u00d7</button></div>' +
+    '<div class="hd"><div class="av">DI</div><div><b>Dream India Realty</b><small>Sales team \u00b7 online now</small></div><button class="x" type="button" aria-label="Close">\u00d7</button></div>' +
     '<div class="msgs" aria-live="polite"></div><div class="chips"></div>' +
     '<form><input type="text" placeholder="Type your message\u2026" maxlength="600" aria-label="Your message"><button class="s" type="submit">Send</button></form>' +
-    '<div class="ft">An AI assistant. A sales advisor follows up every enquiry.</div></div>';
+    '<div class="ft">Automated replies. A sales advisor follows up every enquiry.</div></div>';
 
   var $ = function (s) { return root.querySelector(s); };
   var msgs = $('.msgs'), chips = $('.chips'), input = $('input'), send = $('.s');
@@ -58,15 +59,15 @@
     chips.innerHTML = '';
     (list || []).forEach(function (c) { var b = document.createElement('button'); b.type = 'button'; b.className = 'chip'; b.textContent = c; b.onclick = function () { ask(c); }; chips.appendChild(b); });
   };
-  var open = function () {
+  var open = function (auto) {
     $('.panel').classList.add('on'); $('.fab').style.display = 'none';
     if (!opened) {
       opened = true;
       var hr = new Date().getHours(), hi = hr < 12 ? 'Good morning' : hr < 17 ? 'Good afternoon' : 'Good evening';
-      add('b', hi + '! I am the Dream India Realty assistant. Ask me about our homes, the location, or book a site visit.');
-      setChips(['Tell me about the project', 'Sizes and prices', 'Book a site visit']);
+      add('b', hi + '! Welcome to Dream India Realty. ' + (PROJECT || /signature|aspire|dz-city/i.test(location.pathname) ? 'Happy to tell you all about this project, share sizes, or book a site visit for you.' : 'We have homes at Dream Signature (Oshiwara), Dream Aspire (Lokhandwala) and DZ City (Mumbra). What are you looking for?'));
+      setChips(PROJECT || /signature|aspire|dz-city/i.test(location.pathname) ? ['Tell me about the project', 'Sizes and prices', 'Book a site visit'] : ['1 or 2 BHK homes', 'Book a site visit', 'Call me back']);
     }
-    setTimeout(function () { input.focus(); }, 50);
+    if (auto !== true) setTimeout(function () { input.focus(); }, 50);
   };
   var close = function () { $('.panel').classList.remove('on'); $('.fab').style.display = ''; };
   function ask(text) {
@@ -84,7 +85,20 @@
       .catch(function () { t.remove(); add('b', 'Sorry, the connection dropped. Please try again.'); })
       .then(function () { busy = false; send.disabled = false; input.focus(); });
   }
-  $('.fab').onclick = open; $('.x').onclick = close;
+  $('.fab').onclick = function () { open(); }; $('.x').onclick = function () { close(); try { sessionStorage.setItem('di_bot_closed', '1'); } catch (e) {} };
+  // the home page: open the chat by itself after 2 seconds, once a visit (on a phone, a short note above the button
+  // instead, so the page is not covered)
+  var home = /^\/(index\.(php|html?))?$/i.test(location.pathname);
+  var seen = function () { try { return sessionStorage.getItem('di_bot_auto'); } catch (e) { return '1'; } };
+  if (home && !seen()) setTimeout(function () {
+    try { sessionStorage.setItem('di_bot_auto', '1'); } catch (e) {}
+    if (opened) return;
+    if (window.innerWidth > 640) open(true);
+    else {
+      var t = document.createElement('div'); t.className = 'tease'; t.textContent = 'Hi! Looking for a home in Mumbai? Chat with us.';
+      t.onclick = function () { t.remove(); open(); }; root.appendChild(t); setTimeout(function () { t.remove(); }, 12000);
+    }
+  }, 2000);
   $('form').onsubmit = function (e) { e.preventDefault(); ask(input.value); };
   (document.body || document.documentElement).appendChild(host);
   // the website's older chat box makes way for this one
