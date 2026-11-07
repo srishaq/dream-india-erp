@@ -43,7 +43,9 @@
         const pics = im.length ? `<div class="imgs">${im.map((f, i) => `<a href="/api/marketing?pfile=${f.id}" target="_blank" rel="noopener" title="${im.length > 1 ? 'Slide ' + (i + 1) : 'Open full size'}"><img src="/api/marketing?pfile=${f.id}" alt="" loading="lazy"></a>`).join('')}</div>` : '<div class="noimg">Design on its way</div>';
         const st = p.status === 'review' ? '<span class="tag">Waiting</span>' : ['approved', 'scheduled'].includes(p.status) ? '<span class="tag ok">Approved</span>' : `<span class="tag">${e(p.status)}</span>`;
         const acts = p.status === 'review' && can.approve ? `<div class="acts"><button class="btn pri" data-approve="${p.id}" ${im.length ? '' : 'disabled'}>Approve</button><button class="btn" data-back="${p.id}">Send back</button></div>` : '';
-        return `<div class="card">${pics}<div class="meta"><div class="s">${e(fmt(p.publish_at))} · ${e(streamName(p))} · ${e(p.kind)}${im.length > 1 ? ` · ${im.length} slides` : ''}</div><div class="t">${e(p.title)}</div><div>${st}</div>${acts}</div></div>`;
+        const sh = p.design_text && p.design_text.shoot;
+        const brief = sh ? `<details class="shoot"><summary>${sh.type === 'founder' ? 'Founder reel: shoot with Rafi Sir' : 'Update reel: shoot on site'}</summary>${sh.who ? `<p><b>On camera:</b> ${e(sh.who)}</p>` : ''}${sh.where ? `<p><b>Where:</b> ${e(sh.where)}</p>` : ''}${sh.script ? `<p><b>Script:</b> ${e(sh.script)}</p>` : ''}${(sh.shots || []).length ? `<p><b>Shots:</b></p><ol>${sh.shots.map((x) => `<li>${e(x)}</li>`).join('')}</ol>` : ''}</details>` : '';
+        return `<div class="card">${pics}<div class="meta"><div class="s">${e(fmt(p.publish_at))} · ${e(streamName(p))} · ${e(p.kind)}${im.length > 1 ? ` · ${im.length} slides` : ''}</div><div class="t">${e(p.title)}</div><div>${st}</div>${brief}${acts}</div></div>`;
       }).join('')}</div>`;
     }).join('');
   }

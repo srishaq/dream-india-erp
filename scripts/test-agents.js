@@ -18,7 +18,9 @@ const fake = http.createServer(async (req, res) => {
     if (/read comments/.test(text)) { const lines = [...text.matchAll(/^(\d+)\. [^:]*: (.*)$/gm)]; return J({ content: [{ text: JSON.stringify({ notes: lines.map(([, i, t]) => ({ i: +i, kind: /No reply/.test(t) ? 'complaint' : 'question', reply: 'Thanks, we have sent you a DM.' })) }) }] }); }
     if (/what worked for Dream India/.test(text)) return J({ content: [{ text: '## Summary\n- Reels about redevelopment families did best (12 posts).\n' + 'x '.repeat(150) }] });
     const n = +(text.match(/Write (\d+) social/) || [])[1] || 1;
-    return J({ content: [{ text: JSON.stringify({ posts: Array.from({ length: n }, (_, i) => ({ title: `Draft ${i + 1} ${Date.now() % 1000}`, kind: i % 2 ? 'carousel' : 'reel', channels: ['instagram', 'facebook'], hook: 'Hook ' + i, caption: 'Life in the neighbourhood, story ' + i + '. Comment UPDATES for news. #mumbai', visual: 'Site at sunset', day: i })) }) }] });
+    const onlyReels = /Write only (FOUNDER|UPDATE) REELS/.exec(text), win = /between (\d{4}-\d{2}-\d{2}) and/.exec(text);
+    return J({ content: [{ text: JSON.stringify({ posts: Array.from({ length: n }, (_, i) => ({ title: `Draft ${i + 1} ${Date.now() % 1000}`, kind: onlyReels || !(i % 2) ? 'reel' : 'carousel', channels: ['instagram', 'facebook'], hook: 'Hook ' + i, caption: 'Life in the neighbourhood, story ' + i + '. Comment UPDATES for news. #mumbai', visual: 'Site at sunset', day: i,
+      ...(win ? { date: win[1] } : {}), ...(onlyReels ? { reelType: onlyReels[1].toLowerCase(), shoot: { who: onlyReels[1] === 'FOUNDER' ? 'Rafi Sir' : 'Site engineer', where: 'Office', script: 'Hook. Then the story.', shots: ['Close-up', 'Wide'] } } : {}) })) }) }] });
   }
   if (P.startsWith('/canva')) {
     const c = P.replace(/^\/canva/, '');
@@ -82,7 +84,7 @@ const cron = () => fetch(BASE + '/api/cron?job=agents', { headers: { Authorizati
     const g = await rupali('/api/agents?scope=company');
     assert.equal(g.status, 200, g.error);
     assert.ok(g.projects.some((p) => p.id === gor.id) && g.projects.some((p) => p.id === sig.id));
-    assert.equal(g.departments.length, 8); assert.equal(g.knowledge.length, 12); assert.equal(g.triggers.length, 10);
+    assert.equal(g.departments.length, 8); assert.equal(g.knowledge.length, 13); assert.equal(g.triggers.length, 10);
     assert.ok(g.agents.on < g.agents.of, 'tools that are not connected are not shown as running');
     assert.equal(g.connections.brain, false); assert.equal(g.me.edit, true); assert.equal(g.me.own, false);
     assert.equal((await crm('/api/agents?scope=company')).status, 403);
@@ -238,6 +240,24 @@ const cron = () => fetch(BASE + '/api/cron?job=agents', { headers: { Authorizati
     assert.ok(q, 'a designed draft is waiting');
     assert.equal((await A(sameer, 'post.approve', { id: q.id })).ok, true);
     assert.equal((await db.one('select status from mkt_posts where id = $1', [q.id])).status, 'scheduled');
+  });
+
+  await step('Reels: founder reels on the brand page, update reels on projects, each with a shoot brief and a task for Rupali', async () => {
+    assert.equal((await A(rupali, 'plan.reels', { from: '2027-02-01', to: '2027-02-14' })).status, 403, 'Management plans');
+    const old = await db.one("insert into mkt_posts (title, kind, channels, publish_at, status, caption, agent) values ('Generic reel', 'reel', '{instagram}', '2027-02-03T05:30:00Z', 'review', 'x', 'content-engine') returning id");
+    const r = await A(sameer, 'plan.reels', { from: '2027-02-01', to: '2027-02-14' });
+    assert.equal(r.ok, true, r.error); assert.equal(r.drafted, 2, 'about one a week'); assert.equal(r.replaced, 1, 'the generic reel makes way');
+    assert.match(prompts[prompts.length - 1], /Write only FOUNDER REELS/); assert.match(prompts[prompts.length - 1], /Content mix/);
+    assert.equal((await db.one('select status from mkt_posts where id = $1', [old.id])).status, 'draft');
+    const p = await db.one('select id, design_text from mkt_posts where id = $1', [r.posts[0].id]);
+    assert.equal(p.design_text.shoot.type, 'founder'); assert.equal(p.design_text.shoot.who, 'Rafi Sir');
+    const t = await db.one('select t.title, t.due, u.name from mkt_tasks t left join users u on u.id = t.assigned_to where t.title like $1', [`%(post #${p.id},%`]);
+    assert.ok(t, 'a shoot task'); assert.match(t.title, /^Shoot with Rafi Sir/); assert.match(t.name || '', /Rupali/i, 'for Rupali');
+    assert.equal((await A(sameer, 'plan.reels', { from: '2027-02-01', to: '2027-02-14' })).drafted, 0, 'not twice');
+    const pr = await db.one('select id from projects where rera_no is not null order by id limit 1');
+    const r2 = await A(sameer, 'plan.reels', { from: '2027-02-01', to: '2027-02-14' }, String(pr.id));
+    assert.equal(r2.ok, true, r2.error); assert.match(prompts[prompts.length - 1], /Write only UPDATE REELS/);
+    assert.match((await db.one('select title from mkt_tasks where title like $1', [`%(post #${r2.posts[0].id},%`])).title, /^Shoot on site/);
   });
 
   await step('Photos: the design photo matches what the post is about, from its own project, least used first', async () => {

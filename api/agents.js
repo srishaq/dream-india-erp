@@ -81,6 +81,14 @@ module.exports = route({
       await log('plan', 'agents', scope, { from, to, drafted: r.drafted });
       return res.json({ ok: true, ...r });
     }
+    if (a === 'plan.reels') {
+      own(); inScope();
+      const from = String(d.from || ''), to = String(d.to || '');
+      if (!/^\d{4}-\d{2}-\d{2}$/.test(from) || !/^\d{4}-\d{2}-\d{2}$/.test(to) || to < from || Date.parse(to) - Date.parse(from) > 22 * 864e5) throw fail(400, 'Give a window of at most three weeks (from, to as YYYY-MM-DD).');
+      const r = await require('../lib/agents-plan').planReels(scope, from, to, u);
+      await log('plan-reels', 'agents', scope, { from, to, drafted: r.drafted, replaced: r.replaced });
+      return res.json({ ok: true, ...r });
+    }
     if (a === 'run') { edit(); inScope(); const r = await A.run(scope, { trigger: 'run now by ' + u.name, user: u }); await log('run', 'agents', scope, r); return res.json({ ok: true, ...r }); }
     if (a === 'draft') {
       edit(); inScope();
