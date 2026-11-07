@@ -25,14 +25,16 @@
 
   // ---------- the lists ----------
   const open = (l) => ['new', 'contacted', 'visit'].includes(l.status);
+  const fresh = (l) => Date.now() - Date.parse(l.created_at) < 7 * 864e5; // a lead goes cold fast: the last 7 days come first
   function tabs() {
     const t = S.d.today, all = S.d.me.all;
     const T = all ? [
-      ['now', 'Call now', (l) => l.status === 'new' && !l.first_contact_at && !l.handed_to],
+      ['now', 'Call now', (l) => l.status === 'new' && !l.first_contact_at && !l.handed_to && fresh(l)],
       ['today', 'Call today', (l) => open(l) && l.first_contact_at && l.next_date && day(l.next_date) <= t && !(l.visit_date && day(l.visit_date) === t)],
       ['visits', 'Site visits', (l) => open(l) && l.visit_date && day(l.visit_date) >= t],
       ['follow', 'Follow-ups', (l) => open(l) && l.first_contact_at && !l.handed_to && !(l.next_date && day(l.next_date) <= t)],
       ['sales', 'With sales', (l) => open(l) && l.handed_to],
+      ['old', 'Older, never called', (l) => l.status === 'new' && !l.first_contact_at && !l.handed_to && !fresh(l)],
       ['closed', 'Booked / lost', (l) => !open(l)],
     ] : [
       ['visits', 'Site visits', (l) => open(l) && l.visit_date && day(l.visit_date) >= t],
@@ -54,7 +56,7 @@
     let rows = base.filter(f);
     if (S.tab === 'visits') rows.sort((a, b) => day(a.visit_date).localeCompare(day(b.visit_date)));
     else if (S.tab === 'today') rows.sort((a, b) => day(a.next_date).localeCompare(day(b.next_date)));
-    else if (S.tab === 'now') rows.sort((a, b) => a.created_at.localeCompare(b.created_at)); // longest waiting first
+    else if (S.tab === 'now') rows.sort((a, b) => b.created_at.localeCompare(a.created_at)); // newest first: the warmest leads
     $('#list').innerHTML = rows.length ? rows.slice(0, 300).map(row).join('') + (rows.length > 300 ? `<p class="empty">and ${rows.length - 300} more: search or pick a project.</p>` : '') : `<div class="empty">${S.tab === 'now' ? 'Nobody waiting for a call. Well done.' : 'Nothing here.'}</div>`;
     stats();
   }
@@ -64,7 +66,7 @@
     const what = [l.project, q.bhk, q.budget].filter(Boolean).join(' · ') || 'Project not known yet';
     const src = (l.sources && l.sources.length ? l.sources : [l.source]).map((s) => SRC[s] || s).join(', ');
     let right = '';
-    if (S.tab === 'now') { const h = (Date.now() - Date.parse(l.created_at)) / 36e5; right = `<span class="chip ${h > 2 ? 'bad' : h > 0.25 ? 'warn' : 'good'}">waiting ${ago(l.created_at)}</span>`; }
+    if (S.tab === 'now' || S.tab === 'old') { const h = (Date.now() - Date.parse(l.created_at)) / 36e5; right = `<span class="chip ${h > 2 ? 'bad' : h > 0.25 ? 'warn' : 'good'}">waiting ${ago(l.created_at)}</span>`; }
     else if (l.status === 'booked') right = '<span class="chip good">Booked</span>';
     else if (l.status === 'lost') right = `<span class="chip">Lost</span>`;
     else if (l.visit_date && day(l.visit_date) >= S.d.today) right = `<span class="chip good">Visit ${nice(day(l.visit_date))}</span>`;
