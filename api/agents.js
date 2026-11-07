@@ -48,6 +48,17 @@ module.exports = route({
     if (a === 'history.analyse') { own(); const r = await require('../lib/agents-history').analyseHistory({ months: Math.max(1, Math.min(36, intOr(d.months, 24))), accounts: Array.isArray(d.accounts) ? d.accounts.map((x) => str(x, 80)).filter(Boolean) : null }); await log('analyse', 'agents', 'company', { posts: r.posts }); return res.json({ ok: true, ...r }); }
     if (a === 'photos.sync') { own(); const r = await require('../lib/agents-photos').sync({ max: Math.max(1, Math.min(30, intOr(d.max, 10))), budgetMs: 90000 }); return res.json({ ok: true, ...r }); }
     if (a === 'library.copy') { own(); const r = await require('../lib/agents-library').copyToCanva({ max: Math.max(1, Math.min(10, intOr(d.max, 4))), budgetMs: 90000 }); return res.json({ ok: true, ...r }); }
+    // The latest Instagram posts with fresh full-size links (e.g. to read the MahaRERA QR codes printed on them)
+    if (a === 'media.recent') {
+      own();
+      const S = require('../lib/social'), out = [];
+      for (const p of await S.metaPages()) {
+        if (!p.ig) continue;
+        const j = await S.graph(`/${p.ig.id}/media`, { fields: 'id,caption,media_type,media_url,timestamp,children{media_type,media_url}', limit: Math.max(1, Math.min(50, intOr(d.limit, 30))) }, p.token).catch(() => ({ data: [] }));
+        for (const x of j.data || []) out.push({ account: p.ig.username, id: x.id, at: x.timestamp, caption: String(x.caption || '').slice(0, 300), urls: (x.children && x.children.data ? x.children.data : [x]).filter((k) => k.media_type !== 'VIDEO' && k.media_url).map((k) => k.media_url) });
+      }
+      return res.json({ ok: true, media: out });
+    }
     if (a === 'history.rera') { own(); return res.json({ ok: true, rera: await require('../lib/agents-history').reraSeen() }); }
     // Plan a stream's calendar for a date window (two weeks at a time); festivals come from /content/festivals.md.
     if (a === 'plan.window') {
