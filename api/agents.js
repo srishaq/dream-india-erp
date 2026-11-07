@@ -174,7 +174,7 @@ module.exports = route({
       const cur = await A.settingsOf(scope), t = d.templates || {}, templates = {};
       for (const k of ['default', 'post', 'carousel', 'reel', 'story']) if (t[k]) templates[k] = str(t[k], 80);
       await db.q(`insert into ag_scope (scope, enabled, paused, owner, updated_by, updated_at) values ($1, $2, $3, $4, $5, now())
-          on conflict (scope) do update set owner = excluded.owner, updated_by = excluded.updated_by, updated_at = now()`, [scope, cur.enabled, cur.paused, { ...cur.owner, templates }, u.id]);
+          on conflict (scope) do update set owner = excluded.owner, updated_by = excluded.updated_by, updated_at = now()`, [scope, cur.enabled, cur.paused, { ...cur.owner, templates, templatesAt: JSON.stringify(cur.owner.templates || {}) === JSON.stringify(templates) ? cur.owner.templatesAt : new Date().toISOString() }, u.id]);
       await A.say(scope, 'creative', null, `${u.name} chose the Canva templates: every new draft is designed from them.`);
       await log('templates', 'agents', scope, { templates });
       return res.json({ ok: true });
