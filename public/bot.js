@@ -10,7 +10,7 @@
   var FORCE = me && me.getAttribute('data-force') === '1'; // staff preview: show even while switched off
   // the chat shows only while it is switched on in the ERP (Sales & Marketing -> Website chats)
   if (!FORCE) {
-    fetch(API + '?cfg=1').then(function (r) { return r.json(); }).then(function (j) { if (j && j.on) init(); }).catch(function () {});
+    fetch(API + '?cfg=1&_=' + Date.now()).then(function (r) { return r.json(); }).then(function (j) { if (j && j.on) init(); }).catch(function () {});
   } else init();
   function init() {
     if (window.__diBot) return; window.__diBot = 1; // one chat window, even if the line is on the page twice

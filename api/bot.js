@@ -32,7 +32,7 @@ const staff = route({
 module.exports = async (req, res) => {
   // the website asks whether to show the chat (no login; says only on or off)
   if (req.method === 'GET' && req.query && req.query.cfg) {
-    cors(req, res); res.setHeader('Content-Type', 'application/json'); res.setHeader('Cache-Control', 'public, max-age=60');
+    cors(req, res); res.setHeader('Content-Type', 'application/json'); res.setHeader('Cache-Control', 'no-store');
     try { return res.status(200).end(JSON.stringify({ on: (await B.cfg()).on && B.configured() })); } catch { return res.status(200).end('{"on":false}'); }
   }
   if (req.method === 'GET') return staff(req, res);
