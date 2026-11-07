@@ -62,7 +62,8 @@
     $('.panel').classList.add('on'); $('.fab').style.display = 'none';
     if (!opened) {
       opened = true;
-      add('b', 'Namaste! I am the Dream India Realty assistant. Ask me about our homes, the location, or book a site visit.');
+      var hr = new Date().getHours(), hi = hr < 12 ? 'Good morning' : hr < 17 ? 'Good afternoon' : 'Good evening';
+      add('b', hi + '! I am the Dream India Realty assistant. Ask me about our homes, the location, or book a site visit.');
       setChips(['Tell me about the project', 'Sizes and prices', 'Book a site visit']);
     }
     setTimeout(function () { input.focus(); }, 50);
