@@ -60,6 +60,7 @@
       <span class="clock" id="clock"></span>
       ${me.edit ? `<button class="btn pri" id="runNow"${off ? ' disabled' : ''}>Run now</button>` : ''}
       ${d.queue.length ? `<button class="btn pri" id="toDrafts">Drafts to approve (${d.queue.length})</button>` : ''}
+      <a class="btn" href="/designs" style="text-decoration:none">All designs</a>
       <a class="btn" href="/" style="text-decoration:none">⌂ ERP Home</a>
       <a class="back" href="/#/marketing${d.project ? '/' + d.project.id : ''}">← Sales &amp; Marketing</a>
     </header>

@@ -237,6 +237,15 @@ const cron = () => fetch(BASE + '/api/cron?job=agents', { headers: { Authorizati
     assert.equal((await db.one('select status from mkt_posts where id = $1', [q.id])).status, 'scheduled');
   });
 
+  await step('Photos: the design photo matches what the post is about, from its own project, least used first', async () => {
+    const P = require('../lib/agents-photos');
+    const pr = await db.one('select id from projects order by id limit 1');
+    await db.q("insert into ag_photos (project_id, url, tags, asset_id) values ($1, 'https://x/a.webp', 'tower exterior', 'A1'), ($1, 'https://x/b.webp', 'pool swimming amenities', 'A2'), (null, 'https://x/c.webp', 'mumbai skyline', 'A3')", [pr.id]);
+    assert.deepEqual(await P.pick({ project_id: pr.id, title: 'Weekend by the pool', caption: '' }), ['A2']);
+    assert.deepEqual(await P.pick({ project_id: pr.id, title: 'Site progress', caption: '' }), ['A1'], 'nothing matches: the least used of its own project');
+    assert.equal((await P.pick({ project_id: pr.id, title: 'Slides', caption: '' }, 3)).length, 3, 'a carousel gets one photo per slide');
+  });
+
   await step('Kill switch: Management only; every agent and funnel stops', async () => {
     assert.equal((await A(rupali, 'kill', { on: true })).status, 403);
     assert.equal((await A(sameer, 'kill', { on: true })).ok, true);

@@ -46,6 +46,7 @@ module.exports = route({
     // Learn from our past posts: import two years of Instagram and Facebook, then the Brain writes what worked.
     if (a === 'history.import') { own(); const r = await require('../lib/agents-history').importHistory({ months: Math.max(1, Math.min(36, intOr(d.months, 24))) }); await log('history', 'agents', 'company', r); return res.json({ ok: true, ...r }); }
     if (a === 'history.analyse') { own(); const r = await require('../lib/agents-history').analyseHistory({ months: Math.max(1, Math.min(36, intOr(d.months, 24))), accounts: Array.isArray(d.accounts) ? d.accounts.map((x) => str(x, 80)).filter(Boolean) : null }); await log('analyse', 'agents', 'company', { posts: r.posts }); return res.json({ ok: true, ...r }); }
+    if (a === 'photos.sync') { own(); const r = await require('../lib/agents-photos').sync({ max: Math.max(1, Math.min(30, intOr(d.max, 10))), budgetMs: 90000 }); return res.json({ ok: true, ...r }); }
     if (a === 'library.copy') { own(); const r = await require('../lib/agents-library').copyToCanva({ max: Math.max(1, Math.min(10, intOr(d.max, 4))), budgetMs: 90000 }); return res.json({ ok: true, ...r }); }
     if (a === 'history.rera') { own(); return res.json({ ok: true, rera: await require('../lib/agents-history').reraSeen() }); }
     // Plan a stream's calendar for a date window (two weeks at a time); festivals come from /content/festivals.md.
