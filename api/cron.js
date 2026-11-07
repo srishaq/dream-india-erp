@@ -67,6 +67,7 @@ async function run(req, res, job) {
       out.social = await require('../lib/social').sync({}).catch((e) => ({ error: e.message })); // yesterday's Instagram, Facebook, Meta Ads and YouTube figures
       out.gads = await require('../lib/gads').sync({}).catch((e) => ({ error: e.message })); // Google Ads, when connected
       out.website = await require('./marketing').webAggregate().catch((e) => ({ error: e.message })); // website visits into the daily and monthly figures
+      out.botSite = await require('../lib/web-bot').siteKnowledge({ refresh: true }).then((p) => ({ pages: Object.keys(p).length })).catch((e) => ({ error: e.message })); // the website's text for the chat assistant
       out.mktAlerts = await require('../lib/mkt-money').alerts({}).catch((e) => ({ error: e.message })); // over budget, cost per lead up, tiring ads
       out.mktDigest = await require('../lib/mkt-money').digest({}).catch((e) => ({ error: e.message })); // Mondays: last week in Marketing
       return res.json({ ok: true, ...out });
