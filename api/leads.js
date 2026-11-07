@@ -12,6 +12,7 @@ const auth = require('../lib/auth');
 const audit = require('../lib/audit');
 const { has } = require('../lib/roles');
 const { route, fail, str, intOr } = require('../lib/http');
+const O = require('../lib/mkt-offers');
 
 const DATE = /^\d{4}-\d{2}-\d{2}$/;
 const canAll = (u) => has(u, 'leads.all');
@@ -38,11 +39,15 @@ const projOk = (u) => `(l.project_id is null or l.project_id = any(array[${u.pro
 async function list(u) {
   const rows = await db.q(`select l.id, l.name, l.phone, l.email, l.project_id, p.name as project, l.source, array_to_json(l.sources) as sources, l.status, l.assigned_to, a.name as assigned_name,
         l.handed_to, h.name as handed_name, l.handed_at, l.next_date, l.visit_date, l.qualify, l.created_at, l.first_contact_at, l.visit_at, l.booked_at, l.lost_reason, l.updated_at,
+        l.booking_id, l.hold_until, hu.unit_no as hold_unit,
+        (select json_build_object('id', o.id, 'status', o.status, 'av', o.av, 'discount_pct', o.discount_pct, 'unit_no', ou.unit_no) from mkt_offers o join units ou on ou.id = o.unit_id
+          where o.lead_id = l.id and o.status <> 'void' order by o.id desc limit 1) as offer,
         (select count(*)::int from mkt_lead_events e where e.lead_id = l.id and e.kind = 'call') as calls,
         (select e.note from mkt_lead_events e where e.lead_id = l.id and e.note is not null and e.kind <> 'assign' order by e.at desc limit 1) as last_note,
         exists (select 1 from bookings b join booking_applicants ba on ba.booking_id = b.id join buyers y on y.id = ba.buyer_id
                 where right(regexp_replace(coalesce(y.phone, ''), '\\D', '', 'g'), 10) = l.phone and b.status in ('active', 'pending')) as is_buyer
       from mkt_leads l left join projects p on p.id = l.project_id left join users a on a.id = l.assigned_to left join users h on h.id = l.handed_to
+        left join units hu on hu.id = l.hold_unit_id and l.hold_until > now()
       where ${mine(u, 1)} and ${projOk(u)}
         and ((l.status in ('new', 'contacted', 'visit') and (l.created_at > now() - interval '60 days' or l.first_contact_at is not null or l.handed_to is not null or l.next_date is not null))
           or (l.status in ('booked', 'lost') and coalesce(l.updated_at, l.created_at) > now() - interval '30 days'))
@@ -57,11 +62,18 @@ async function summary(u) {
       count(*) filter (where first_contact_at is not null and first_contact_at <= created_at + interval '15 minutes')::int as fast,
       count(*) filter (where handed_at is not null)::int as handed,
       count(*) filter (where visit_at is not null)::int as visits,
+      count(*) filter (where exists (select 1 from mkt_offers o where o.lead_id = mkt_leads.id and o.status <> 'void'))::int as offers,
       count(*) filter (where booked_at is not null)::int as booked
     from mkt_leads where created_at > now() - interval '30 days'`);
+  const bySales = await db.q(`select h.name, count(*)::int as handed, count(*) filter (where l.visit_at is not null)::int as visits,
+      count(*) filter (where exists (select 1 from mkt_offers o where o.lead_id = l.id and o.status <> 'void'))::int as offers,
+      count(*) filter (where l.booked_at is not null)::int as booked, count(*) filter (where l.status = 'lost')::int as lost,
+      count(*) filter (where l.status in ('contacted', 'visit') and l.next_date < (now() + interval '330 minutes')::date)::int as overdue
+    from mkt_leads l join users h on h.id = l.handed_to where l.handed_at > now() - interval '90 days' group by h.name order by 2 desc`);
+  const lost = await db.q(`select coalesce(lost_reason, 'No reason given') as reason, count(*)::int as n from mkt_leads where status = 'lost' and updated_at > now() - interval '90 days' group by 1 order by 2 desc limit 8`);
   const bySource = await db.q(`select source, count(*)::int as leads, count(*) filter (where visit_at is not null)::int as visits, count(*) filter (where booked_at is not null)::int as booked
     from mkt_leads where created_at > now() - interval '30 days' group by source order by 2 desc`);
-  return { ...r, bySource };
+  return { ...r, bySource, bySales, lost };
 }
 
 async function lead(u, id) {
@@ -82,11 +94,19 @@ module.exports = route({
       const l = await lead(u, intOr(q.id)); if (!l) throw fail(404, 'That lead is not there, or it is not yours.');
       const events = await db.q('select e.at, e.kind, e.outcome, e.note, e.data, us.name as who from mkt_lead_events e left join users us on us.id = e.user_id where e.lead_id = $1 order by e.at desc', [l.id]);
       const calls = await db.q("select called_at, status, duration, recording_url from mkt_ivr_calls where caller = $1 order by called_at desc limit 20", [l.phone]).catch(() => []);
-      return res.json({ lead: l, events, ivr: calls });
+      const offers = await db.q(`select o.*, u.unit_no, u.floor, u.typology, bl.code as wing, c.name as by_name, dd.name as decided_name from mkt_offers o join units u on u.id = o.unit_id
+          join buildings bl on bl.id = u.building_id left join users c on c.id = o.created_by left join users dd on dd.id = o.decided_by where o.lead_id = $1 order by o.id desc`, [l.id]);
+      const hold = l.hold_unit_id && l.hold_until && new Date(l.hold_until) > new Date() ? await db.one('select id, unit_no from units where id = $1', [l.hold_unit_id]) : null;
+      return res.json({ lead: l, events, ivr: calls, offers, hold, mayApprove: await O.mayApprove(u) });
     }
     const projects = (await db.q('select id, name from projects where active order by name')).filter((p) => u.projects.includes(p.id));
     const people = await db.q("select id, name, role from users where not disabled and role in ('presales', 'sales') order by name");
-    return res.json({ me: { id: u.id, name: u.name, all: canAll(u), role: u.role }, today: istToday(), leads: await list(u), summary: await summary(u), projects, people, outcomes: OUTCOMES });
+    const may = await O.mayApprove(u), set = await O.settings();
+    const approvals = may ? await db.q(`select o.id, o.lead_id, o.discount, o.discount_pct, o.av, o.client_ask, o.created_at, u.unit_no, p.name as project, l.name as lead_name, l.phone, c.name as by_name
+        from mkt_offers o join units u on u.id = o.unit_id join projects p on p.id = u.project_id join mkt_leads l on l.id = o.lead_id left join users c on c.id = o.created_by
+        where o.status = 'pending' order by o.id`) : [];
+    return res.json({ me: { id: u.id, name: u.name, all: canAll(u), role: u.role, approver: may, sells: has(u, 'booking.create') }, today: istToday(), leads: await list(u), summary: await summary(u),
+      projects, people, outcomes: OUTCOMES, approvals, sales: { limitPct: set.limitPct, holdHours: set.holdHours } });
   },
 
   POST: async (req, res, d) => {
@@ -153,6 +173,72 @@ module.exports = route({
       const sent = await require('../lib/mkt-flow').send([to.email], `New lead for you: ${l.name || l.phone}${visitDate ? ' · visit ' + visitDate : ''}`, html, { text: 'New lead', skipped: 'no email on the login' }).catch((e) => ({ skipped: e.message }));
       await log('lead-handover', l.id, { to: to.id, visitDate });
       return res.json({ ok: true, to: to.name, emailed: !(sent && sent.skipped) });
+    }
+
+    // ---------- offers, holds ----------
+    if (a === 'offer.price' || a === 'offer.make') {
+      const unit = await db.one('select id, project_id, status, unit_no, held_lead_id from units where id = $1', [intOr(d.unitId)]);
+      if (!unit) throw fail(404, 'That flat is not there.');
+      if (!u.projects.includes(unit.project_id)) throw fail(403, 'That project is not on your login.');
+      if (!(unit.status === 'available' || (unit.status === 'held' && unit.held_lead_id === l.id))) throw fail(409, `Flat ${unit.unit_no} is not available (${unit.status}).`);
+      const parking = Math.max(0, Math.min(5, intOr(d.parking, 0)));
+      const discount = Math.max(0, Number(String(d.discount == null ? '' : d.discount).replace(/[₹,\s]/g, '')) || 0);
+      const pr = await O.price(unit.id, { parking, discount });
+      const set = await O.settings(), over = pr.discountPct > set.limitPct + 1e-9;
+      if (a === 'offer.price') return res.json({ ok: true, ...pr, unit: { id: unit.id, unit_no: unit.unit_no }, pl: undefined, needsApproval: over, limitPct: set.limitPct });
+      if (!has(u, 'booking.create') && !canAll(u)) throw fail(403, 'Only sales makes offers.');
+      const ask = str(d.clientAsk, 300);
+      if (over && !ask) throw fail(400, `A discount above ${set.limitPct}% needs your approver's OK: write what the customer is asking for.`);
+      // a newer offer replaces the earlier open ones on this lead
+      await db.q("update mkt_offers set status = 'void' where lead_id = $1 and status in ('given', 'pending', 'approved')", [l.id]);
+      const o = await db.one(`insert into mkt_offers (lead_id, unit_id, price_list_id, carpet, rate, parking, parking_amt, list_av, discount, discount_pct, av, gst, stamp_duty, registration, other_total, total, list_total, others, client_ask, note, status, created_by, floor_rate)
+          values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23) returning id`,
+        [l.id, unit.id, pr.pl.id, pr.sqft, pr.rate, parking, pr.parkingAmt, pr.listAv, pr.discount, pr.discountPct, pr.av, pr.gst, pr.stampDuty, pr.registration, pr.otherTotal, pr.total, pr.listTotal,
+          JSON.stringify(pr.others || []), ask || null, str(d.note, 500) || null, over ? 'pending' : 'given', u.id, pr.floorRate]);
+      await db.q(`update mkt_leads set project_id = coalesce(project_id, $2), next_date = coalesce($3, next_date), updated_at = now(), first_contact_at = coalesce(first_contact_at, now()),
+          status = case when status = 'new' then 'contacted' else status end where id = $1`, [l.id, unit.project_id, DATE.test(d.nextDate || '') ? d.nextDate : null]);
+      await event(l.id, u, 'offer', { outcome: over ? 'pending' : 'given', note: `${O.offerNo(o.id)}: flat ${unit.unit_no}, ${O.inr(pr.av)} agreement value${pr.discount ? `, discount ${O.inr(pr.discount)} (${pr.discountPct.toFixed(2)}%)` : ''}${over ? ', sent for approval' : ''}${ask ? '. Customer asks: ' + ask : ''}`, data: { offer: o.id } });
+      let notified = null;
+      if (over) notified = await O.notify(o.id).catch((e) => ({ error: e.message }));
+      await log('offer', l.id, { offer: o.id, unit: unit.unit_no, discountPct: pr.discountPct, pending: over });
+      return res.json({ ok: true, id: o.id, no: O.offerNo(o.id), status: over ? 'pending' : 'given', notified });
+    }
+
+    if (a === 'offer.decide') {
+      const o = await db.one('select id, lead_id from mkt_offers where id = $1 and lead_id = $2', [intOr(d.offerId), l.id]); if (!o) throw fail(404, 'That offer is not there.');
+      const r = await O.decide(o.id, u, !!d.approve, str(d.note, 500));
+      await log(d.approve ? 'offer-approve' : 'offer-reject', l.id, { offer: o.id });
+      return res.json(r);
+    }
+
+    if (a === 'hold') {
+      if (!has(u, 'booking.create') && !canAll(u)) throw fail(403, 'Only sales holds a flat.');
+      const set = await O.settings();
+      const unit = await db.one('select id, project_id, unit_no, status, held_lead_id from units where id = $1', [intOr(d.unitId)]);
+      if (!unit) throw fail(404, 'That flat is not there.');
+      if (!u.projects.includes(unit.project_id)) throw fail(403, 'That project is not on your login.');
+      const until = new Date(Date.now() + set.holdHours * 3600e3);
+      const untilTxt = until.toLocaleString('en-IN', { day: 'numeric', month: 'short', hour: 'numeric', minute: '2-digit', timeZone: 'Asia/Kolkata' });
+      const done = await db.tx(async (t) => {
+        const cur = await t.one('select status, held_lead_id from units where id = $1 for update', [unit.id]);
+        if (!(cur.status === 'available' || (cur.status === 'held' && cur.held_lead_id === l.id))) throw fail(409, `Flat ${unit.unit_no} is not available (${cur.status}).`);
+        // one hold per customer: an earlier hold of this lead is let go
+        if (l.hold_unit_id && l.hold_unit_id !== unit.id) await t.q("update units set status = 'available', hold_note = null, held_until = null, held_lead_id = null where id = $1 and held_lead_id = $2", [l.hold_unit_id, l.id]);
+        await t.q("update units set status = 'held', held_until = $2, held_lead_id = $3, hold_note = $4 where id = $1", [unit.id, until, l.id, `Held by ${u.name} for ${l.name || l.phone} until ${untilTxt}`]);
+        await t.q('update mkt_leads set hold_unit_id = $2, hold_until = $3, updated_at = now() where id = $1', [l.id, unit.id, until]);
+        return true;
+      });
+      await event(l.id, u, 'hold', { note: `Flat ${unit.unit_no} held until ${untilTxt}.`, data: { unit: unit.id } });
+      await log('hold', l.id, { unit: unit.unit_no, until });
+      return res.json({ ok: done, until, unit: unit.unit_no });
+    }
+
+    if (a === 'release') {
+      if (!l.hold_unit_id) throw fail(400, 'No flat is held for this customer.');
+      await db.q("update units set status = 'available', hold_note = null, held_until = null, held_lead_id = null where id = $1 and held_lead_id = $2 and status = 'held'", [l.hold_unit_id, l.id]);
+      await db.q('update mkt_leads set hold_unit_id = null, hold_until = null, updated_at = now() where id = $1', [l.id]);
+      await event(l.id, u, 'hold', { note: 'Hold let go.' });
+      return res.json({ ok: true });
     }
 
     if (a === 'assign') {

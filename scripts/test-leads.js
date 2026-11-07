@@ -87,6 +87,83 @@ let n = 0; const step = async (name, fn) => { await fn(); n++; console.log('  �
     assert.equal(b.id, a.id); assert.equal(b.duplicate, true);
   });
 
+  await step('Dream Aspire is ready for sales: 13 unsold flats, the 70% plan, the quoting price list matching the cost sheet', async () => {
+    // the live ERP has Dream Aspire; a new test database does not: add it and run its set-up step again
+    if (!(await db.one("select id from projects where code = 'ASPIRE'"))) {
+      await db.q("insert into projects (code, name, company_id) select 'ASPIRE', 'Dream Aspire', company_id from projects where code = 'SIGNATURE'");
+      for (const st of require('../lib/migrations').find((m) => m.id === '072_aspire_inventory').sql.split(/;\s*\n/).map((x) => x.replace(/^\s*--.*$/gm, '').trim()).filter(Boolean)) await db.q(st);
+    }
+    const asp = await db.one("select id from projects where code = 'ASPIRE'");
+    await db.q('update users set all_projects = true');
+    assert.equal((await db.one("select count(*)::int as n from units where project_id = $1 and status = 'available'", [asp.id])).n, 13);
+    assert.equal((await db.one('select sum(s.pct)::int as p from plan_stages s join payment_plans pp on pp.id = s.plan_id where pp.project_id = $1', [asp.id])).p, 100);
+    const O = require('../lib/mkt-offers');
+    const pr = await O.price((await db.one("select id from units where unit_no = 'A-605'")).id, { parking: 1 });
+    assert.equal(pr.listAv, 14081500, '459 sq ft × ₹28,500 + ₹10 L parking'); assert.equal(pr.total, 16019994, 'the cost sheet says ₹1,60,19,984 (stamp duty rounds up to ₹100)');
+    assert.equal(pr.floorRate, 27500);
+  });
+
+  let offerLead;
+  await step('Sales offers within 1% at once; above 1% it needs the customer\'s ask and waits for the approver', async () => {
+    const r = await require('../lib/mkt-leads').add({ phone: '98200 44444', name: 'Meera Rao', source: 'instagram', welcome: false });
+    offerLead = r.id;
+    await asma('/api/leads', { action: 'handover', id: offerLead, to: amaan.id });
+    const unit = await db.one("select id from units where unit_no = 'A-605'");
+    const small = await amaan('/api/leads', { action: 'offer.make', id: offerLead, unitId: unit.id, parking: 1, discount: 140000 });
+    assert.equal(small.ok, true, small.error); assert.equal(small.status, 'given', 'just under 1%');
+    assert.equal((await amaan('/api/leads', { action: 'offer.make', id: offerLead, unitId: unit.id, parking: 1, discount: 500000 })).status, 400, 'above 1% needs what the customer asks');
+    const big = await amaan('/api/leads', { action: 'offer.make', id: offerLead, unitId: unit.id, parking: 1, discount: 500000, clientAsk: 'Wants 1.55 Cr all inclusive' });
+    assert.equal(big.status, 'pending');
+    assert.equal((await db.one('select status from mkt_offers where id = $1', [small.id])).status, 'void', 'the newer offer replaces the earlier one');
+    const o = await db.one('select discount_pct, floor_rate, list_total, total from mkt_offers where id = $1', [big.id]);
+    assert.ok(Number(o.discount_pct) > 3.5 && Number(o.discount_pct) < 3.6); assert.equal(Number(o.floor_rate), 27500);
+    assert.ok((await admin('/api/leads')).approvals.some((x) => x.id === big.id), 'the approver sees it to approve');
+    assert.equal((await amaan('/api/leads', { action: 'offer.decide', id: offerLead, offerId: big.id, approve: true })).status, 403, 'sales cannot approve his own');
+    assert.equal((await sameer('/api/leads', { action: 'offer.decide', id: offerLead, offerId: big.id, approve: true })).status, 403, 'only the approver');
+    assert.equal((await admin('/api/leads', { action: 'offer.decide', id: offerLead, offerId: big.id, approve: false })).status, 400, 'a rejection needs a reason');
+    const ok = await admin('/api/leads', { action: 'offer.decide', id: offerLead, offerId: big.id, approve: true });
+    assert.equal(ok.status, 'approved', ok.error);
+    // and by WhatsApp reply, from the approver's own mobile
+    await db.q("update users set phone = '9876500000' where username = 'admin'");
+    const third = await amaan('/api/leads', { action: 'offer.make', id: offerLead, unitId: unit.id, parking: 1, discount: 450000, clientAsk: 'Final: 1.56 Cr' });
+    const reply = await require('../lib/mkt-offers').handleReply('919876500000', `APPROVE OF-${third.id}`);
+    assert.ok(reply && reply.handled); assert.equal((await db.one('select status from mkt_offers where id = $1', [third.id])).status, 'approved');
+    assert.equal(await require('../lib/mkt-offers').handleReply('919999999999', `APPROVE OF-${third.id}`), null, 'not from a stranger\'s mobile');
+  });
+
+  await step('Sales holds the flat for 72 hours; nobody else can take it; the hold ends by itself', async () => {
+    const unit = await db.one("select id from units where unit_no = 'A-605'");
+    const h = await amaan('/api/leads', { action: 'hold', id: offerLead, unitId: unit.id });
+    assert.equal(h.ok, true, h.error);
+    const u1 = await db.one('select status, held_lead_id, held_until from units where id = $1', [unit.id]);
+    assert.equal(u1.status, 'held'); assert.equal(u1.held_lead_id, offerLead);
+    assert.ok(Math.abs(new Date(u1.held_until) - Date.now() - 72 * 3600e3) < 120e3, '72 hours');
+    const other = await asma('/api/leads', { action: 'add', phone: '9820055555', welcome: false });
+    await asma('/api/leads', { action: 'handover', id: other.id, to: amaan.id });
+    assert.equal((await amaan('/api/leads', { action: 'hold', id: other.id, unitId: unit.id })).status, 409, 'held for someone else');
+    assert.equal((await amaan('/api/leads', { action: 'offer.make', id: other.id, unitId: unit.id })).status, 409);
+    const u2 = await db.one("select id from units where unit_no = 'A-606'");
+    await amaan('/api/leads', { action: 'hold', id: other.id, unitId: u2.id });
+    await db.q("update units set held_until = now() - interval '1 minute' where id = $1", [u2.id]);
+    assert.equal((await require('../lib/mkt-offers').releaseHolds()).released, 1);
+    assert.equal((await db.one('select status from units where id = $1', [u2.id])).status, 'available');
+    assert.equal((await db.one('select status from units where id = $1', [unit.id])).status, 'held', 'the live hold stays');
+  });
+
+  await step('Book this flat: the held flat is booked for this customer, goes to the CRM, and the lead closes as booked', async () => {
+    const unit = await db.one("select id from units where unit_no = 'A-605'");
+    const o = await db.one("select av from mkt_offers where lead_id = $1 and status = 'approved'", [offerLead]);
+    const b = await amaan('/api/bookings', { action: 'create', leadId: offerLead, unitId: unit.id, agreementValue: Number(o.av), parking: 1, bookingDate: new Date(Date.now() + 5.5 * 3600e3).toISOString().slice(0, 10),
+      applicants: [{ name: 'Meera Rao', phone: '9820044444', pan: 'ABCDE1234F' }], source: 'Instagram', rmName: 'amaan' });
+    assert.equal(b.ok, true, b.error);
+    const l = await db.one('select status, booking_id, hold_unit_id from mkt_leads where id = $1', [offerLead]);
+    assert.equal(l.status, 'booked'); assert.equal(l.booking_id, b.id); assert.equal(l.hold_unit_id, null);
+    assert.equal((await db.one('select status, held_lead_id from units where id = $1', [unit.id])).status, 'blocked', 'waiting for CRM approval, like every booking');
+    assert.equal((await db.one("select count(*)::int as n from mkt_offers where lead_id = $1 and status = 'booked'", [offerLead])).n, 1);
+    const s = (await admin('/api/leads')).summary;
+    assert.ok(s.offers >= 1 && s.booked >= 2); assert.ok(s.bySales.find((x) => x.name === 'amaan'));
+  });
+
   console.log(`\n${n} pre-sales & sales checks passed.`);
   process.exit(0);
 })().catch((e) => { console.error(e); process.exit(1); });

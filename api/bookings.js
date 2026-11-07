@@ -131,8 +131,11 @@ module.exports = route({
       const brokerage = pct !== null ? Math.round(av * pct / 100) : b.brokerage === '' || b.brokerage == null ? null : toPaise(b.brokerage);
       if (brokerage !== null && !(brokerage >= 0)) throw fail(400, 'Brokerage looks wrong.');
       const id = await db.tx(async (t) => {
-        const cur = await t.one('select status from units where id = $1 for update', [unit.id]);
-        if (!['available', 'blocked'].includes(cur.status)) throw fail(409, `Unit ${unit.unit_no} is not available (${cur.status}).`);
+        const cur = await t.one('select status, held_lead_id from units where id = $1 for update', [unit.id]);
+        // a flat held by sales for this very customer (Pre-sales & Sales) can be booked for them
+        const leadId = intOr(b.leadId) || null;
+        const heldForLead = cur.status === 'held' && leadId && cur.held_lead_id === leadId;
+        if (!['available', 'blocked'].includes(cur.status) && !heldForLead) throw fail(409, `Unit ${unit.unit_no} is not available (${cur.status}).`);
         const firm = await require('../lib/cp').firmFor(t, { cpId: intOr(b.cpId), cpName: b.cpName, userId: u.id });
         const row = await t.one(
           `insert into bookings (unit_id, plan_id, booking_date, agreement_value, gst_rate, parking, funding, loan_bank, source, cp_name, brokerage, rm_name, created_by, cp_id, brokerage_pct)
@@ -144,10 +147,22 @@ module.exports = route({
           const y = await t.one('insert into buyers (name, pan, aadhaar, phone, email, address) values ($1, $2, $3, $4, $5, $6) returning id', Object.values(people[i]));
           await t.q('insert into booking_applicants (booking_id, seq, buyer_id) values ($1, $2, $3)', [row.id, i + 1, y.id]);
         }
-        await t.q("update units set status = 'blocked' where id = $1", [unit.id]);
+        await t.q("update units set status = 'blocked', held_until = null, held_lead_id = null, hold_note = case when held_lead_id is not null then null else hold_note end where id = $1", [unit.id]);
+        // the lead this booking came from closes as booked, and stays linked (which ad or call brought the buyer)
+        if (leadId) {
+          const ld = await t.one('select id, status from mkt_leads where id = $1', [leadId]);
+          if (ld) {
+            await t.q(`update mkt_leads set booking_id = $2, status = 'booked', booked_at = coalesce(booked_at, now()), next_date = null, hold_unit_id = null, hold_until = null,
+                project_id = $3, updated_at = now() where id = $1`, [leadId, row.id, unit.project_id]);
+            await t.q("update mkt_offers set status = 'booked' where lead_id = $1 and unit_id = $2 and status in ('given', 'approved')", [leadId, unit.id]);
+            await t.q("insert into mkt_lead_events (lead_id, user_id, kind, outcome, note, data) values ($1, $2, 'booking', 'booked', $3, $4)", [leadId, u.id, `Booked flat ${unit.unit_no}: sent to CRM for approval.`, { booking: row.id }]);
+            row.leadFrom = ld.status;
+          }
+        }
         await audit.record(t.q, { user: u, action: 'create', entity: 'booking', entityId: row.id, projectId: unit.project_id, after: { unit: unit.unit_no, agreementValue: rupees(av), bookingDate, buyers: people.map((p) => p.name) } });
         return row.id;
       });
+      if (intOr(b.leadId)) await require('../lib/mkt-leads').statusChanged(intOr(b.leadId), 'visit', 'booked').catch(() => {});
       return res.json({ ok: true, id });
     }
 
@@ -184,6 +199,13 @@ module.exports = route({
           const ok = await t.one("update bookings set status = 'rejected', approved_by = $2, approved_at = now() where id = $1 and status = 'pending' returning id", [bk.id, u.id]);
           if (!ok) throw fail(409, 'Someone else has just dealt with this booking. Refresh the page.');
           await t.q("update units set status = 'available' where id = $1", [bk.unit_id]);
+          // the lead it came from goes back to sales to follow up
+          const ld = await t.one('select id from mkt_leads where booking_id = $1', [bk.id]);
+          if (ld) {
+            await t.q("update mkt_leads set status = 'visit', booking_id = null, booked_at = null, next_date = (now() + interval '330 minutes')::date, updated_at = now() where id = $1", [ld.id]);
+            await t.q("update mkt_offers set status = 'approved' where lead_id = $1 and status = 'booked'", [ld.id]);
+            await t.q("insert into mkt_lead_events (lead_id, user_id, kind, outcome, note) values ($1, $2, 'booking', 'rejected', $3)", [ld.id, u.id, `CRM did not approve the booking${b.reason ? ': ' + str(b.reason, 200) : ''}. Back to sales.`]);
+          }
           await log(t, 'reject', { status: 'rejected' }, str(b.reason, 300) || null);
         }
       });

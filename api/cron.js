@@ -72,7 +72,10 @@ async function run(req, res, job) {
       out.mktDigest = await require('../lib/mkt-money').digest({}).catch((e) => ({ error: e.message })); // Mondays: last week in Marketing
       return res.json({ ok: true, ...out });
     }
-    if (job === 'agents') return res.json({ ok: true, ...(await require('../lib/agents').tick()) }); // the AI marketing agent team, every 10 minutes
+    if (job === 'agents') { // every 10 minutes: flats held by sales whose 72 hours ran out are free again; then the AI marketing agent team
+      const holds = await require('../lib/mkt-offers').releaseHolds().catch((e) => ({ error: e.message }));
+      return res.json({ ok: true, holds, ...(await require('../lib/agents').tick()) });
+    }
     if (job === 'backup') return res.json({ ok: true, ...(await require('../lib/backup').run({ trigger: 'schedule' })) }); // the nightly backup to Google Drive
     if (job === 'dpr') return res.json({ ok: true, ...(await require('../lib/staff-alerts').dprReminder()) });
     if (job === 'summary') return res.json({ ok: true, ...(await require('../lib/staff-alerts').sendSummary({ trigger: 'schedule' })) });
