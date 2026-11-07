@@ -518,7 +518,7 @@ Find out: which home (1, 2 or 3 BHK), budget, when they plan to buy, to live in 
 If interested, book a site visit: any day except Monday, 10 am to 7 pm. Confirm the day and time.
 Answer only from these facts. For anything else, say a sales advisor will call them. Never promise prices, offers or dates.
 If they ask not to be called again, apologise and end the call.`;
-    const defScript = (p) => `Namaste. This is a call from Dream India Realty, Mumbai. We are launching our new residential project ${p.name || ''}${p.location ? ' in ' + p.location : ''}. You are receiving this call because you shared your interest in property with our channel partner. If you would like to know more, or visit the site, please press 1. If you are not interested, please press 2. Thank you.`;
+    const defScript = (p) => `Hello. This is a call from Dream India Realty, Mumbai. We are launching our new residential project ${p.name || ''}${p.location ? ' in ' + p.location : ''}. You are receiving this call because you shared your interest in property with our channel partner. If you would like to know more, or visit the site, please press 1. If you are not interested, please press 2. Thank you.`;
     const ST = [['fresh', 'Not called yet'], ['not_reachable', 'Not reachable last time'], ['callback', 'Asked to call back'], ['interested', 'Interested']];
     const f = (c && c.filters) || {}, st = f.statuses || (kind === 'sms' ? ['fresh', 'not_reachable', 'callback', 'interested'] : kind === 'agent' ? ['fresh', 'not_reachable', 'ai_interested'] : ['fresh', 'not_reachable']);
     if (kind === 'agent' && !ST.some((x) => x[0] === 'ai_interested')) ST.push(['ai_interested', 'Pressed 1 on an AI call']);
