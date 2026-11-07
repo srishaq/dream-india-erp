@@ -127,6 +127,9 @@ const cron = () => fetch(BASE + '/api/cron?job=agents', { headers: { Authorizati
     const p = await db.one('select * from mkt_posts where id = $1', [r.posts[0].id]);
     assert.match(p.caption, /MahaRERA No\.: P51800012345/);
     assert.equal((await A(rupali, 'post.approve', { id: p.id })).status, 403);
+    const blocked = await A(sameer, 'post.approve', { id: p.id });
+    assert.equal(blocked.status, 409); assert.match(blocked.error, /MahaRERA QR/, 'no QR, no approval');
+    await db.q("insert into ag_photos (project_id, url, tags, asset_id, created_at) values ($1, 'qr:test', 'mahareraqr', 'QR1', now())", [p.project_id]);
     assert.equal((await A(sameer, 'post.approve', { id: p.id })).ok, true);
     assert.equal((await db.one('select status from mkt_posts where id = $1', [p.id])).status, 'approved');
     assert.equal((await A(sameer, 'post.sendback', { id: r.posts[1].id, note: 'Use the new photos' })).ok, true);

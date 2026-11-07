@@ -59,6 +59,18 @@ module.exports = route({
       }
       return res.json({ ok: true, media: out });
     }
+    // The official MahaRERA QR code of a project (once per project; MahaRERA requires it on every project ad)
+    if (a === 'qr.upload') {
+      edit();
+      const pid = intOr(d.projectId);
+      if (!u.projects.includes(pid)) throw fail(403, 'Not your project.');
+      const m = String(d.data || '').match(/^data:(image\/(?:png|jpeg));base64,(.+)$/);
+      if (!m) throw fail(400, 'Choose the QR image (PNG or JPG).');
+      const r = await require('../lib/agents-photos').qrUpload(pid, Buffer.from(m[2], 'base64'), m[1], u);
+      await A.say(String(pid), 'creative', null, `${u.name} added the MahaRERA QR code of ${r.project}: every ${r.project} design carries it from now on.`);
+      await log('rera-qr', 'projects', pid, {});
+      return res.json({ ok: true });
+    }
     if (a === 'history.rera') { own(); return res.json({ ok: true, rera: await require('../lib/agents-history').reraSeen() }); }
     // Plan a stream's calendar for a date window (two weeks at a time); festivals come from /content/festivals.md.
     if (a === 'plan.window') {
@@ -149,6 +161,16 @@ module.exports = route({
       if (a === 'post.approve') {
         if (p.created_by === u.id) throw fail(403, 'Someone other than the person who asked for it approves it.');
         const m = await require('../lib/mkt-tools').reraMissing(p); if (m) throw fail(400, m);
+        // MahaRERA: a registered project's ad carries its official QR code; the design must have been made with it
+        if (p.project_id) {
+          const pr = await db.one('select name, rera_no from projects where id = $1', [p.project_id]);
+          if (pr && pr.rera_no) {
+            const qr = await require('../lib/agents-photos').qrFor(p.project_id);
+            if (!qr) throw fail(409, `MahaRERA requires the project's QR code on every ad. Upload the MahaRERA QR of ${pr.name} first (AI Agent Team → ${pr.name} → MahaRERA QR), then redo the design.`);
+            const f = await db.one("select max(created_at) as at from mkt_post_files where post_id = $1 and mime like 'image/%'", [p.id]);
+            if (f && f.at && new Date(f.at) < new Date(qr.at)) throw fail(409, `This design was made before the MahaRERA QR of ${pr.name} was added. Press "Redo the design" first.`);
+          }
+        }
         // approved with a date and a design: straight onto the calendar, and the publisher posts it at that time
         const r = await db.one(`update mkt_posts set status = case when publish_at > now() and exists (select 1 from mkt_post_files f where f.post_id = mkt_posts.id) then 'scheduled' else 'approved' end,
             approved_by = $2, approved_at = now(), review_note = null, updated_at = now() where id = $1 returning status, publish_at`, [p.id, u.id]);

@@ -61,6 +61,7 @@
       ${me.edit ? `<button class="btn pri" id="runNow"${off ? ' disabled' : ''}>Run now</button>` : ''}
       ${d.queue.length ? `<button class="btn pri" id="toDrafts">Drafts to approve (${d.queue.length})</button>` : ''}
       <a class="btn" href="/designs" style="text-decoration:none">All designs</a>
+      ${d.project && d.project.rera_no ? `<button class="btn ${d.reraQr ? '' : 'pri'}" id="reraQr" title="MahaRERA requires the project's official QR code on every ad">${d.reraQr ? 'MahaRERA QR ✓' : 'Upload MahaRERA QR'}</button><input type="file" id="reraQrFile" accept="image/png,image/jpeg" hidden>` : ''}
       <a class="btn" href="/" style="text-decoration:none">⌂ ERP Home</a>
       <a class="back" href="/#/marketing${d.project ? '/' + d.project.id : ''}">← Sales &amp; Marketing</a>
     </header>
@@ -176,7 +177,8 @@
     on('runNow', async (ev) => { ev.target.disabled = true; ev.target.textContent = 'Running…'; try { const r = await api({ action: 'run' }); toast(r.skipped ? 'Skipped: ' + r.skipped : r.flagged.length ? `Handled: ${r.flagged.join(', ').replace(/_/g, ' ')}${r.drafts ? ` · ${r.drafts} drafts written` : ''}` : 'Nothing new needs a brief right now.'); } catch (x) { toast(x.message, true); } load(); });
     on('enableHere', () => saveScope({ enabled: true, paused: false }));
     on('ownerEdit', ownerDlg); on('aOwner', () => (d.me.own ? ownerDlg() : toast('Management sets the owner input.')));
-    on('aQueue', () => $('#you').scrollIntoView({ behavior: 'smooth' })); on('toDrafts', () => $('#you').scrollIntoView({ behavior: 'smooth' })); on('aAlerts', () => $('#you').scrollIntoView({ behavior: 'smooth' }));
+    on('aQueue', () => $('#you').scrollIntoView({ behavior: 'smooth' })); on('toDrafts', () => $('#you').scrollIntoView({ behavior: 'smooth' })); on('reraQr', () => $('#reraQrFile').click());
+    const qf = $('#reraQrFile'); if (qf) qf.onchange = () => { const f = qf.files[0]; if (!f) return; const rd = new FileReader(); rd.onload = async () => { try { await api({ action: 'qr.upload', projectId: d.project.id, data: rd.result }); await load(); toast('MahaRERA QR saved. Every new design of this project carries it.'); } catch (e) { toast(e.message, true); } }; rd.readAsDataURL(f); }; on('aAlerts', () => $('#you').scrollIntoView({ behavior: 'smooth' }));
     on('aFeed', () => { S.focus = null; render(); $('#focus').scrollIntoView({ behavior: 'smooth' }); });
     on('aPerm', permDlg); on('aKill', killDlg); on('brief', briefDlg); on('funnels', funnelsDlg);
     on('templates', templatesDlg);
