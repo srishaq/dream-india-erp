@@ -3,7 +3,7 @@
    data-project: the project's ERP number or name (leave empty on company pages). Everything is inside a shadow root, so
    the website's own styles are not touched. */
 (function () {
-  if (window.__diBot) return; window.__diBot = 1;
+  if (window.__diBot) return;
   var me = document.currentScript || document.querySelector('script[src*="/bot.js"]');
   var API = (me && me.src ? new URL(me.src).origin : '') + '/api/bot';
   var PROJECT = (me && me.getAttribute('data-project')) || '';
@@ -13,6 +13,7 @@
     fetch(API + '?cfg=1').then(function (r) { return r.json(); }).then(function (j) { if (j && j.on) init(); }).catch(function () {});
   } else init();
   function init() {
+    if (window.__diBot) return; window.__diBot = 1; // one chat window, even if the line is on the page twice
   var KEY = 'di_bot_sid_' + PROJECT;
   var get = function (k) { try { return localStorage.getItem(k); } catch (e) { return null; } };
   var set = function (k, v) { try { localStorage.setItem(k, v); } catch (e) {} };
