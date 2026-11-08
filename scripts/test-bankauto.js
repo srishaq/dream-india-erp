@@ -135,6 +135,19 @@ let n = 0; const step = async (name, fn) => { await fn(); n++; console.log('  âœ
     const one = await admin('/api/bank-auto?run=' + first.id); assert.equal(one.run.added_rows.length, 4);
     const t = await admin('/api/accounts?view=todo'); assert.ok(t.items.find((x) => x.task.startsWith('Bank Auto Check')).n >= 2);
   });
+  await step('a typed day total that differs from the statement is set to the statement (what was typed kept in the remark); Opening is the bank\'s own balance', async () => {
+    const q = require('../lib/db');
+    const e = await q.one("select id from acc_daily_entries where bank = 'PRIME RERA COLLECTION 100%' and entry_date = '2026-10-15'");
+    await q.q("update acc_daily_entries set receipts = 999, payments = 5, entered_by = 'Tally' where id = $1", [e.id]);
+    await q.q("insert into acc_daily_entries (book, entry_date, bank, receipts, entered_by) values ('signature', '2026-10-15', 'PRIME RERA COLLECTION 100%', 777, 'Tally')");
+    const r = await admin('/api/bank-auto', { action: 'upload', files: [{ name: 'Yes Bank RERA 700 Ac.xlsx', data: b64(rera()) }] });
+    assert.equal(r.status, 200, r.error); assert.ok(r.dailyCorrected >= 1);
+    const rows = await q.q("select receipts, payments, entered_by, remarks from acc_daily_entries where bank = 'PRIME RERA COLLECTION 100%' and entry_date = '2026-10-15' order by id");
+    assert.equal(Number(rows[0].receipts), 150000); assert.equal(Number(rows[0].payments), 150000); assert.match(rows[0].remarks, /was Tally: receipts 999, payments 5/);
+    assert.equal(rows[1].receipts, null); assert.match(rows[1].remarks, /^Emptied/);
+    const b = await admin('/api/accounts?view=balances&date=2026-10-31');
+    const row = b.rows.find((x) => x.bank === 'PRIME RERA COLLECTION 100%'); assert.ok(row.openingFrom);
+  });
   await step('a receipt entered in the ERP but not on the statement is listed; one under the wrong bank says so', async () => {
     await admin('/api/accounts', { action: 'save', reg: 'receipts', data: { txn_date: '2026-10-22', bank: 'Yes RERA Collection 100% (0700)', amount: '42000', description: 'NOT ON STATEMENT' } });
     await admin('/api/accounts', { action: 'save', reg: 'receipts', data: { txn_date: '2026-10-26', bank: 'Yes RERA Collection 100% (0700)', amount: '5000', description: 'UNKNOWN CREDIT (wrong bank)' } });
