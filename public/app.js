@@ -3267,7 +3267,7 @@
     const date = dateArg || store.get('erp_bal_date') || todayIso();
     const d = await api('/api/accounts?view=balances&date=' + date);
     const row = (r, bold) => `<tr class="${bold ? 'tot' : ''}"><td>${bold ? `<b>${esc(r.grp)} – total</b>` : esc(r.bank)}</td><td class="small">${bold ? '' : esc(r.account_no || '')}</td><td class="num">${inr(r.opening)}${!bold && r.openingFrom ? `<div class="small muted" title="The balance the bank statement shows at the end of this day">bank, ${fmtD(r.openingFrom)}</div>` : ''}</td><td class="num">${inr(r.receipts)}</td><td class="num">${inr(r.payments)}</td><td class="num"><b>${inr(r.closing)}</b></td>
-      <td class="num">${bold ? (r.perBank ? inr(r.perBank) : '') : d.can.enter ? `<input class="stated" data-b="${r.id}" value="${r.perBank == null ? '' : Math.round(r.perBank * 100) / 100}" inputmode="decimal" style="width:130px;text-align:right">` : r.perBank == null ? '' : inr(r.perBank)}</td>
+      <td class="num">${bold ? (r.perBank ? inr(r.perBank) : '') : d.can.enter ? `<input class="stated" data-b="${r.id}" value="${r.perBank == null ? '' : (Math.round(r.perBank * 100) / 100).toLocaleString('en-IN', { maximumFractionDigits: 2 })}" inputmode="decimal" style="width:140px;text-align:right">` : r.perBank == null ? '' : inr(r.perBank)}</td>
       <td class="num ${!bold && r.difference != null && Math.abs(r.difference) > 1 ? 'bad-t' : ''}">${bold || r.difference == null ? '' : inr(r.difference, 2)}</td><td class="num">${inr(r.bf)}</td></tr>`;
     const groups = [...new Set(d.rows.map((r) => r.grp))];
     $('#page').innerHTML = `<div class="page-head"><div><h1>Daily Bank Balance</h1><p class="muted">Every day, add one row per bank in Daily entries (date, bank, receipts, payments). The summary shows opening, receipts, payments and closing for the report date. Type the balance the bank shows in Balance per Bank: the Difference must be blank or zero. For banks read from their statement, Opening is the balance the statement shows at the end of the previous day; for the others, Opening = balance brought forward on ${fmtD(d.bfDate)} plus every entry before the report date.</p></div></div>
@@ -3283,6 +3283,8 @@
         <div class="actions"><a class="btn ghost" href="#/reg-daily">All daily entries</a></div></div>`;
     $('#bd').onchange = (e) => { store.set('erp_bal_date', e.target.value); accBalances(e.target.value); };
     if ($('#cfDay')) $('#cfDay').onclick = async () => { try { await api('/api/accounts', { action: 'confirm-day', date: d.date, note: $('#cfNote').value }); toast('Closing balances confirmed.'); accBalances(d.date); } catch (e) { alert(e.message); } };
+    // Balance per Bank reads with Indian commas (48,88,019); commas are stripped when it is saved
+    document.querySelectorAll('input.stated').forEach((i) => (i.onblur = () => { const n = Number(String(i.value).replace(/[₹,\s]/g, '')); if (i.value.trim() && Number.isFinite(n)) i.value = n.toLocaleString('en-IN', { maximumFractionDigits: 2 }); }));
     document.querySelectorAll('input.stated').forEach((i) => (i.onchange = async () => { try { await api('/api/accounts', { action: 'stated', bankId: +i.dataset.b, date: d.date, balance: i.value }); accBalances(d.date); } catch (e) { alert(e.message); } }));
     if ($('#addEntry')) $('#addEntry').onclick = async () => {
       const L = (await api('/api/accounts?view=lists')).lists;
