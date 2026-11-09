@@ -8,18 +8,27 @@ const db = require('../lib/db');
 const { migrate } = require('../lib/migrate');
 
 async function restore(file, { log = console.log } = {}) {
-  const lines = zlib.gunzipSync(fs.readFileSync(file)).toString('utf8').split('\n').filter(Boolean);
-  const head = JSON.parse(lines.shift());
+  // read line by line (a backup can be bigger than one text string); a table may be split over many lines
+  const rl = require('readline').createInterface({ input: fs.createReadStream(file).pipe(zlib.createGunzip()), crlfDelay: Infinity });
+  let head = null; const data = {};
+  for await (const l of rl) {
+    if (!l) continue;
+    const j = JSON.parse(l);
+    if (!head) { head = j; continue; }
+    if (j.end) { head.counts = j.counts; continue; } // the counts actually written
+    (data[j.t] = data[j.t] || []).push(...j.rows);
+  }
+  if (!head) throw new Error('This file is empty.');
   if (head.backup !== 'dream-india-erp') throw new Error('This is not a Dream India ERP backup.');
   log(`Backup of ${head.day} (${head.at}): ${Object.keys(head.counts).length} tables.`);
   await migrate();
   const busy = await db.one('select (select count(*) from users)::int + (select count(*) from bookings)::int as n');
   if (busy.n > 0) throw new Error('This database is not empty (it has logins or bookings). Restore only into a new, empty database.');
-  const data = Object.fromEntries(lines.map((l) => { const j = JSON.parse(l); return [j.t, j.rows]; }));
   // parents first: order the tables by their foreign keys
   const fks = await db.q(`select tc.table_name as child, ccu.table_name as parent from information_schema.table_constraints tc
     join information_schema.constraint_column_usage ccu on ccu.constraint_name = tc.constraint_name and ccu.table_schema = tc.table_schema
     where tc.constraint_type = 'FOREIGN KEY' and tc.table_schema = 'public'`);
+  for (const t of Object.keys(head.counts)) data[t] = data[t] || [];
   const names = Object.keys(data), order = [], seen = new Set();
   const visit = (t, path = new Set()) => { if (seen.has(t) || path.has(t)) return; path.add(t); for (const f of fks) if (f.child === t && f.parent !== t && names.includes(f.parent)) visit(f.parent, path); seen.add(t); order.push(t); };
   names.forEach((t) => visit(t));
