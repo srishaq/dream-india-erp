@@ -15,7 +15,8 @@
   const p = document.getElementById('prev'), n = document.getElementById('next');
   if (p) p.onclick = () => go(at() - 1); if (n) n.onclick = () => go(at() + 1);
   document.addEventListener('keydown', (e) => { if (e.key === 'ArrowRight') go(at() + 1); if (e.key === 'ArrowLeft') go(at() - 1); if (e.key === 'Escape') back(); });
-  const back = () => { if (history.length > 1 && document.referrer) history.back(); else window.close(); setTimeout(() => { location.href = '/agents'; }, 300); };
+  // Back: to the page that opened the viewer (same tab), else the AI Agent Team
+  const back = () => { const r = document.referrer; if (r && new URL(r).origin === location.origin && history.length > 1) history.back(); else location.href = '/agents'; };
   document.getElementById('back').onclick = back;
   requestAnimationFrame(() => { track.scrollLeft = start * track.clientWidth; show(); });
   window.addEventListener('resize', () => { const i = at(); track.scrollLeft = i * track.clientWidth; });
