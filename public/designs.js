@@ -40,7 +40,7 @@
       const label = 'Week of ' + d.toLocaleDateString('en-IN', { day: 'numeric', month: 'long', timeZone: 'UTC' });
       return `<div class="week">${label}</div><div class="grid">${ps.map((p) => {
         const im = (p.files || []).filter((f) => /^image\//.test(f.mime));
-        const pics = im.length ? `<div class="imgs">${im.map((f, i) => `<a href="/api/marketing?pfile=${f.id}" target="_blank" rel="noopener" title="${im.length > 1 ? 'Slide ' + (i + 1) : 'Open full size'}"><img src="/api/marketing?pfile=${f.id}" alt="" loading="lazy"></a>`).join('')}</div>` : '<div class="noimg">Design on its way</div>';
+        const pics = im.length ? `<div class="imgs">${im.map((f, i) => `<a href="/slides?ids=${im.map((y) => y.id).join(',')}&i=${i}" target="_blank" rel="noopener" title="${im.length > 1 ? 'Slide ' + (i + 1) : 'Open full size'}"><img src="/api/marketing?pfile=${f.id}" alt="" loading="lazy"></a>`).join('')}</div>` : '<div class="noimg">Design on its way</div>';
         const st = p.status === 'review' ? '<span class="tag">Waiting</span>' : ['approved', 'scheduled'].includes(p.status) ? '<span class="tag ok">Approved</span>' : `<span class="tag">${e(p.status)}</span>`;
         const acts = p.status === 'review' && can.approve ? `<div class="acts"><button class="btn pri" data-approve="${p.id}" ${im.length ? '' : 'disabled'}>Approve</button><button class="btn" data-back="${p.id}">Send back</button></div>` : '';
         const sh = p.design_text && p.design_text.shoot;

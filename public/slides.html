@@ -1,0 +1,50 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>Design · Dream India ERP</title>
+<style>
+:root{--bg:#111318;--ink:#fff;--mut:#A3A9B4}
+html,body{margin:0;height:100%;background:var(--bg);color:var(--ink);font:14px/1.4 system-ui,-apple-system,"Segoe UI",Roboto,sans-serif}
+.track{display:flex;height:100%;overflow-x:auto;scroll-snap-type:x mandatory;-webkit-overflow-scrolling:touch;scrollbar-width:none}
+.track::-webkit-scrollbar{display:none}
+.slide{flex:0 0 100%;height:100%;scroll-snap-align:center;display:flex;align-items:center;justify-content:center;padding:52px 12px 64px;box-sizing:border-box}
+.slide img{max-width:100%;max-height:100%;object-fit:contain;border-radius:8px;box-shadow:0 8px 30px rgba(0,0,0,.4)}
+.bar{position:fixed;left:0;right:0;top:0;display:flex;align-items:center;gap:10px;padding:12px 14px calc(12px);background:linear-gradient(#111318,rgba(17,19,24,0))}
+.bar a,.bar button{color:var(--ink);background:rgba(255,255,255,.12);border:0;border-radius:9px;padding:8px 12px;font-weight:600;text-decoration:none;font-size:14px}
+.count{margin-left:auto;font-weight:700;color:var(--mut)}
+.dots{position:fixed;left:0;right:0;bottom:calc(18px + env(safe-area-inset-bottom));display:flex;justify-content:center;gap:8px}
+.dots i{width:8px;height:8px;border-radius:50%;background:rgba(255,255,255,.3)}.dots i.on{background:#F5A524}
+.nav{position:fixed;top:50%;transform:translateY(-50%);width:44px;height:44px;border-radius:50%;border:0;background:rgba(255,255,255,.14);color:#fff;font-size:22px;cursor:pointer}
+.nav.l{left:14px}.nav.r{right:14px}
+@media (hover:none){.nav{display:none}}
+.hint{position:fixed;bottom:calc(42px + env(safe-area-inset-bottom));left:0;right:0;text-align:center;color:var(--mut);font-size:12.5px}
+</style></head>
+<body>
+<div class="bar"><button id="back">← Back</button><a id="open" target="_blank" rel="noopener">Full size</a><span class="count" id="count"></span></div>
+<div class="track" id="track"></div>
+<button class="nav l" id="prev" aria-label="Previous slide">‹</button><button class="nav r" id="next" aria-label="Next slide">›</button>
+<div class="hint" id="hint">Swipe to see every slide</div>
+<div class="dots" id="dots"></div>
+<script>
+(function () {
+  // /slides?ids=12,13,14&i=0 — a carousel's slides, one per screen, swipe (or arrows / keys) to move
+  const q = new URLSearchParams(location.search);
+  const ids = String(q.get('ids') || '').split(',').map((x) => parseInt(x, 10)).filter((x) => x > 0).slice(0, 20);
+  const start = Math.max(0, Math.min(ids.length - 1, parseInt(q.get('i') || '0', 10) || 0));
+  const track = document.getElementById('track'), dots = document.getElementById('dots');
+  track.innerHTML = ids.map((id, i) => `<div class="slide"><img src="/api/marketing?pfile=${id}" alt="Slide ${i + 1}" ${i > 2 ? 'loading="lazy"' : ''}></div>`).join('');
+  dots.innerHTML = ids.length > 1 ? ids.map(() => '<i></i>').join('') : '';
+  if (ids.length < 2) { document.getElementById('hint').remove(); document.getElementById('prev').remove(); document.getElementById('next').remove(); }
+  const at = () => Math.round(track.scrollLeft / track.clientWidth);
+  const show = () => { const i = at(); document.getElementById('count').textContent = ids.length > 1 ? `${i + 1} / ${ids.length}` : ''; [...dots.children].forEach((d, k) => d.classList.toggle('on', k === i)); document.getElementById('open').href = `/api/marketing?pfile=${ids[i]}`; };
+  const go = (i) => track.scrollTo({ left: Math.max(0, Math.min(ids.length - 1, i)) * track.clientWidth, behavior: 'smooth' });
+  track.addEventListener('scroll', () => { requestAnimationFrame(show); const h = document.getElementById('hint'); if (h && at() > 0) h.remove(); });
+  const p = document.getElementById('prev'), n = document.getElementById('next');
+  if (p) p.onclick = () => go(at() - 1); if (n) n.onclick = () => go(at() + 1);
+  document.addEventListener('keydown', (e) => { if (e.key === 'ArrowRight') go(at() + 1); if (e.key === 'ArrowLeft') go(at() - 1); if (e.key === 'Escape') back(); });
+  const back = () => { if (history.length > 1 && document.referrer) history.back(); else window.close(); setTimeout(() => { location.href = '/agents'; }, 300); };
+  document.getElementById('back').onclick = back;
+  requestAnimationFrame(() => { track.scrollLeft = start * track.clientWidth; show(); });
+  window.addEventListener('resize', () => { const i = at(); track.scrollLeft = i * track.clientWidth; });
+})();
+</script>
+</body></html>
