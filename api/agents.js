@@ -261,6 +261,15 @@ module.exports = route({
       await log('design', 'mkt-post', p.id, { canva: m[1] });
       return res.json({ ok: true, added: files.length });
     }
+    if (a === 'post.video') { // the simple view: the finished reel's Google Drive link
+      edit();
+      const p = await db.one("select id, kind from mkt_posts where id = $1", [intOr(d.id)]); if (!p) throw fail(404, 'No such post.');
+      const link = String(d.link || '').trim();
+      if (!/^https:\/\/\S+$/.test(link) || link.length > 500) throw fail(400, 'Paste the full link, starting with https://');
+      await db.q('update mkt_posts set asset_url = $2, updated_by = $3, updated_at = now() where id = $1', [p.id, link, u.id]);
+      await log('video-link', 'mkt-post', p.id, { link });
+      return res.json({ ok: true });
+    }
     if (a === 'owner.done') {
       own();
       const r = await db.one("update ag_interrupts set status = 'handled', handled_at = now(), handled_by = $2 where id = $1 and status = 'owner' returning scope, kind", [intOr(d.id), u.id]);

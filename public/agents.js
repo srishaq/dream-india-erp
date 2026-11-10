@@ -9,6 +9,7 @@
   try { S.scope = localStorage.getItem('erp_agents_scope') || null; } catch { /* private window */ }
   if (/^#\/?(company|\d+)$/.test(location.hash)) S.scope = location.hash.replace(/^#\/?/, '');
   S.scope = S.scope || 'company';
+  try { S.full = localStorage.getItem('erp_agents_full') === '1'; } catch { S.full = false; }
 
   async function api(body) {
     const r = await fetch('/api/agents' + (body ? '' : `?scope=${encodeURIComponent(S.scope)}`), body ? { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ scope: S.scope, ...body }) } : {});
@@ -39,7 +40,14 @@
   const inr = (n) => '₹' + Number(n).toLocaleString('en-IN');
 
   // ---------- the screen ----------
+  // A draft waiting for approval: its design (or carousel slides), caption and the buttons
+  const qCard = (p, me) => `<div class="q">${(() => { const im = (p.files || []).filter((x) => /^image\//.test(x.mime)), f = im[im.length - 1];
+              if (p.kind === 'carousel' && im.length > 1) return `<div style="display:flex;gap:6px;overflow-x:auto;margin:0 0 6px">${im.map((x, i) => `<a href="/api/marketing?pfile=${x.id}" target="_blank" rel="noopener" title="Slide ${i + 1}"><img src="/api/marketing?pfile=${x.id}" alt="Slide ${i + 1}" loading="lazy" style="height:200px;border-radius:8px;display:block"></a>`).join('')}</div>`;
+              return f ? `<a href="/api/marketing?pfile=${f.id}" target="_blank" rel="noopener"><img src="/api/marketing?pfile=${f.id}" alt="" loading="lazy" style="width:100%;border-radius:8px;margin:0 0 6px;display:block"></a>` : (p.files || []).length ? '' : '<div style="font-size:11.5px;color:#B54708;margin:0 0 4px">No design attached yet</div>'; })()}<h4>${e(p.title)}</h4><div class="meta">${e(p.kind)} · ${e((p.channels || []).join(', '))}${p.publish_at ? ' · ' + new Date(p.publish_at).toLocaleDateString('en-IN', { weekday: 'short', day: 'numeric', month: 'short' }) : ''}${p.agent ? ' · <span class="tag">AI draft</span>' : ''}</div><p>${e(p.caption || '')}</p>
+            <div class="acts">${me.own ? `<button class="btn sm pri" data-approve="${p.id}">Approve</button><button class="btn sm" data-back="${p.id}">Send back</button>` : ''}${me.edit ? `<button class="btn sm" data-design="${p.id}">${(p.files || []).length ? 'Redo the design' : 'Design in Canva'}</button>` : ''}<button class="btn sm" data-view="${p.id}">Read all</button></div></div>`;
+
   function render() {
+    if (!S.full) return renderSimple();
     const d = S.d, me = d.me, sc = d.settings, o = sc.owner;
     const scopeName = d.project ? d.project.name : 'Dream India Realty (company)';
     const off = d.killed || sc.paused || !sc.enabled;
@@ -60,6 +68,7 @@
       <span class="clock" id="clock"></span>
       ${me.edit ? `<button class="btn pri" id="runNow"${off ? ' disabled' : ''}>Run now</button>` : ''}
       ${d.queue.length ? `<button class="btn pri" id="toDrafts">Drafts to approve (${d.queue.length})</button>` : ''}
+      <button class="btn" id="simpleView">Simple view</button>
       <a class="btn" href="/designs" style="text-decoration:none">All designs</a>
       ${d.project && d.project.rera_no ? `<button class="btn ${d.reraQr ? '' : 'pri'}" id="reraQr" title="MahaRERA requires the project's official QR code on every ad">${d.reraQr ? 'MahaRERA QR ✓' : 'Upload MahaRERA QR'}</button><input type="file" id="reraQrFile" accept="image/png,image/jpeg" hidden>` : ''}
       <a class="btn" href="/" style="text-decoration:none">⌂ ERP Home</a>
@@ -141,10 +150,7 @@
         <p class="sub">All you have to do is check &amp; approve.</p>
         <div class="queue">
           ${d.queue.length ? `<div class="sub" style="margin:2px 0 0;font-weight:600;color:var(--ink,#101828)">Drafts to approve (${d.queue.length})</div>` : ''}
-          ${d.queue.map((p) => `<div class="q">${(() => { const im = (p.files || []).filter((x) => /^image\//.test(x.mime)), f = im[im.length - 1];
-              if (p.kind === 'carousel' && im.length > 1) return `<div style="display:flex;gap:6px;overflow-x:auto;margin:0 0 6px">${im.map((x, i) => `<a href="/api/marketing?pfile=${x.id}" target="_blank" rel="noopener" title="Slide ${i + 1}"><img src="/api/marketing?pfile=${x.id}" alt="Slide ${i + 1}" loading="lazy" style="height:200px;border-radius:8px;display:block"></a>`).join('')}</div>`;
-              return f ? `<a href="/api/marketing?pfile=${f.id}" target="_blank" rel="noopener"><img src="/api/marketing?pfile=${f.id}" alt="" loading="lazy" style="width:100%;border-radius:8px;margin:0 0 6px;display:block"></a>` : (p.files || []).length ? '' : '<div style="font-size:11.5px;color:#B54708;margin:0 0 4px">No design attached yet</div>'; })()}<h4>${e(p.title)}</h4><div class="meta">${e(p.kind)} · ${e((p.channels || []).join(', '))}${p.publish_at ? ' · ' + new Date(p.publish_at).toLocaleDateString('en-IN', { weekday: 'short', day: 'numeric', month: 'short' }) : ''}${p.agent ? ' · <span class="tag">AI draft</span>' : ''}</div><p>${e(p.caption || '')}</p>
-            <div class="acts">${me.own ? `<button class="btn sm pri" data-approve="${p.id}">Approve</button><button class="btn sm" data-back="${p.id}">Send back</button>` : ''}${me.edit ? `<button class="btn sm" data-design="${p.id}">${(p.files || []).length ? 'Redo the design' : 'Design in Canva'}</button>` : ''}<button class="btn sm" data-view="${p.id}">Read all</button></div></div>`).join('')}
+          ${d.queue.map((p) => qCard(p, me)).join('')}
           ${d.owner.length ? `<div class="sub" style="margin:6px 0 0;font-weight:600;color:var(--ink,#101828)">Alerts (${d.owner.length})</div>` : ''}
           ${d.owner.map((x) => { const m = x.detail || {}; return `<div class="om"><b>${e(x.kind.replace(/_/g, ' '))}</b> · <span style="color:var(--mut)">${ago(x.at)}</span><div>${e(m.msg || '')}</div>${m.link ? `<a href="${e(m.link)}" target="_blank" rel="noopener">Open the post</a>` : ''}${me.own ? `<div class="acts"><button class="btn sm" data-done="${x.id}">Dealt with</button></div>` : ''}</div>`; }).join('')}
           ${!d.queue.length && !d.owner.length ? '<div class="empty">Nothing waiting. The team is on routine work.</div>' : ''}
@@ -167,6 +173,53 @@
     tickClock();
   }
 
+
+  // ---------- the simple view (the default): only what needs a person ----------
+  const day = (t) => new Date(t).toLocaleDateString('en-IN', { weekday: 'short', day: 'numeric', month: 'short', timeZone: 'Asia/Kolkata' });
+  const dayTime = (t) => day(t) + ', ' + new Date(t).toLocaleTimeString('en-IN', { hour: 'numeric', minute: '2-digit', timeZone: 'Asia/Kolkata' });
+  function renderSimple() {
+    const d = S.d, me = d.me, sc = d.settings;
+    const off = d.killed || sc.paused || !sc.enabled;
+    const due = (t) => { const x = new Date(new Date(t).getTime() - 3 * 864e5); return x < new Date() ? 'book it today' : 'book by ' + day(x); };
+    $('#app').innerHTML = `
+    <header class="top">
+      <div class="pick"><label for="scope">Project</label>
+        <select id="scope"><option value="company"${S.scope === 'company' ? ' selected' : ''}>Dream India Realty · whole company</option>
+          ${d.projects.map((p) => `<option value="${p.id}"${String(p.id) === S.scope ? ' selected' : ''}>${e(p.name)}${p.rera_no ? '' : ' · pre-RERA'}</option>`).join('')}</select></div>
+      <div class="title">AI <b>Marketing Team</b></div>
+      <span class="live${off ? ' off' : ''}"><i></i>${d.killed ? 'Stopped (kill switch)' : !sc.enabled ? 'Off for this project' : sc.paused ? 'Paused' : 'Working · checks every 30 minutes'}</span>
+      <a class="btn" href="/designs" style="text-decoration:none">All designs</a>
+      <button class="btn" id="fullView">Show the full team</button>
+      <a class="btn" href="/" style="text-decoration:none">⌂ ERP Home</a>
+      <a class="back" href="/#/marketing${d.project ? '/' + d.project.id : ''}">← Sales &amp; Marketing</a>
+    </header>
+    ${d.killed ? '<div class="banner red">The kill switch is on: nothing is being drafted or posted.</div>' : ''}
+    ${!sc.enabled ? `<div class="banner">The team is off for ${e(d.project ? d.project.name : 'the company')}. ${me.own ? '<button class="btn sm" id="enableHere">Switch it on</button>' : 'Management switches it on.'}</div>` : ''}
+    ${d.preRera ? `<div class="banner"><b>Pre-RERA:</b> ${e(d.project.name)} has no MahaRERA number yet, so posts are about the area and Dream India only, with no prices.</div>` : ''}
+    <main class="simple">
+      <section class="p sbox"><div class="ph"><span class="n">1</span><h3>To approve</h3><span class="st${d.queue.length ? ' hot' : ' ok'}">${d.queue.length || 'All done'}</span></div>
+        <p class="sub">Check the design, the spelling, the caption, the MahaRERA number on project posts, and the date. Approve, or send it back with what to change.</p>
+        <div class="sgrid">${d.queue.length ? d.queue.map((p) => qCard(p, me)).join('') : '<div class="empty">Nothing to approve right now. New drafts appear here.</div>'}</div>
+        ${d.owner.length ? `<div class="sub" style="margin:10px 0 4px;font-weight:700;color:var(--ink)">Alerts (${d.owner.length})</div>` + d.owner.map((x) => { const m = x.detail || {}; return `<div class="om"><b>${e(x.kind.replace(/_/g, ' '))}</b> · <span style="color:var(--mut)">${ago(x.at)}</span><div>${e(m.msg || '')}</div>${m.link ? `<a href="${e(m.link)}" target="_blank" rel="noopener">Open the post</a>` : ''}${me.own ? `<div class="acts"><button class="btn sm" data-done="${x.id}">Dealt with</button></div>` : ''}</div>`; }).join('') : ''}
+      </section>
+      <div class="scol">
+        <section class="p sbox"><div class="ph"><span class="n">2</span><h3>Reels to shoot</h3><span class="st${d.shoots.length ? ' hot' : ' ok'}">${d.shoots.length || 'None'}</span></div>
+          <p class="sub">Book each shoot at least 3 days before the reel goes out. Film to the brief, edit to 30–60 seconds, then attach the video here.</p>
+          ${d.shoots.length ? d.shoots.map((r) => { const b = r.shoot || {}; return `<div class="q reel">
+            <h4>${e(r.title)}</h4><div class="meta">${b.type === 'founder' ? 'Founder reel' : 'Site update reel'} · goes out ${e(day(r.publish_at))} · <b style="color:#B54708">${e(due(r.publish_at))}</b></div>
+            <div class="brief"><div><span>On camera</span>${e(b.who || '')}</div><div><span>Where</span>${e(b.where || '')}</div>${b.script ? `<div><span>Script</span>${e(b.script)}</div>` : ''}${(b.shots || []).length ? `<div><span>Shots</span>${(b.shots || []).map(e).join(' · ')}</div>` : ''}</div>
+            ${me.edit ? `<div class="acts"><button class="btn sm pri" data-vfile="${r.id}">Attach the video</button><button class="btn sm" data-vlink="${r.id}">Paste a Drive link</button></div>` : ''}</div>`; }).join('') : '<div class="empty">No reels waiting to be filmed.</div>'}
+          <input type="file" id="vIn" accept="video/mp4" hidden>
+        </section>
+        <section class="p sbox"><div class="ph"><span class="n">3</span><h3>Going out this week</h3><span class="st ok">${d.upcoming.length}</span></div>
+          <p class="sub">Approved posts go out by themselves at these times.</p>
+          ${d.upcoming.length ? `<div class="wk">${d.upcoming.map((p) => `<div class="wr${p.status === 'published' ? ' pub' : ''}"><time>${e(dayTime(p.publish_at))}</time><b>${e(p.title)}</b><span>${e(p.kind)} · ${e((p.channels || []).join(', '))}${p.status === 'published' ? ' · posted ✓' : p.ready ? '' : ' · <em>no design yet</em>'}</span></div>`).join('')}</div>` : '<div class="empty">Nothing scheduled for the next 7 days.</div>'}
+        </section>
+      </div>
+    </main>`;
+    bind();
+  }
+
   function tickClock() { const c = $('#clock'); if (c) c.textContent = new Date().toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false, timeZone: 'Asia/Kolkata' }) + ' IST'; }
   setInterval(tickClock, 1000);
 
@@ -176,6 +229,25 @@
     const on = (id, fn) => { const el = $('#' + id); if (el) el.addEventListener('click', (ev) => { ev.preventDefault(); fn(ev); }); };
     on('runNow', async (ev) => { ev.target.disabled = true; ev.target.textContent = 'Running…'; try { const r = await api({ action: 'run' }); toast(r.skipped ? 'Skipped: ' + r.skipped : r.flagged.length ? `Handled: ${r.flagged.join(', ').replace(/_/g, ' ')}${r.drafts ? ` · ${r.drafts} drafts written` : ''}` : 'Nothing new needs a brief right now.'); } catch (x) { toast(x.message, true); } load(); });
     on('enableHere', () => saveScope({ enabled: true, paused: false }));
+    on('fullView', () => { S.full = true; try { localStorage.setItem('erp_agents_full', '1'); } catch { /* */ } render(); });
+    on('simpleView', () => { S.full = false; try { localStorage.setItem('erp_agents_full', '0'); } catch { /* */ } render(); });
+    const vIn = $('#vIn');
+    $$('[data-vfile]').forEach((el) => el.addEventListener('click', () => { vIn.dataset.id = el.dataset.vfile; vIn.value = ''; vIn.click(); }));
+    if (vIn) vIn.onchange = async () => {
+      const f = vIn.files[0]; if (!f) return;
+      if (f.size > 3 * 1024 * 1024) { toast('This video is over 3 MB. Upload it to Google Drive and use “Paste a Drive link” instead.', true); return; }
+      try {
+        const data = await new Promise((ok, no) => { const fr = new FileReader(); fr.onload = () => ok(String(fr.result).split(',')[1] || ''); fr.onerror = () => no(new Error('Could not read the file.')); fr.readAsDataURL(f); });
+        const r = await fetch('/api/marketing', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action: 'post.file', data: { postId: +vIn.dataset.id, name: f.name, mime: f.type || 'video/mp4', data } }) });
+        const j = await r.json().catch(() => ({})); if (!r.ok) throw new Error(j.error || 'Could not attach the video.');
+        toast('Video attached. Approve the reel and it goes out on its date.');
+      } catch (x) { toast(x.message, true); }
+      load();
+    };
+    $$('[data-vlink]').forEach((el) => el.addEventListener('click', () => {
+      const dl = dialog('Paste the reel’s Google Drive link', '<label style="display:block;font-weight:600;margin-bottom:6px">Link to the finished video (anyone with the link can view)</label><input id="vLink" type="url" placeholder="https://drive.google.com/…" style="width:100%;padding:9px;border:1px solid var(--line);border-radius:8px">', '<button class="btn pri" id="vSave">Save</button>');
+      $('#vSave', dl).addEventListener('click', async () => { try { await api({ action: 'post.video', id: +el.dataset.vlink, link: $('#vLink', dl).value }); dl.close(); toast('Link saved. Approve the reel and it goes out on its date.'); load(); } catch (x) { toast(x.message, true); } });
+    }));
     on('ownerEdit', ownerDlg); on('aOwner', () => (d.me.own ? ownerDlg() : toast('Management sets the owner input.')));
     on('aQueue', () => $('#you').scrollIntoView({ behavior: 'smooth' })); on('toDrafts', () => $('#you').scrollIntoView({ behavior: 'smooth' })); on('reraQr', () => $('#reraQrFile').click());
     const qf = $('#reraQrFile'); if (qf) qf.onchange = () => { const f = qf.files[0]; if (!f) return; const rd = new FileReader(); rd.onload = async () => { try { await api({ action: 'qr.upload', projectId: d.project.id, data: rd.result }); await load(); toast('MahaRERA QR saved. Every new design of this project carries it.'); } catch (e) { toast(e.message, true); } }; rd.readAsDataURL(f); }; on('aAlerts', () => $('#you').scrollIntoView({ behavior: 'smooth' }));
