@@ -26,8 +26,11 @@
     };
     send('view');
     // the website chat assistant: loaded from here so the website needs no other line (it shows only while switched on)
-    if (/(^|\.)dreamindiarealty\.com$/i.test(location.hostname) && !document.querySelector('script[src*="/bot.js"]')) {
-      var b = document.createElement('script'); b.src = base + '/bot.js'; b.defer = true; (document.body || document.head).appendChild(b);
+    // our project landing pages (ads send people there): the same chat, set to that project
+    var LANDING = { 'dreamaspire.in': 'ASPIRE', 'sapnokaconnection.com': 'ASPIRE' };
+    var landing = LANDING[location.hostname.replace(/^www\./i, '').toLowerCase()] || '';
+    if ((landing || /(^|\.)dreamindiarealty\.com$/i.test(location.hostname)) && !document.querySelector('script[src*="/bot.js"]')) {
+      var b = document.createElement('script'); b.src = base + '/bot.js'; b.defer = true; if (landing) b.setAttribute('data-project', landing); (document.body || document.head).appendChild(b);
     }
     // clicks on call / WhatsApp
     document.addEventListener('click', function (e) {
@@ -53,7 +56,7 @@
       if (!o.phone && !o.email) return;
       var b = new URLSearchParams(); for (var k in o) b.set(k, o[k]);
       for (var x in from) if (x !== 'set' && from[x]) b.set(x, from[x]);
-      b.set('source', 'website'); b.set('vid', vid); b.set('page', location.href.slice(0, 300)); if (!o.project) b.set('project', document.title.slice(0, 120));
+      b.set('source', 'website'); b.set('vid', vid); b.set('page', location.href.slice(0, 300)); if (!o.project) b.set('project', landing || document.title.slice(0, 120));
       var url = base + '/api/marketing?lead=' + encodeURIComponent(key);
       if (navigator.sendBeacon) navigator.sendBeacon(url, b); else fetch(url, { method: 'POST', body: b, mode: 'no-cors', keepalive: true });
       send('enquiry');

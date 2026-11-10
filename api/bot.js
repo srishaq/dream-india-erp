@@ -5,7 +5,9 @@ const auth = require('../lib/auth');
 const roles = require('../lib/roles');
 const B = require('../lib/web-bot');
 
-const ALLOWED = (process.env.BOT_ORIGINS || 'https://dreamindiarealty.com,https://www.dreamindiarealty.com,https://dreamindiagroup.com,https://www.dreamindiagroup.com').split(',').map((x) => x.trim()).filter(Boolean);
+// our websites, plus the Dream Aspire landing pages the ads send people to (10 Nov 2026)
+const LANDING = ['https://dreamaspire.in', 'https://www.dreamaspire.in', 'https://sapnokaconnection.com', 'https://www.sapnokaconnection.com'];
+const ALLOWED = [...new Set([...(process.env.BOT_ORIGINS || 'https://dreamindiarealty.com,https://www.dreamindiarealty.com,https://dreamindiagroup.com,https://www.dreamindiagroup.com').split(','), ...LANDING].map((x) => x.trim()).filter(Boolean))];
 function cors(req, res) {
   const o = req.headers.origin || '';
   const ok = ALLOWED.includes(o) || (process.env.VERCEL !== '1' && /^http:\/\/localhost(:\d+)?$/.test(o)) || o === (process.env.ERP_URL || 'https://erp.dreamindiarealty.com');

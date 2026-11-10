@@ -72,7 +72,7 @@
       opened = true;
       if (log.length) { log.forEach(function (x) { draw(x[0], x[1]); }); setChips([]); if (auto !== true) setTimeout(function () { input.focus(); }, 50); return; }
       var hr = new Date().getHours(), hi = hr < 12 ? 'Good morning' : hr < 17 ? 'Good afternoon' : 'Good evening';
-      add('b', hi + '! Welcome to Dream India Realty. ' + (PROJECT || /signature|aspire|dz-city/i.test(location.pathname) ? 'Happy to tell you all about this project, share sizes, or book a site visit for you.' : 'We have homes at Dream Signature (Oshiwara), Dream Aspire (Lokhandwala) and DZ City (Mumbra). What are you looking for?'));
+      add('b', hi + '! Welcome to ' + ({ ASPIRE: 'Dream Aspire, Lokhandwala, by Dream India Realty', SIGNATURE: 'Dream Signature, Oshiwara, by Dream India Realty' }[String(PROJECT).toUpperCase()] || 'Dream India Realty') + '. ' + (PROJECT || /signature|aspire|dz-city/i.test(location.pathname) ? 'Happy to tell you all about this project, share sizes, or book a site visit for you.' : 'We have homes at Dream Signature (Oshiwara), Dream Aspire (Lokhandwala) and DZ City (Mumbra). What are you looking for?'));
       setChips(PROJECT || /signature|aspire|dz-city/i.test(location.pathname) ? ['Tell me about the project', 'Sizes and prices', 'Book a site visit'] : ['1 or 2 BHK homes', 'Book a site visit', 'Call me back']);
     }
     if (auto !== true) setTimeout(function () { input.focus(); }, 50);
