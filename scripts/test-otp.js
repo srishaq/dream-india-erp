@@ -83,7 +83,7 @@ const step = async (name, fn) => { await fn(); passed++; console.log('  ✓', na
     const r = await admin('/api/users', { action: 'create', name: 'Neha CRM', username: 'neha', role: 'crm', phone: '+91 98200 11122', email: 'Neha@Example.com' });
     assert.equal(r.ok, true); temp = r.tempPassword;
     const sec = await admin('/api/users?security=1');
-    assert.equal(sec.settings.enforce, false); assert.equal(sec.settings.waOtpTemplate, ''); // off until the Admin turns it on; WhatsApp codes off until a template is set
+    assert.equal(sec.settings.enforce, true); assert.equal(sec.settings.waOtpTemplate, ''); // required from migration 076 (12 Nov 2026); WhatsApp codes off until a template is set
     assert.equal((await admin('/api/users', { action: 'security', enforce: true, waOtpTemplate: TPL })).ok, true);
     assert.ok(sec.noMobile.some((u) => u.username === 'rafi')); assert.ok(!sec.noMobile.some((u) => u.username === 'neha'));
   });

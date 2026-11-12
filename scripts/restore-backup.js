@@ -7,7 +7,21 @@ const zlib = require('zlib');
 const db = require('../lib/db');
 const { migrate } = require('../lib/migrate');
 
-async function restore(file, { log = console.log } = {}) {
+// An encrypted backup (.json.gz.enc, from 12 Nov 2026) is opened with the private key file Rafi Sir keeps off the server.
+function decryptTo(file, keyFile) {
+  const crypto = require('crypto'), buf = fs.readFileSync(file), MAGIC = Buffer.from('DIERP-ENC1\n');
+  if (!buf.subarray(0, MAGIC.length).equals(MAGIC)) return file; // an older, plain backup
+  if (!keyFile) throw new Error('This backup is encrypted. Give the private key file: node scripts/restore-backup.js <backup> <private-key.pem>');
+  let p = MAGIC.length; const n = buf.readUInt16BE(p); p += 2;
+  const k = crypto.privateDecrypt({ key: fs.readFileSync(keyFile, 'utf8'), padding: crypto.constants.RSA_PKCS1_OAEP_PADDING, oaepHash: 'sha256' }, buf.subarray(p, p + n)); p += n;
+  const iv = buf.subarray(p, p + 12); p += 12;
+  const d = crypto.createDecipheriv('aes-256-gcm', k, iv); d.setAuthTag(buf.subarray(buf.length - 16));
+  const out = require('path').join(require('os').tmpdir(), 'erp-restore-' + process.pid + '.json.gz');
+  fs.writeFileSync(out, Buffer.concat([d.update(buf.subarray(p, buf.length - 16)), d.final()]));
+  return out;
+}
+async function restore(file, { log = console.log, keyFile = process.env.BACKUP_PRIVATE_KEY_FILE } = {}) {
+  file = decryptTo(file, keyFile);
   // read line by line (a backup can be bigger than one text string); a table may be split over many lines
   const rl = require('readline').createInterface({ input: fs.createReadStream(file).pipe(zlib.createGunzip()), crlfDelay: Infinity });
   let head = null; const data = {};
@@ -49,11 +63,13 @@ async function restore(file, { log = console.log } = {}) {
   const bad = [];
   for (const t of names) { const n = (await db.one(`select count(*)::int as n from "${t}"`)).n; if (n !== head.counts[t]) bad.push(`${t}: ${n} of ${head.counts[t]}`); }
   if (bad.length) throw new Error('Row counts differ after the restore: ' + bad.join(', '));
+  // backups carry no login secret (from 12 Nov 2026): make a new one, so the restored ERP can sign people in
+  await db.q("insert into settings (key, value) values ('session_secret', $1) on conflict (key) do nothing", [JSON.stringify(require('crypto').randomBytes(48).toString('base64url'))]);
   log(`Restored ${Object.values(head.counts).reduce((a, b) => a + b, 0)} rows; every table's count matches the backup.`);
   return head;
 }
-module.exports = { restore };
+module.exports = { restore, decryptTo };
 if (require.main === module) {
-  const f = process.argv[2]; if (!f) { console.error('Usage: DATABASE_URL=… node scripts/restore-backup.js <backup file>'); process.exit(1); }
-  restore(f).then(() => process.exit(0), (e) => { console.error('Restore failed:', e.message); process.exit(1); });
+  const f = process.argv[2]; if (!f) { console.error('Usage: DATABASE_URL=… node scripts/restore-backup.js <backup file> [private-key.pem]'); process.exit(1); }
+  restore(f, { keyFile: process.argv[3] || process.env.BACKUP_PRIVATE_KEY_FILE }).then(() => process.exit(0), (e) => { console.error('Restore failed:', e.message); process.exit(1); });
 }

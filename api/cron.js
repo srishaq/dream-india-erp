@@ -85,7 +85,9 @@ async function run(req, res, job) {
       return res.json({ ok: true, due: r.due.length, sent: r.sent.length, reason: r.reason || null });
     }
     if (job === 'mail') {
+      const rot = await require('../lib/auth').rotateSecretOnce('2026-11-12').catch((e) => ({ error: e.message })); // once: backups up to 12 Nov held the old login secret
       const r = await require('../lib/mail-sync').sync({ trigger: 'schedule' });
+      if (rot && !rot.skipped) r.secret = rot;
       r.autoLetters = await require('../lib/letters').sendPendingAuto().catch((e) => ({ error: e.message }));
       r.preDemand = await require('../lib/predemand').sendPending().catch((e) => ({ error: e.message })); // pre-demand notices still to email
       r.approvals = await require('../lib/staff-alerts').runApprovals().catch((e) => ({ error: e.message }));
