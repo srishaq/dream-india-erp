@@ -270,6 +270,15 @@ let n = 0; const step = async (name, fn) => { await fn(); n++; console.log('  âœ
     const back = await up(admin, { status: 'paid', reason: 'Entered as cancelled by mistake' }); assert.equal(back.status, 409); assert.ok(back.duplicate);
     assert.equal((await up(admin, { status: 'paid', reason: 'Entered as cancelled by mistake', duplicateReason: 'Both were paid; refund claimed on the second' })).ok, true);
   });
+  await step('Payments Out split: each part keeps its own invoice number', async () => {
+    const all = await admin('/api/accounts?reg=payments&limit=50'); const p = all.rows.find((r) => Number(r.amount) >= 10 && !/split/.test(r.remark || ''));
+    const a = Math.round(Number(p.amount) * 0.4 * 100) / 100, b = Math.round((Number(p.amount) - a) * 100) / 100;
+    const r = await admin('/api/accounts', { action: 'split-row', reg: 'payments', id: p.id, parts: [{ head: 'RMC', amount: a, bill_no: 'INV-101' }, { head: 'RMC', amount: b, bill_no: 'INV-102' }] });
+    assert.equal(r.ok, true, r.error); assert.equal(r.ids.length, 2);
+    const rows = (await admin('/api/accounts?reg=payments&limit=200')).rows.filter((x) => r.ids.includes(x.ref_id));
+    assert.deepEqual(rows.map((x) => x.bill_no).sort(), ['INV-101', 'INV-102']);
+    assert.ok(rows.every((x) => /part \d of split 2 ways from \S+ \(â‚¹[\d,.]+\)/.test(x.remark)));
+  });
   console.log(`\nAll ${n} accounts checks passed.`);
   server.close(); require('../lib/db').reset(); process.exit(0);
 })().catch((e) => { console.error('\nFAILED:', e); process.exit(1); });

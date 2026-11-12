@@ -2172,9 +2172,28 @@
     recon: [['open', 'Open'], ['', 'All']], compliance: [['pending', 'Pending'], ['', 'All']],
     cancellations: [['notRefunded', 'Not refunded yet'], ['refundedRows', 'Refunded'], ['', 'All']],
   };
+  // Split rows (Tally style): the original amount on one line, its parts just below it with their bill numbers.
+  // The remark of each part says "split N ways from <ref> (₹total)", so the parts are kept together under that line.
+  const accSplitRows = (rows, show) => {
+    if (!show.some((c) => c.key === 'amount')) return rows.map((r) => ({ r }));
+    const info = (r) => { const m = [...String(r.remark || '').matchAll(/part (\d+) of split (\d+) ways from (\S+) \(₹([\d,]+(?:\.\d+)?)\)/g)].pop(); return m ? { k: m[3] + '|' + m[4], part: +m[1], n: +m[2], ref: m[3], total: Number(m[4].replace(/,/g, '')) } : null; };
+    const groups = new Map();
+    rows.forEach((r) => { const x = info(r); if (x) { if (!groups.has(x.k)) groups.set(x.k, { ...x, rows: [] }); groups.get(x.k).rows.push({ r, part: x.part }); } });
+    const out = [], done = new Set();
+    for (const r of rows) {
+      const x = info(r);
+      if (!x) { out.push({ r }); continue; }
+      if (done.has(x.k)) continue;
+      done.add(x.k);
+      const g = groups.get(x.k), parts = g.rows.sort((a, b) => a.part - b.part);
+      out.push({ head: { ref: g.ref, total: g.total, n: g.n, shown: parts.length, date: parts[0].r.txn_date } });
+      parts.forEach((p) => out.push({ r: p.r, part: true }));
+    }
+    return out;
+  };
   const ACC_SHOW = { // columns shown in the list (all columns are in the form)
     receipts: ['ref_id', 'txn_date', 'bank', 'amount', 'head', 'payment_head', 'unit_no', 'payer_name', 'payer_type', 'cheque_status', 'description', 'remark'],
-    payments: ['ref_id', 'txn_date', 'bank', 'amount', 'head', 'unit_no', 'payee', 'remark', 'needs', 'description'],
+    payments: ['ref_id', 'txn_date', 'bank', 'amount', 'head', 'bill_no', 'unit_no', 'payee', 'remark', 'needs', 'description'],
     cancellations: ['cancel_date', 'unit_no', 'client', 'final_av', 'received', 'deduction', 'refund_due', 'refund_rtgs', 'refund_white', 'refund_status', 'crm_now', 'books_received', 'books_refunded', 'to_refund', 'books_check', 'cp'],
   };
   const accMonth = (ym) => { const [y, m] = String(ym).split('-'); return m ? `${['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'][+m - 1]} ${y}` : ym; };
@@ -2271,11 +2290,13 @@
         <div><button class="ghost" id="ago">Show</button></div></div>
         ${accFilterBox(d, state)}
         ${ACC_FILTERS[key] ? `<div class="tabs" style="margin:12px 0 0">${ACC_FILTERS[key].map(([k, l]) => `<button class="tab ${k === state.filter ? 'on' : ''}" data-f="${k}">${l}</button>`).join('')}</div>` : ''}
+        ${d.amount != null ? `<div class="acc-total"><span>Total${state.q ? ` for “${esc(state.q)}”` : ''}${state.from || state.to ? ` · ${state.from ? fmtD(state.from) : 'start'} to ${state.to ? fmtD(state.to) : 'today'}` : ''}</span><b>${inr(d.amount)}</b><span class="small muted">${d.total.toLocaleString('en-IN')} rows</span></div>` : ''}
         <div style="display:flex;flex-wrap:wrap;align-items:center;gap:10px;margin:10px 0 0"><p class="small muted" style="margin:0;flex:1">${d.rows.length < d.total ? `Showing ${d.rows.length} of ` : ''}${d.total.toLocaleString('en-IN')} rows${d.amount != null ? ` · total ${inr(d.amount)}` : ''}. Tap a row to ${d.can.enter ? 'edit' : 'see'} it.</p>
           ${d.total ? '<button class="ghost small" id="aprint">Print</button><button class="ghost small" id="axls">Export to Excel</button>' : ''}</div></div>
       ${d.groups ? accGroupsPanel(d.groups, d.amount, d.total, state.from || state.to ? `${state.from ? fmtD(state.from) : 'start'} to ${state.to ? fmtD(state.to) : 'today'}` : 'all dates') : ''}
       <div class="panel"><div class="table-wrap acc-grid"><table><tr>${show.map((c) => `<th class="${['money', 'num', 'pct'].includes(c.type) ? 'num' : ''}">${esc(c.label)}</th>`).join('')}</tr>
-        ${d.rows.map((r) => `<tr data-id="${r.id}" class="${r.cheque_status === 'Bounced' ? 'dim' : ''}">${show.map((c) => `<td class="${['money', 'num', 'pct'].includes(c.type) ? 'num' : c.type === 'long' || c.key === 'needs' ? 'small wrap' : ''}">${c.key === 'needs' && r.needs ? `<span class="bad-t">${esc(r.needs)}</span>` : accFmt(c, r[c.key])}</td>`).join('')}</tr>`).join('') || `<tr><td colspan="${show.length}" class="muted">Nothing here.</td></tr>`}</table></div>
+        ${accSplitRows(d.rows, show).map(({ r, head, part }) => head ? `<tr class="split-h">${show.map((c, i) => `<td class="${['money', 'num', 'pct'].includes(c.type) ? 'num' : ''}">${c.key === 'ref_id' ? `<b>${esc(head.ref)}</b>` : c.key === 'amount' ? `<b>${inr(head.total)}</b>` : c.key === 'head' ? `Split into ${head.n} parts${head.shown < head.n ? ` (${head.shown} shown)` : ''}` : c.key === 'txn_date' ? accFmt(c, head.date) : ''}</td>`).join('')}</tr>`
+          : `<tr data-id="${r.id}" class="${r.cheque_status === 'Bounced' ? 'dim' : ''}${part ? ' split-p' : ''}">${show.map((c) => `<td class="${['money', 'num', 'pct'].includes(c.type) ? 'num' : c.type === 'long' || c.key === 'needs' ? 'small wrap' : ''}">${c.key === 'needs' && r.needs ? `<span class="bad-t">${esc(r.needs)}</span>` : part && c.key === 'ref_id' ? '↳ ' + accFmt(c, r[c.key]) : accFmt(c, r[c.key])}</td>`).join('')}</tr>`).join('') || `<tr><td colspan="${show.length}" class="muted">Nothing here.</td></tr>`}</table></div>
         ${d.rows.length < d.total ? '<div class="actions"><button class="ghost" id="amore">Show more</button></div>' : ''}</div>`;
     if (['tenants', 'rentLinks', 'cancellations'].includes(key) && d.rows.length) $('.acc-grid table tr').insertAdjacentHTML('afterend', `<tr class="tot">${show.map((c, i) => `<td class="num"><b>${c.type === 'money' && !['monthly_rent', 'split_amount'].includes(c.key) ? inr(d.rows.reduce((a, r) => a + toNum(r[c.key]), 0)) : i === 0 ? 'Totals' : ''}</b></td>`).join('')}</tr>`);
     const save = () => store.set('erp_acc_' + key, JSON.stringify({ q: state.q, from: state.from, to: state.to, filter: state.filter, m: state.m, by: state.by }));
@@ -2316,16 +2337,17 @@
       const total = Number(row.amount), headCol = cols.find((c) => c.key === 'head'), L = (headCol && d.lists[headCol.list]) || [];
       const pre = String(row.description || '').split(' · ')[0].split('; ').map((p) => p.match(/^(.*\S) ₹([\d,]+(?:\.\d+)?)$/)).filter(Boolean).map((m) => ({ head: m[1], amount: Number(m[2].replace(/,/g, '')) }));
       const fit = pre.length > 1 && Math.abs(pre.reduce((a, x) => a + x.amount, 0) - total) < 0.01;
-      const start = fit ? pre : [{ head: row.head || '', amount: total }, { head: '', amount: '' }];
-      const line = (x = {}) => `<tr><td><input name="h" list="dl_sph" value="${esc(x.head || '')}" style="min-width:260px"></td><td><input name="a" inputmode="decimal" value="${x.amount === '' || x.amount == null ? '' : esc(String(x.amount))}" style="width:140px"></td><td><button type="button" class="ghost sm" data-rm>✕</button></td></tr>`;
+      const start = fit ? pre : [{ head: row.head || '', amount: total, bill: row.bill_no || '' }, { head: '', amount: '' }];
+      const inv = key === 'payments';
+      const line = (x = {}) => `<tr><td><input name="h" list="dl_sph" value="${esc(x.head || '')}" style="min-width:260px"></td><td><input name="a" inputmode="decimal" value="${x.amount === '' || x.amount == null ? '' : esc(String(x.amount))}" style="width:140px"></td>${inv ? `<td><input name="b" value="${esc(x.bill || '')}" placeholder="Invoice no." style="width:150px"></td>` : ''}<td><button type="button" class="ghost sm" data-rm>✕</button></td></tr>`;
       const dl = dialog(`<h2>Split ${esc(row.ref_id || '')} · ${inr(total)}</h2>
         <p class="small muted">Each part becomes its own row (${esc(row.ref_id || '')}/1, /2 …) with the same date, bank and reference, so the bank statement still matches them as one line. The parts must add up to ${inr(total)}.${fit ? ' <b>Filled in from the Tally voucher.</b>' : ''}</p>
         <datalist id="dl_sph">${L.slice(0, 3000).map((o) => `<option value="${esc(o)}">`).join('')}</datalist>
-        <div class="table-wrap"><table id="spT"><tr><th>Head</th><th class="num">Amount</th><th></th></tr>${start.map(line).join('')}</table></div>
+        <div class="table-wrap"><table id="spT"><tr><th>Head</th><th>Amount</th>${inv ? '<th>Invoice no.</th>' : ''}<th></th></tr>${start.map(line).join('')}</table></div>
         <p><button type="button" class="ghost sm" id="spAdd">+ Add a part</button> <span id="spSum" class="small"></span></p>
         <label>Reason (needed if the month is closed)</label><input name="reason">`,
         async (x, f) => {
-          const parts = [...f.querySelectorAll('#spT tr')].slice(1).map((tr) => ({ head: tr.querySelector('[name=h]').value.trim(), amount: tr.querySelector('[name=a]').value.trim() })).filter((p) => p.head || p.amount);
+          const parts = [...f.querySelectorAll('#spT tr')].slice(1).map((tr) => ({ head: tr.querySelector('[name=h]').value.trim(), amount: tr.querySelector('[name=a]').value.trim(), bill_no: tr.querySelector('[name=b]') ? tr.querySelector('[name=b]').value.trim() : '' })).filter((p) => p.head || p.amount);
           const r = await api('/api/accounts', { action: 'split-row', reg: key, id: row.id, parts, reason: x.reason || '' });
           toast(`Split into ${r.ids.length} rows: ${r.ids.join(', ')}`, 6000); accRegister(key, { limit: state.limit });
         });

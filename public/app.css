@@ -668,3 +668,11 @@ tr.clickable:hover td { background: var(--brand-tint); }
 .rp-card b { display: block; margin-bottom: 4px; }
 .rp-card span { font-size: 13px; color: var(--ink-3); }
 tr.tot td { border-top: 2px solid var(--line, #ddd); }
+
+/* Payments Out: the total of what the search finds, and split rows under their original amount */
+.acc-total { display: flex; align-items: baseline; gap: 12px; flex-wrap: wrap; margin: 12px 0 0; padding: 10px 14px; border-radius: 10px; background: #eef4ff; border: 1px solid #cfdcf5; }
+.acc-total > span:first-child { font-weight: 600; }
+.acc-total b { font-size: 22px; }
+.acc-grid tr.split-h td { background: #f3f6fb; font-weight: 600; border-top: 2px solid #cfdcf5; }
+.acc-grid tr.split-p td:first-child { padding-left: 22px; }
+.acc-grid tr.split-p td { background: #fbfcfe; }

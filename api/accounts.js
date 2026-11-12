@@ -342,7 +342,7 @@ module.exports = route({
       need('accounts.enter');
       if (!['receipts', 'payments'].includes(b.reg)) throw fail(400, 'Only Receipts and Payments Out rows can be split.');
       const reg = REGISTERS[b.reg], id = intOr(b.id);
-      const parts = (Array.isArray(b.parts) ? b.parts : []).map((x) => ({ head: str(x.head, 120), amount: Math.round(Number(String(x.amount ?? '').replace(/[,₹\s]/g, '')) * 100) / 100, unit_no: str(x.unit_no, 12).toUpperCase() || null, payee: str(x.payee, 200) || null })).filter((x) => x.head || x.amount);
+      const parts = (Array.isArray(b.parts) ? b.parts : []).map((x) => ({ head: str(x.head, 120), amount: Math.round(Number(String(x.amount ?? '').replace(/[,₹\s]/g, '')) * 100) / 100, unit_no: str(x.unit_no, 12).toUpperCase() || null, payee: str(x.payee, 200) || null, bill_no: b.reg === 'payments' ? str(x.bill_no, 60) || null : null })).filter((x) => x.head || x.amount);
       if (parts.length < 2) throw fail(400, 'Give at least two parts.');
       for (const x of parts) { if (!x.head) throw fail(400, 'Every part needs a head.'); if (!(x.amount > 0)) throw fail(400, `The amount for ${x.head} looks wrong.`); }
       const row = await db.one(`select * from ${reg.table} where id = $1 and book = $2`, [id, acc.BOOK]); if (!row) throw fail(404, 'Row not found.');
@@ -361,7 +361,7 @@ module.exports = route({
         const BILL = ['taxable_value', 'gst_on_bill', 'total_bill', 'tds_deducted', 'net_payable', 'bill_no', 'bill_ids', 'bill_date', 'tds_challan', 'tds_deposited_on'];
         const ids = [];
         const p0 = parts[0];
-        const set0 = { ref_id: firstRef, amount: p0.amount, head: p0.head, remark: [row.remark, `part 1 of ${note}`].filter(Boolean).join(' · '), ...(p0.unit_no ? { unit_no: p0.unit_no } : {}), ...(p0.payee ? { [b.reg === 'payments' ? 'payee' : 'payer_name']: p0.payee } : {}), ...(b.reg === 'payments' ? tds(p0.head) : {}) };
+        const set0 = { ref_id: firstRef, amount: p0.amount, head: p0.head, remark: [row.remark, `part 1 of ${note}`].filter(Boolean).join(' · '), ...(p0.unit_no ? { unit_no: p0.unit_no } : {}), ...(p0.payee ? { [b.reg === 'payments' ? 'payee' : 'payer_name']: p0.payee } : {}), ...(p0.bill_no ? { bill_no: p0.bill_no } : {}), ...(b.reg === 'payments' ? tds(p0.head) : {}) };
         const k0 = Object.keys(set0);
         await t.q(`update ${reg.table} set ${k0.map((c, i) => `${c} = $${i + 2}`).join(', ')}, updated_by = $${k0.length + 2}, updated_at = now() where id = $1`, [row.id, ...k0.map((c) => set0[c]), u.id]);
         ids.push(firstRef);
@@ -369,7 +369,7 @@ module.exports = route({
         for (let i = 1; i < parts.length; i++) {
           const x = parts[i], ref = row.ref_id ? `${base}/${next++}` : null;
           const r = { ...Object.fromEntries(Object.entries(row).filter(([c]) => !skip.has(c))), ref_id: ref, amount: x.amount, head: x.head, remark: [row.remark, `part ${i + 1} of ${note}`].filter(Boolean).join(' · '),
-            ...(x.unit_no ? { unit_no: x.unit_no } : {}), ...(x.payee ? { [b.reg === 'payments' ? 'payee' : 'payer_name']: x.payee } : {}), ...(b.reg === 'payments' ? tds(x.head) : {}), created_by: u.id };
+            ...(x.unit_no ? { unit_no: x.unit_no } : {}), ...(x.payee ? { [b.reg === 'payments' ? 'payee' : 'payer_name']: x.payee } : {}), ...(x.bill_no ? { bill_no: x.bill_no } : {}), ...(b.reg === 'payments' ? tds(x.head) : {}), created_by: u.id };
           const c = Object.keys(r).filter((k) => r[k] !== null && r[k] !== undefined);
           await t.q(`insert into ${reg.table} (${c.join(', ')}) values (${c.map((_, j) => '$' + (j + 1)).join(', ')})`, c.map((k) => (r[k] && typeof r[k] === 'object' && !(r[k] instanceof Date) ? JSON.stringify(r[k]) : r[k])));
           ids.push(ref);
