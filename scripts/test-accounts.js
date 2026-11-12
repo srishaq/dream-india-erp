@@ -278,6 +278,14 @@ let n = 0; const step = async (name, fn) => { await fn(); n++; console.log('  âœ
     const rows = (await admin('/api/accounts?reg=payments&limit=200')).rows.filter((x) => r.ids.includes(x.ref_id));
     assert.deepEqual(rows.map((x) => x.bill_no).sort(), ['INV-101', 'INV-102']);
     assert.ok(rows.every((x) => /part \d of split 2 ways from \S+ \(â‚¹[\d,.]+\)/.test(x.remark)));
+    // the list knows the original payment even when the search finds only one part, and print / Excel show it on top
+    const one = (await admin('/api/accounts?reg=payments&q=INV-102')).rows[0];
+    assert.equal(one._split.total, Number(p.amount)); assert.equal(one._split.n, 2);
+    const x = await admin('/api/accounts?reg=payments&export=rows&q=RMC&cols=ref_id,amount,bill_no,remark');
+    const h = x.rows.findIndex((r) => r._head && r.ref_id === p.ref_id);
+    assert.ok(h >= 0); assert.equal(x.rows[h].amount, Number(p.amount)); assert.deepEqual([x.rows[h + 1].bill_no, x.rows[h + 2].bill_no], ['INV-101', 'INV-102']);
+    assert.equal(x.head.amount, (await admin('/api/accounts?reg=payments&q=RMC')).amount); // the total counts the parts once
+    const xl = await admin('/api/accounts?reg=payments&export=xlsx&q=RMC', null, true); assert.equal(xl.status, 200);
   });
   console.log(`\nAll ${n} accounts checks passed.`);
   server.close(); require('../lib/db').reset(); process.exit(0);

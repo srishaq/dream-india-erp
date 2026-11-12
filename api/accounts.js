@@ -76,11 +76,12 @@ module.exports = route({
         const byWho = who && amt ? Object.entries(all.reduce((m, r) => { const k = (r[who] || '(no name)').trim(); m[k] = m[k] || { n: 0, amt: 0 }; m[k].n++; m[k].amt += Number(r[amt]) || 0; return m; }, {})).sort((a, b) => b[1].amt - a[1].amt) : [];
         const when = [opts.from, opts.to].some(Boolean) ? `${opts.from || 'start'} to ${opts.to || 'today'}` : 'all dates';
         const head = { title: reg.title, search: opts.q || '', filters: fLabel, when, rows: total, amount };
-        if (q.export === 'rows') return res.json({ head, cols, rows: all, groups: G, byWho: byWho.map(([k, v]) => ({ name: k, n: v.n, amount: Math.round(v.amt * 100) / 100 })), whoLabel: who === 'payee' ? 'Payee' : 'Payer' });
+        const shown = acc.arrangeSplits(all);
+        if (q.export === 'rows') return res.json({ head, cols, rows: shown, groups: G, byWho: byWho.map(([k, v]) => ({ name: k, n: v.n, amount: Math.round(v.amt * 100) / 100 })), whoLabel: who === 'payee' ? 'Payee' : 'Payer' });
         const cell = (c, v) => (v == null || v === '' ? '' : ['money', 'num'].includes(c.type) ? Number(v) : c.type === 'pct' ? Number(v) : c.type === 'date' ? String(v instanceof Date ? v.toISOString() : v).slice(0, 10) : String(v));
-        const sheet = [[`${reg.title}${opts.q ? ' · search: ' + opts.q : ''}${fLabel ? ' · ' + fLabel : ''} · ${when}`], [], cols.map((c) => c.label), ...all.map((r) => cols.map((c) => cell(c, r[c.key])))];
+        const sheet = [[`${reg.title}${opts.q ? ' · search: ' + opts.q : ''}${fLabel ? ' · ' + fLabel : ''} · ${when}`], [], cols.map((c) => c.label), ...shown.map((r) => cols.map((c) => cell(c, r[c.key])))];
         if (amt) { const i = cols.findIndex((c) => c.key === amt); const t = cols.map(() => ''); t[0] = `Total (${total} rows)`; if (i >= 0) t[i] = Math.round((amount || 0) * 100) / 100; sheet.push([], t); }
-        const sheets = [{ name: reg.title, rows: sheet, widths: cols.map((c) => (c.type === 'long' ? 40 : ['payee', 'head', 'payer_name', 'description'].includes(c.key) ? 30 : 14)) }];
+        const sheets = [{ name: reg.title, rows: sheet, bold: new Set(shown.map((r, i) => (r._head ? i + 3 : -1)).filter((i) => i >= 0)), widths: cols.map((c) => (c.type === 'long' ? 40 : ['payee', 'head', 'payer_name', 'description'].includes(c.key) ? 30 : 14)) }];
         if (G && G.rows.length) {
           const r2 = (v) => Math.round((v || 0) * 100) / 100, td = !!G.tillDate;
           sheets.splice(0, 0, { name: `Total by ${G.label}`.slice(0, 31), rows: [[`${reg.title} · total by ${G.label}${fLabel ? ' · ' + fLabel : ''}`], [],

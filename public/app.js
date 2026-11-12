@@ -2172,22 +2172,20 @@
     recon: [['open', 'Open'], ['', 'All']], compliance: [['pending', 'Pending'], ['', 'All']],
     cancellations: [['notRefunded', 'Not refunded yet'], ['refundedRows', 'Refunded'], ['', 'All']],
   };
-  // Split rows (Tally style): the original amount on one line, its parts just below it with their bill numbers.
-  // The remark of each part says "split N ways from <ref> (₹total)", so the parts are kept together under that line.
+  // Split rows (Tally style): the original payment on one line as it was, its parts just below it with their bill numbers.
+  // The server marks each part with _split = { base, part, n, total }; total is the whole original payment.
   const accSplitRows = (rows, show) => {
     if (!show.some((c) => c.key === 'amount')) return rows.map((r) => ({ r }));
-    const info = (r) => { const m = [...String(r.remark || '').matchAll(/part (\d+) of split (\d+) ways from (\S+) \(₹([\d,]+(?:\.\d+)?)\)/g)].pop(); return m ? { k: m[3] + '|' + m[4], part: +m[1], n: +m[2], ref: m[3], total: Number(m[4].replace(/,/g, '')) } : null; };
     const groups = new Map();
-    rows.forEach((r) => { const x = info(r); if (x) { if (!groups.has(x.k)) groups.set(x.k, { ...x, rows: [] }); groups.get(x.k).rows.push({ r, part: x.part }); } });
+    rows.forEach((r) => { if (r._split) { if (!groups.has(r._split.base)) groups.set(r._split.base, []); groups.get(r._split.base).push(r); } });
     const out = [], done = new Set();
     for (const r of rows) {
-      const x = info(r);
-      if (!x) { out.push({ r }); continue; }
-      if (done.has(x.k)) continue;
-      done.add(x.k);
-      const g = groups.get(x.k), parts = g.rows.sort((a, b) => a.part - b.part);
-      out.push({ head: { ref: g.ref, total: g.total, n: g.n, shown: parts.length, date: parts[0].r.txn_date } });
-      parts.forEach((p) => out.push({ r: p.r, part: true }));
+      if (!r._split) { out.push({ r }); continue; }
+      const b = r._split.base; if (done.has(b)) continue; done.add(b);
+      const parts = groups.get(b).sort((x, y) => x._split.part - y._split.part), same = (k) => (parts.every((p) => (p[k] || '') === (parts[0][k] || '')) ? parts[0][k] : '');
+      out.push({ head: { ref_id: b, txn_date: parts[0].txn_date, bank: parts[0].bank, amount: r._split.total, head: same('head'), payee: same('payee'), payer_name: same('payer_name'), unit_no: same('unit_no'),
+        description: parts.map((p) => p.description).find(Boolean) || '', remark: `Split into ${r._split.n} parts${parts.length < r._split.n ? ` (${parts.length} shown here)` : ''}` } });
+      parts.forEach((p) => out.push({ r: p, part: true }));
     }
     return out;
   };
@@ -2295,7 +2293,7 @@
           ${d.total ? '<button class="ghost small" id="aprint">Print</button><button class="ghost small" id="axls">Export to Excel</button>' : ''}</div></div>
       ${d.groups ? accGroupsPanel(d.groups, d.amount, d.total, state.from || state.to ? `${state.from ? fmtD(state.from) : 'start'} to ${state.to ? fmtD(state.to) : 'today'}` : 'all dates') : ''}
       <div class="panel"><div class="table-wrap acc-grid"><table><tr>${show.map((c) => `<th class="${['money', 'num', 'pct'].includes(c.type) ? 'num' : ''}">${esc(c.label)}</th>`).join('')}</tr>
-        ${accSplitRows(d.rows, show).map(({ r, head, part }) => head ? `<tr class="split-h">${show.map((c, i) => `<td class="${['money', 'num', 'pct'].includes(c.type) ? 'num' : ''}">${c.key === 'ref_id' ? `<b>${esc(head.ref)}</b>` : c.key === 'amount' ? `<b>${inr(head.total)}</b>` : c.key === 'head' ? `Split into ${head.n} parts${head.shown < head.n ? ` (${head.shown} shown)` : ''}` : c.key === 'txn_date' ? accFmt(c, head.date) : ''}</td>`).join('')}</tr>`
+        ${accSplitRows(d.rows, show).map(({ r, head, part }) => head ? `<tr class="split-h">${show.map((c) => `<td class="${['money', 'num', 'pct'].includes(c.type) ? 'num' : c.type === 'long' ? 'small wrap' : ''}">${c.key in head && head[c.key] ? accFmt(c, head[c.key]) : ''}</td>`).join('')}</tr>`
           : `<tr data-id="${r.id}" class="${r.cheque_status === 'Bounced' ? 'dim' : ''}${part ? ' split-p' : ''}">${show.map((c) => `<td class="${['money', 'num', 'pct'].includes(c.type) ? 'num' : c.type === 'long' || c.key === 'needs' ? 'small wrap' : ''}">${c.key === 'needs' && r.needs ? `<span class="bad-t">${esc(r.needs)}</span>` : part && c.key === 'ref_id' ? '↳ ' + accFmt(c, r[c.key]) : accFmt(c, r[c.key])}</td>`).join('')}</tr>`).join('') || `<tr><td colspan="${show.length}" class="muted">Nothing here.</td></tr>`}</table></div>
         ${d.rows.length < d.total ? '<div class="actions"><button class="ghost" id="amore">Show more</button></div>' : ''}</div>`;
     if (['tenants', 'rentLinks', 'cancellations'].includes(key) && d.rows.length) $('.acc-grid table tr').insertAdjacentHTML('afterend', `<tr class="tot">${show.map((c, i) => `<td class="num"><b>${c.type === 'money' && !['monthly_rent', 'split_amount'].includes(c.key) ? inr(d.rows.reduce((a, r) => a + toNum(r[c.key]), 0)) : i === 0 ? 'Totals' : ''}</b></td>`).join('')}</tr>`);
@@ -2321,12 +2319,12 @@
         const x = await api('/api/accounts?' + expQs('rows'));
         const cs = x.cols, num = (c) => ['money', 'num', 'pct'].includes(c.type);
         const ai = cs.findIndex((c) => c.key === 'amount');
-        const st = 'body{font:12px Arial,sans-serif;margin:24px;color:#111}h1{font-size:18px;margin:0 0 2px}p{margin:2px 0 12px;color:#444}table{border-collapse:collapse;width:100%;margin:0 0 18px}th,td{border:1px solid #ccc;padding:4px 6px;text-align:left;vertical-align:top}th{background:#f2f4f7}td.n,th.n{text-align:right;white-space:nowrap}tr.t td{font-weight:700;background:#f7f7f7}@media print{body{margin:10mm}}';
+        const st = 'body{font:12px Arial,sans-serif;margin:24px;color:#111}h1{font-size:18px;margin:0 0 2px}p{margin:2px 0 12px;color:#444}table{border-collapse:collapse;width:100%;margin:0 0 18px}th,td{border:1px solid #ccc;padding:4px 6px;text-align:left;vertical-align:top}th{background:#f2f4f7}td.n,th.n{text-align:right;white-space:nowrap}tr.t td{font-weight:700;background:#f7f7f7}tr.sh td{font-weight:700;background:#eef3fb}@media print{body{margin:10mm}}';
         const G = x.groups;
         const body = `<h1>${esc(x.head.title)}${x.head.search ? ' · ' + esc(x.head.search) : ''}</h1><p>${x.head.filters ? esc(x.head.filters) + ' · ' : ''}${esc(x.head.when)} · ${x.head.rows} rows${x.head.amount != null ? ' · total <b>' + inr(x.head.amount) + '</b>' : ''} · printed ${fmtD(todayIso())}</p>
           ${G && G.rows.length ? accGroupsTable(G, x.head.amount, x.head.rows, x.head.when, true) : ''}
           ${x.byWho.length > 1 && !(G && G.by === (x.whoLabel === 'Payee' ? 'payee' : 'payer_name')) ? `<table><tr><th>${esc(x.whoLabel)}</th><th class="n">Rows</th><th class="n">Total</th></tr>${x.byWho.map((b) => `<tr><td>${esc(b.name)}</td><td class="n">${b.n}</td><td class="n">${inr(b.amount)}</td></tr>`).join('')}</table>` : ''}
-          <table><tr>${cs.map((c) => `<th class="${num(c) ? 'n' : ''}">${esc(c.label)}</th>`).join('')}</tr>${x.rows.map((r) => `<tr>${cs.map((c) => `<td class="${num(c) ? 'n' : ''}">${accFmt(c, r[c.key])}</td>`).join('')}</tr>`).join('')}
+          <table><tr>${cs.map((c) => `<th class="${num(c) ? 'n' : ''}">${esc(c.label)}</th>`).join('')}</tr>${x.rows.map((r) => `<tr class="${r._head ? 'sh' : ''}">${cs.map((c, i) => `<td class="${num(c) ? 'n' : ''}">${r._split && i === 0 ? '&nbsp;&nbsp;↳ ' : ''}${accFmt(c, r[c.key])}</td>`).join('')}</tr>`).join('')}
           ${ai >= 0 ? `<tr class="t">${cs.map((c, i) => `<td class="${num(c) ? 'n' : ''}">${i === 0 ? 'Total' : i === ai ? inr(x.head.amount) : ''}</td>`).join('')}</tr>` : ''}</table>`;
         w.document.open(); w.document.write(`<!doctype html><html><head><meta charset="utf-8"><title>${esc(x.head.title)}${x.head.search ? ' - ' + esc(x.head.search) : ''}</title><style>${st}</style></head><body>${body}</body></html>`); w.document.close();
         setTimeout(() => w.print(), 300);
