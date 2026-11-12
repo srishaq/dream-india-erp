@@ -231,3 +231,16 @@ a { color: var(--brand-2); }
 
 /* long-press on a chat or in the menu opens the menu, it does not select the text (iPhone) */
 .row, .sheet h2, .sheet .act, .sheet button { -webkit-user-select: none; user-select: none; -webkit-touch-callout: none; }
+
+/* selecting chats or messages to delete (works without a long press) */
+.bar .selbtn { background: #fff; color: #B42318; border-radius: 18px; padding: 7px 14px; font-weight: 700; font-size: 14px; }
+.bar .selbtn:disabled { opacity: .5; }
+.row .tick { flex: none; width: 24px; height: 24px; border-radius: 50%; border: 2px solid #94A3B8; display: grid; place-items: center; font-size: 14px; font-weight: 700; color: #fff; }
+.row.sel-on { background: #E8EEFC; }
+.row.sel-on .tick { background: #2563EB; border-color: #2563EB; }
+.msgs.selecting .m { cursor: pointer; }
+.msgs.selecting .m.sel { background: rgba(37, 99, 235, .18); outline: 2px solid #2563EB; outline-offset: 2px; border-radius: 10px; }
+.selfoot { display: flex; align-items: center; gap: 10px; padding: 10px 12px calc(10px + var(--safe-b, 0px)); background: #fff; border-top: 1px solid #E2E8F0; }
+.selfoot span { flex: 1; white-space: nowrap; text-align: center; font-size: 14px; color: #475569; }
+.selfoot .btn.danger { background: #B42318; color: #fff; border: 0; }
+.selfoot .btn:disabled { opacity: .5; }

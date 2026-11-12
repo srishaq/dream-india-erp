@@ -199,11 +199,11 @@
     app.innerHTML = `<section class="pane-list" id="pl"></section><section class="pane-room" id="pr"></section>`;
     const pl = $('#pl');
     const roomOf = (e) => { const b = e.target.closest('[data-room]'); return b ? S.rooms.find((r) => r.id === +b.dataset.room) : null; };
-    pl.addEventListener('click', (e) => { const r = roomOf(e); if (r) go('#r' + r.id); });
+    pl.addEventListener('click', (e) => { const r = roomOf(e); if (!r) return; if (S.lsel) { S.lsel.has(r.id) ? S.lsel.delete(r.id) : S.lsel.add(r.id); renderList(); return; } go('#r' + r.id); });
     pl.addEventListener('contextmenu', (e) => { const r = roomOf(e); if (r) { e.preventDefault(); roomMenu(r); } });
     let lp = null;
     pl.addEventListener('touchstart', (e) => { const r = roomOf(e); if (!r) return; lp = setTimeout(() => { lp = null; holding(); navigator.vibrate && navigator.vibrate(15); roomMenu(r); }, 520); }, { passive: true });
-    ['touchend', 'touchmove', 'touchcancel'].forEach((ev) => pl.addEventListener(ev, () => clearTimeout(lp), { passive: true }));
+    ['touchend', 'touchmove'].forEach((ev) => pl.addEventListener(ev, () => clearTimeout(lp), { passive: true }));
     layout();
     renderList();
     await loadRooms();
@@ -246,9 +246,10 @@
     const showPush = 'Notification' in window && 'serviceWorker' in navigator && 'PushManager' in window && Notification.permission !== 'granted' && Notification.permission !== 'denied' && store.get('dc_push_later') !== '1';
     const hiddenN = S.rooms.filter((r) => r.hidden).length;
     const html = `
-      <div class="bar"><h1>${APP}</h1>
+      ${S.lsel ? `<div class="bar"><button class="ib" id="lsX" aria-label="Cancel">${I.x}</button><h1>${S.lsel.size ? S.lsel.size + ' selected' : 'Tap chats to select'}</h1><button class="selbtn" id="lsDel" ${S.lsel.size ? '' : 'disabled'}>🗑️ Delete</button></div>`
+      : `<div class="bar"><h1>${APP}</h1>
         <button class="ib" id="lSearch" title="Search messages">${I.search}</button>
-        <button class="ib" id="lMenu" title="Menu">${I.dots}</button></div>
+        <button class="ib" id="lMenu" title="Menu">${I.dots}</button></div>`}
       <div class="search"><input id="lq" placeholder="Search chats" value="${esc(S.q)}" autocomplete="off"></div>
       <div class="chips">${[['all', 'All'], ['unread', 'Unread'], ['groups', 'Groups']].concat(hiddenN ? [['hidden', `Hidden (${hiddenN})`]] : []).map(([k, l]) => `<button class="chip ${S.filter === k ? 'on' : ''}" data-f="${k}">${l}</button>`).join('')}</div>
       ${showPush ? `<div class="notice">🔔 Get a notification when a message comes.<button id="pushOn">Turn on</button><button class="x" id="pushLater" aria-label="Later">${I.x}</button></div>` : ''}
@@ -271,8 +272,18 @@
     el.querySelectorAll('[data-newdm]').forEach((b) => (b.onclick = async () => { try { const r = await api('', { action: 'dm', user: +b.dataset.newdm }); S.q = ''; await loadRooms(); go('#r' + r.room); } catch (x) { alert(x.message); } }));
     el.querySelectorAll('[data-f]').forEach((b) => (b.onclick = () => { S.filter = b.dataset.f; renderList(); }));
     $('#newChat', el).onclick = newChat;
-    $('#lMenu', el).onclick = mainMenu;
-    $('#lSearch', el).onclick = searchAll;
+    if (S.lsel) {
+      $('#lsX', el).onclick = () => { S.lsel = null; renderList(); };
+      $('#lsDel', el).onclick = async () => {
+        const ids = [...S.lsel], names = S.rooms.filter((r) => S.lsel.has(r.id)).map((r) => r.name);
+        if (!ids.length || !confirm(`Delete ${ids.length === 1 ? 'the chat with ' + names[0] : ids.length + ' chats'} from your list? Their messages go from your screen; the others keep theirs. A new message starts a chat again.`)) return;
+        try { for (const id of ids) await api('', { action: 'pref', room: id, deleteChat: true }); } catch (x) { fail(x); }
+        S.lsel = null; if (S.room && ids.includes(S.room.id)) location.hash = ''; await loadRooms(); renderList();
+      };
+    } else {
+      $('#lMenu', el).onclick = mainMenu;
+      $('#lSearch', el).onclick = searchAll;
+    }
     if ($('#pushOn', el)) $('#pushOn', el).onclick = pushOn;
     if ($('#pushLater', el)) $('#pushLater', el).onclick = () => { store.set('dc_push_later', '1'); renderList(); };
     if ($('#instOn', el)) $('#instOn', el).onclick = async () => { installEvent.prompt(); await installEvent.userChoice.catch(() => {}); installEvent = null; renderList(); };
@@ -281,8 +292,8 @@
   function rowHtml(r) {
     const on = S.room && S.room.id === r.id;
     const last = r.last ? `${r.last.mine ? (r.last.id <= (r.kind === 'dm' ? 0 : 0) ? '' : '') + 'You: ' : r.kind !== 'dm' && r.last.name ? esc(r.last.name.split(' ')[0]) + ': ' : ''}${esc(r.last.text)}` : `<i>${esc(r.about || '')}</i>`;
-    return `<button class="row ${on ? 'on' : ''}" data-room="${r.id}">
-      ${avatar(r.name, r.other ? r.other.id : r.id, '', r, r.other && online(r.other.seen))}
+    return `<button class="row ${on ? 'on' : ''} ${S.lsel && S.lsel.has(r.id) ? 'sel-on' : ''}" data-room="${r.id}">
+      ${S.lsel ? `<span class="tick">${S.lsel.has(r.id) ? '✓' : ''}</span>` : ''}${avatar(r.name, r.other ? r.other.id : r.id, '', r, r.other && online(r.other.seen))}
       <span class="mid"><span class="top"><b>${esc(r.name)}</b><time class="${r.unread && !r.muted ? 'new' : ''}">${listTime(r.last ? r.at : null)}</time></span>
         <span class="sub"><span>${last}</span><span class="flags">${r.muted ? '🔕' : ''}${r.pinned ? '📌' : ''}${r.mentioned ? '<span class="badge at">@</span>' : ''}${r.unread ? `<span class="badge ${r.muted ? 'mute' : ''}">${r.unread > 99 ? '99+' : r.unread}</span>` : ''}</span></span></span></button>`;
   }
@@ -317,11 +328,12 @@
       ['👥', 'New group', 'group'],
       ['⭐', 'Saved messages', 'saved'],
       ['🔔', 'Notifications', 'push'],
+      S.me.canDeleteChat && ['🗑️', 'Delete chats…', 'lsel', 'danger'],
       S.me.admin && ['🛡️', 'Review chats (Admin)', 'review'],
       ['📱', `Install ${APP}`, 'install'],
       ['🚪', 'Sign out', 'out', 'danger'],
     ])}`, (el, close) => bindActions(el, close, {
-      status: statusSheet, group: () => newGroup(), saved: savedSheet, push: pushSheet, review: reviewSheet,
+      lsel: () => { S.lsel = new Set(); renderList(); }, status: statusSheet, group: () => newGroup(), saved: savedSheet, push: pushSheet, review: reviewSheet,
       install: () => sheet(`<h2>Install ${APP}</h2><div class="body">${installHint() || (ios() ? `<p>No ${APP} icon on your home screen? You may have opened ${APP} from inside the ERP app. To give it its own icon: open <b>Safari</b>, go to <b>${esc(location.origin)}/chat</b>, tap Share <b>⎋</b>, then <b>Add to Home Screen</b>, and tap Add.</p>` : `<p>If there is no ${APP} icon yet: open this page in Chrome, tap the menu <b>⋮</b> and choose <b>Install app</b>.</p>`)}<p class="small muted">Send this link to staff: <b>${esc(location.origin)}/chat</b>. They sign in with their ERP username and password.</p></div>`),
       out: async () => { let ep = null; try { const reg = await navigator.serviceWorker?.getRegistration(); const s = await reg?.pushManager.getSubscription(); ep = s?.endpoint; await s?.unsubscribe(); } catch {} await api('', { action: 'logout', endpoint: ep }).catch(() => {}); location.hash = ''; showLogin(); },
     }));
@@ -437,7 +449,7 @@
   async function openRoom(id) {
     const seq = ++openSeq;
     const same = S.room && S.room.id === id;
-    if (!same) { S.reply = null; S.edit = null; S.private = null; S.mentions = new Map(); S.members = []; }
+    if (!same) { S.msel = null; S.reply = null; S.edit = null; S.private = null; S.mentions = new Map(); S.members = []; }
     S.room = S.rooms.find((r) => r.id === id) || { id, name: '…', kind: 'dm' };
     layout(); renderList();
     if (!same) renderRoomShell();
@@ -580,10 +592,25 @@
     }
     if (S.private) html += `<div class="private"><div class="pv"><span>🔒 Only you can see this</span><button data-pclose="1">✕</button></div>${S.private.map(cardHtml).join('')}</div>`;
     ml.innerHTML = html;
+    if (S.msel) ml.querySelectorAll('.m[data-id]').forEach((x) => x.classList.toggle('sel', S.msel.has(+x.dataset.id)));
+    ml.classList.toggle('selecting', !!S.msel);
     if ($('#older')) $('#older').onclick = loadOlder;
     if (toBottom) { const ul = $('#ul'); if (ul) ul.scrollIntoView({ block: 'center' }); else ml.scrollTop = ml.scrollHeight; }
     else if (nearBottom) ml.scrollTop = ml.scrollHeight;
   }
+  // who may delete a message for everyone: the sender within 2 hours, a group admin, the ERP Admin
+  const canDelMsg = (m) => !!m && !m.deleted && !m.pending && ((m.user === S.me.id && Date.now() - Date.parse(m.at) < 120 * 60e3) || (S.room && S.room.role === 'admin') || S.me.admin);
+  // selecting messages: a tap picks or drops a message (no long press needed)
+  document.addEventListener('click', (e) => {
+    if (!S.msel) return;
+    const ml = $('#ml'); if (!ml || !ml.contains(e.target)) return;
+    e.preventDefault(); e.stopPropagation();
+    const mEl = e.target.closest('.m[data-id]'); if (!mEl) return;
+    const id = +mEl.dataset.id, m = S.byId.get(id);
+    if (!canDelMsg(m)) return toast(m && m.deleted ? 'Already deleted.' : 'You can delete only your own messages, within 2 hours.');
+    S.msel.has(id) ? S.msel.delete(id) : S.msel.add(id);
+    mEl.classList.toggle('sel', S.msel.has(id)); renderComposer();
+  }, true);
   // one listener for everything inside the messages
   document.addEventListener('click', async (e) => {
     const ml = $('#ml'); if (!ml || !ml.contains(e.target)) return;
@@ -628,7 +655,7 @@
     const m = S.byId.get(id); if (!m || m.pending) return;
     const me = m.user === S.me.id, room = S.room;
     const canEdit = me && m.kind === 'text' && !m.deleted && Date.now() - Date.parse(m.at) < 15 * 60e3;
-    const canDel = !m.deleted && ((me && Date.now() - Date.parse(m.at) < 120 * 60e3) || room.role === 'admin' || S.me.admin);
+    const canDel = canDelMsg(m);
     sheet(`${m.deleted ? '' : `<div class="quick">${QUICK.map((q) => `<button data-q="${q}" class="${(m.reactions.find((r) => r.mine) || {}).e === q ? 'on' : ''}">${q}</button>`).join('')}</div>`}${actions([
       !m.deleted && room.canPost && ['↩️', 'Reply', 'reply'],
       !m.deleted && m.body && m.kind !== 'card' && ['📋', 'Copy', 'copy'],
@@ -679,9 +706,11 @@
       [r.muted ? '🔔' : '🔕', r.muted ? 'Unmute' : 'Mute notifications', 'mute'],
       [r.pinned ? '📍' : '📌', r.pinned ? 'Unpin chat' : 'Pin chat to the top', 'pinc'],
       r.kind === 'group' && ['🚪', 'Leave group', 'leave', 'danger'],
+      ['☑️', 'Select messages to delete', 'msel'],
       S.me.canDeleteChat && ['🗑️', 'Delete chat (from my list only)', 'delc', 'danger'],
     ])}`, (el, close) => bindActions(el, close, {
       info: infoSheet, search: () => searchAll(r.id), catch: catchUp,
+      msel: () => { S.msel = new Set(); renderMsgs(false); renderComposer(); },
       delc: async () => { if (!confirm(`Delete the chat with ${r.name} from your list? Its messages go from your screen; the others keep theirs. A new message starts it again.`)) return; await api('', { action: 'pref', room: r.id, deleteChat: true }); await loadRooms(); go(''); },
       mute: () => (r.muted ? api('', { action: 'pref', room: r.id, mute: 0 }).then(refreshRoomMeta) : muteSheet(r)),
       pinc: async () => { await api('', { action: 'pref', room: r.id, pinned: !r.pinned }); refreshRoomMeta(); },
@@ -779,6 +808,16 @@
   function renderComposer() {
     const f = $('#rFoot'); if (!f || !S.room) return;
     const r = S.room;
+    if (S.msel) {
+      f.innerHTML = `<div class="selfoot"><button class="btn ghost" id="msX">Cancel</button><span>${S.msel.size ? S.msel.size + ' selected' : 'Tap messages to select'}</span><button class="btn danger" id="msDel" ${S.msel.size ? '' : 'disabled'}>🗑️ Delete for everyone</button></div>`;
+      $('#msX').onclick = () => { S.msel = null; renderMsgs(false); renderComposer(); };
+      $('#msDel').onclick = async () => {
+        const ids = [...S.msel]; if (!ids.length || !confirm(`Delete ${ids.length === 1 ? 'this message' : ids.length + ' messages'} for everyone?`)) return;
+        try { for (const id of ids) await api('', { action: 'delete', id }); } catch (x) { fail(x); }
+        S.msel = null; renderComposer(); poll();
+      };
+      return;
+    }
     if (!r.canPost) { f.innerHTML = `<div class="readonly">${r.kind === 'announce' ? '📣 Only Management can post in Announcements.' : r.other && r.other.off ? 'This person has left Dream India.' : 'You cannot write in this chat.'}</div>`; return; }
     const quote = S.edit ? { name: 'Editing', body: S.edit.body } : S.reply ? { name: S.reply.user === S.me.id ? 'You' : S.reply.name, body: S.reply.body || { image: '📷 Photo', video: '🎥 Video', voice: '🎤 Voice note', file: '📄 ' + (S.reply.file ? S.reply.file.name : 'Document') }[S.reply.kind] || '' } : null;
     f.innerHTML = `${quote ? `<div class="replying"><div class="q"><b>${esc(quote.name)}</b><span>${esc(quote.body)}</span></div><button class="ib" id="rqX" style="width:32px;height:32px">${I.x}</button></div>` : ''}
