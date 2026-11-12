@@ -199,11 +199,11 @@
     app.innerHTML = `<section class="pane-list" id="pl"></section><section class="pane-room" id="pr"></section>`;
     const pl = $('#pl');
     const roomOf = (e) => { const b = e.target.closest('[data-room]'); return b ? S.rooms.find((r) => r.id === +b.dataset.room) : null; };
-    pl.addEventListener('click', (e) => { const r = roomOf(e); if (r && !pl._pressed) go('#r' + r.id); pl._pressed = false; });
+    pl.addEventListener('click', (e) => { const r = roomOf(e); if (r) go('#r' + r.id); });
     pl.addEventListener('contextmenu', (e) => { const r = roomOf(e); if (r) { e.preventDefault(); roomMenu(r); } });
     let lp = null;
-    pl.addEventListener('touchstart', (e) => { const r = roomOf(e); if (!r) return; lp = setTimeout(() => { lp = null; pl._pressed = true; roomMenu(r); }, 520); }, { passive: true });
-    ['touchend', 'touchmove'].forEach((ev) => pl.addEventListener(ev, () => clearTimeout(lp), { passive: true }));
+    pl.addEventListener('touchstart', (e) => { const r = roomOf(e); if (!r) return; lp = setTimeout(() => { lp = null; holding(); navigator.vibrate && navigator.vibrate(15); roomMenu(r); }, 520); }, { passive: true });
+    ['touchend', 'touchmove', 'touchcancel'].forEach((ev) => pl.addEventListener(ev, () => clearTimeout(lp), { passive: true }));
     layout();
     renderList();
     await loadRooms();
@@ -292,6 +292,13 @@
   }
 
   // ---------- menus ----------
+  // After a long press opens a menu, the phone sends a click when the finger lifts. Without this guard that click lands on
+  // the menu's backdrop (closing it at once) or on one of its buttons. Clicks are ignored until just after the finger lifts.
+  let holdUntil = 0;
+  const holding = () => { holdUntil = Infinity; };
+  document.addEventListener('touchend', () => { if (holdUntil === Infinity) holdUntil = Date.now() + 450; }, { capture: true, passive: true });
+  document.addEventListener('touchcancel', () => { if (holdUntil === Infinity) holdUntil = Date.now() + 450; }, { capture: true, passive: true });
+  document.addEventListener('click', (e) => { if (Date.now() < holdUntil) { e.preventDefault(); e.stopPropagation(); } }, true);
   function sheet(html, onMount) {
     const s = document.createElement('div'); s.className = 'scrim';
     s.innerHTML = `<div class="sheet" role="dialog">${html}</div>`;
@@ -602,7 +609,7 @@
   document.addEventListener('touchstart', (e) => {
     const mEl = e.target.closest && e.target.closest('#ml .m'); if (!mEl || e.touches.length > 1) return;
     const t0 = e.touches[0];
-    press = { el: mEl, x: t0.clientX, y: t0.clientY, dx: 0, timer: setTimeout(() => { press && !press.moved && (navigator.vibrate && navigator.vibrate(15), msgMenu(+mEl.dataset.id)); press = null; }, 480) };
+    press = { el: mEl, x: t0.clientX, y: t0.clientY, dx: 0, timer: setTimeout(() => { press && !press.moved && (holding(), navigator.vibrate && navigator.vibrate(15), msgMenu(+mEl.dataset.id)); press = null; }, 480) };
   }, { passive: true });
   document.addEventListener('touchmove', (e) => {
     if (!press) return;
@@ -672,8 +679,10 @@
       [r.muted ? '🔔' : '🔕', r.muted ? 'Unmute' : 'Mute notifications', 'mute'],
       [r.pinned ? '📍' : '📌', r.pinned ? 'Unpin chat' : 'Pin chat to the top', 'pinc'],
       r.kind === 'group' && ['🚪', 'Leave group', 'leave', 'danger'],
+      S.me.canDeleteChat && ['🗑️', 'Delete chat (from my list only)', 'delc', 'danger'],
     ])}`, (el, close) => bindActions(el, close, {
       info: infoSheet, search: () => searchAll(r.id), catch: catchUp,
+      delc: async () => { if (!confirm(`Delete the chat with ${r.name} from your list? Its messages go from your screen; the others keep theirs. A new message starts it again.`)) return; await api('', { action: 'pref', room: r.id, deleteChat: true }); await loadRooms(); go(''); },
       mute: () => (r.muted ? api('', { action: 'pref', room: r.id, mute: 0 }).then(refreshRoomMeta) : muteSheet(r)),
       pinc: async () => { await api('', { action: 'pref', room: r.id, pinned: !r.pinned }); refreshRoomMeta(); },
       leave: async () => { if (!confirm(`Leave "${r.name}"?`)) return; await api('', { action: 'leave', room: r.id }); await loadRooms(); go(''); },
