@@ -367,6 +367,7 @@
     { key: 'reg-recon', label: 'Reconciling Items', show: () => anyOf('accounts.view', 'audit.tabs'), sub: true },
     { key: 'reg-receipts', label: 'Receipts (bank)', show: () => can('accounts.view'), sub: true },
     { key: 'reg-payments', label: 'Payments Out', show: () => can('accounts.view'), sub: true },
+    { key: 'reg-journals', label: 'Journals (Tally)', show: () => can('accounts.view'), sub: true },
     { key: 'reg-pdc', label: 'PDC', show: () => can('accounts.view'), sub: true },
     { key: 'reg-tds', label: 'TDS Tracker', show: () => can('accounts.view'), sub: true },
     { key: 'sdr', label: 'SDR challans', show: () => can('accounts.view'), sub: true },
@@ -555,7 +556,7 @@
     training: 'Short videos on how to use each part of the ERP',
     accdash: 'Bank balances, collections, refunds, TDS, PDC, SRA tenants and reconciliation',
     balances: 'Closing balance of every bank account, day by day', bankauto: 'The 12 noon and 7 pm check of bank statements against the books',
-    'reg-receipts': 'Every receipt as it came into the bank', 'reg-payments': 'Every payment out, by head', 'reg-pdc': 'Post-dated cheques and their reminders',
+    'reg-receipts': 'Every receipt as it came into the bank', 'reg-payments': 'Every payment out, by head', 'reg-pdc': 'Post-dated cheques and their reminders', 'reg-journals': 'Tally journal vouchers, line by line',
     'reg-tds': 'TDS deducted and challans paid', sdr: 'Stamp duty and registration challans, one per flat (a second one is blocked)', 'reg-recon': 'Items the bank and the books do not yet agree on', 'reg-compliance': 'GST, TDS and RERA due dates',
     'reg-tenants': 'SRA tenants and their rent', 'reg-rentLinks': 'Rent payment links for each tenant', 'reg-cancellations': 'Cancelled flats and refunds still to pay',
     accreports: 'Reports and the Tally import', checks: 'Daily checks on the registers', dues: 'Balance due by follow-up status, flat by flat, with search and Excel', queries: 'Every correction still to make in the CRM and Accounts, with who fixes it', bookscrm: 'Tally receipts flat by flat against the CRM',
@@ -580,7 +581,7 @@
   ];
   const HUBS = {
     'acc-bank': ['Bank', [['balances', 'Daily Bank Balance'], ['bankauto', 'Bank Auto Check'], ['reg-recon', 'Reconciling Items']]],
-    'acc-money': ['Receipts & payments', [['reg-receipts', 'Receipts (bank)'], ['reg-payments', 'Payments Out'], ['reg-pdc', 'PDC']]],
+    'acc-money': ['Receipts & payments', [['reg-receipts', 'Receipts (bank)'], ['reg-payments', 'Payments Out'], ['reg-journals', 'Journals (Tally)'], ['reg-pdc', 'PDC']]],
     'acc-tax': ['Tax & compliance', [['reg-tds', 'TDS Tracker'], ['sdr', 'SDR challans'], ['reg-compliance', 'Compliance Calendar']]],
     'acc-sra': ['SRA tenants', [['reg-tenants', 'Tenants'], ['reg-rentLinks', 'Rent links']]],
   };
@@ -3784,6 +3785,12 @@
     const [d, imp] = await Promise.all([api('/api/accounts?view=lists'), api('/api/accounts?view=import')]);
     $('#page').innerHTML = `<div class="page-head"><div><h1>Banks, heads &amp; import</h1><p class="muted">Cash flow heads and bank accounts are set up here only (on the sheet: "Do not add heads yourself; ask Mr Syed"). The head map decides the cash flow section, TDS section and rate, and whether a payment needs a bill.</p></div></div>
       <div class="panel" id="tlink"><h2>Tally link</h2><p class="muted small">Loading…</p></div>
+      ${imp.can && imp.can.manage ? `<div class="panel" id="tsync"><h2>Sync with Tally</h2>
+        <p class="muted">Makes Receipts, Payments Out and Journals the same as Tally for one period. In Tally: Display → Account Books → Receipt Register, Payment Register, Contra Register and Journal Register, each "Detailed", for the <b>same period</b> (F2), then Export to Excel. Upload all four here.</p>
+        <p class="muted small">Vouchers that already match stay exactly as they are (heads, units, bill details and splits stay). Ones that differ are replaced by Tally's, keeping what was filled for the same ledger. Missing ones are added, and rows from Tally that Tally no longer has are removed. A voucher with several ledgers becomes one row per ledger. Entries made in the ERP that Tally does not have yet are listed, never deleted. Journals for the period are replaced by Tally's.</p>
+        ${imp.lastSync ? `<p class="ok">Last sync ${fmtDate(imp.lastSync.created_at)} by ${esc(imp.lastSync.by_name || '')}: ${fmtD(imp.lastSync.after.period.from)} to ${fmtD(imp.lastSync.after.period.to)}.</p>` : ''}
+        <div class="row" style="grid-template-columns:1fr 1fr 1fr 1fr"><div><label>Receipt Register</label><input type="file" id="sr" accept=".xlsx"></div><div><label>Payment Register</label><input type="file" id="sp" accept=".xlsx"></div><div><label>Contra Register</label><input type="file" id="sc" accept=".xlsx"></div><div><label>Journal Register</label><input type="file" id="sj" accept=".xlsx"></div></div>
+        <div class="actions"><button class="ghost" id="spv">Check against Tally (changes nothing)</button><button id="sgo">Make the ERP the same as Tally</button></div><div id="sout"></div></div>` : ''}
       ${!imp.live ? `<div class="panel"><h2>Import from Tally</h2>
         <p class="muted">Upload the Receipt Register, the Payment Register and the Contra Register exported from Tally to Excel. Every bank line becomes one row in Receipts or Payments Out (flat ledgers such as "B-2401 Name" fill the Unit), the bank accounts are set up from Tally's bank ledgers, and the Daily Bank Balance is worked out from Tally. Everything now in Receipts, Payments Out and the Daily Bank Balance is replaced. Then use Bank Auto Check → "Compare with the bank statements" to see what differs.</p>
         ${imp.lastTally ? `<p class="ok">Last Tally import ${fmtDate(imp.lastTally.created_at)} by ${esc(imp.lastTally.by_name || '')}: ${imp.lastTally.after.receipts} receipts and ${imp.lastTally.after.payments} payments, ${fmtD(imp.lastTally.after.from)} to ${fmtD(imp.lastTally.after.to)}.</p>` : ''}
@@ -3817,6 +3824,41 @@
     const summ = (s) => `<div class="kpis" style="margin:10px 0">${kpi(s.receipts.toLocaleString('en-IN'), 'receipts')}${kpi(inr(s.receiptsCleared), 'received, bounced left out')}${kpi(s.payments.toLocaleString('en-IN'), 'payments')}${kpi(inr(s.paymentsAmount), 'paid out')}${kpi(s.daily, 'daily entries')}${kpi(s.tds, 'TDS entries')}${kpi(s.recon, 'reconciling items')}${kpi(s.tenants, 'SRA tenants')}${kpi(s.rentLinks, 'rent links')}${kpi(s.heads, 'heads')}${kpi(inr(s.cpReleased), 'CP brokerage released')}</div>
       ${Object.values(s.gaps).some(Boolean) ? `<p class="small muted">Rows with a blank required column (they come in as they are, to fill in the ERP): ${Object.entries(s.gaps).filter(([, n]) => n).map(([k, n]) => `${k} ${n}`).join(', ')}.</p>` : ''}`;
     if ($('#ipv')) $('#ipv').onclick = async (e) => { e.target.disabled = true; e.target.textContent = 'Reading…'; try { const r = await api('/api/accounts', { action: 'import-preview', projectId: proj }); $('#ipo').innerHTML = summ(r.summary); } catch (x) { alert(x.message); } e.target.disabled = false; e.target.textContent = 'Read the sheet and check it'; };
+    // Sync with Tally: the four registers go up in parts (a request is limited in size), then the action names them.
+    const syncFiles = async () => {
+      const f = [['#sr', 'Receipt'], ['#sp', 'Payment'], ['#sc', 'Contra'], ['#sj', 'Journal']].map(([k, l]) => [$(k).files[0], l]);
+      const miss = f.filter(([x]) => !x).map(([, l]) => l);
+      if (miss.length) throw new Error(`Choose the ${miss.join(', ')} Register${miss.length > 1 ? 's' : ''} too. All four are needed, for the same period.`);
+      const out = [];
+      for (const [x] of f) {
+        const data = await new Promise((res, rej) => { const r = new FileReader(); r.onload = () => res(String(r.result).split(',')[1]); r.onerror = rej; r.readAsDataURL(x); });
+        const id = 'ts' + Date.now().toString(36) + Math.random().toString(36).slice(2, 8), size = 3000000, of = Math.max(1, Math.ceil(data.length / size));
+        for (let i = 0; i < of; i++) await api('/api/accounts', { action: 'file-part', id, part: i, of, data: data.slice(i * size, (i + 1) * size) });
+        out.push({ name: x.name, fileId: id });
+      }
+      return out;
+    };
+    let synced = null;
+    const sTable = (title, rows, cols) => rows && rows.length ? `<h3 style="margin:14px 0 6px">${title}</h3><div class="table-wrap"><table><tr>${cols.map((c) => `<th class="${c[2] || ''}">${c[0]}</th>`).join('')}</tr>${rows.map((r) => `<tr>${cols.map((c) => `<td class="${c[2] || ''} small">${c[2] === 'num' ? (c[1](r) == null ? '' : inr(c[1](r))) : esc(c[1](r) == null ? '' : String(c[1](r)))}</td>`).join('')}</tr>`).join('')}</table></div>` : '';
+    const sShow = (r, done) => {
+      const side = (lbl, x) => `<li><b>${lbl}</b>: ${x.same.toLocaleString('en-IN')} already the same · ${x.replace} ${done ? 'replaced' : 'to replace'} · ${x.add} ${done ? 'added' : 'to add'} · ${x.remove} ${done ? 'removed' : 'to remove'}${x.erpOnly ? ` · <span class="bad-t">${x.erpOnly} made in the ERP, not in Tally yet</span>` : ''}</li>`;
+      const ch = [...r.payments.changes.map((c) => ({ ...c, side: 'Payment' })), ...r.receipts.changes.map((c) => ({ ...c, side: 'Receipt' }))];
+      const only = [...r.payments.erpOnlyRows.map((c) => ({ ...c, side: 'Payment' })), ...r.receipts.erpOnlyRows.map((c) => ({ ...c, side: 'Receipt' }))];
+      $('#sout').innerHTML = `<p class="${done ? 'ok' : ''}">${done ? 'Done.' : 'What would change'} · ${fmtD(r.period.from)} to ${fmtD(r.period.to)}${r.period.sameForAll ? '' : ' <span class="bad-t">(the four registers are not for the same period: only the dates all of them cover are synced)</span>'}</p>
+        <ul>${side('Payments Out', r.payments)}${side('Receipts', r.receipts)}<li><b>Journals</b>: ${r.journals.now} vouchers (${r.journals.lines} lines) from Tally${r.journals.before ? `, replacing ${r.journals.before}` : ''}</li></ul>
+        ${r.check ? `<p class="${r.check.different.length ? '' : 'ok'}"><b>Ledger check after the sync:</b> ${r.check.matching} of ${r.check.ledgers} ledgers match Tally exactly.${r.check.different.length ? ' The rest are below, with the reason in the lists above (usually entries made in the ERP that Tally does not have yet).' : ''}</p>` : ''}
+        ${r.check ? sTable('Ledgers that still differ', r.check.different.slice(0, 200), [['Ledger', (x) => x.ledger], ['Tally Dr', (x) => x.tallyDr, 'num'], ['Tally Cr', (x) => x.tallyCr, 'num'], ['ERP Dr', (x) => x.erpDr, 'num'], ['ERP Cr', (x) => x.erpCr, 'num'], ['ERP − Tally', (x) => x.diff, 'num']]) : ''}
+        ${sTable(done ? 'What changed' : 'What will change', ch.slice(0, 300), [['', (x) => x.side], ['What', (x) => x.what], ['Tally voucher', (x) => x.voucher], ['Date', (x) => fmtD(x.date)], ['Ledgers', (x) => x.ledgers], ['Tally', (x) => x.tally, 'num'], ['ERP', (x) => x.erp, 'num'], ['ERP IDs', (x) => x.erpIds]])}
+        ${sTable('Made in the ERP, not in Tally yet (enter these in Tally, or correct them in the ERP)', only, [['', (x) => x.side], ['ID', (x) => x.id], ['Date', (x) => fmtD(x.date)], ['Bank', (x) => x.bank], ['Payee / payer', (x) => x.who], ['Amount', (x) => x.amount, 'num'], ['Source', (x) => x.source]])}
+        ${r.problems && r.problems.length ? sTable('To check in Tally', r.problems, [['What', (x) => x.what], ['Voucher', (x) => x.where], ['Detail', (x) => x.detail]]) : ''}`;
+    };
+    if ($('#spv')) $('#spv').onclick = async (e) => { e.target.disabled = true; e.target.textContent = 'Reading the registers…'; try { synced = await syncFiles(); sShow(await api('/api/accounts', { action: 'tally-sync-preview', files: synced }), false); } catch (x) { alert(x.message); } e.target.disabled = false; e.target.textContent = 'Check against Tally (changes nothing)'; };
+    if ($('#sgo')) $('#sgo').onclick = async (e) => {
+      if (!confirm('Make Receipts, Payments Out and Journals the same as these Tally registers for their period? Matching vouchers stay as they are; the rest follow Tally.')) return;
+      e.target.disabled = true; e.target.textContent = 'Syncing… (up to a minute)';
+      try { const files = synced || await syncFiles(); synced = null; sShow(await api('/api/accounts', { action: 'tally-sync', files }), true); toast('The ERP now follows Tally for that period.'); } catch (x) { alert(x.message); }
+      e.target.disabled = false; e.target.textContent = 'Make the ERP the same as Tally';
+    };
     const tallyFiles = async () => {
       const f = [$('#tr').files[0], $('#tp').files[0], $('#tc').files[0]].filter(Boolean);
       if (!$('#tr').files[0] || !$('#tp').files[0]) throw new Error('Choose the Receipt Register and the Payment Register (and the Contra Register for transfers between your own accounts).');

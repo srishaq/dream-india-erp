@@ -36,6 +36,22 @@ async function guardClosed(u, reg, dates, reason) {
   return c.date;
 }
 
+// Tally registers for Sync with Tally: each file sent in parts first (action file-part), then named here by its id.
+// done=true removes the parts once used.
+async function syncFiles(b, done) {
+  const out = [];
+  for (const f of (Array.isArray(b.files) ? b.files : []).slice(0, 4)) {
+    if (f && f.data) { out.push({ name: str(f.name, 200), buffer: Buffer.from(String(f.data), 'base64') }); continue; }
+    const id = str(f && f.fileId, 40).replace(/[^a-z0-9-]/gi, ''); if (!id) continue;
+    const parts = await db.q('select key, info from job_marks where key like $1', [`upload:${id}:%`]);
+    const of = parts[0] ? parts[0].info.of : 0;
+    if (!of || parts.length !== of) throw fail(400, `${str(f.name, 200)} did not arrive completely. Choose it again.`);
+    out.push({ name: str(f.name, 200), buffer: Buffer.from(parts.sort((x, y) => +x.key.split(':')[2] - +y.key.split(':')[2]).map((x) => x.info.data).join(''), 'base64') });
+    if (done) await db.q('delete from job_marks where key like $1', [`upload:${id}:%`]);
+  }
+  return out;
+}
+
 module.exports = route({
   GET: async (req, res) => {
     // The Tally link (lib/tally-feed.js): Tally's server fetches vouchers with its own key, no ERP login.
@@ -96,7 +112,7 @@ module.exports = route({
         return res.end(require('../lib/xlsx-write').write(sheets));
       }
       const L = await acc.list(q.reg, { ...opts, limit: intOr(q.limit, 200), offset: intOr(q.offset, 0) });
-      return res.json({ ...L, groups: G, filterCols: acc.filterCols(reg).map((c) => c.key), reg: { key: q.reg, title: reg.title, help: reg.help, prefix: reg.prefix || null, idLabel: reg.idLabel || null, dateKey: reg.dateKey || null, cols: reg.cols }, lists: await acc.lists(), can });
+      return res.json({ ...L, groups: G, filterCols: acc.filterCols(reg).map((c) => c.key), reg: { key: q.reg, title: reg.title, help: reg.help, prefix: reg.prefix || null, idLabel: reg.idLabel || null, dateKey: reg.dateKey || null, cols: reg.cols }, lists: await acc.lists(), can: reg.readOnly ? { ...can, enter: false } : can });
     }
     switch (q.view) {
       case 'todo': return res.json({ ...(await acc.todo()), can });
@@ -138,7 +154,8 @@ module.exports = route({
         const last = await db.one("select at as created_at, after, (select name from users where id = audit_log.user_id) as by_name from audit_log where action = 'import-accounts' order by id desc limit 1");
         const lastTally = await db.one("select at as created_at, after, (select name from users where id = audit_log.user_id) as by_name from audit_log where action = 'import-tally' order by id desc limit 1");
         const lastRefunds = await db.one("select at as created_at, after, (select name from users where id = audit_log.user_id) as by_name from audit_log where action = 'import-refund-list' order by id desc limit 1");
-        return res.json({ configured: sheets.configured() || !!(process.env.ACC_FIXTURE && process.env.VERCEL !== '1'), sheetId: accImport.SHEET_ID, last, lastTally, lastRefunds, can, live: process.env.ERP_LIVE === '1' });
+        const lastSync = await db.one("select at as created_at, after, (select name from users where id = audit_log.user_id) as by_name from audit_log where action = 'tally-sync' order by id desc limit 1").catch(() => null);
+        return res.json({ configured: sheets.configured() || !!(process.env.ACC_FIXTURE && process.env.VERCEL !== '1'), sheetId: accImport.SHEET_ID, last, lastTally, lastRefunds, lastSync, can, live: process.env.ERP_LIVE === '1' });
       }
       default: throw fail(400, 'Unknown view.');
     }
@@ -154,6 +171,7 @@ module.exports = route({
     if (b.action === 'save') {
       need('accounts.enter');
       const reg = REGISTERS[b.reg]; if (!reg) throw fail(400, 'Unknown register.');
+      if (reg.readOnly) throw fail(400, `${reg.title} change only through Tally (Sync with Tally).`);
       const id = intOr(b.id);
       const data = await acc.cleanRow(b.reg, b.data || {}, { partial: !!id });
       // Payments Out: the TDS section and rate come from the payment head when not typed; TDS = taxable value × rate.
@@ -236,6 +254,7 @@ module.exports = route({
     if (b.action === 'delete') {
       need('accounts.manage');
       const reg = REGISTERS[b.reg]; if (!reg) throw fail(400, 'Unknown register.');
+      if (reg.readOnly) throw fail(400, `${reg.title} change only through Tally (Sync with Tally).`);
       if (['receipts', 'payments'].includes(b.reg)) throw fail(400, 'Receipts and payments are never deleted. A bounced cheque is marked Bounced; a wrong entry is corrected.');
       const reason = str(b.reason, 300); if (!reason) throw fail(400, 'Say why this row is being removed.');
       if (reg.dateKey) { const r0 = await db.one(`select ${reg.dateKey} as d from ${reg.table} where id = $1 and book = $2`, [intOr(b.id), acc.BOOK]); if (r0) await guardClosed(u, b.reg, [r0.d], reason); }
@@ -458,6 +477,36 @@ module.exports = route({
         return res2;
       });
       return res.json({ ok: true, ...out });
+    }
+    if (b.action === 'tally-sync-preview' || b.action === 'tally-sync') {
+      // The ERP is live: Receipts, Payments Out and Journals are brought in line with Tally without wiping the ERP (lib/tally-sync.js).
+      need('accounts.manage');
+      const files = await syncFiles(b, b.action === 'tally-sync');
+      if (files.length < 2 || files.some((f) => !f.buffer.length)) throw fail(400, 'Choose the Tally registers: Receipt, Payment, Contra and Journal (.xlsx), all for the same period.');
+      const p = tally.parse(files, today());
+      const TS = require('../lib/tally-sync');
+      if (b.action === 'tally-sync-preview') {
+        const pl = await TS.plan(db, p, today());
+        return res.json({ registers: p.registers, problems: p.problems.slice(0, 50), ...TS.summary(pl) });
+      }
+      const r = await db.tx(async (t) => {
+        const pl = await TS.plan(t, p, today());
+        const done = await TS.apply(t, pl, { user: u });
+        const check = await TS.ledgers(t, p, pl.period);
+        const sum = TS.summary(pl);
+        await audit.record(t.q, { user: u, action: 'tally-sync', entity: 'accounts', entityId: 'signature', after: { period: pl.period, registers: p.registers.map((x) => x.file), done,
+          receipts: { ...sum.receipts, changes: sum.receipts.changes.slice(0, 100) }, payments: { ...sum.payments, changes: sum.payments.changes.slice(0, 100) }, journals: sum.journals, ledgersDifferent: check.different.length } });
+        return { ...sum, done, check };
+      });
+      return res.json({ ok: true, registers: p.registers, ...r });
+    }
+    if (b.action === 'tally-check') {
+      // Ledger by ledger: Tally's registers against the ERP for their period, nothing changed.
+      need('accounts.view');
+      const files = await syncFiles(b, false);
+      const p = tally.parse(files, today());
+      const TS = require('../lib/tally-sync');
+      return res.json(await TS.ledgers(db, p, TS.periodOf(p, today())));
     }
     if (b.action === 'tally-preview' || b.action === 'tally-import') {
       // Test version: the registers are replaced with the Receipt and Payment Registers exported from Tally.
