@@ -67,6 +67,7 @@ const b64 = (b) => b.toString('base64');
     V('2026-10-08', 'Payment', 1511, [['Cement Co', 95000, null], [R30, null, 95000]]),
     V('2026-10-12', 'Payment', 1512, [['Steel Co', 60000, null], ['TDS on Contract', null, 1200], [R30, null, 58800]]),
     V('2026-10-21', 'Payment', 1520, [['Electric Co', 70000, null], [R30, null, 70000]]),
+    V('2026-10-22', 'Payment (HDFC)', 1511, [['Courier Co', 3000, null], [HD, null, 3000]]), // a second voucher type numbered alike
   ]);
   const J2 = reg('Journal Register', [V('2026-10-16', 'Journal', 314, [[RAFI, 50000, null], [MUB, null, 50000]])]);
   let pv;
@@ -95,6 +96,7 @@ const b64 = (b) => b.toString('base64');
     assert.equal(by(/^P2627-1510/).length, 0);
     const c = by(/^P2627-1511$/)[0]; assert.equal(Number(c.amount), 95000); assert.equal(c.head, 'Cement'); assert.equal(c.bill_no, 'CB-77'); assert.equal(c.vendor_pan, 'AAAPC1234C');
     assert.deepEqual(by(/^P2627-1512\//).map((x) => [x.payee, Number(x.amount)]), [['Steel Co', 60000], ['TDS on Contract', -1200]]);
+    assert.equal(rows.find((x) => x.payee === 'Courier Co').ref_id, 'P2627-1511.2'); // numbered alike in Tally: still its own row
     const el = rows.filter((x) => x.payee === 'Electric Co'); assert.equal(el.length, 1); // not added twice
     assert.equal(el[0].ref_id, 'PO00001'); assert.equal(el[0].txn_date.slice(0, 10), '2026-10-21'); // its ERP ID kept, Tally's date
     assert.ok((await db.one("select tally_at from acc_payments where ref_id = 'PO00001'")).tally_at); // never sent to Tally again
