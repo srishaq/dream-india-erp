@@ -49,6 +49,9 @@ const b64 = (b) => b.toString('base64');
     // the old import kept a two-ledger voucher as one row under its biggest ledger
     await db.q("delete from acc_payments where ref_id like 'P2627-1509/%'");
     await db.q("insert into acc_payments (book, imported, source, ref_id, txn_date, bank, amount, head, payee, remark, created_by) values ('signature', true, 'Tally', 'P2627-1509', '2026-10-06', 'Yes RERA 30% (0501)', 500000, $1, $1, 'Tally Payment 1509 · several ledgers in one voucher', $2)", [RAFI, u]);
+    // the old import gave a voucher Tally keeps without a number the ID R2627-
+    const rb = await db.one("select bank from acc_receipts where ref_id = 'R2627-6'");
+    await db.q("insert into acc_receipts (book, imported, source, ref_id, txn_date, bank, amount, head, payer_name, created_by) values ('signature', true, 'Tally', 'R2627-', '2026-10-26', $1, 1861000, 'Loan', 'Partner Loan A/c', $2)", [rb.bank, u]);
     // staff split Skyway's payment with invoice numbers, and filled a bill on Cement Co
     const sky = pay.find((r) => r.ref_id === 'P2627-1734');
     const s = await admin('/api/accounts', { action: 'split-row', reg: 'payments', id: sky.id, parts: [{ head: 'RMC', amount: 150000, bill_no: 'INV-1' }, { head: 'RMC', amount: 250000, bill_no: 'INV-2' }] });
@@ -69,10 +72,12 @@ const b64 = (b) => b.toString('base64');
     V('2026-10-21', 'Payment', 1520, [['Electric Co', 70000, null], [R30, null, 70000]]),
     V('2026-10-22', 'Payment (HDFC)', 1511, [['Courier Co', 3000, null], [HD, null, 3000]]), // a second voucher type numbered alike
   ]);
+  const R2 = reg('Receipt Register', [V('2026-10-03', 'Receipt', 6, [[RAFI, null, 1000000], [HD, 1000000, null]]),
+    V('2026-10-26', 'Receipt', '', [['Partner Loan A/c', null, 1861000], [HD, 1861000, null]]), V('2026-10-27', 'Receipt', '', [['Partner Loan A/c', null, 5000], [HD, 5000, null]])]);
   const J2 = reg('Journal Register', [V('2026-10-16', 'Journal', 314, [[RAFI, 50000, null], [MUB, null, 50000]])]);
   let pv;
   await step('check against Tally: nothing changes, and it says what would', async () => {
-    pv = await admin('/api/accounts', { action: 'tally-sync-preview', files: files(R1, P2, C1, J2) });
+    pv = await admin('/api/accounts', { action: 'tally-sync-preview', files: files(R2, P2, C1, J2) });
     assert.equal(pv.status, 200, pv.error);
     assert.deepEqual(pv.period, { from: '2026-10-01', to: '2026-10-31', sameForAll: true });
     const p = pv.payments; if (process.env.DBG) console.log(JSON.stringify(p, null, 1));
@@ -80,12 +85,13 @@ const b64 = (b) => b.toString('base64');
     assert.equal(p.replace, 3); // 1509 (old single row), 1511 (amount changed), Electric Co (the ERP's entry, a day off in Tally) assert.equal(p.add, 1); assert.equal(p.remove, 1); assert.equal(p.erpOnly, 1);
     assert.equal(p.erpOnlyRows[0].who, 'Tea Stall');
     assert.equal(pv.journals.now, 1);
+    assert.deepEqual([pv.receipts.same, pv.receipts.add, pv.receipts.remove], [3, 1, 0]); // receipt 6, the contra, the numberless voucher found as R2627-; the new numberless one added
     assert.equal((await admin('/api/accounts?reg=payments&q=Steel')).total, 0);
   });
   await step('sync: the ERP follows Tally, staff work stays, every ledger matches but the ERP-only entry', async () => {
     // the files go up in parts first, as the page sends them
     const parts = [];
-    for (const f of files(R1, P2, C1, J2)) { const id = 'x' + Math.random().toString(36).slice(2, 10); const half = Math.ceil(f.data.length / 2);
+    for (const f of files(R2, P2, C1, J2)) { const id = 'x' + Math.random().toString(36).slice(2, 10); const half = Math.ceil(f.data.length / 2);
       for (let i = 0; i < 2; i++) assert.equal((await admin('/api/accounts', { action: 'file-part', id, part: i, of: 2, data: f.data.slice(i * half, (i + 1) * half) })).ok, true);
       parts.push({ name: f.name, fileId: id }); }
     const r = await admin('/api/accounts', { action: 'tally-sync', files: parts });
@@ -104,8 +110,10 @@ const b64 = (b) => b.toString('base64');
     assert.deepEqual(r.check.different.map((x) => x.ledger), ['Tea Stall']);
     const rafiT = (r.check.different.find((x) => x.ledger === RAFI)); assert.equal(rafiT, undefined);
     // a second sync with the same registers changes nothing
-    const again = await admin('/api/accounts', { action: 'tally-sync-preview', files: files(R1, P2, C1, J2) });
+    const again = await admin('/api/accounts', { action: 'tally-sync-preview', files: files(R2, P2, C1, J2) });
     assert.equal(again.payments.replace + again.payments.add + again.payments.remove, 0); assert.equal(again.receipts.replace + again.receipts.add + again.receipts.remove, 0);
+    const rr = (await admin('/api/accounts?reg=receipts&limit=50')).rows.map((x) => x.ref_id).sort();
+    assert.ok(rr.includes('R2627-N2026102701'), rr.join(','));
     const page = await admin('/api/accounts?view=import'); assert.equal(page.lastSync.after.period.from, '2026-10-01');
   });
   await step('journals are read only in the ERP', async () => {
