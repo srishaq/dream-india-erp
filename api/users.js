@@ -28,7 +28,7 @@ const tempPassword = () => {
 };
 
 async function list() {
-  const users = await db.q('select id, username, name, role, disabled, must_change, all_projects, phone, designation, email, created_at from users order by disabled, name');
+  const users = await db.q('select id, username, name, role, disabled, must_change, all_projects, stay_signed_in, phone, designation, email, created_at from users order by disabled, name');
   const links = await db.q('select user_id, project_id from user_projects');
   for (const u of users) u.projects = links.filter((l) => l.user_id === u.id).map((l) => l.project_id);
   const projects = await db.q('select id, name from projects where active order by name');
@@ -96,7 +96,7 @@ module.exports = route({
       return res.json({ ok: true, username, tempPassword: temp, ...(await list()) });
     }
     const id = intOr(b.id);
-    const before = id && (await db.one('select id, username, name, role, disabled, all_projects, phone, email from users where id = $1', [id]));
+    const before = id && (await db.one('select id, username, name, role, disabled, all_projects, stay_signed_in, phone, email from users where id = $1', [id]));
     if (!before) throw fail(404, 'Login not found.');
     if (id === me.id && ['disable', 'update'].includes(b.action) && (b.action === 'disable' || role !== 'admin')) throw fail(400, 'You cannot remove your own Admin access.');
     if (b.action === 'update') {
@@ -108,6 +108,7 @@ module.exports = route({
       if (id === me.id && ((phoneChanged && before.phone) || (emailChanged && before.email))) throw fail(403, 'You cannot change your own mobile or email: sign-in codes go there. Another Admin must change it.');
       await db.tx(async (t) => {
         await t.q('update users set name = $2, role = $3, all_projects = $4, phone = $5, designation = $6, email = $7, session_version = session_version + 1, portal_role = case when role = $3 then portal_role end, portal_access = case when role = $3 then portal_access end where id = $1', [id, name, role, !!b.allProjects, phone, str(b.designation, 80) || null, email]);
+        await t.q('update users set stay_signed_in = $2 where id = $1', [id, !!b.staySignedIn]);
         await setProjects(t, id, cleanIds(b.projects));
         const { phone: bp, email: be, ...rest } = before;
         await audit.record(t.q, { user: me, action: 'update', entity: 'user', entityId: id, before: rest, after: { name, role, allProjects: !!b.allProjects, projects: cleanIds(b.projects) } });

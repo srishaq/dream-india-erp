@@ -804,10 +804,11 @@
       <div><label>Mobile (sign-in codes on WhatsApp, approvals and alerts)</label><input name="phone" inputmode="tel" value="${esc(u?.phone)}" ${u && u.id === me.id && u.phone ? 'disabled title="Another Admin changes your own mobile"' : ''}></div></div>
       <label>Own email (sign-in codes when WhatsApp cannot be used, approval links, daily summaries, buyers' replies)</label><input name="email" type="email" value="${esc(u?.email)}" maxlength="120" placeholder="e.g. ayesha@dreamindiagroup.com" ${u && u.id === me.id && u.email ? 'disabled title="Another Admin changes your own email"' : ''}>
       <label>Designation (shown under the name in emails to buyers)</label><input name="designation" value="${esc(u?.designation)}" maxlength="80" placeholder="e.g. Senior Executive – Customer Relations">
+      ${u ? `<label class="check"><input type="checkbox" name="staySignedIn" ${u.stay_signed_in ? 'checked' : ''}> Stay signed in for 30 days on this person's phone and iPad (otherwise the ERP asks again every 12 hours)</label>` : ''}
       <label>Projects</label>
       <label class="check"><input type="checkbox" name="allProjects" ${u?.all_projects ? 'checked' : ''}> All projects, including future ones</label>
       ${d.projects.map((p) => `<label class="check"><input type="checkbox" name="p${p.id}" ${u?.projects.includes(p.id) ? 'checked' : ''}> ${esc(p.name)}</label>`).join('')}`;
-    const pick = (x, u) => ({ name: x.name, username: x.username, role: x.role, phone: x.phone ?? u?.phone, designation: x.designation, email: x.email ?? u?.email, allProjects: x.allProjects === 'on', projects: d.projects.filter((p) => x['p' + p.id] === 'on').map((p) => p.id) });
+    const pick = (x, u) => ({ name: x.name, username: x.username, role: x.role, phone: x.phone ?? u?.phone, designation: x.designation, email: x.email ?? u?.email, allProjects: x.allProjects === 'on', staySignedIn: x.staySignedIn === 'on', projects: d.projects.filter((p) => x['p' + p.id] === 'on').map((p) => p.id) });
     const showTemp = (r) => {
       const dl = document.createElement('dialog');
       dl.innerHTML = `<form method="dialog"><h2>Temporary password for ${esc(r.username)}</h2><p>${r.emailedTo ? `Emailed to ${esc(r.emailedTo)}. ` : 'No email on this login, so it was not emailed: give it to the person. '}It is shown only once; they must choose their own password when they first sign in.</p>
