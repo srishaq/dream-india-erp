@@ -41,6 +41,11 @@ The person who enters something can never approve it.
 - **Daily report:** 6 pm email to the site team if today's report is not in (cron `job=dpr`, 12:30 UTC); "no report yesterday" on the dashboard; speak instead of typing (English, or Hindi turned into English when `ANTHROPIC_API_KEY` is set).
 - **Contractor bills** (`/contracts`, from Purchase): work orders (items, rates, retention, TDS, advance and its recovery, allowed RMC/steel wastage) and RA bills (previous, this bill, cumulative; slab items suggested from slabs cast; material recovery suggested from the site's design vs used quantities). Purchase enters, Management approves (not the person who entered it), Accounts pay. Site logins have no access.
 
+## Debit & credit notes from Tally (14 Nov 2026)
+- Banks, heads & import → **Debit & credit notes from Tally**: upload Tally's Debit Note Register (and Credit Note Register, if any), "Detailed", exported to Excel. "Read and check" lists each note (party, what it is against, amount, narration); "Bring the notes into the ERP" replaces the notes for the register's period.
+- They show under Accounts → Receipts & payments → **Debit / Credit notes**, one row per ledger line (voucher J2627-D1 …), read only. Journals no longer lists them.
+- Sync with Tally leaves the notes alone unless a Debit/Credit Note Register is among its files (`journalScope` in `lib/tally-import.js`).
+
 ## DreamComm (company chat, `/chat`)
 - Installable on phones and computers (Install / Add to Home Screen). Staff sign in with their ERP username and password and stay signed in for 30 days; that sign-in opens DreamComm only, never the rest of the ERP. Switching a login off ends it at once.
 - One-to-one chats, groups anyone makes, a group per department (Sales, CRM, Accounts, Site, Purchase, Management) kept in step with each login's role (Management is not put in the other teams' groups), and Announcements (only Management posts). Consultants and the CA are guests: they see only the groups they are added to.

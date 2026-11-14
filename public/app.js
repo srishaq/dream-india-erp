@@ -368,6 +368,7 @@
     { key: 'reg-receipts', label: 'Receipts (bank)', show: () => can('accounts.view'), sub: true },
     { key: 'reg-payments', label: 'Payments Out', show: () => can('accounts.view'), sub: true },
     { key: 'reg-journals', label: 'Journals (Tally)', show: () => can('accounts.view'), sub: true },
+    { key: 'reg-notes', label: 'Debit / Credit notes', show: () => can('accounts.view'), sub: true },
     { key: 'reg-pdc', label: 'PDC', show: () => can('accounts.view'), sub: true },
     { key: 'reg-tds', label: 'TDS Tracker', show: () => can('accounts.view'), sub: true },
     { key: 'sdr', label: 'SDR challans', show: () => can('accounts.view'), sub: true },
@@ -556,7 +557,7 @@
     training: 'Short videos on how to use each part of the ERP',
     accdash: 'Bank balances, collections, refunds, TDS, PDC, SRA tenants and reconciliation',
     balances: 'Closing balance of every bank account, day by day', bankauto: 'The 12 noon and 7 pm check of bank statements against the books',
-    'reg-receipts': 'Every receipt as it came into the bank', 'reg-payments': 'Every payment out, by head', 'reg-pdc': 'Post-dated cheques and their reminders', 'reg-journals': 'Tally journal vouchers, line by line',
+    'reg-receipts': 'Every receipt as it came into the bank', 'reg-payments': 'Every payment out, by head', 'reg-pdc': 'Post-dated cheques and their reminders', 'reg-journals': 'Tally journal vouchers, line by line', 'reg-notes': 'Debit notes and credit notes from Tally',
     'reg-tds': 'TDS deducted and challans paid', sdr: 'Stamp duty and registration challans, one per flat (a second one is blocked)', 'reg-recon': 'Items the bank and the books do not yet agree on', 'reg-compliance': 'GST, TDS and RERA due dates',
     'reg-tenants': 'SRA tenants and their rent', 'reg-rentLinks': 'Rent payment links for each tenant', 'reg-cancellations': 'Cancelled flats and refunds still to pay',
     accreports: 'Reports and the Tally import', checks: 'Daily checks on the registers', dues: 'Balance due by follow-up status, flat by flat, with search and Excel', queries: 'Every correction still to make in the CRM and Accounts, with who fixes it', bookscrm: 'Tally receipts flat by flat against the CRM',
@@ -581,7 +582,7 @@
   ];
   const HUBS = {
     'acc-bank': ['Bank', [['balances', 'Daily Bank Balance'], ['bankauto', 'Bank Auto Check'], ['reg-recon', 'Reconciling Items']]],
-    'acc-money': ['Receipts & payments', [['reg-receipts', 'Receipts (bank)'], ['reg-payments', 'Payments Out'], ['reg-journals', 'Journals (Tally)'], ['reg-pdc', 'PDC']]],
+    'acc-money': ['Receipts & payments', [['reg-receipts', 'Receipts (bank)'], ['reg-payments', 'Payments Out'], ['reg-journals', 'Journals (Tally)'], ['reg-notes', 'Debit / Credit notes'], ['reg-pdc', 'PDC']]],
     'acc-tax': ['Tax & compliance', [['reg-tds', 'TDS Tracker'], ['sdr', 'SDR challans'], ['reg-compliance', 'Compliance Calendar']]],
     'acc-sra': ['SRA tenants', [['reg-tenants', 'Tenants'], ['reg-rentLinks', 'Rent links']]],
   };
@@ -3798,6 +3799,11 @@
         ${imp.lastSync ? `<p class="ok">Last sync ${fmtDate(imp.lastSync.created_at)} by ${esc(imp.lastSync.by_name || '')}: ${fmtD(imp.lastSync.after.period.from)} to ${fmtD(imp.lastSync.after.period.to)}.</p>` : ''}
         <div class="row" style="grid-template-columns:1fr 1fr 1fr 1fr"><div><label>Receipt Register</label><input type="file" id="sr" accept=".xlsx"></div><div><label>Payment Register</label><input type="file" id="sp" accept=".xlsx"></div><div><label>Contra Register</label><input type="file" id="sc" accept=".xlsx"></div><div><label>Journal Register</label><input type="file" id="sj" accept=".xlsx"></div></div>
         <div class="actions"><button class="ghost" id="spv">Check against Tally (changes nothing)</button><button id="sgo">Make the ERP the same as Tally</button></div><div id="sout"></div></div>` : ''}
+      ${imp.can && imp.can.manage ? `<div class="panel" id="tnotes"><h2>Debit &amp; credit notes from Tally</h2>
+        <p class="muted">In Tally: Display → Account Books → Debit Note Register (and Credit Note Register, if any), "Detailed", for the period you want (F2), then Export to Excel. Upload it here. The notes for that period are replaced by the register's and show under Accounts → Receipts &amp; payments → <a href="#/reg-notes">Debit / Credit notes</a>. Receipts, Payments Out and Journals are not touched, and Sync with Tally leaves the notes alone.</p>
+        ${imp.lastNotes ? `<p class="ok">Last uploaded ${fmtDate(imp.lastNotes.created_at)} by ${esc(imp.lastNotes.by_name || '')}: ${imp.lastNotes.after.vouchers} notes (${inr(imp.lastNotes.after.amount)}), ${fmtD(imp.lastNotes.after.period.from)} to ${fmtD(imp.lastNotes.after.period.to)}.</p>` : ''}
+        <div class="row"><div><label>Debit Note Register (.xlsx)</label><input type="file" id="ndn" accept=".xlsx"></div><div><label>Credit Note Register (.xlsx, optional)</label><input type="file" id="ncn" accept=".xlsx"></div></div>
+        <div class="actions"><button class="ghost" id="npv">Read and check (changes nothing)</button><button id="ngo">Bring the notes into the ERP</button></div><div id="nout"></div></div>` : ''}
       ${!imp.live ? `<div class="panel"><h2>Import from Tally</h2>
         <p class="muted">Upload the Receipt Register, the Payment Register and the Contra Register exported from Tally to Excel. Every bank line becomes one row in Receipts or Payments Out (flat ledgers such as "B-2401 Name" fill the Unit), the bank accounts are set up from Tally's bank ledgers, and the Daily Bank Balance is worked out from Tally. Everything now in Receipts, Payments Out and the Daily Bank Balance is replaced. Then use Bank Auto Check → "Compare with the bank statements" to see what differs.</p>
         ${imp.lastTally ? `<p class="ok">Last Tally import ${fmtDate(imp.lastTally.created_at)} by ${esc(imp.lastTally.by_name || '')}: ${imp.lastTally.after.receipts} receipts and ${imp.lastTally.after.payments} payments, ${fmtD(imp.lastTally.after.from)} to ${fmtD(imp.lastTally.after.to)}.</p>` : ''}
@@ -3865,6 +3871,31 @@
       e.target.disabled = true; e.target.textContent = 'Syncing… (up to a minute)';
       try { const files = synced || await syncFiles(); synced = null; sShow(await api('/api/accounts', { action: 'tally-sync', files }), true); toast('The ERP now follows Tally for that period.'); } catch (x) { alert(x.message); }
       e.target.disabled = false; e.target.textContent = 'Make the ERP the same as Tally';
+    };
+    // Debit & credit notes: the register(s) go up in parts like Sync's, then the action names them.
+    const noteFiles = async () => {
+      const f = [$('#ndn').files[0], $('#ncn').files[0]].filter(Boolean);
+      if (!f.length) throw new Error('Choose the Debit Note Register exported from Tally first.');
+      const out = [];
+      for (const x of f) {
+        const data = await new Promise((res, rej) => { const r = new FileReader(); r.onload = () => res(String(r.result).split(',')[1]); r.onerror = rej; r.readAsDataURL(x); });
+        const id = 'tn' + Date.now().toString(36) + Math.random().toString(36).slice(2, 8), size = 3000000, of = Math.max(1, Math.ceil(data.length / size));
+        for (let i = 0; i < of; i++) await api('/api/accounts', { action: 'file-part', id, part: i, of, data: data.slice(i * size, (i + 1) * size) });
+        out.push({ name: x.name, fileId: id });
+      }
+      return out;
+    };
+    let noted = null;
+    ['#ndn', '#ncn'].forEach((k) => { if ($(k)) $(k).onchange = () => { noted = null; }; });
+    const nShow = (r, done) => { const s = r.summary;
+      $('#nout').innerHTML = `<p class="${done ? 'ok' : ''}">${done ? 'Done.' : 'In the register'} · ${fmtD(r.period.from)} to ${fmtD(r.period.to)}: ${s.debitNotes} debit note${s.debitNotes === 1 ? '' : 's'}${s.creditNotes ? `, ${s.creditNotes} credit note${s.creditNotes === 1 ? '' : 's'}` : ''}, ${inr(s.amount)} in all (${s.lines} ledger lines)${done ? `. ${r.done.removed ? `${r.before} notes already in the ERP for these dates were replaced.` : ''}` : r.before ? `. The ${r.before} notes already in the ERP for these dates will be replaced.` : '.'}</p>`
+        + sTable(done ? 'Notes brought in' : 'Notes to bring in', r.vouchers, [['Voucher', (x) => x.voucher], ['Date', (x) => fmtD(x.date)], ['Type', (x) => x.type], ['No.', (x) => x.no], ['Party', (x) => x.party], ['Against', (x) => x.items], ['Amount', (x) => x.amount, 'num'], ['Narration', (x) => x.narration]]); };
+    if ($('#npv')) $('#npv').onclick = async (e) => { e.target.disabled = true; e.target.textContent = 'Reading…'; try { noted = await noteFiles(); nShow(await api('/api/accounts', { action: 'tally-notes-preview', files: noted }), false); } catch (x) { alert(x.message); } e.target.disabled = false; e.target.textContent = 'Read and check (changes nothing)'; };
+    if ($('#ngo')) $('#ngo').onclick = async (e) => {
+      if (!confirm('Bring these debit / credit notes into the ERP? Notes already there for the same dates are replaced by the register\'s.')) return;
+      e.target.disabled = true; e.target.textContent = 'Bringing in…';
+      try { const files = noted || await noteFiles(); noted = null; const r = await api('/api/accounts', { action: 'tally-notes', files }); nShow(r, true); toast(`${r.summary.vouchers} notes are in the ERP.`); } catch (x) { alert(x.message); }
+      e.target.disabled = false; e.target.textContent = 'Bring the notes into the ERP';
     };
     const tallyFiles = async () => {
       const f = [$('#tr').files[0], $('#tp').files[0], $('#tc').files[0]].filter(Boolean);

@@ -121,6 +121,44 @@ const b64 = (b) => b.toString('base64');
     const r = await admin('/api/accounts', { action: 'save', reg: 'journals', id: j.id, data: { ledger: 'X' } }); assert.equal(r.status, 400);
     assert.equal((await admin('/api/accounts?reg=journals')).can.enter, false);
   });
+  // Tally's Debit Note Register, as Prime Realtors exports it (14 Nov 2026), plus one October note to test Sync leaves it alone
+  const DN = reg('Debit Note Register', [
+    [...V('2026-06-18', 'Debit Note', 1, [['UMESH CHANDRA VISHW(Narayan Patra)', 39459, null], ['Khadi, Reti, Cement, M.S Plate, Patra', null, 39459]]), ['', 'Debit Note Recd from Umeshchandra Vishwakarma']],
+    [...V('2026-06-18', 'Debit Note', 2, [['SKYWAY RMC PLANTS PVT LTD', 15340, null], ['RMC - M - 60', null, 13000], ['CGST - Purchase', null, 1170], ['SGST - Purchase', null, 1170]]), ['', 'Credit Note Recd from Party Agst. Inv.No.2026-27060406 Vide Credit Note No.CN-00143/26-27 dt.30/06/26']],
+    [...V('2026-08-07', 'Debit Note', 3, [['N M Creation LLP', 237400, null], ['RMC - M -35', null, 237400]]), ['', 'Column Concrete Break with Staging Total Rs.2,37,400/-']],
+    V('2026-10-15', 'Debit Note', 4, [['Cement Co', 5000, null], ['Cement', null, 5000]]),
+  ], '1-Apr-24 to 31-Mar-27');
+  await step('Debit Note Register: read and checked, then brought in under Debit / Credit notes (not Journals)', async () => {
+    const pv2 = await admin('/api/accounts', { action: 'tally-notes-preview', files: [{ name: 'Debit_Note.xlsx', data: b64(DN) }] });
+    assert.equal(pv2.status, 200, pv2.error);
+    assert.deepEqual(pv2.period, { from: '2024-04-01', to: '2027-03-31' });
+    assert.equal(pv2.summary.debitNotes, 4); assert.equal(pv2.summary.amount, 297199);
+    const sky = pv2.vouchers.find((v) => v.no === '2');
+    assert.deepEqual([sky.voucher, sky.party, sky.amount, sky.items], ['J2627-D2', 'SKYWAY RMC PLANTS PVT LTD', 15340, 'RMC - M - 60; CGST - Purchase; SGST - Purchase']);
+    assert.match(sky.narration, /CN-00143/);
+    assert.equal((await admin('/api/accounts?reg=notes')).total, 0); // the check changes nothing
+    const r = await admin('/api/accounts', { action: 'tally-notes', files: [{ name: 'Debit_Note.xlsx', data: b64(DN) }] });
+    assert.equal(r.ok, true, r.error); assert.equal(r.done.added, 10);
+    const notes = await admin('/api/accounts?reg=notes&limit=50');
+    assert.equal(notes.total, 10); assert.equal(notes.can.enter, false);
+    assert.equal(notes.rows.filter((x) => x.ref_id === 'J2627-D3').map((x) => Number(x.debit || 0)).reduce((a, b) => a + b, 0), 237400);
+    assert.ok((await admin('/api/accounts?reg=journals&limit=50')).rows.every((x) => x.vch_type === 'Journal')); // notes are not in Journals
+    // the same register again replaces, never doubles
+    const r2 = await admin('/api/accounts', { action: 'tally-notes', files: [{ name: 'Debit_Note.xlsx', data: b64(DN) }] });
+    assert.equal(r2.before, 4); assert.equal((await admin('/api/accounts?reg=notes')).total, 10);
+    assert.equal((await admin('/api/accounts?view=import')).lastNotes.after.vouchers, 4);
+  });
+  await step('Sync with Tally (without the Debit Note Register) leaves the debit notes alone', async () => {
+    const pv3 = await admin('/api/accounts', { action: 'tally-sync-preview', files: files(R2, P2, C1, J2) });
+    assert.equal(pv3.journals.before, 1); // only the journal, not the October debit note
+    const r = await admin('/api/accounts', { action: 'tally-sync', files: files(R2, P2, C1, J2) });
+    assert.equal(r.ok, true, r.error);
+    assert.equal((await admin('/api/accounts?reg=notes')).total, 10);
+    assert.ok(!r.check.different.some((x) => x.ledger === 'Cement'), 'a note in the ERP is not a ledger difference when its register was not uploaded');
+    // a sync that includes it covers the notes too
+    const all = await admin('/api/accounts', { action: 'tally-sync-preview', files: [...files(R2, P2, C1, J2).slice(0, 3), { name: 'DN.xlsx', data: b64(DN) }] });
+    assert.equal(all.status, 200, all.error); assert.equal(all.journals.before, 2); assert.equal(all.journals.now, 1); // October: the journal and the debit note are covered; this upload has only the debit note
+  });
   console.log(`Sync with Tally: ${n} checks passed`);
   server.close(); process.exit(0);
 })().catch((e) => { console.error(e); process.exit(1); });

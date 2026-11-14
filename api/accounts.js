@@ -155,7 +155,8 @@ module.exports = route({
         const lastTally = await db.one("select at as created_at, after, (select name from users where id = audit_log.user_id) as by_name from audit_log where action = 'import-tally' order by id desc limit 1");
         const lastRefunds = await db.one("select at as created_at, after, (select name from users where id = audit_log.user_id) as by_name from audit_log where action = 'import-refund-list' order by id desc limit 1");
         const lastSync = await db.one("select at as created_at, after, (select name from users where id = audit_log.user_id) as by_name from audit_log where action = 'tally-sync' order by id desc limit 1").catch(() => null);
-        return res.json({ configured: sheets.configured() || !!(process.env.ACC_FIXTURE && process.env.VERCEL !== '1'), sheetId: accImport.SHEET_ID, last, lastTally, lastRefunds, lastSync, can, live: process.env.ERP_LIVE === '1' });
+        const lastNotes = await db.one("select at as created_at, after, (select name from users where id = audit_log.user_id) as by_name from audit_log where action = 'tally-notes' order by id desc limit 1").catch(() => null);
+        return res.json({ configured: sheets.configured() || !!(process.env.ACC_FIXTURE && process.env.VERCEL !== '1'), sheetId: accImport.SHEET_ID, last, lastTally, lastRefunds, lastSync, lastNotes, can, live: process.env.ERP_LIVE === '1' });
       }
       default: throw fail(400, 'Unknown view.');
     }
@@ -486,6 +487,24 @@ module.exports = route({
         return res2;
       });
       return res.json({ ok: true, ...out });
+    }
+    if (b.action === 'tally-notes-preview' || b.action === 'tally-notes') {
+      // Tally's Debit Note / Credit Note Register on its own: the notes for its period are replaced by the register's
+      // (shown under Accounts → Debit / Credit notes). Journals, receipts and payments are not touched.
+      need('accounts.manage');
+      const files = await syncFiles(b, b.action === 'tally-notes');
+      if (!files.length || files.some((f) => !f.buffer.length)) throw fail(400, 'Choose the Debit Note Register (and the Credit Note Register, if you have one) exported from Tally (.xlsx).');
+      const p = tally.parseNotes(files);
+      if (!p.period.from) throw fail(400, 'The register has no notes in it.');
+      const before = await db.one(`select count(distinct ref_id)::int as v from acc_journals where book = $1 and txn_date between $2 and $3 and ${tally.journalScope(p.registers)}`, [acc.BOOK, p.period.from, p.period.to]);
+      const out = { registers: p.registers, period: p.period, summary: p.summary, vouchers: p.vouchers.slice(0, 500), before: before.v };
+      if (b.action === 'tally-notes-preview') return res.json(out);
+      const done = await db.tx(async (t) => {
+        const r = await tally.commitNotes(t, p, { user: u });
+        await audit.record(t.q, { user: u, action: 'tally-notes', entity: 'accounts', entityId: 'signature', after: { period: p.period, registers: p.registers.map((x) => x.file), ...p.summary, ...r } });
+        return r;
+      });
+      return res.json({ ok: true, ...out, done });
     }
     if (b.action === 'tally-sync-preview' || b.action === 'tally-sync') {
       // The ERP is live: Receipts, Payments Out and Journals are brought in line with Tally without wiping the ERP (lib/tally-sync.js).
