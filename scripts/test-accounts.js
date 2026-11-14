@@ -286,6 +286,12 @@ let n = 0; const step = async (name, fn) => { await fn(); n++; console.log('  âœ
     assert.ok(h >= 0); assert.equal(x.rows[h].amount, Number(p.amount)); assert.deepEqual([x.rows[h + 1].bill_no, x.rows[h + 2].bill_no], ['INV-101', 'INV-102']);
     assert.equal(x.head.amount, (await admin('/api/accounts?reg=payments&q=RMC')).amount); // the total counts the parts once
     const xl = await admin('/api/accounts?reg=payments&export=xlsx&q=RMC', null, true); assert.equal(xl.status, 200);
+    // one part for the whole amount: only its invoice no. (and head) are saved, the row is not split
+    const part = rows.find((x) => x.bill_no === 'INV-101');
+    const single = await admin('/api/accounts', { action: 'split-row', reg: 'payments', id: part.id, parts: [{ head: 'RMC', amount: Number(part.amount), bill_no: 'INV-201' }] });
+    assert.equal(single.ok, true, single.error); assert.equal(single.single, true);
+    const again = (await admin('/api/accounts?reg=payments&limit=300')).rows.find((x) => x.id === part.id);
+    assert.equal(again.bill_no, 'INV-201'); assert.equal(again.ref_id, part.ref_id);
   });
   console.log(`\nAll ${n} accounts checks passed.`);
   server.close(); require('../lib/db').reset(); process.exit(0);

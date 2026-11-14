@@ -2355,7 +2355,7 @@
         async (x, f) => {
           const parts = [...f.querySelectorAll('#spT tr')].slice(1).map((tr) => ({ head: tr.querySelector('[name=h]').value.trim(), amount: tr.querySelector('[name=a]').value.trim(), bill_no: tr.querySelector('[name=b]') ? tr.querySelector('[name=b]').value.trim() : '' })).filter((p) => p.head || p.amount);
           const r = await api('/api/accounts', { action: 'split-row', reg: key, id: row.id, parts, reason: x.reason || '' });
-          toast(`Split into ${r.ids.length} rows: ${r.ids.join(', ')}`, 6000); accRegister(key, { limit: state.limit });
+          toast(r.single ? `Saved on ${r.ids[0]} (not split).` : `Split into ${r.ids.length} rows: ${r.ids.join(', ')}`, 6000); accRegister(key, { limit: state.limit });
         });
       dl.classList.add('wide');
       const sum = () => { const s = [...dl.querySelectorAll('[name=a]')].reduce((a, i) => a + (Number(String(i.value).replace(/[,₹\s]/g, "")) || 0), 0), left = Math.round((total - s) * 100) / 100; $('#spSum', dl).innerHTML = Math.abs(left) < 0.01 ? '<span class="good-t">Adds up to ' + inr(total) + '</span>' : `<span class="bad-t">${left > 0 ? inr(left) + ' still to give' : inr(-left) + ' too much'}</span>`; };

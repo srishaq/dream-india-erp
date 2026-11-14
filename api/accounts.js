@@ -363,12 +363,21 @@ module.exports = route({
       if (!['receipts', 'payments'].includes(b.reg)) throw fail(400, 'Only Receipts and Payments Out rows can be split.');
       const reg = REGISTERS[b.reg], id = intOr(b.id);
       const parts = (Array.isArray(b.parts) ? b.parts : []).map((x) => ({ head: str(x.head, 120), amount: Math.round(Number(String(x.amount ?? '').replace(/[,₹\s]/g, '')) * 100) / 100, unit_no: str(x.unit_no, 12).toUpperCase() || null, payee: str(x.payee, 200) || null, bill_no: b.reg === 'payments' ? str(x.bill_no, 60) || null : null })).filter((x) => x.head || x.amount);
-      if (parts.length < 2) throw fail(400, 'Give at least two parts.');
+      if (!parts.length) throw fail(400, 'Give at least one part.');
       for (const x of parts) { if (!x.head) throw fail(400, 'Every part needs a head.'); if (!(x.amount > 0)) throw fail(400, `The amount for ${x.head} looks wrong.`); }
       const row = await db.one(`select * from ${reg.table} where id = $1 and book = $2`, [id, acc.BOOK]); if (!row) throw fail(404, 'Row not found.');
       const sum = Math.round(parts.reduce((a, x) => a + x.amount, 0) * 100) / 100;
       if (Math.abs(sum - Number(row.amount)) > 0.009) throw fail(400, `The parts add up to ₹${sum.toLocaleString('en-IN')}, but the entry is ₹${Number(row.amount).toLocaleString('en-IN')}. They must match.`);
       if (b.reg === 'receipts' && row.cheque_status === 'Bounced') throw fail(409, 'A bounced cheque is not split.');
+      if (parts.length === 1) {
+        // one part for the whole amount (14 Nov 2026, Accounts): not a split, only the head and invoice no. on the row itself
+        const p = parts[0], set = { head: p.head, ...(b.reg === 'payments' && p.bill_no ? { bill_no: p.bill_no } : {}), ...(p.unit_no ? { unit_no: p.unit_no } : {}) };
+        await db.tx(async (t) => {
+          await t.q(`update ${reg.table} set ${Object.keys(set).map((k, i) => `${k} = $${i + 2}`).join(', ')}, updated_by = $${Object.keys(set).length + 2}, updated_at = now() where id = $1`, [row.id, ...Object.values(set), u.id]);
+          await audit.record(t.q, { user: u, action: 'update', entity: b.reg, entityId: String(row.id), before: { head: row.head, bill_no: row.bill_no }, after: set, note: 'one part (split dialog)' });
+        });
+        return res.json({ ok: true, ids: [row.ref_id], single: true });
+      }
       const closedOn = await guardClosed(u, b.reg, [row[reg.dateKey]], b.reason);
       const T = b.reg === 'payments' ? await acc.headTds() : {};
       const out = await db.tx(async (t) => {
