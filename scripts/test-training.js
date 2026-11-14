@@ -90,6 +90,19 @@ let n = 0; const step = async (name, fn) => { await fn(); n++; console.log('  âœ
     assert.equal(e.ok, true, e.error); assert.deepEqual(e.to, ['me@test.local']);
     const m = sent[sent.length - 1]; assert.match(m, /application\/pdf/); assert.match(m, /Receipt_DS/);
     assert.ok(await db.one("select 1 as x from communications where booking_id = $1 and kind = 'receipt'", [b1.id]));
+    // 14 Nov 2026: a payment brought in from the old CRM sheet gets its receipt too when the CRM sends it
+    const old = await db.one("select id, booking_id from receipts where opening and status = 'approved' order by id limit 1");
+    const eo = await crm('/api/receipts', { action: 'receipt-email', id: old.id });
+    assert.equal(eo.ok, true, eo.error);
+    assert.match((await db.one('select receipt_no from receipts where id = $1', [old.id])).receipt_no, /^DS\//);
+    // the buyer email can carry the flat's demand letters and payment receipts as PDFs
+    const pv = await crm('/api/followups', { action: 'email', bookingId: old.booking_id, preview: true });
+    assert.ok(pv.receipts.length >= 1, 'the old payments are offered');
+    const n0 = sent.length;
+    const em = await crm('/api/followups', { action: 'email', bookingId: old.booking_id, template: pv.templates[0].key, subject: 'Your payments', body: 'Please find attached.', receiptIds: pv.receipts.map((r) => r.id), letterIds: pv.letters.map((l) => l.id) });
+    assert.equal(em.ok, true, em.error); assert.equal(em.attached, pv.receipts.length + pv.letters.length);
+    assert.equal(sent.length, n0 + 1);
+    assert.equal((sent[sent.length - 1].match(/application\/pdf/g) || []).length, em.attached);
   });
   await step('SDR challans: a second one for the same flat is refused; Head Accounts can add it with a reason; one GRN once', async () => {
     const add = (c, x) => c('/api/sdr', { action: 'add', projectId: sig.id, unit: b1.unit_no, kind: 'stamp_duty', amount: 594000, grn: 'MH0001', challanDate: day(-2), ...x });

@@ -24,6 +24,27 @@ const mobile = (p) => { const d = String(p || '').replace(/\D/g, '').slice(-10);
 
 // The standard email to a buyer (lib/buyer-mail.js): greeting with each buyer's salutation, the chosen template's
 // text (editable), the sender's fixed signature. Logged in the buyer's Communication record and as an Email follow-up.
+// What can go with it as PDFs (14 Nov 2026): the flat's demand letters and its approved payment receipts.
+async function attachables(bookingId) {
+  const letters = await db.q("select id, letter_type, letter_date, due_date, figures->>'total' as total from demand_letters where booking_id = $1 order by letter_date desc, id desc limit 12", [bookingId]);
+  const receipts = await db.q("select id, received_on, amount, receipt_no, instrument_no from receipts where booking_id = $1 and status = 'approved' order by received_on, id", [bookingId]);
+  return { letters, receipts };
+}
+async function attachFiles(u, bookingId, letterIds, receiptIds) {
+  const ids = (x) => (Array.isArray(x) ? x : []).map((v) => intOr(v)).filter(Boolean).slice(0, 40);
+  const safe = (s) => s.replace(/[^A-Za-z0-9._-]+/g, '_');
+  const { buildLetter, buildReceipt } = require('../lib/demand-letter');
+  const out = [];
+  for (const l of await db.q('select id, letter_type, figures from demand_letters where booking_id = $1 and id = any($2::int[]) order by letter_date, id', [bookingId, ids(letterIds)]))
+    out.push({ filename: safe(`${l.figures.unit}_${l.letter_type}_${l.id}.pdf`), type: 'application/pdf', content: buildLetter(l.figures) });
+  const rm = require('../lib/receipt-mail');
+  for (const r of await db.q("select id from receipts where booking_id = $1 and status = 'approved' and id = any($2::int[]) order by received_on, id", [bookingId, ids(receiptIds)])) {
+    const f = await rm.receiptFigures(u, r.id);
+    out.push({ filename: safe(`Receipt_${f.doc.receiptNo}_${f.doc.unit}.pdf`), type: 'application/pdf', content: buildReceipt(f.doc) });
+  }
+  return out;
+}
+
 async function sendEmail(u, b, res) {
   const bm = require('../lib/buyer-mail');
   const bk = await bookingFor(u, intOr(b.bookingId));
@@ -31,7 +52,7 @@ async function sendEmail(u, b, res) {
   const sig = await bm.signature(u);
   const toAll = [...new Set(x.people.flatMap((p) => emails(p.email)))];
   if (b.preview) return res.json({ people: x.people.map((p) => ({ id: p.id, name: p.name, salutation: p.salutation })), salutations: bm.SALUTATIONS, templates: bm.templates(x), signature: sig,
-    to: toAll.map((e) => (has(u, 'buyer.kyc') ? e : e.replace(/^(.).*(@.*)$/, '$1•••$2'))), live: live(), configured: mailer.configured(), unit: x.unit });
+    to: toAll.map((e) => (has(u, 'buyer.kyc') ? e : e.replace(/^(.).*(@.*)$/, '$1•••$2'))), live: live(), configured: mailer.configured(), unit: x.unit, ...(await attachables(bk.id)) });
   // the salutation chosen for each buyer is kept for next time
   const sal = b.salutations && typeof b.salutations === 'object' ? b.salutations : {};
   for (const p of x.people) {
@@ -50,18 +71,19 @@ async function sendEmail(u, b, res) {
   const set = (await db.one("select value from settings where key = 'letters'"))?.value || {};
   if (!live()) { to = emails(set.testEmail).slice(0, 1); if (!to.length) throw fail(409, 'This is the test version: set a test email address in Letter settings (Demand letters page). Emails go only there until the ERP is live.'); }
   else { if (!to.length) throw fail(400, `${bk.unit_no}: no email address on this booking. Add it on the booking first.`); cc = emails(set.cc); }
+  const attachments = await attachFiles(u, bk.id, b.letterIds, b.receiptIds);
   const html = message.split(/\n{2,}/).map((x) => `<p>${esc(x).replace(/\n/g, '<br>')}</p>`).join('');
   const conn = await mailer.connect();
   const ref = b.replyTo ? await db.one("select message_id from communications where id = $1 and booking_id = $2 and channel = 'email'", [intOr(b.replyTo), bk.id]) : null;
   let sent;
-  try { sent = await conn.send({ to, cc, subject: (live() ? '' : '[TEST] ') + subject, text: message, html, inReplyTo: ref && ref.message_id || undefined }); } finally { await conn.close().catch(() => {}); }
+  try { sent = await conn.send({ to, cc, subject: (live() ? '' : '[TEST] ') + subject, text: message, html, attachments, inReplyTo: ref && ref.message_id || undefined }); } finally { await conn.close().catch(() => {}); }
   await require('../lib/comms').logSent({ bookingId: bk.id, to, subject, body: message, sent, kind: ref ? 'reply' : 'follow-up', userId: u.id, test: !live() });
   await db.tx(async (t) => {
     const r = await t.one("insert into follow_ups (booking_id, kind, outcome, note, next_date, created_by) values ($1, 'Email', 'Email sent', $2, $3, $4) returning id",
       [bk.id, `${live() ? '' : '[TEST to ' + to.join(', ') + '] '}${subject}`.slice(0, 1000), nextDate, u.id]);
-    await audit.record(t.q, { user: u, action: 'email', entity: 'follow-up', entityId: r.id, projectId: bk.project_id, after: { unit: bk.unit_no, to: live() ? to : ['test'], subject } });
+    await audit.record(t.q, { user: u, action: 'email', entity: 'follow-up', entityId: r.id, projectId: bk.project_id, after: { unit: bk.unit_no, to: live() ? to : ['test'], subject, attached: attachments.map((a) => a.filename) } });
   });
-  return res.json({ ok: true, to, test: !live() });
+  return res.json({ ok: true, to, test: !live(), attached: attachments.length });
 }
 
 module.exports = route({

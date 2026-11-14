@@ -1861,16 +1861,22 @@
       <div class="mail-prev"><div class="small" id="emGreet"></div>
         <textarea name="body" rows="9">${esc(first.body)}</textarea>
         <pre class="mail-sig">${esc(p.signature)}</pre></div>
+      ${(p.letters || []).length || (p.receipts || []).length ? `<label>Attach (PDF)</label><div style="max-height:190px;overflow:auto;border:1px solid #e2e8f0;border-radius:8px;padding:6px 10px">
+        ${p.letters.map((l) => `<label class="check"><input type="checkbox" name="att_l_${l.id}"> ${esc(l.letter_type)} of ${fmtD(l.letter_date)} · Rs. ${esc(String(l.total || ''))}, due ${fmtD(l.due_date)}</label>`).join('')}
+        ${p.receipts.length ? `<label class="check" style="font-weight:600"><input type="checkbox" id="attAllR"> All payment receipts (${p.receipts.length})</label>` : ''}
+        ${p.receipts.map((r) => `<label class="check"><input type="checkbox" name="att_r_${r.id}"> Receipt ${esc(r.receipt_no || '(number given on sending)')} · ${fmtD(r.received_on)} · ${inr(r.amount)}${r.instrument_no ? ' · ' + esc(r.instrument_no) : ''}</label>`).join('')}</div>` : ''}
       <label>Next follow-up</label><input type="date" name="nextDate" min="${todayIso()}" value="${plus(3)}">`,
     async (x) => {
+      const letterIds = (p.letters || []).filter((l) => x['att_l_' + l.id] === 'on').map((l) => l.id), receiptIds = (p.receipts || []).filter((r) => x['att_r_' + r.id] === 'on').map((r) => r.id);
       const salutations = Object.fromEntries(p.people.map((y) => [y.id, x['sal_' + y.id] === '-' ? '' : x['sal_' + y.id]]));
-      const r = await api('/api/followups', { action: 'email', bookingId, template: x.template, subject: x.subject, body: x.body, nextDate: x.nextDate, salutations, replyTo: reply ? reply.id : undefined });
-      toast(r.test ? `Test email sent to ${r.to.join(', ')}.` : 'Email sent; a copy is in the buyer\'s record.'); after();
+      const r = await api('/api/followups', { action: 'email', bookingId, template: x.template, subject: x.subject, body: x.body, nextDate: x.nextDate, salutations, replyTo: reply ? reply.id : undefined, letterIds, receiptIds });
+      toast(r.attached ? `${r.test ? 'Test email' : 'Email'} sent with ${r.attached} PDF${r.attached > 1 ? 's' : ''}; a copy is in the buyer's record.` : r.test ? `Test email sent to ${r.to.join(', ')}.` : 'Email sent; a copy is in the buyer\'s record.'); after();
     });
     $('[value=save]', dl).textContent = 'Send email';
     const greet = () => { const names = p.people.map((y) => { const v = dl.querySelector(`[name=sal_${y.id}]`).value; return `${v && v !== '-' ? v + ' ' : ''}${y.name}`; });
       $('#emGreet', dl).textContent = `Dear ${names.length > 1 ? names.slice(0, -1).join(', ') + ' and ' + names[names.length - 1] : names[0] || 'Sir / Madam'},`; };
     dl.querySelectorAll('[name^=sal_]').forEach((x) => (x.onchange = greet)); greet();
+    if ($('#attAllR', dl)) $('#attAllR', dl).onchange = (e) => dl.querySelectorAll('[name^=att_r_]').forEach((c) => (c.checked = e.target.checked));
     dl.querySelector('[name=template]').onchange = (e) => { const t = T.find((z) => z.key === e.target.value); dl.querySelector('[name=subject]').value = reply ? subj0 : t.subject; dl.querySelector('[name=body]').value = t.body; };
   }
 
@@ -2891,7 +2897,7 @@
     const m = await docsMeta();
     const tab = store.get('erp_cdtab') || (can('buyer.kyc') ? 'flats' : 'tenants');
     const conn = m.connected ? `<p class="small">Google Drive connected${m.email ? ' (' + esc(m.email) + ')' : ''}${m.folder ? ` · <a href="${esc(m.folder)}" target="_blank" rel="noopener">Open the folder in Drive ↗</a>` : ''}${m.canConnect ? ' · <button class="link small" id="gdOff">Disconnect</button>' : ''}</p>`
-      : m.canConnect ? (m.configured ? `<div class="note"><b>Connect Google Drive.</b> Sign in with the Google account whose Drive will keep the documents (srishaq@gmail.com) and allow the ERP to "see, edit, create and delete only the specific Google Drive files you use with this app". It can never see anything else in that Drive.<div class="actions" style="margin-top:10px"><a class="btn" href="/api/custdocs?oauth=start">Connect Google Drive</a></div></div>`
+      : m.canConnect ? (m.configured ? `<div class="note"><b>Connect Google Drive.</b> Sign in with the Google account whose Drive will keep the documents (the Chairman's) and allow the ERP to "see, edit, create and delete only the specific Google Drive files you use with this app". It can never see anything else in that Drive.<div class="actions" style="margin-top:10px"><a class="btn" href="/api/custdocs?oauth=start">Connect Google Drive</a></div></div>`
           : `<div class="note"><b>One-time set-up needed.</b> Google sign-in for the ERP is not set up yet (GOOGLE_OAUTH_CLIENT_ID and GOOGLE_OAUTH_CLIENT_SECRET in Vercel). The redirect address to give Google is <code>${esc(m.redirectUri)}</code>.</div>`)
       : '<p class="small bad-t">Google Drive is not connected yet. Ask the Admin to connect it.</p>';
     $('#page').innerHTML = `<div class="page-head"><div><h1>Customer documents</h1><p class="muted">Signed and scanned papers for every flat and SRA tenant: agreement, Index II, KYC, signed letters. They are kept in Google Drive, one folder per flat, and open here for the logins allowed to see buyer documents.</p></div></div>
