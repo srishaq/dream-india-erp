@@ -43,6 +43,9 @@ const b64 = (b) => b.toString('base64');
     const v = pay.filter((r) => /^P2627-1509\//.test(r.ref_id)).sort((a, b) => a.ref_id.localeCompare(b.ref_id));
     assert.deepEqual(v.map((r) => [r.payee, Number(r.amount)]), [[RAFI, 300000], ['Mubeen Sir', 200000]]);
     assert.equal(v[0]._split.total, 500000);
+    // each part names only its own ledger, so searching one ledger finds only its own part (16 Nov 2026)
+    assert.ok(!/Mubeen/.test(v[0].description) && !/Rafi/.test(v[1].description), v.map((x) => x.description).join(' | '));
+    assert.equal((await admin('/api/accounts?reg=payments&q=Mubeen Sir')).amount, 200000);
   });
   await step('the ERP as it was on the live site: old single rows, staff work, ERP entries', async () => {
     const u = (await db.one("select id from users where username = 'admin'")).id;
