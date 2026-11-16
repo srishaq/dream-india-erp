@@ -95,6 +95,12 @@ let n = 0; const step = async (name, fn) => { await fn(); n++; console.log('  âœ
     const eo = await crm('/api/receipts', { action: 'receipt-email', id: old.id });
     assert.equal(eo.ok, true, eo.error);
     assert.match((await db.one('select receipt_no from receipts where id = $1', [old.id])).receipt_no, /^DS\//);
+    // 16 Nov 2026: the flat-cost part reads as the demand stages it pays, never "Agreement value (flat cost)"
+    for (const x of await db.q("select r.id from receipts r join receipt_splits s on s.receipt_id = r.id and s.head = 'av' where r.status = 'approved' and exists (select 1 from demands d where d.booking_id = r.booking_id and d.status = 'raised') order by r.id limit 5")) {
+      const f = await require('../lib/receipt-mail').receiptFigures(null, x.id);
+      assert.ok(f.doc.splits.every(([l]) => !/flat cost/i.test(l)), JSON.stringify(f.doc.splits));
+      assert.ok(f.doc.splits.some(([l]) => /^Towards |^Advance towards/.test(l)), JSON.stringify(f.doc.splits));
+    }
     // the buyer email can carry the flat's demand letters and payment receipts as PDFs
     const pv = await crm('/api/followups', { action: 'email', bookingId: old.booking_id, preview: true });
     assert.ok(pv.receipts.length >= 1, 'the old payments are offered');
