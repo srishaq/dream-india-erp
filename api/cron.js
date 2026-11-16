@@ -1,6 +1,6 @@
 // Scheduled jobs (vercel.json "crons", times in UTC):
-//   /api/cron?job=bank  06:30 and 13:30 UTC = 12 noon and 7 pm IST  bank statements from the Drive folder (staff upload
-//                       the morning statements 11–11:45 am and the end-of-day ones by 6:30 pm; a second run adds only what is new)
+//   /api/cron?job=bank  08:30 and 13:30 UTC = 2 pm and 7 pm IST (2 pm from 16 Nov 2026: statements arrive ~12:30)  bank statements from the Drive folder (staff upload
+//                       the morning statements by 1:45 pm and the end-of-day ones by 6:30 pm; a second run adds only what is new)
 //   /api/cron?job=morning 03:30 UTC = 9:00 am IST  payment reminders to buyers, the CA's monthly pack (from the 5th), the Accounts audit
 //                                                  and the CRM list → Daily To-Do (Accounts audit emailed)
 //   /api/cron?job=pdc   03:50 UTC = 9:20 am IST  PDC reminder emails
@@ -40,11 +40,11 @@ async function run(req, res, job) {
     if (secret) { if (req.headers.authorization !== `Bearer ${secret}`) throw fail(401, 'Not allowed.'); }
     // No CRON_SECRET in Vercel yet: only Vercel's own scheduler, and only at each job's hour (a stopgap; add CRON_SECRET)
     else if (!/^vercel-cron\//.test(String(req.headers['user-agent'] || ''))) throw fail(403, 'Not allowed.');
-    else if (job !== 'mail' && job !== 'agents' && !(job === 'mkt' && istHour() === 9) && !(job === 'backup' && istHour() === 2) && !(job === 'bank' && [12, 19].includes(istHour())) && !((job === 'pdc' || job === 'morning') && istHour() === 9) && !(job === 'summary' && istHour() === 10) && !(job === 'evening' && istHour() === 20) && !(job === 'dpr' && istHour() === 18)) throw fail(403, 'Not the time for this job.');
+    else if (job !== 'mail' && job !== 'agents' && !(job === 'mkt' && istHour() === 9) && !(job === 'backup' && istHour() === 2) && !(job === 'bank' && [14, 19].includes(istHour())) && !((job === 'pdc' || job === 'morning') && istHour() === 9) && !(job === 'summary' && istHour() === 10) && !(job === 'evening' && istHour() === 20) && !(job === 'dpr' && istHour() === 18)) throw fail(403, 'Not the time for this job.');
     const st = await status();
     if (st.pending.length && st.applied.length) await migrate(); // a new release deployed overnight: its tables first
     if (job === 'bank') {
-      if (await ba.ranWithin('schedule', 120)) return res.json({ ok: true, skipped: 'Already ran in this slot.' }); // noon and 7 pm: once each
+      if (await ba.ranWithin('schedule', 120)) return res.json({ ok: true, skipped: 'Already ran in this slot.' }); // 2 pm and 7 pm: once each
       const r = await ba.runFromDrive({ trigger: 'schedule' });
       return res.json({ ok: true, id: r.id, added: r.added, updated: r.updated, differences: r.differences.length });
     }

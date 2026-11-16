@@ -183,7 +183,7 @@
     },
     {
       "path": "/api/cron?job=bank",
-      "schedule": "30 6 * * *"
+      "schedule": "30 8 * * *"
     },
     {
       "path": "/api/cron?job=bank",
