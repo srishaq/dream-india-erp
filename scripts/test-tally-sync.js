@@ -159,6 +159,21 @@ const b64 = (b) => b.toString('base64');
     const all = await admin('/api/accounts', { action: 'tally-sync-preview', files: [...files(R2, P2, C1, J2).slice(0, 3), { name: 'DN.xlsx', data: b64(DN) }] });
     assert.equal(all.status, 200, all.error); assert.equal(all.journals.before, 2); assert.equal(all.journals.now, 1); // October: the journal and the debit note are covered; this upload has only the debit note
   });
+  await step('a journal is linked to the payment that pays it back, and shows under it', async () => {
+    const r = await admin('/api/accounts', { action: 'save', reg: 'payments', data: { txn_date: '2026-10-20', bank: 'Yes RERA 30% (0501)', amount: '50000', payee: MUB } });
+    const id = r.id || (r.row && r.row.id);
+    const v = await admin(`/api/accounts?view=jv&id=${id}`);
+    assert.equal(v.suggest[0].ref, 'J2627-314'); assert.equal(v.suggest[0].exact, true);
+    const l = await admin('/api/accounts', { action: 'jv-link', id, journal: 'J2627-314' });
+    assert.equal(l.ok, true, l.error); assert.equal(l.linkedTotal, 50000); assert.equal(l.suggest.length, 0);
+    const pay = (await admin('/api/accounts?reg=payments&q=Reimbursement')).rows.find((x) => x.id === id);
+    assert.equal(pay._jv[0].ref, 'J2627-314'); assert.deepEqual(pay._jv[0].lines.filter((x) => x.debit).map((x) => [x.ledger, x.debit]), [[RAFI, 50000]]);
+    assert.ok((await admin('/api/accounts?reg=journals')).rows.every((x) => x._paidBy && x._paidBy[0] === pay.ref_id));
+    // the link survives a Sync with Tally (kept by Payment ID and voucher)
+    const again = await admin('/api/accounts', { action: 'tally-sync', files: files(R2, P2, C1, J2) }); assert.equal(again.ok, true, again.error);
+    assert.equal((await admin('/api/accounts?reg=payments&q=Reimbursement')).rows.find((x) => x.ref_id === pay.ref_id)._jv[0].ref, 'J2627-314');
+    const u = await admin('/api/accounts', { action: 'jv-unlink', id, journal: 'J2627-314' }); assert.equal(u.linked.length, 0);
+  });
   console.log(`Sync with Tally: ${n} checks passed`);
   server.close(); process.exit(0);
 })().catch((e) => { console.error(e); process.exit(1); });

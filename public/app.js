@@ -2183,6 +2183,9 @@
   };
   // Split rows (Tally style): the original payment on one line as it was, its parts just below it with their bill numbers.
   // The server marks each part with _split = { base, part, n, total }; total is the whole original payment.
+  // Journal vouchers a payment out settles (acc_jv_links): their expense lines, shown under the payment, not counted
+  // again in the total (16 Nov 2026, Accounts).
+  const accJvRows = (r, show) => (r && r._jv ? r._jv.map((j) => (j.lines.filter((l) => l.debit).length ? j.lines.filter((l) => l.debit) : [{ ledger: j.missing ? '(journal not in the ERP yet: run Sync with Tally)' : '', debit: null }]).map((l) => `<tr class="jv-l">${show.map((c) => `<td class="${['money', 'num', 'pct'].includes(c.type) ? 'num' : ''}">${c.key === 'ref_id' ? `↳ ${esc(j.ref)}` : c.key === 'txn_date' ? (j.date ? fmtD(String(j.date).slice(0, 10)) : '') : c.key === 'amount' ? (l.debit != null ? inr(l.debit) : '') : c.key === 'head' ? esc(l.ledger || '') : c.key === 'remark' ? esc(j.narration || 'Journal') : ''}</td>`).join('')}</tr>`).join('')).join('') : '');
   const accSplitRows = (rows, show) => {
     if (!show.some((c) => c.key === 'amount')) return rows.map((r) => ({ r }));
     const groups = new Map();
@@ -2303,7 +2306,7 @@
       ${d.groups ? accGroupsPanel(d.groups, d.amount, d.total, state.from || state.to ? `${state.from ? fmtD(state.from) : 'start'} to ${state.to ? fmtD(state.to) : 'today'}` : 'all dates') : ''}
       <div class="panel"><div class="table-wrap acc-grid"><table><tr>${show.map((c) => `<th class="${['money', 'num', 'pct'].includes(c.type) ? 'num' : ''}">${esc(c.label)}</th>`).join('')}</tr>
         ${accSplitRows(d.rows, show).map(({ r, head, part }) => head ? `<tr class="split-h">${show.map((c) => `<td class="${['money', 'num', 'pct'].includes(c.type) ? 'num' : c.type === 'long' ? 'small wrap' : ''}">${c.key in head && head[c.key] ? accFmt(c, head[c.key]) : ''}</td>`).join('')}</tr>`
-          : `<tr data-id="${r.id}" class="${r.cheque_status === 'Bounced' ? 'dim' : ''}${part ? ' split-p' : ''}">${show.map((c) => `<td class="${['money', 'num', 'pct'].includes(c.type) ? 'num' : c.type === 'long' || c.key === 'needs' ? 'small wrap' : ''}">${c.key === 'needs' && r.needs ? `<span class="bad-t">${esc(r.needs)}</span>` : part && c.key === 'ref_id' ? '↳ ' + accFmt(c, r[c.key]) : accFmt(c, r[c.key])}</td>`).join('')}</tr>`).join('') || `<tr><td colspan="${show.length}" class="muted">Nothing here.</td></tr>`}</table></div>
+          : `<tr data-id="${r.id}" class="${r.cheque_status === 'Bounced' ? 'dim' : ''}${part ? ' split-p' : ''}">${show.map((c) => `<td class="${['money', 'num', 'pct'].includes(c.type) ? 'num' : c.type === 'long' || c.key === 'needs' ? 'small wrap' : ''}">${c.key === 'needs' && r.needs ? `<span class="bad-t">${esc(r.needs)}</span>` : part && c.key === 'ref_id' ? '↳ ' + accFmt(c, r[c.key]) : accFmt(c, r[c.key])}${key === 'journals' && c.key === 'narration' && r._paidBy ? ` <span class="ok small">· paid by ${esc(r._paidBy.join(', '))}</span>` : ''}</td>`).join('')}</tr>${accJvRows(r, show)}`).join('') || `<tr><td colspan="${show.length}" class="muted">Nothing here.</td></tr>`}</table></div>
         ${d.rows.length < d.total ? '<div class="actions"><button class="ghost" id="amore">Show more</button></div>' : ''}</div>`;
     if (['tenants', 'rentLinks', 'cancellations'].includes(key) && d.rows.length) $('.acc-grid table tr').insertAdjacentHTML('afterend', `<tr class="tot">${show.map((c, i) => `<td class="num"><b>${c.type === 'money' && !['monthly_rent', 'split_amount'].includes(c.key) ? inr(d.rows.reduce((a, r) => a + toNum(r[c.key]), 0)) : i === 0 ? 'Totals' : ''}</b></td>`).join('')}</tr>`);
     const save = () => store.set('erp_acc_' + key, JSON.stringify({ q: state.q, from: state.from, to: state.to, filter: state.filter, m: state.m, by: state.by }));
@@ -2383,11 +2386,28 @@
       const dl = dialog(`<h2>${row ? esc(R.title) + (row.ref_id ? ' · ' + esc(row.ref_id) : '') : 'New row · ' + esc(R.title)}</h2>
         ${row && row.imported ? '<p class="small muted">Came in from the accounts sheet.</p>' : ''}
         <div class="acc-form">${main.map(field).join('')}</div>
+        ${key === 'payments' && row && row.id ? '<div id="jvBox" class="panel" style="margin:12px 0;padding:10px 12px"><b>Journal entries this payment settles</b> <span class="small muted">Loading…</span></div>' : ''}
         ${bill.length ? `<details ${row && row.needs ? 'open' : ''}><summary><b>Bill details</b>${row && row.needs ? ` <span class="bad-t small">${esc(row.needs)}</span>` : ''}</summary><div class="acc-form">${bill.map(field).join('')}</div></details>` : ''}
         ${d.can.enter && (row ? ['receipts', 'payments'].includes(key) : key === 'payments') ? `<p><button type="button" class="ghost" id="splitRow">${row ? 'Split into several heads…' : 'Save and split into several heads…'}</button> <span class="small muted">only when one amount goes to two or more heads, e.g. one TDS payment for 194J, 194I, 194C and 194H${row ? '' : '. Otherwise just press Save.'}</span></p>` : ''}`,
       async (x) => { if (!d.can.enter) return; const data = {}; for (const c of cols) if (!c.calc && c.key in x) data[c.key] = x[c.key]; const r = await api('/api/accounts', { action: 'save', reg: key, id: row ? row.id : undefined, data, poId: form.poId || undefined }); if (form.poId) toast(r.billPaid ? 'Purchase bill marked Paid.' : 'Saved, but the purchase bill could not be marked Paid: ' + (r.billError || ''), 6000); toast(row ? 'Saved.' : `Added${r.ref_id ? ' as ' + r.ref_id : ''}.`); accRegister(key, { limit: state.limit }); });
       dl.classList.add('wide');
       if (!d.can.enter) $('[value=save]', dl).remove();
+      if ($('#jvBox', dl)) {
+        // the Tally journals behind a reimbursement: link the ones this payment pays back
+        const jvLine = (j) => `<div style="border-top:1px solid #e2e8f0;padding:6px 0"><b>${esc(j.ref)}</b> · ${j.date ? fmtD(String(j.date).slice(0, 10)) : ''}${j.narration ? ' · ' + esc(j.narration) : ''}<div class="small">${j.lines.map((l) => `${esc(l.ledger)} ${l.debit ? 'Dr ' + inr(l.debit) : 'Cr ' + inr(l.credit)}`).join(' · ')}</div>`;
+        const draw = (r) => {
+          if (!r.linked.length && !(d.can.enter && r.suggest.length)) { $('#jvBox', dl).remove(); return; }
+          const left = Math.round((r.payment.amount - r.linkedTotal) * 100) / 100;
+          $('#jvBox', dl).innerHTML = `<b>Journal entries this payment settles</b> <span class="small muted">e.g. expenses booked to ${esc(r.payment.payee || 'the payee')} in Tally, paid back by this payment</span>
+            ${r.linked.map((j) => jvLine(j) + (d.can.enter ? ` <button type="button" class="ghost sm" data-unjv="${esc(j.ref)}">Unlink</button>` : '') + '</div>').join('') || '<p class="small muted" style="margin:6px 0">None linked yet.</p>'}
+            ${r.linked.length ? `<p class="small ${Math.abs(left) < 0.01 ? 'ok' : 'bad-t'}" style="margin:4px 0">Linked expenses ${inr(r.linkedTotal)} of the payment's ${inr(r.payment.amount)}${Math.abs(left) < 0.01 ? ': fully accounted for.' : ` · ${inr(Math.abs(left))} ${left > 0 ? 'not explained yet' : 'more than the payment'}`}</p>` : ''}
+            ${d.can.enter && r.suggest.length ? `<p class="small" style="margin:8px 0 2px"><b>Journals to link</b> (crediting ${esc(r.payment.payee || '')}, not linked to any payment):</p>${r.suggest.map((j) => jvLine(j) + ` <button type="button" class="ghost sm" data-jv="${esc(j.ref)}">Link</button>${j.exact ? ' <span class="ok small">same amount</span>' : ''}</div>`).join('')}` : ''}`;
+          $('#jvBox', dl).querySelectorAll('[data-jv],[data-unjv]').forEach((bt) => (bt.onclick = async () => {
+            try { draw(await api('/api/accounts', { action: bt.dataset.jv ? 'jv-link' : 'jv-unlink', id: row.id, journal: bt.dataset.jv || bt.dataset.unjv })); } catch (e) { alert(e.message); }
+          }));
+        };
+        api(`/api/accounts?view=jv&id=${row.id}`).then(draw).catch((e) => { $('#jvBox', dl).innerHTML = `<b>Journal entries this payment settles</b> <span class="small bad-t">${esc(e.message)}</span>`; });
+      }
       if ($('#splitRow', dl)) $('#splitRow', dl).onclick = async () => {
         if (row) { dl.close(); dl.remove(); return splitRow(row); }
         // a new payment: save it as one row first (the full amount), then split it

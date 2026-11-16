@@ -150,6 +150,11 @@ module.exports = route({
         res.setHeader('Content-Disposition', `attachment; filename="tally_${from}_to_${to}.${csv ? 'csv' : 'xml'}"`);
         return res.end(csv ? '﻿' + body : body);
       }
+      case 'jv': {
+        // the journals linked to one payment out, and the ones that look like it settles them
+        const r = await acc.jvSuggest(intOr(q.id)); if (!r) throw fail(404, 'Payment not found.');
+        return res.json(r);
+      }
       case 'import': {
         const last = await db.one("select at as created_at, after, (select name from users where id = audit_log.user_id) as by_name from audit_log where action = 'import-accounts' order by id desc limit 1");
         const lastTally = await db.one("select at as created_at, after, (select name from users where id = audit_log.user_id) as by_name from audit_log where action = 'import-tally' order by id desc limit 1");
@@ -356,6 +361,22 @@ module.exports = route({
       const name = str(b.name, 120); if (!name) throw fail(400, 'Give the bank account name as it should appear in Receipts and Payments Out.');
       await db.tx(async (t) => { await t.q("insert into acc_banks (book, name, account_no) values ('signature', $1, $2) on conflict (book, name) do update set account_no = excluded.account_no", [name, str(b.accountNo, 40) || null]); await audit.record(t.q, { user: u, action: 'bank', entity: 'acc-bank', entityId: name, after: b }); });
       return res.json({ ok: true });
+    }
+    if (b.action === 'jv-link' || b.action === 'jv-unlink') {
+      // A Tally journal (expenses someone paid first) tied to the payment out that paid them back (16 Nov 2026).
+      need('accounts.enter');
+      const p = await db.one('select id, ref_id from acc_payments where id = $1 and book = $2', [intOr(b.id), acc.BOOK]); if (!p) throw fail(404, 'Payment not found.');
+      const jr = str(b.journal, 40); if (!jr) throw fail(400, 'Which journal?');
+      await db.tx(async (t) => {
+        if (b.action === 'jv-link') {
+          if (!(await t.one('select 1 as x from acc_journals where book = $1 and ref_id = $2 limit 1', [acc.BOOK, jr]))) throw fail(404, `Journal ${jr} is not in the ERP.`);
+          const other = await t.one('select payment_ref from acc_jv_links where book = $1 and journal_ref = $2 and payment_ref <> $3', [acc.BOOK, jr, p.ref_id]);
+          if (other) throw fail(409, `${jr} is already linked to ${other.payment_ref}. Unlink it there first.`);
+          await t.q('insert into acc_jv_links (book, payment_ref, journal_ref, created_by) values ($1, $2, $3, $4) on conflict do nothing', [acc.BOOK, p.ref_id, jr, u.id]);
+        } else await t.q('delete from acc_jv_links where book = $1 and payment_ref = $2 and journal_ref = $3', [acc.BOOK, p.ref_id, jr]);
+        await audit.record(t.q, { user: u, action: b.action, entity: 'payments', entityId: String(p.id), after: { payment: p.ref_id, journal: jr } });
+      });
+      return res.json({ ok: true, ...(await acc.jvSuggest(p.id)) });
     }
     if (b.action === 'split-row') {
       // One Receipts / Payments Out row into several heads (6 Nov 2026: a Tally TDS payment holding 194J, 194I, 194C and 194H).
