@@ -55,6 +55,11 @@ let n = 0; const step = async (name, fn) => { await fn(); n++; console.log('  âœ
     assert.equal((await admin('/api/accounts', { action: 'save', reg: 'receipts', id: newId, data: { cheque_status: 'Bounced' } })).ok, true);
     assert.equal((await admin('/api/accounts', { action: 'delete', reg: 'receipts', id: newId, reason: 'x' })).status, 400);
     const b = await admin('/api/accounts?reg=receipts&filter=bounced'); assert.equal(b.rows.length, 2);
+    // a search total counts only cleared money; the bounced cheque is shown beside it (17 Nov 2026)
+    const all = await admin('/api/accounts?reg=receipts&q=A-1002'); const sum = (rs, f) => rs.filter(f).reduce((t, r) => t + Number(r.amount), 0);
+    assert.equal(all.amount, sum(all.rows, (r) => !['Bounced', 'Not found on statement'].includes(r.cheque_status)));
+    assert.equal(all.notReceived.amount, sum(all.rows, (r) => ['Bounced', 'Not found on statement'].includes(r.cheque_status))); assert.ok(all.notReceived.amount >= 200000);
+    assert.equal(b.amount, sum(b.rows, () => true)); // the Bounced filter still totals the bounced cheques
   });
   await step('To Do counts what is missing; payments needing bill details are listed', async () => {
     const t = await admin('/api/accounts?view=todo');

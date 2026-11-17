@@ -82,8 +82,8 @@ module.exports = route({
       // Excel or print: every row the search finds (not only the first page), the columns on screen, a total row,
       // and a total for each payee / payer so "everything paid to X" is one figure.
       if (q.export === 'xlsx' || q.export === 'rows') {
-        const all = []; let total = 0, amount = null;
-        for (let off = 0; off < 20000; off += 2000) { const L = await acc.list(q.reg, { ...opts, limit: 2000, offset: off }); all.push(...L.rows); total = L.total; amount = L.amount; if (all.length >= L.total || !L.rows.length) break; }
+        const all = []; let total = 0, amount = null, nr = null;
+        for (let off = 0; off < 20000; off += 2000) { const L = await acc.list(q.reg, { ...opts, limit: 2000, offset: off }); all.push(...L.rows); total = L.total; amount = L.amount; nr = L.notReceived || null; if (all.length >= L.total || !L.rows.length) break; }
         const keys = String(q.cols || '').split(',').filter(Boolean);
         const colOf = (k) => (k === 'ref_id' ? { key: 'ref_id', label: reg.idLabel || 'ID', type: 'text' } : reg.cols.find((c) => c.key === k));
         const cols = (keys.length ? keys.map(colOf) : [...(reg.prefix ? [colOf('ref_id')] : []), ...reg.cols]).filter((c) => c && c.key !== 'needs');
@@ -91,12 +91,12 @@ module.exports = route({
         const amt = reg.cols.some((c) => c.key === 'amount') ? 'amount' : null;
         const byWho = who && amt ? Object.entries(all.reduce((m, r) => { const k = (r[who] || '(no name)').trim(); m[k] = m[k] || { n: 0, amt: 0 }; m[k].n++; m[k].amt += Number(r[amt]) || 0; return m; }, {})).sort((a, b) => b[1].amt - a[1].amt) : [];
         const when = [opts.from, opts.to].some(Boolean) ? `${opts.from || 'start'} to ${opts.to || 'today'}` : 'all dates';
-        const head = { title: reg.title, search: opts.q || '', filters: fLabel, when, rows: total, amount };
+        const head = { title: reg.title, search: opts.q || '', filters: fLabel, when, rows: total, amount, notReceived: nr };
         const shown = acc.arrangeSplits(all);
         if (q.export === 'rows') return res.json({ head, cols, rows: shown, groups: G, byWho: byWho.map(([k, v]) => ({ name: k, n: v.n, amount: Math.round(v.amt * 100) / 100 })), whoLabel: who === 'payee' ? 'Payee' : 'Payer' });
         const cell = (c, v) => (v == null || v === '' ? '' : ['money', 'num'].includes(c.type) ? Number(v) : c.type === 'pct' ? Number(v) : c.type === 'date' ? String(v instanceof Date ? v.toISOString() : v).slice(0, 10) : String(v));
         const sheet = [[`${reg.title}${opts.q ? ' · search: ' + opts.q : ''}${fLabel ? ' · ' + fLabel : ''} · ${when}`], [], cols.map((c) => c.label), ...shown.map((r) => cols.map((c) => cell(c, r[c.key])))];
-        if (amt) { const i = cols.findIndex((c) => c.key === amt); const t = cols.map(() => ''); t[0] = `Total (${total} rows)`; if (i >= 0) t[i] = Math.round((amount || 0) * 100) / 100; sheet.push([], t); }
+        if (amt) { const i = cols.findIndex((c) => c.key === amt); const t = cols.map(() => ''); t[0] = nr ? `Total cleared (${total} rows; ${nr.n} bounced / not in bank, ${Math.round(nr.amount)}, left out)` : `Total (${total} rows)`; if (i >= 0) t[i] = Math.round((amount || 0) * 100) / 100; sheet.push([], t); }
         const sheets = [{ name: reg.title, rows: sheet, bold: new Set(shown.map((r, i) => (r._head ? i + 3 : -1)).filter((i) => i >= 0)), widths: cols.map((c) => (c.type === 'long' ? 40 : ['payee', 'head', 'payer_name', 'description'].includes(c.key) ? 30 : 14)) }];
         if (G && G.rows.length) {
           const r2 = (v) => Math.round((v || 0) * 100) / 100, td = !!G.tillDate;
