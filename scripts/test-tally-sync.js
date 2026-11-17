@@ -177,6 +177,33 @@ const b64 = (b) => b.toString('base64');
     assert.equal((await admin('/api/accounts?reg=payments&q=Reimbursement')).rows.find((x) => x.ref_id === pay.ref_id)._jv[0].ref, 'J2627-314');
     const u = await admin('/api/accounts', { action: 'jv-unlink', id, journal: 'J2627-314' }); assert.equal(u.linked.length, 0);
   });
+  await step('a payment in the ERP twice (bank row + Tally voucher) is merged; two same-amount payments in a week each find their voucher', async () => {
+    // the bank statement run added Cement Co's payment again after Tally's voucher (P2627-1511) was already in
+    const d = await admin('/api/accounts', { action: 'save', reg: 'payments', data: { txn_date: '2026-10-09', bank: 'Yes RERA 30% (0501)', amount: 95000, payee: 'Cement Co', bill_no: 'DUP-1', vendor_gstin: '27AAAPC1234C1Z5' } });
+    const dupRef = d.ref_id || (d.row && d.row.ref_id); assert.ok(dupRef, JSON.stringify(d).slice(0, 200));
+    // two RMC payments of the same amount two days apart, entered in the ERP first, then in Tally
+    for (const dt of ['2026-10-23', '2026-10-25']) assert.ok((await admin('/api/accounts', { action: 'save', reg: 'payments', data: { txn_date: dt, bank: 'Yes RERA 30% (0501)', amount: 44000, payee: 'RMC Co' } })).ok !== false);
+    const P4 = reg('Payment Register', [
+      V('2026-10-05', 'Payment', 1734, [['SKYWAY RMC PLANTS PVT LTD', 400000, null], [R30, null, 400000]]),
+      V('2026-10-06', 'Payment', 1509, [[RAFI, 300000, null], ['Mubeen Sir', 200000, null], [R30, null, 500000]]),
+      V('2026-10-08', 'Payment', 1511, [['Cement Co', 95000, null], [R30, null, 95000]]),
+      V('2026-10-12', 'Payment', 1512, [['Steel Co', 60000, null], ['TDS on Contract', null, 1200], [R30, null, 58800]]),
+      V('2026-10-21', 'Payment', 1520, [['Electric Co', 70000, null], [R30, null, 70000]]),
+      V('2026-10-22', 'Payment (HDFC)', 1511, [['Courier Co', 3000, null], [HD, null, 3000]]),
+      V('2026-10-24', 'Payment', 1530, [['RMC Co', 44000, null], [R30, null, 44000]]),
+      V('2026-10-25', 'Payment', 1531, [['RMC Co', 44000, null], [R30, null, 44000]]),
+    ]);
+    const pv = await admin('/api/accounts', { action: 'tally-sync-preview', files: files(R2, P4, C1, J2) });
+    assert.equal(pv.status, 200, pv.error);
+    assert.deepEqual(pv.payments.twins.map((x) => [x.erp, x.tally]), [[dupRef, 'P2627-1511']]);
+    assert.equal(pv.payments.add, 0); // both RMC vouchers found the ERP's rows, nothing added beside them
+    const r = await admin('/api/accounts', { action: 'tally-sync', files: files(R2, P4, C1, J2) }); assert.equal(r.ok, true, r.error);
+    const rows = (await admin('/api/accounts?reg=payments&limit=300')).rows;
+    const cem = rows.filter((x) => x.payee === 'Cement Co'); assert.equal(cem.length, 1);
+    assert.equal(cem[0].ref_id, 'P2627-1511'); assert.equal(cem[0].bill_no, 'CB-77'); assert.equal(cem[0].vendor_gstin, '27AAAPC1234C1Z5'); assert.match(cem[0].remark, new RegExp(dupRef));
+    assert.equal(rows.filter((x) => x.payee === 'RMC Co').length, 2);
+    assert.ok(!r.check.different.some((x) => x.ledger === 'Cement Co' || x.ledger === 'RMC Co'), JSON.stringify(r.check.different));
+  });
   console.log(`Sync with Tally: ${n} checks passed`);
   server.close(); process.exit(0);
 })().catch((e) => { console.error(e); process.exit(1); });
