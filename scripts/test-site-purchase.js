@@ -138,6 +138,29 @@ const JPEG = 'data:image/jpeg;base64,/9j/4AAQSkZJRgABAQEASABIAAD/2wBDAP/////////
     const am = await P(acc); assert.equal(am.orders[pr1.id].order.amount, 594000); // Accounts still sees the bill
   });
 
+  await step('Different vendors for different grades: each vendor gets its own order, bill and PO no.', async () => {
+    const g = await P(siteeng), line = g.budget.lines.find((l) => l.rmc > 0).key;
+    const pr = (await P(siteeng, { op: 'request', data: { material: 'RMC', items: [{ spec: 'M35', qty: 17.5 }, { spec: 'M60', qty: 14 }], line, wing: g.wings[line.split('|')[0]][0] } })).doc;
+    assert.equal((await P(sameer, { op: 'approve', id: pr.id, data: {} })).status, 200);
+    const r = await P(buyer1, { op: 'order', id: pr.id, data: { billDate: '2026-11-16', items: [
+      { spec: 'M35', qty: 17.5, rate: 7700, vendor: 'Skyway RMC', billNo: 'SK-11', poNo: 'PO-501' },
+      { spec: 'M60', qty: 14, rate: 9100, vendor: 'Ultratech RMC', amount: 127400, billNo: 'UT-9', poNo: 'PO-502' }] } });
+    assert.equal(r.status, 200, r.error); assert.equal(r.split.length, 2);
+    const [a, b] = r.split;
+    assert.equal(a.id, pr.id); assert.equal(a.no, pr.no); assert.equal(b.no, pr.no + '-B');
+    assert.deepEqual([a.order.vendor, a.order.poNo, a.order.billNo, a.order.amount, a.qty, a.spec], ['Skyway RMC', 'PO-501', 'SK-11', 134750, 17.5, 'M35']);
+    assert.deepEqual([b.order.vendor, b.order.poNo, b.order.billNo, b.order.amount, b.qty, b.spec, b.status], ['Ultratech RMC', 'PO-502', 'UT-9', 127400, 14, 'M60', 'ordered']);
+    assert.ok(b.approval.ok); assert.match(b.history.find((h) => /Split from/.test(h.did)).did, /Ultratech RMC supplies M60/);
+    // the site confirms each vendor's delivery on its own
+    const today = new Date(Date.now() + 5.5 * 3600e3).toISOString().slice(0, 10);
+    assert.equal((await P(siteeng, { op: 'receive', id: b.id, data: { qty: 14, challan: 'UT-DC-4', date: today } })).status, 200);
+    // one vendor for all, given on the first line only: one order, as before
+    const pr3 = (await P(siteeng, { op: 'request', data: { material: 'RMC', items: [{ spec: 'M35', qty: 5 }, { spec: 'M60', qty: 3 }], line, wing: g.wings[line.split('|')[0]][0] } })).doc;
+    await P(sameer, { op: 'approve', id: pr3.id, data: {} });
+    const one = await P(buyer1, { op: 'order', id: pr3.id, data: { items: [{ spec: 'M35', qty: 5, rate: 7700, vendor: 'Skyway RMC', poNo: 'PO-600' }, { spec: 'M60', qty: 3, rate: 9100 }] } });
+    assert.equal(one.status, 200, one.error); assert.ok(!one.split); assert.deepEqual([one.doc.order.vendor, one.doc.order.poNo, one.doc.order.amount], ['Skyway RMC', 'PO-600', 65800]);
+  });
+
   await step('A problem report can carry a photo, kept apart from the entry', async () => {
     const r = await siteeng('/api/site', { op: 'add', col: 'hindrances', data: { tower: 'A', category: 'Labour shortage', from: '2026-10-30', description: 'Only 20 men today', status: 'open', photo: JPEG } });
     assert.equal(r.status, 200, r.error); assert.ok(r.doc.photo); assert.ok(!String(JSON.stringify(r.doc)).includes('base64'));

@@ -128,7 +128,9 @@ async function act(payload, okMsg) {
   btns.forEach((b) => (b.disabled = true)); if (err) err.textContent = '';
   try {
     const r = await api('POST', payload);
-    D.orders[r.doc.id] = r.doc; render(); showOrder(r.doc.id, okMsg);
+    D.orders[r.doc.id] = r.doc;
+    if (r.split) { r.split.forEach((x) => (D.orders[x.id] = x)); okMsg = `Ordered from ${r.split.length} vendors, one order each: ${r.split.map((x) => `${x.no} (${x.order.vendor})`).join(', ')}. The site confirms each delivery and Accounts pays each bill separately.`; }
+    render(); showOrder(r.doc.id, okMsg);
   } catch (e) { if (err) err.textContent = e.message; btns.forEach((b) => (b.disabled = false)); }
 }
 
@@ -225,13 +227,10 @@ function actionBox(o) {
     <div class="acts"><button class="btn warn" data-op="reject">Reject</button><button class="btn go" data-op="approve">Approve</button></div></div>`;
   }
   if (o.status === 'requested' && c.order && multi(o)) return `<div class="box"><h4>Place the order and enter the bill</h4>
-    <p class="note" style="margin:0">One order and one bill for all sizes. Enter the quantity and rate for each; put 0 for a size you are not buying now.</p>
-    <div class="items">${itemsOf(o).map((it) => `<div class="irow r3" data-spec="${esc(it.spec)}"><b>${esc(it.spec)}<br><span class="note">approved ${q(it.qty, 3)} ${u}</span></b><label class="field">Qty ordered (${u})<input data-k="qty" inputmode="decimal" value="${it.qty}"></label><label class="field">Rate per ${u}, incl. GST (₹)<input data-k="rate" inputmode="decimal" placeholder="${o.budgetRate ? 'Budget ₹' + o.budgetRate.toLocaleString('en-IN') : ''}"></label></div>`).join('')}</div>
-    <div class="form"><label class="field">Vendor<input name="vendor" autocomplete="off"></label>
-    <label class="field">Bill amount, incl. GST (₹)<input name="amount" inputmode="decimal"></label>
-    <label class="field">Bill no.<input name="billNo" autocomplete="off"></label>
-    <label class="field">Bill date<input name="billDate" type="date" value="${today()}"></label>
-    <label class="field">PO no. (optional)<input name="poNo" autocomplete="off"></label>
+    <p class="note" style="margin:0">Enter the quantity and rate for each size; put 0 for a size you are not buying now. Each size can have its own vendor, bill and PO no. Leave the vendor blank when it is the same as the size above. Each vendor's sizes become a separate order (${esc(o.no)}, ${esc(o.no)}-B…), so the site confirms and Accounts pays each vendor's bill on its own.</p>
+    <div class="items">${itemsOf(o).map((it, i) => `<div class="pline" data-spec="${esc(it.spec)}"><div class="irow r3"><b>${esc(it.spec)}<br><span class="note">approved ${q(it.qty, 3)} ${u}</span></b><label class="field">Qty ordered (${u})<input data-k="qty" inputmode="decimal" value="${it.qty}"></label><label class="field">Rate per ${u}, incl. GST (₹)<input data-k="rate" inputmode="decimal" placeholder="${o.budgetRate ? 'Budget ₹' + o.budgetRate.toLocaleString('en-IN') : ''}"></label></div>
+      <div class="irow r4"><label class="field">Vendor<input data-k="vendor" autocomplete="off" placeholder="${i ? 'Same as above' : ''}"></label><label class="field">Bill amount, incl. GST (₹)<input data-k="amount" inputmode="decimal" placeholder="Qty × rate"></label><label class="field">Bill no.<input data-k="billNo" autocomplete="off" placeholder="${i ? 'Same vendor: same bill' : ''}"></label><label class="field">PO no.<input data-k="poNo" autocomplete="off"></label></div></div>`).join('')}</div>
+    <div class="form"><label class="field">Bill date<input name="billDate" type="date" value="${today()}"></label>
     <label class="field wide">Note<textarea name="note"></textarea></label></div><p class="err"></p>
     <div class="acts"><button class="btn go" data-op="order">Save order and bill</button></div></div>`;
   if (o.status === 'requested' && c.order) return `<div class="box"><h4>Place the order and enter the bill</h4>
@@ -292,9 +291,9 @@ function showOrder(id, okMsg) {
   $$('#sheet [data-op]').forEach((b) => b.addEventListener('click', () => {
     const op = b.dataset.op, data = {};
     $$('#sheet .box [name]').forEach((el) => (data[el.name] = el.value));
-    const rows = $$('#sheet .box .irow[data-spec]');
+    const rows = $$('#sheet .box [data-spec]');
     if (rows.length) data.items = rows.map((r) => { const x = { spec: r.dataset.spec }; r.querySelectorAll('[data-k]').forEach((el) => (x[el.dataset.k] = el.value)); return x; });
-    if (op === 'order' && data.items && !data.amount) { const v = data.items.reduce((s, x) => s + num(x.qty) * num(x.rate), 0); if (v) data.amount = String(Math.round(v)); }
+    if (op === 'order' && data.items && !data.amount && !data.items.some((x) => x.vendor)) { const v = data.items.reduce((s, x) => s + num(x.qty) * num(x.rate), 0); if (v) data.amount = String(Math.round(v)); }
     if (op === 'order' && !data.amount && data.qty && data.rate) data.amount = String(Math.round(+data.qty.replace(/,/g, '') * +data.rate.replace(/,/g, '')));
     const msg = { approve: 'Approved. It is now with Purchase.', reject: 'Rejected.', order: 'Order and bill saved. The site will confirm delivery.', receive: 'Receipt confirmed. The bill is now with Accounts.', accounts_ok: 'Approved for payment.', hold: 'Put on hold.', paid: 'Payment recorded.', cancel: 'Cancelled.' }[op];
     act({ op, id: o.id, data }, msg);

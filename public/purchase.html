@@ -66,6 +66,9 @@ tr.click{cursor:pointer}tr.click:hover td{background:#F7F8F5}
 .irow{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr) 34px;gap:8px;align-items:end}
 .irow.r3{grid-template-columns:minmax(0,1.1fr) minmax(0,1fr) minmax(0,1fr)}
 .irow.r2{grid-template-columns:minmax(0,1.1fr) minmax(0,1fr)}
+.irow.r4{grid-template-columns:repeat(4,minmax(0,1fr))}
+.pline{display:grid;gap:8px;padding:10px 0;border-bottom:1px solid #e5e7eb}.pline:last-child{border-bottom:0}
+@media (max-width:640px){.irow.r4{grid-template-columns:minmax(0,1fr) minmax(0,1fr)}}
 .irow .field{min-width:0}.irow input,.irow select{width:100%;min-width:0}
 .irow b{align-self:center;font-size:14.5px}
 .irow .x{width:34px;height:40px;border-radius:8px}
