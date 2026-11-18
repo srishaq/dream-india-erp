@@ -192,7 +192,7 @@ module.exports = route({
       if (b.action === 'pre.approve') { need('demand.approve'); return res.json({ ok: true, ...(await PRE.approve({ user: u, id: intOr(b.id) })) }); }
       if (!has(u, 'demand.raise') && !has(u, 'demand.approve')) throw fail(403, 'Your role does not allow this.');
       if (b.action === 'pre.cancel') return res.json(await PRE.cancel({ user: u, id: intOr(b.id) }));
-      return res.json({ ok: true, ...(await PRE.markCouriered({ user: u, id: intOr(b.id) })) });
+      return res.json({ ok: true, ...(await PRE.markCouriered({ user: u, id: intOr(b.id), itemIds: Array.isArray(b.itemIds) ? b.itemIds : undefined })) });
     }
 
     if (b.action === 'settings') {
