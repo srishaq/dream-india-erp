@@ -88,6 +88,7 @@ async function run(req, res, job) {
       const rot = await require('../lib/auth').rotateSecretOnce('2026-11-12').catch((e) => ({ error: e.message })); // once: backups up to 12 Nov held the old login secret
       const r = await require('../lib/mail-sync').sync({ trigger: 'schedule' });
       if (rot && !rot.skipped) r.secret = rot;
+      r.bounces = await require('../lib/tally-bounce').run().then((x) => x.paired).catch((e) => ({ error: e.message })); // Tally cheque returns paired with their receipts
       r.autoLetters = await require('../lib/letters').sendPendingAuto().catch((e) => ({ error: e.message }));
       r.preDemand = await require('../lib/predemand').sendPending().catch((e) => ({ error: e.message })); // pre-demand notices still to email
       r.approvals = await require('../lib/staff-alerts').runApprovals().catch((e) => ({ error: e.message }));

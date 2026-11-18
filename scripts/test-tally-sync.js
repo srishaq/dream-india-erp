@@ -204,6 +204,32 @@ const b64 = (b) => b.toString('base64');
     assert.equal(rows.filter((x) => x.payee === 'RMC Co').length, 2);
     assert.ok(!r.check.different.some((x) => x.ledger === 'Cement Co' || x.ledger === 'RMC Co'), JSON.stringify(r.check.different));
   });
+  await step('a bounced cheque (Tally: the receipt, then a cheque-return payment) is left out of the flat\'s total', async () => {
+    const BUY = 'A-2602 Mohammad Salim Ansari';
+    const R5 = reg('Receipt Register', [V('2026-10-03', 'Receipt', 6, [[RAFI, null, 1000000], [HD, 1000000, null]]),
+      V('2026-10-26', 'Receipt', '', [['Partner Loan A/c', null, 1861000], [HD, 1861000, null]]), V('2026-10-27', 'Receipt', '', [['Partner Loan A/c', null, 5000], [HD, 5000, null]]),
+      V('2026-10-10', 'Receipt', 2057, [[BUY, null, 821700], [R30, 821700, null]]), V('2026-10-18', 'Receipt', 2096, [[BUY, null, 821700], [R30, 821700, null]])]);
+    const P5 = reg('Payment Register', [
+      V('2026-10-05', 'Payment', 1734, [['SKYWAY RMC PLANTS PVT LTD', 400000, null], [R30, null, 400000]]),
+      V('2026-10-06', 'Payment', 1509, [[RAFI, 300000, null], ['Mubeen Sir', 200000, null], [R30, null, 500000]]),
+      V('2026-10-08', 'Payment', 1511, [['Cement Co', 95000, null], [R30, null, 95000]]),
+      V('2026-10-12', 'Payment', 1512, [['Steel Co', 60000, null], ['TDS on Contract', null, 1200], [R30, null, 58800]]),
+      V('2026-10-21', 'Payment', 1520, [['Electric Co', 70000, null], [R30, null, 70000]]),
+      V('2026-10-22', 'Payment (HDFC)', 1511, [['Courier Co', 3000, null], [HD, null, 3000]]),
+      V('2026-10-24', 'Payment', 1530, [['RMC Co', 44000, null], [R30, null, 44000]]),
+      V('2026-10-25', 'Payment', 1531, [['RMC Co', 44000, null], [R30, null, 44000]]),
+      V('2026-10-12', 'Payment', 1571, [[BUY, 821700, null], [R30, null, 821700]]), // the 10 Oct cheque came back
+    ]);
+    const r = await admin('/api/accounts', { action: 'tally-sync', files: files(R5, P5, C1, J2) }); assert.equal(r.ok, true, r.error);
+    assert.equal(r.done.bounces, 1);
+    const f = await admin('/api/accounts?reg=receipts&q=A-2602');
+    assert.equal(f.rows.length, 2); assert.equal(f.amount, 821700); assert.equal(f.notReceived.amount, 821700);
+    assert.equal(f.rows.find((x) => x.ref_id === 'R2627-2057').cheque_status, 'Bounced');
+    const p = (await admin('/api/accounts?reg=payments&q=A-2602')).rows[0]; assert.equal(p.head, 'Cheque returned (bounce)');
+    // again: the pair stays, nothing new
+    const again = await admin('/api/accounts', { action: 'tally-sync', files: files(R5, P5, C1, J2) }); assert.equal(again.ok, true, again.error);
+    assert.equal(again.done.bounces, 0); assert.equal((await admin('/api/accounts?reg=receipts&q=A-2602')).amount, 821700);
+  });
   console.log(`Sync with Tally: ${n} checks passed`);
   server.close(); process.exit(0);
 })().catch((e) => { console.error(e); process.exit(1); });
