@@ -1015,11 +1015,39 @@
       return `<div class="panel tower">${shown.length > 1 ? `<h2>${esc(b.name)} <span class="muted small">${list.length - ns} saleable flats${ns ? ` (+ ${ns} refuge / society, not for sale)` : ''}</span></h2>` : ''}${legend(list)}
         ${floors.length ? `<div class="floors">${floors.map((f) => `<div class="floor"><span class="fl">${f}</span>${list.filter((u) => u.floor === f).map(cell).join('')}</div>`).join('')}</div>` : '<p class="muted">No units yet in this building.' + (can('users.manage') ? ' For testing, load sample data from the Home page, or import from the CRM sheet.' : '') + '</p>'}</div>`;
     };
+    // the summary follows the wing tab: one wing's figures when one wing is picked, all wings otherwise
+    const wingSum = one && d.summary ? d.summary.wings.find((w) => w.code === one.code) : null;
+    const sumFor = wingSum ? { wings: [wingSum], total: wingSum } : d.summary;
+    const shownIds = new Set(shown.map((b) => b.id));
+    // Balance to sell (open for sale) or Held: the flats, floor by floor, with the total area
+    const flatList = (kind) => {
+      const list = d.units.filter((u) => shownIds.has(u.building_id) && !u.sample && (kind === 'held' ? u.status === 'held' : ['available', 'blocked'].includes(u.status)))
+        .sort((a, b) => a.unit_no.localeCompare(b.unit_no, 'en', { numeric: true }));
+      const area = list.reduce((a, u) => a + toNum(u.carpet_sqft), 0);
+      const where = one ? one.name : 'all wings';
+      const title = kind === 'held' ? `Held flats, ${where}` : `Flats open for sale, ${where}`;
+      const dl = document.createElement('dialog'); dl.className = 'wide';
+      dl.innerHTML = `<form method="dialog"><h2>${esc(title)}</h2><p class="muted">${list.length} flat${list.length === 1 ? '' : 's'} · ${Math.round(area).toLocaleString('en-IN')} sq ft carpet. Tap a flat to open it.</p>
+        <div class="table-wrap" style="max-height:60vh;overflow:auto"><table><tr><th>Flat</th><th>Floor</th><th>Type</th><th class="num">Carpet sq ft</th>${kind === 'held' ? '<th>Held for / note</th>' : '<th>Status</th>'}</tr>
+        ${list.map((u) => `<tr class="click" data-uu="${u.id}"><td><b>${esc(u.unit_no)}</b></td><td>${u.floor ?? ''}</td><td>${esc(u.typology || '')}</td><td class="num">${toNum(u.carpet_sqft) || ''}</td><td class="small">${kind === 'held' ? esc(String(u.sheet_status || u.hold_note || '').replace(/^Sheet status:\s*/i, '')) : esc(STATUS[u.status] || u.status)}</td></tr>`).join('') || '<tr><td colspan="5" class="muted">None.</td></tr>'}
+        ${list.length ? `<tr class="tot"><th>Total</th><th></th><th>${list.length} flat${list.length === 1 ? '' : 's'}</th><th class="num">${Math.round(area).toLocaleString('en-IN')}</th><th></th></tr>` : ''}</table></div>
+        <div class="actions"><button type="button" class="ghost" id="csv">Download (Excel)</button><button type="button" id="cl">Close</button></div></form>`;
+      document.body.appendChild(dl); dl.showModal();
+      const close = () => { dl.close(); dl.remove(); };
+      $('#cl', dl).onclick = close;
+      dl.querySelectorAll('[data-uu]').forEach((tr) => (tr.onclick = () => { close(); unitDialog(d.units.find((u) => u.id === +tr.dataset.uu)); }));
+      $('#csv', dl).onclick = () => {
+        const q = (v) => `"${String(v ?? '').replace(/"/g, '""')}"`;
+        const csv = [['Flat', 'Floor', 'Type', 'Carpet sq ft', kind === 'held' ? 'Held for / note' : 'Status'].map(q).join(','), ...list.map((u) => [u.unit_no, u.floor, u.typology, toNum(u.carpet_sqft), kind === 'held' ? String(u.sheet_status || u.hold_note || '').replace(/^Sheet status:\s*/i, '') : STATUS[u.status]].map(q).join(',')), ['Total', '', list.length + ' flats', Math.round(area), ''].map(q).join(',')].join('\n');
+        const a = document.createElement('a'); a.href = URL.createObjectURL(new Blob(['\ufeff' + csv], { type: 'text/csv' })); a.download = `${kind === 'held' ? 'held' : 'open-for-sale'}-flats-${todayIso()}.csv`; a.click(); setTimeout(() => URL.revokeObjectURL(a.href), 2000);
+      };
+    };
     $('#page').innerHTML = `<div class="page-head"><div><h1>Units & inventory</h1><p class="muted">Every unit, floor by floor. A red corner means the buyer has overdue dues.</p></div>
       ${can('inventory.edit') && bld ? '<div class="actions" style="margin:0"><button class="ghost" id="gen">Add units</button></div>' : ''}</div>
       <div class="tabs">${sideBySide.length > 1 ? `<button class="tab ${!one ? 'on' : ''}" data-b="0">All wings</button>` : ''}${blds.map((b) => `<button class="tab ${b === one || (!one && shown.length === 1 && b === shown[0]) ? 'on' : ''}" data-b="${b.id}">${esc(b.name)}</button>`).join('')}</div>
-      ${salesStrip(d.summary)}
+      ${salesStrip(sumFor, { click: true })}
       <div class="towers">${shown.map(tower).join('')}</div>`;
+    document.querySelectorAll('[data-ss]').forEach((b) => { const open = () => flatList(b.dataset.ss); b.onclick = open; b.onkeydown = (e) => { if (e.key === 'Enter') open(); }; });
     document.querySelectorAll('.tab[data-b]').forEach((t) => (t.onclick = () => { store.set('erp_bld', t.dataset.b); units(); }));
     document.querySelectorAll('[data-u]').forEach((c) => (c.onclick = () => unitDialog(d.units.find((u) => u.id === +c.dataset.u))));
     if ($('#gen')) $('#gen').onclick = () => dialog(`<h2>Add units to ${esc(bld.name)}</h2>
@@ -3105,21 +3133,22 @@
 
   // Management dashboard: the key figures of every department on one screen (Admin and Management).
   // Saleable flats, area sold and the average sale rate (Units & inventory, and the Management dashboard).
-  function salesStrip(S, { title = 'Sales summary', link = '' } = {}) {
+  function salesStrip(S, { title = 'Sales summary', link = '', click = false } = {}) {
     if (!S || !S.total) return '';
     const T = S.total, money = T.saleValue != null;
     const sq = (v) => `${Math.round(v).toLocaleString('en-IN')} sq ft`;
     const pct = (a, b) => (b ? Math.round((a / b) * 1000) / 10 + '%' : '—');
-    const box = (label, big, sub, cls = '') => `<div class="ss-b ${cls}"><span class="ss-l">${label}</span><b class="ss-v">${big}</b>${sub ? `<span class="ss-s">${sub}</span>` : ''}</div>`;
-    const rows = [...S.wings, { ...T, name: 'Total', code: 'T' }];
+    // with click: Balance to sell and Held open the list of those flats (Units & inventory)
+    const box = (label, big, sub, cls = '', key = '') => `<div class="ss-b ${cls}${click && key ? ' ss-click' : ''}"${click && key ? ` data-ss="${key}" role="button" tabindex="0" title="Show these flats"` : ''}><span class="ss-l">${label}${click && key ? ' <span class="ss-go">→</span>' : ''}</span><b class="ss-v">${big}</b>${sub ? `<span class="ss-s">${sub}</span>` : ''}</div>`;
+    const rows = S.wings.length > 1 ? [...S.wings, { ...T, name: 'Total', code: 'T' }] : S.wings; // one wing: no separate total row
     const miss = [T.soldNoDev ? `${T.soldNoDev} sold flat${T.soldNoDev > 1 ? 's have' : ' has'} no development charges in the ERP yet` : '', T.soldNoArea ? `${T.soldNoArea} sold flat${T.soldNoArea > 1 ? 's have' : ' has'} no carpet area` : ''].filter(Boolean);
     return `<section class="panel ss">
       <div class="ss-head"><h2>${esc(title)}</h2>${link ? `<a class="small" href="${esc(link)}">Units & inventory →</a>` : ''}</div>
       <div class="ss-grid">
         ${box('Saleable flats', T.saleable.toLocaleString('en-IN'), `${sq(T.saleableSqft)} carpet${T.notForSale ? ` · ${T.notForSale} refuge / society not counted` : ''}`)}
         ${box('Sold', T.sold.toLocaleString('en-IN'), `${sq(T.soldSqft)} · ${pct(T.soldSqft, T.saleableSqft)} of the area`, 'good')}
-        ${box('Balance to sell', T.balance.toLocaleString('en-IN'), `${sq(T.balanceSqft)} open for sale`, 'warn')}
-        ${T.held ? box(T.heldMgmt === T.held ? 'Held by management' : 'Held back', T.held.toLocaleString('en-IN'), `${sq(T.heldSqft)} · not for sale now`, 'grey') : ''}
+        ${box('Balance to sell', T.balance.toLocaleString('en-IN'), `${sq(T.balanceSqft)} open for sale`, 'warn', 'balance')}
+        ${T.held ? box(T.heldMgmt === T.held ? 'Held by management' : 'Held back', T.held.toLocaleString('en-IN'), `${sq(T.heldSqft)} · not for sale now`, 'grey', 'held') : ''}
         ${money ? box('Sale value of flats sold', cr(T.saleValue), `Agreement value incl. parking ${cr(T.av)} + amenity & possession ${cr(T.dev)}`) : ''}
         ${money ? box('Average sale rate', T.avgRate ? '₹' + T.avgRate.toLocaleString('en-IN') + ' / sq ft' : '—', 'Sale value ÷ carpet area sold', 'brand') : ''}
       </div>

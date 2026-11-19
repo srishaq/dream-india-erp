@@ -11,7 +11,7 @@ const MANUAL = ['available', 'blocked', 'held', 'refuge', 'rehab', 'society'];
 async function inventory(projectId) {
   const buildings = await db.q('select id, code, name, kind, floors from buildings where project_id = $1 order by code', [projectId]);
   const units = await db.q(
-    `select u.id, u.building_id, u.unit_no, u.floor, u.typology, u.carpet_sqft, u.carpet_sqm, u.status, u.hold_note, u.sample,
+    `select u.id, u.building_id, u.unit_no, u.floor, u.typology, u.carpet_sqft, u.carpet_sqm, u.status, u.hold_note, u.sheet_status, u.sample,
             b.id as booking_id, b.status as booking_status, b.agreement_value,
             (select y.name from booking_applicants a join buyers y on y.id = a.buyer_id where a.booking_id = b.id order by a.seq limit 1) as buyer,
             bb.outstanding, bb.overdue
