@@ -270,6 +270,21 @@ let n = 0; const step = async (name, fn) => { await fn(); n++; console.log('  âœ
     const bc2 = await admin(`/api/books-crm?project=${sig.id}`); assert.equal(bc2.rows.find((x) => x.unit === 'A-1001').booksAv, 485700); // the CRM still has this buyer, so his money stays
     const g = await admin('/api/bank-auto'); assert.equal(g.runs[0].trigger, 'compare'); assert.ok(!g.last || g.last.trigger !== 'compare');
   });
+  await step('Dream Aspire statements: balance only, under ASPIRE; nothing matched or added; misread future dates left out', async () => {
+    const q = require('../lib/db');
+    await q.q("insert into acc_daily_banks (book, name, grp, seq, bf_balance) values ('signature', 'ASPIRE CA 30%', 'SIGNATURE', 50, 6909000) on conflict do nothing");
+    const asp = makeXlsx('Statement', [[], ['Date', 'Narration', 'Chq./Ref.No.', 'Value Dt', 'Withdrawal Amt.', 'Deposit Amt.', 'Closing Balance'],
+      ['18/10/26', 'RTGS CR-SOME BUYER', 'R1', '18/10/26', null, 1000000, 25592468.44], ['19/10/26', 'POS PURCHASE', 'P1', '19/10/26', 6265, null, 25586203.44],
+      ['10/10/32', 'MISREAD DATE', 'X', '10/10/32', null, 5, 25586208.44]]);
+    const r = await admin('/api/bank-auto', { action: 'upload', files: [{ name: 'Dream Aspire HDFC 30_ - 7044.xlsx', data: b64(asp) }] });
+    assert.equal(r.status, 200, r.error);
+    assert.ok(!r.addedRows.some((x) => /Aspire/.test(x.bank)), JSON.stringify(r.addedRows));
+    assert.ok(!r.differences.some((d) => /Aspire/.test(d.bank || '')), JSON.stringify(r.differences.filter((d) => /Aspire/.test(d.bank || ''))));
+    const b = await admin('/api/accounts?view=balances&date=2026-10-20');
+    const row = b.rows.find((x) => x.bank === 'ASPIRE HDFC 30% (7044)'); assert.ok(row, 'the Aspire bank is on the Daily Bank Balance');
+    assert.equal(row.grp, 'ASPIRE'); assert.equal(Math.round(row.closing * 100), 2558620344);
+    assert.ok(!b.rows.some((x) => x.bank === 'ASPIRE CA 30%'), 'the old hand-kept Aspire row no longer counts');
+  });
   console.log(`bank auto, PDC and CA: ${n} checks passed`);
   server.close(); process.exit(0);
 })().catch((e) => { console.error(e); process.exit(1); });
