@@ -47,7 +47,7 @@ async function receiptWhatsapp(id, u, again = false) {
   let document = null;
   if (set.waReceiptPdfTemplate) {
     const f = await require('../lib/receipt-mail').receiptFigures(null, r.id);
-    document = { content: require('../lib/demand-letter').buildReceipt(f.doc), url: wa.fileLink('receipt', r.id), filename: `Receipt_${f.doc.receiptNo.replace(/[^A-Za-z0-9-]+/g, '_')}_${f.doc.unit}.pdf` };
+    document = { content: require('../lib/demand-letter').buildReceipt(f.doc), url: wa.fileLink('receipt', r.id), open: `/api/receipts?pdf=${r.id}`, filename: `Receipt_${f.doc.receiptNo.replace(/[^A-Za-z0-9-]+/g, '_')}_${f.doc.unit}.pdf` };
   }
   const w = await L.waNotice({ bookingId: r.booking_id, kind: 'received', set, userId: u ? u.id : null, params: [k.names, L.rs(r.amount), k.unit_no, L.dmy(r.received_on)], document, template: set.waReceiptPdfTemplate || null });
   if (w.sent) await db.q('update receipts set wa_sent_at = now() where id = $1', [r.id]);

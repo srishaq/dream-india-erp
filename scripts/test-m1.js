@@ -289,6 +289,9 @@ const n = (v) => Number(v);
     const dbx = require('../lib/db'), lt = await dbx.one('select id from demand_letters where run_id = $1 order by id limit 1', [r.id]); assert.ok(lt, 'letters carry the run');
     const pdfTxt = Buffer.from(await (await crm(`/api/letters?pdf=${lt.id}`, null, true)).arrayBuffer()).toString('latin1'); assert.ok((pdfTxt.match(/\/Type \/Page\b/g) || []).length >= 3, 'letter + 2 certificate pages');
     assert.ok(mails.some((m) => /Architect_Certificate/.test(m)), 'the email carries the certificate');
+    // the Communication record keeps the email word for word, with the letter and the certificate to open again
+    const cm = await dbx.one("select body, attachments from communications where kind = 'letter' and channel = 'email' order by id desc limit 1");
+    assert.match(cm.body, /^(\[Test version[^\]]*\]\s+)?Dear /); assert.ok(cm.attachments.some((a) => /^\/api\/letters\?pdf=\d+$/.test(a.url)) && cm.attachments.some((a) => /runAttach/.test(a.url)), JSON.stringify(cm.attachments));
     // a flat's papers for the bank: every receipt, then the latest demand letter with its certificate
     const lb = await dbx.one('select booking_id from demand_letters where id = $1', [lt.id]);
     const pack = await crm(`/api/receipts?pdfAll=${lb.booking_id}&letter=1`, null, true); assert.equal(pack.headers.get('content-type'), 'application/pdf');

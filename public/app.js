@@ -2558,9 +2558,9 @@
   const chIcon = (c) => (c.channel === 'whatsapp' ? 'WhatsApp' : 'Email') + (c.direction === 'in' ? ' from buyer' : ' sent');
   const tick = (d) => ({ sent: '✓', delivered: '✓✓', read: '✓✓ read', failed: 'failed' }[d] || '');
   function msgHtml(c, opts = {}) {
-    const att = (c.attachments || []).map((a) => a.docId ? `<button class="link small" data-doc="${a.docId}" data-n="${esc(a.name)}">📎 ${esc(a.name)}</button>` : `<span class="small muted">📎 ${esc(a.name)}${a.note ? ' (' + esc(a.note) + ')' : ''}</span>`).join(' ');
+    const att = (c.attachments || []).map((a) => a.docId ? `<button class="link small" data-doc="${a.docId}" data-n="${esc(a.name)}">📎 ${esc(a.name)}</button>` : a.url ? `<a class="small" href="${esc(a.url)}" target="_blank" rel="noopener">📎 ${esc(a.name)}</a>` : `<span class="small muted">📎 ${esc(a.name)}${a.note ? ' (' + esc(a.note) + ')' : ''}</span>`).join(' ');
     const long = (c.body || '').length > 420;
-    return `<div class="msg ${c.direction} ${c.read_at || c.direction === 'out' ? '' : 'unread'}" data-id="${c.id}">
+    return `<div class="msg ${c.direction} ${c.read_at || c.direction === 'out' ? '' : 'unread'}" data-id="${c.id}" title="Click to see the full message" style="cursor:pointer">
       <div class="msg-h"><b>${chIcon(c)}</b>${opts.unit && c.unit_no ? ` · <a href="#/booking/${c.booking_id}">${esc(c.unit_no)}</a>` : ''} · <span class="muted">${fmtDate(c.sent_at)}</span>
         ${c.direction === 'out' ? `<span class="muted small"> · ${esc(c.sent_by_name || 'ERP')}${c.delivery ? ' · ' + tick(c.delivery) : ''}</span>` : `<span class="muted small"> · ${esc(c.from_addr || '')}</span>`}</div>
       ${c.subject ? `<div class="msg-s">${esc(c.subject)}</div>` : ''}
@@ -2568,9 +2568,29 @@
       ${att ? `<div class="msg-a">${att}</div>` : ''}
       ${opts.actions || ''}</div>`;
   }
-  function wireMsgs(el) {
-    el.querySelectorAll('[data-more]').forEach((x) => (x.onclick = () => { x.previousElementSibling.classList.remove('clip'); x.remove(); }));
-    el.querySelectorAll('[data-doc]').forEach((x) => (x.onclick = () => openDoc(+x.dataset.doc, x.dataset.n)));
+  // 19 Nov 2026: a click on a message opens it in full: who it went to, when, by whom, the words exactly as sent,
+  // WhatsApp delivery, and the attachments to open again.
+  function msgDetail(c) {
+    const wa = c.channel === 'whatsapp', out = c.direction === 'out';
+    const st = { sent: 'Sent (one tick)', delivered: 'Delivered (two ticks)', read: 'Read by the buyer (blue ticks)', failed: 'Failed: not delivered' }[c.delivery] || c.delivery || '';
+    const att = (c.attachments || []).map((a) => `<li>${a.url ? `<a href="${esc(a.url)}" target="_blank" rel="noopener">📎 ${esc(a.name)}</a>` : a.docId ? `<button class="link" data-doc="${a.docId}" data-n="${esc(a.name)}">📎 ${esc(a.name)}</button>` : `📎 ${esc(a.name)}${a.note ? ' (' + esc(a.note) + ')' : ''}`}</li>`).join('');
+    const row = (k, v) => (v ? `<tr><td class="muted" style="width:120px">${k}</td><td>${v}</td></tr>` : '');
+    const dl = dialog(`<h2>${chIcon(c)}</h2>
+      <table class="small" style="margin-bottom:10px">${row('When', esc(fmtDate(c.sent_at)))}${row(out ? 'To' : 'From', esc(out ? c.to_addr || '' : c.from_addr || ''))}${row(out ? 'Sent by' : 'To', esc(out ? c.sent_by_name || 'The ERP, by itself' : c.to_addr || ''))}
+        ${wa && out ? row('WhatsApp', esc(st)) : ''}${row(wa ? 'Template' : 'Subject', esc(wa ? String(c.subject || '').replace(/^Template: /, '') : c.subject || ''))}${row('Kind', esc(c.kind || ''))}</table>
+      <div class="panel" style="white-space:pre-wrap;margin:0 0 10px">${esc(c.body || '(no text)')}</div>
+      ${att ? `<p class="small"><b>Attachments</b></p><ul class="small" style="margin-top:4px">${att}</ul>` : '<p class="small muted">No attachments.</p>'}
+      ${out && !att && /PDF attached/.test(c.body || '') ? '<p class="small muted">Sent before 19 Nov 2026, when only a summary was kept. Messages from now on show the full text and the files.</p>' : ''}`, async () => {});
+    $('[value=save]', dl).remove(); $('[value=cancel]', dl).textContent = 'Close';
+    dl.querySelectorAll('[data-doc]').forEach((x) => (x.onclick = () => openDoc(+x.dataset.doc, x.dataset.n)));
+  }
+  function wireMsgs(el, rows) {
+    el.querySelectorAll('[data-more]').forEach((x) => (x.onclick = (e) => { e.stopPropagation(); x.previousElementSibling.classList.remove('clip'); x.remove(); }));
+    el.querySelectorAll('[data-doc]').forEach((x) => (x.onclick = (e) => { e.stopPropagation(); openDoc(+x.dataset.doc, x.dataset.n); }));
+    if (rows) el.querySelectorAll('.msg[data-id]').forEach((m) => (m.onclick = (e) => {
+      if (e.target.closest('a,button,select,input,textarea')) return;
+      const c = rows.find((r) => r.id === +m.dataset.id); if (c) msgDetail(c);
+    }));
   }
   async function commPanel(bookingId, unit, el) {
     const d = await api(`/api/comms?booking=${bookingId}`);
@@ -2581,7 +2601,7 @@
         ${d.canTeams ? ` · <select id="cmOwn" class="small"><option value="">Use the wing team</option>${d.crmUsers.map((x) => `<option value="${x.id}" ${x.id === d.crm.own ? 'selected' : ''}>${esc(x.name)} only</option>`).join('')}</select>` : ''}</p>
       ${d.whatsapp.configured ? '' : '<p class="small muted">WhatsApp messages will appear here once the WhatsApp Business number is connected.</p>'}
       <div class="msgs">${d.rows.map((c) => msgHtml(c, { actions: c.direction === 'in' && c.channel === 'email' && d.canAct ? `<div class="msg-x"><button class="link small" data-reply="${c.id}">Reply</button></div>` : '' })).join('') || '<p class="muted">No emails or WhatsApps with this buyer yet. Emails sent from the ERP, and the buyer\'s replies, appear here.</p>'}</div>`;
-    wireMsgs(el);
+    wireMsgs(el, d.rows);
     const again = () => commPanel(bookingId, unit, el);
     if ($('#cmMail', el)) $('#cmMail', el).onclick = () => followupEmail(bookingId, unit, again);
     if ($('#cmOwn', el)) $('#cmOwn', el).onchange = async (e) => { await api('/api/comms', { action: 'allocate', bookingId, userId: e.target.value || null }); toast('CRM in charge updated.'); again(); };
@@ -2904,7 +2924,7 @@
         <div class="actions"><button class="ghost small" id="cmTeams">Save the CRM teams</button></div></details>` : ''}
       <div class="tabs">${[['mine', `Mine${d.counts.mine ? ' (' + d.counts.mine + ')' : ''}`], ['waiting', `Waiting for our reply${d.counts.waiting ? ' (' + d.counts.waiting + ')' : ''}`], ['new', 'All not read'], ['unmatched', 'To link'], ['all', 'All received']].map(([k, l]) => `<button class="tab ${k === f ? 'on' : ''}" data-t="${k}">${l}</button>`).join('')}</div>
       <div class="panel msgs" id="cml">${d.rows.map((c) => msgHtml(c, { unit: true, actions: d.canAct ? `<div class="msg-x">${c.status === 'unmatched' ? `<button class="small" data-link="${c.id}">Link to a flat</button> <button class="link small" data-dis="${c.id}">Not about a buyer</button>${c.matched_by ? ` <span class="small muted">(${esc(c.matched_by)})</span>` : ''}` : `${c.waiting ? `<span class="pill ${c.age_hours > 72 ? 'bad' : 'warn'}">waiting ${c.age_hours >= 48 ? Math.round(c.age_hours / 24) + ' days' : c.age_hours + ' hours'} for our reply</span> ` : ''}<a class="small" href="#/booking/${c.booking_id}">Open the booking to reply</a>${!c.read_at ? ` · <button class="link small" data-read="${c.id}">Mark read</button>` : ''}${c.waiting ? ` · <button class="link small" data-nr="${c.id}">No reply needed</button>` : ''}`}</div>` : '' })).join('') || '<p class="muted">Nothing here.</p>'}</div>`;
-    wireMsgs($('#cml'));
+    wireMsgs($('#cml'), d.rows);
     document.querySelectorAll('.tab[data-t]').forEach((t) => (t.onclick = () => { store.set('erp_cmf', t.dataset.t); comms(); }));
     document.querySelectorAll('[data-goto]').forEach((t) => (t.onclick = () => { store.set('erp_cmf', t.dataset.goto); comms(); }));
     if ($('#waHook')) $('#waHook').onclick = async (e) => { e.target.disabled = true; try { const r = await api('/api/comms', { action: 'wa-webhook' }); toast('Click Connect will now send WhatsApp replies and delivery ticks to the ERP.', 6000); } catch (x) { alert(x.message); } e.target.disabled = false; };

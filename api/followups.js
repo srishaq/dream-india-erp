@@ -77,7 +77,9 @@ async function sendEmail(u, b, res) {
   const ref = b.replyTo ? await db.one("select message_id from communications where id = $1 and booking_id = $2 and channel = 'email'", [intOr(b.replyTo), bk.id]) : null;
   let sent;
   try { sent = await conn.send({ to, cc, subject: (live() ? '' : '[TEST] ') + subject, text: message, html, attachments, inReplyTo: ref && ref.message_id || undefined }); } finally { await conn.close().catch(() => {}); }
-  await require('../lib/comms').logSent({ bookingId: bk.id, to, subject, body: message, sent, kind: ref ? 'reply' : 'follow-up', userId: u.id, test: !live() });
+  const opened = [...[].concat(b.letterIds || []).map((id) => `/api/letters?pdf=${+id}`), ...[].concat(b.receiptIds || []).map((id) => `/api/receipts?pdf=${+id}`)];
+  await require('../lib/comms').logSent({ bookingId: bk.id, to, cc, subject, body: message, sent, kind: ref ? 'reply' : 'follow-up', userId: u.id, test: !live(),
+    attachments: attachments.map((a, i) => ({ name: a.filename, url: opened[i] || null })) });
   await db.tx(async (t) => {
     const r = await t.one("insert into follow_ups (booking_id, kind, outcome, note, next_date, created_by) values ($1, 'Email', 'Email sent', $2, $3, $4) returning id",
       [bk.id, `${live() ? '' : '[TEST to ' + to.join(', ') + '] '}${subject}`.slice(0, 1000), nextDate, u.id]);
