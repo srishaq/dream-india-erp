@@ -289,13 +289,13 @@ button.link { background: none; border: 0; padding: 0; color: var(--brand); font
 .mg-s { font-size: 12.5px; color: var(--ink-2); }
 .mg-l { list-style: none; margin: 0; padding: 0; display: grid; gap: 4px; border-top: 1px solid var(--line); padding-top: 8px; }
 .mg-l li { display: flex; justify-content: space-between; gap: 10px; font-size: 13px; }
-.mg-l li span, .mg-l li a { color: var(--ink-2); min-width: 0; overflow-wrap: anywhere; }
-.mg-l li b { font-weight: 600; white-space: nowrap; text-align: right; }
+.mg-l li span, .mg-l li a { color: var(--ink-2); flex: 1 1 50%; min-width: 7em; overflow-wrap: break-word; }
+.mg-l li b { font-weight: 600; white-space: nowrap; text-align: right; flex: 0 1 auto; }
 .mg-l li.good b { color: var(--good); } .mg-l li.warn b { color: var(--warn); } .mg-l li.bad b { color: var(--bad); }
 .mg-h { font-size: 11.5px; font-weight: 700; letter-spacing: .06em; text-transform: uppercase; color: var(--ink-3); margin-top: 2px; }
 .mg-n { font-size: 12px; color: var(--ink-3); margin: 0; }
 .mg-go { margin-top: auto; font-size: 13px; font-weight: 600; text-decoration: none; align-self: flex-end; }
-@media (max-width: 520px) { .mg-v { font-size: 21px; } .mg-l li b { white-space: normal; } }
+@media (max-width: 520px) { .mg-v { font-size: 21px; } .mg-l li { flex-wrap: wrap; column-gap: 6px; } .mg-l li b { white-space: normal; margin-left: auto; } }
 
 /* back link above every department page */
 .crumb { display: flex; gap: 18px; align-items: center; padding: 14px 28px 0; font-size: 14px; font-weight: 600; }
