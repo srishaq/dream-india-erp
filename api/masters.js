@@ -13,7 +13,8 @@ const KINDS = ['sale', 'rehab', 'commercial', 'other'];
 async function overview(u) {
   const all = auth.has(u, 'masters.edit');
   const companies = await db.q('select id, code, name, pan, gstin, active from companies order by name');
-  const projects = (await db.q(`select p.id, p.code, p.name, p.company_id, c.name as company, p.location, p.rera_no, p.active
+  const projects = (await db.q(`select p.id, p.code, p.name, p.company_id, c.name as company, p.location, p.rera_no, p.active,
+                                        (select count(*)::int from bookings b join units u on u.id = b.unit_id where u.project_id = p.id and b.sale_type = 'contractor' and b.status = 'active') as contractor_flats
                                  from projects p join companies c on c.id = p.company_id order by p.name`))
     .filter((p) => all || u.projects.includes(p.id));
   const ids = projects.map((p) => p.id);
