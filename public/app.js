@@ -333,6 +333,8 @@
     { key: 'flats', label: 'Flats & buyers', show: () => anyOf('inventory.view', 'ledger.view') },
     { key: 'units', label: 'Book a flat (inventory)', show: () => can('inventory.view') },
     { key: 'receipts', label: 'Receipts', show: () => anyOf('receipt.enter', 'receipt.approve', 'ledger.view') },
+    { key: 'sc-dev', label: 'Developer’s bookings', show: () => anyOf('inventory.view', 'ledger.view'), href: () => '#/flats?t=developer' },
+    { key: 'sc-con', label: 'Contractor’s bookings', show: () => anyOf('inventory.view', 'ledger.view'), href: () => '#/flats?t=contractor' },
     { key: 'sc-appr', label: 'Bookings & approvals', show: () => anyOf('inventory.view', 'ledger.view'), href: () => '#/flats?f=approval' },
     { key: 'comms', label: 'Inbox', show: () => can('ledger.view') },
     { key: 'team', label: 'Dream Chat', show: () => anyOf('ledger.view', 'receipt.enter') && !(can('accounts.enter') && !can('demand.raise') && !can('booking.create')) },
@@ -552,6 +554,7 @@
     crmtodo: 'Today’s calls, approvals, letters and what the 9 am check found', flats: 'Every flat and buyer. Open one to see payments, calls, messages and documents in one place',
     'sc-calls': 'Who to call today, broken promises to pay, and buyers never called', 'sc-dues': 'Every buyer with an overdue amount; open one for the full ledger and statement',
     'sc-appr': 'New bookings, cancellations and transfers waiting for approval',
+    'sc-dev': 'Flats we sold: buyers, agreement value, collections and dues', 'sc-con': 'Flats given to the contractor against construction bills: rate, value, adjusted and who holds each flat',
     'acc-bank': 'Daily bank balance, the 2 pm and 7 pm statement checks and reconciling items', 'acc-money': 'Receipts into the bank, payments out and post-dated cheques',
     'acc-tax': 'TDS challans, SDR challans and the compliance calendar', 'acc-sra': 'SRA tenants, their rent and the rent payment links', acctodo: 'What the 9 am Accounts audit found, plus your own tasks',
     training: 'Short videos on how to use each part of the ERP',
@@ -563,11 +566,11 @@
     accreports: 'Reports and the Tally import', checks: 'Daily checks on the registers', dues: 'Balance due by follow-up status, flat by flat, with search and Excel', queries: 'Every correction still to make in the CRM and Accounts, with who fixes it', bookscrm: 'Tally receipts flat by flat against the CRM',
     ca: 'GST, TDS payable, RERA quarterly and cash flow, for the CA', accsetup: 'Bank accounts, heads, statement folders and imports', audit: 'Who changed what, and when',
   };
-  const PICON = { parking: 'grid', 'acc-bank': 'rupee', 'acc-money': 'book', 'acc-tax': 'check', 'acc-sra': 'users', collections: 'chart', flats: 'users', 'sc-calls': 'phone', 'sc-dues': 'book', 'sc-appr': 'check', comms: 'mail', team: 'users', accteam: 'users', sdr: 'rupee', custdocs: 'book', site: 'tower', crmtodo: 'check', acctodo: 'check', training: 'book', dashboard: 'chart', units: 'grid', bookings: 'book', demands: 'tower', receipts: 'rupee', ledgers: 'book', letters: 'mail', followups: 'phone', verify: 'check', prices: 'rupee', partners: 'users',
+  const PICON = { 'sc-dev': 'users', 'sc-con': 'tower', parking: 'grid', 'acc-bank': 'rupee', 'acc-money': 'book', 'acc-tax': 'check', 'acc-sra': 'users', collections: 'chart', flats: 'users', 'sc-calls': 'phone', 'sc-dues': 'book', 'sc-appr': 'check', comms: 'mail', team: 'users', accteam: 'users', sdr: 'rupee', custdocs: 'book', site: 'tower', crmtodo: 'check', acctodo: 'check', training: 'book', dashboard: 'chart', units: 'grid', bookings: 'book', demands: 'tower', receipts: 'rupee', ledgers: 'book', letters: 'mail', followups: 'phone', verify: 'check', prices: 'rupee', partners: 'users',
     accdash: 'chart', balances: 'rupee', bankauto: 'check', 'reg-cancellations': 'users', bookscrm: 'check', checks: 'check', queries: 'check', dues: 'rupee', audit: 'book', ca: 'chart', accsetup: 'grid' };
   const DEPTS = [
     { key: 'crm', title: 'Sales & CRM', sub: 'Today’s work, every flat and buyer in one place, receipts, collections and the inbox', icon: 'chart', tone: '#2B5C8A', group: 'CRM', more: 'CRM tools',
-      sections: [['Every day', ['crmtodo', 'flats', 'receipts', 'comms', 'team']], ['Sales', ['units', 'parking', 'sc-appr', 'prices', 'partners']],
+      sections: [['Every day', ['crmtodo', 'flats', 'receipts', 'comms', 'team']], ['Bookings', ['sc-dev', 'sc-con']], ['Sales', ['units', 'parking', 'sc-appr', 'prices', 'partners']],
         ['Collections', ['dues', 'collections', 'demands', 'letters']], ['Records and checks', ['custdocs', 'verify']]] },
     { key: 'accounts', title: 'Accounts', sub: 'Bank, receipts, payments, PDC, TDS, SRA rent, GST, SDR and Tally', icon: 'book', tone: '#117A65', group: 'Accounts', skip: ['ca', 'bookscrm', 'checks'],
       sections: [['Every day', ['acctodo', 'acc-bank', 'acc-money', 'accteam']], ['Taxes & compliance', ['acc-tax']], ['Refunds, partners & tenants', ['reg-cancellations', 'cpacc', 'acc-sra']], ['Reports & set-up', ['accdash', 'accreports', 'accsetup']]] },
@@ -1057,7 +1060,10 @@
     // the same lists the Collections figures count (worked out in lib/dashboard.js), by flat
     const inList = (k) => new Set(((DB && DB.actions && DB.actions[k]) || []).map((x) => String(x.unit).toUpperCase()));
     const L = { def: inList('defaulters'), tds: inList('tdsPending'), reg: inList('registrationPending') };
-    const rows = B.rows.map((r) => { const u = String(r.unit_no).toUpperCase(), live = r.status === 'active'; return { ...r, f: fu.get(r.id), def: live && L.def.has(u), tdsOnly: live && L.tds.has(u), regPend: live && L.reg.has(u) }; });
+    // Developer's or contractor's bookings only (the two tiles on Sales & CRM)
+    const qt = ((location.hash.split('?')[1] || '').match(/t=(developer|contractor)/) || [])[1] || null;
+    if (qt === 'contractor') return contractorFlats(B.rows.filter((r) => r.sale_type === 'contractor'));
+    const rows = B.rows.filter((r) => !qt || (r.sale_type || 'developer') === qt).map((r) => { const u = String(r.unit_no).toUpperCase(), live = r.status === 'active'; return { ...r, f: fu.get(r.id), def: live && L.def.has(u), tdsOnly: live && L.tds.has(u), regPend: live && L.reg.has(u) }; });
     const req = (r) => r.status === 'active' && (r.cancel_requested_at || r.transfer_requested_at);
     const SETS = [
       ['bookings', 'All bookings', () => true, 'Every booking: active, waiting for approval, cancelled and transferred'],
@@ -1085,9 +1091,14 @@
     const list = rows.filter(cur[2]).filter(mine).sort((a, b) => (f === 'bookings' || f === 'closed' || f === 'approval' ? a.unit_no.localeCompare(b.unit_no, 'en', { numeric: true }) : toNum(b.overdue) - toNum(a.overdue)));
     const todo = (r) => r.status === 'pending' ? '<span class="pill">needs approval</span>' : r.cancel_requested_at && r.status === 'active' ? '<span class="pill bad">cancel requested</span>' : r.transfer_requested_at && r.status === 'active' ? '<span class="pill warn">transfer requested</span>'
       : r.status !== 'active' ? `<span class="pill grey">${esc(r.status)}</span>` : f === 'regpending' && r.reg_next ? `<span class="pill warn">next: ${esc(r.reg_next)}</span>` : r.def ? '<span class="pill bad">defaulter</span>' : r.f && r.f.broken ? '<span class="pill bad">promise broken</span>' : r.f && r.f.due ? '<span class="pill warn">call today</span>' : toNum(r.overdue) > 0 ? '<span class="pill warn">overdue</span>' : '<span class="pill good">on track</span>';
-    $('#page').innerHTML = `<div class="page-head"><div><h1>Flats &amp; buyers</h1><p class="muted">Every flat and buyer in one list. Open a flat to see and do everything for it: payments, calls, messages, documents and history.</p></div>
+    const live = rows.filter((r) => r.status === 'active'), sumOf = (k) => live.reduce((a, r) => a + toNum(r[k]), 0);
+    const devHead = qt === 'developer' ? `<div class="panel"><div class="grid4">
+        <div><div class="muted small">Flats sold</div><b>${live.length}</b></div><div><div class="muted small">Agreement value</div><b>${inr(sumOf('agreement_value'))}</b></div>
+        <div><div class="muted small">Collected (incl. TDS)</div><b>${inr(sumOf('credit_av'))}</b></div><div><div class="muted small">Balance due now / overdue</div><b>${inr(sumOf('outstanding'))}</b> / <b class="${sumOf('overdue') > 0 ? 'bad-t' : ''}">${inr(sumOf('overdue'))}</b></div>
+      </div><p class="small muted" style="margin:8px 0 0">Our own sales only. The contractor's flats are under <a href="#/flats?t=contractor">Contractor's bookings</a>.</p></div>` : '';
+    $('#page').innerHTML = `<div class="page-head"><div>${qt ? `<p class="crumbs"><a href="#/flats">Flats &amp; buyers</a> › ${qt === 'developer' ? 'Developer’s bookings' : ''}</p>` : ''}<h1>${qt === 'developer' ? 'Developer’s bookings' : 'Flats &amp; buyers'}</h1><p class="muted">Every flat and buyer in one list. Open a flat to see and do everything for it: payments, calls, messages, documents and history.</p></div>
       ${can('booking.create') ? '<div class="actions" style="margin:0"><a class="btn" href="#/units">+ Book a flat</a></div>' : ''}</div>
-      <div class="chips">${SETS.map(([k, l, fn, hint]) => { const n = rows.filter(fn).filter(mine).length; return `<button type="button" class="chip ${k === f ? 'on' : ''} ${['call', 'broken'].includes(k) && n ? 'hot' : ''}" data-f="${k}" title="${esc(hint)}">${l} <b>${n}</b></button>`; }).join('')}</div>
+      ${devHead}<div class="chips">${SETS.map(([k, l, fn, hint]) => { const n = rows.filter(fn).filter(mine).length; return `<button type="button" class="chip ${k === f ? 'on' : ''} ${['call', 'broken'].includes(k) && n ? 'hot' : ''}" data-f="${k}" title="${esc(hint)}">${l} <b>${n}</b></button>`; }).join('')}</div>
       <div class="panel table-wrap"><input class="search" id="q" placeholder="Search a flat number, buyer name or phone" autofocus>
       <p class="small muted" style="margin:4px 0 10px">${esc(cur[3])} · ${list.length} flat${list.length === 1 ? '' : 's'}${whoId ? ` · <b>${esc(((T && T.crmUsers) || []).find((x) => x.id === whoId)?.name || 'one person')}'s list</b>${myWings.length ? ' (wing ' + myWings.join(', ') + ')' : ''} · <a href="#/flats?f=${f}">show everyone</a>` : ''}</p>
       <table class="flats"><tr><th>Flat</th><th>Buyer</th><th>Status</th><th class="num">Balance due</th><th class="num">Overdue</th><th>Last contact</th><th>Next call</th><th>Contact</th></tr>
@@ -1097,8 +1108,38 @@
         <td class="small">${r.f && r.f.count ? `${fmtD(r.f.last_at.slice(0, 10))} · ${esc(r.f.outcome || r.f.kind || '')}` : r.f ? '<span class="muted">never</span>' : ''}</td>
         <td class="small">${r.f && r.f.next_date ? fmtD(r.f.next_date) : ''}${r.f && r.f.promise_date ? `<br><span class="muted">promised ${fmtD(r.f.promise_date)}</span>` : ''}</td>
         <td class="small" style="white-space:nowrap">${r.f && r.f.mobile && r.f.wa ? `<a href="tel:+91${esc(r.f.mobile)}" data-stop>Call</a> · <a href="${esc(r.f.wa)}" target="_blank" rel="noopener" data-stop>WhatsApp</a>` : ''}</td></tr>`).join('') || '<tr><td colspan="8" class="muted">Nothing here.</td></tr>'}</table></div>`;
-    document.querySelectorAll('.chip[data-f]').forEach((x) => (x.onclick = () => { history.replaceState(null, '', (x.dataset.f === 'bookings' ? '#/flats' : '#/flats?f=' + x.dataset.f) + (whoId ? (x.dataset.f === 'bookings' ? '?' : '&') + 'who=' + whoId : '')); flats(); }));
+    document.querySelectorAll('.chip[data-f]').forEach((x) => (x.onclick = () => { const qs = [x.dataset.f !== 'bookings' && 'f=' + x.dataset.f, qt && 't=' + qt, whoId && 'who=' + whoId].filter(Boolean).join('&'); history.replaceState(null, '', '#/flats' + (qs ? '?' + qs : '')); flats(); }));
     document.querySelectorAll('tr[data-b]').forEach((tr) => (tr.onclick = (e) => { if (e.target.closest('[data-stop]')) return; go(`#/booking/${tr.dataset.b}`); }));
+    $('#q').oninput = (e) => { const q = e.target.value.toLowerCase().trim(); document.querySelectorAll('tr[data-s]').forEach((tr) => (tr.style.display = tr.dataset.s.includes(q) ? '' : 'none')); };
+  }
+
+  // Contractor's bookings: flats given to the contractor at a flat rate, adjusted against the construction bills.
+  // Nothing is demanded from these buyers; "adjusted" is what Accounts have set off against the contractor's bills.
+  function contractorFlats(all) {
+    const rows = all.filter((r) => r.status === 'active').sort((a, b) => a.unit_no.localeCompare(b.unit_no, 'en', { numeric: true }));
+    const sum = (arr, k) => arr.reduce((a, r) => a + toNum(r[k]), 0);
+    const resold = (r) => !String(r.buyers || '').toLowerCase().includes(String(r.contractor_name || '~').toLowerCase().split(' ')[0]);
+    const tf = ((location.hash.split('?')[1] || '').match(/f=(resold|held)/) || [])[1] || 'all';
+    const list = rows.filter((r) => tf === 'all' || (tf === 'resold' ? resold(r) : !resold(r)));
+    const value = sum(rows, 'agreement_value'), adj = sum(rows, 'credit_av'), area = sum(rows, 'carpet_sqft');
+    const rates = [...new Set(rows.map((r) => toNum(r.contractor_rate)).filter(Boolean))], who = [...new Set(rows.map((r) => r.contractor_name).filter(Boolean))];
+    $('#page').innerHTML = `<div class="page-head"><div><p class="crumbs"><a href="#/flats">Flats &amp; buyers</a> › Contractor’s bookings</p><h1>Contractor’s bookings</h1>
+      <p class="muted">Flats given to ${esc(who.join(', ') || 'the contractor')}${rates.length ? ` at ${rates.map((x) => inr(x)).join(' / ')} a sq ft (carpet)` : ''}, adjusted against the construction bills. Nothing is demanded from these buyers and no receipt or reminder goes to them.</p></div></div>
+      <div class="panel"><div class="grid4">
+        <div><div class="muted small">Flats</div><b>${rows.length}</b> <span class="small muted">· ${rows.filter(resold).length} resold, ${rows.filter((r) => !resold(r)).length} with the contractor</span></div>
+        <div><div class="muted small">Carpet area</div><b>${Math.round(area).toLocaleString('en-IN')} sq ft</b></div>
+        <div><div class="muted small">Value of the flats</div><b>${inr(value)}</b></div>
+        <div><div class="muted small">Adjusted against bills / balance</div><b>${inr(adj)}</b> / <b class="${value - adj > 1 ? 'warn-t' : ''}">${inr(value - adj)}</b></div>
+      </div></div>
+      <div class="chips">${[['all', 'All', rows.length], ['resold', 'Resold by the contractor', rows.filter(resold).length], ['held', 'With the contractor', rows.filter((r) => !resold(r)).length]].map(([k, l, n]) => `<button type="button" class="chip ${k === tf ? 'on' : ''}" data-cf="${k}">${l} <b>${n}</b></button>`).join('')}</div>
+      <div class="panel table-wrap"><input class="search" id="q" placeholder="Search a flat number or buyer name">
+      <table class="flats"><tr><th>Flat</th><th>Held by</th><th class="num">Carpet sq ft</th><th class="num">Rate</th><th class="num">Value</th><th class="num">Adjusted</th><th class="num">Balance</th><th>Registered</th></tr>
+      ${list.map((r) => `<tr class="click" data-b="${r.id}" data-s="${esc((r.unit_no + ' ' + (r.buyers || '')).toLowerCase())}"><td><b>${esc(r.unit_no)}</b></td>
+        <td>${esc(r.buyers || '')} ${resold(r) ? '<span class="pill">resold</span>' : '<span class="pill grey">contractor</span>'}</td><td class="num">${toNum(r.carpet_sqft) || ''}</td><td class="num">${inr(r.contractor_rate)}</td>
+        <td class="num">${inr(r.agreement_value)}</td><td class="num">${inr(r.credit_av)}</td><td class="num">${inr(toNum(r.agreement_value) - toNum(r.credit_av))}</td><td class="small">${r.registration_date ? fmtD(String(r.registration_date).slice(0, 10)) : '<span class="muted">not yet</span>'}</td></tr>`).join('') || '<tr><td colspan="8" class="muted">No contractor’s flats in this project.</td></tr>'}
+      ${list.length ? `<tr><th>Total</th><th></th><th class="num">${Math.round(sum(list, 'carpet_sqft')).toLocaleString('en-IN')}</th><th></th><th class="num">${inr(sum(list, 'agreement_value'))}</th><th class="num">${inr(sum(list, 'credit_av'))}</th><th class="num">${inr(sum(list, 'agreement_value') - sum(list, 'credit_av'))}</th><th></th></tr>` : ''}</table></div>`;
+    document.querySelectorAll('.chip[data-cf]').forEach((x) => (x.onclick = () => { history.replaceState(null, '', '#/flats?t=contractor' + (x.dataset.cf === 'all' ? '' : '&f=' + x.dataset.cf)); flats(); }));
+    document.querySelectorAll('tr[data-b]').forEach((tr) => (tr.onclick = () => go(`#/booking/${tr.dataset.b}`)));
     $('#q').oninput = (e) => { const q = e.target.value.toLowerCase().trim(); document.querySelectorAll('tr[data-s]').forEach((tr) => (tr.style.display = tr.dataset.s.includes(q) ? '' : 'none')); };
   }
 

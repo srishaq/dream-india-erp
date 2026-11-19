@@ -40,6 +40,7 @@ async function receiptWhatsapp(id, u, again = false) {
   const r = await db.one('select id, booking_id, amount, received_on, opening, wa_sent_at, status from receipts where id = $1', [id]);
   if (!r || r.opening || !['pending', 'approved'].includes(r.status)) return { skipped: 'not a live receipt' };
   if (r.wa_sent_at && !again) return { skipped: 'already sent' };
+  if (!again && (await require('../lib/receipt-mail').contractorFlat(r.id))) return { skipped: "contractor's flat: a bill adjustment, not the buyer's payment" };
   const k = await db.one(`select u.unit_no, (select string_agg(y.name, ' & ' order by a.seq) from booking_applicants a join buyers y on y.id = a.buyer_id where a.booking_id = b.id) as names
       from bookings b join units u on u.id = b.unit_id where b.id = $1`, [r.booking_id]);
   // with the receipt PDF when the template with a document is approved (Letter settings: waReceiptPdfTemplate)

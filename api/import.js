@@ -60,6 +60,14 @@ module.exports = route({
   POST: async (req, res, b) => {
     const u = await auth.guard(req, res, 'users.manage'); if (!u) return;
     const projectId = needProject(u, intOr(b.projectId));
+    if (b.action === 'aspire-contractor') {
+      const prj = await db.one('select code from projects where id = $1', [projectId]);
+      if (prj?.code !== 'ASPIRE') throw fail(400, 'This import is for Dream Aspire only.');
+      const { parsed, name } = await readAspire(b);
+      const rate = Number(b.rate) || 22800, contractor = String(b.contractor || 'Buildwell Construction').slice(0, 120);
+      const out = await db.tx((t) => require('../lib/import-aspire').contractorCommit(t, parsed, { projectId, user: u, rate, contractor, source: name }));
+      return res.json({ ok: true, file: name, ...out });
+    }
     if (b.action === 'aspire-preview' || b.action === 'aspire-commit') {
       const prj = await db.one('select code from projects where id = $1', [projectId]);
       if (prj?.code !== 'ASPIRE') throw fail(400, 'This import is for Dream Aspire only.');

@@ -18,6 +18,7 @@ const mask = (s, keep = 4) => (s ? '•'.repeat(Math.max(String(s).length - keep
 async function list(projectId) {
   return db.q(
     `select b.id, b.status, b.booking_date, b.agreement_value, b.registration_date, b.cancel_reason, b.cancel_requested_at, b.transfer_requested_at, b.sample,
+            b.sale_type, b.contractor_name, b.contractor_rate, u.carpet_sqft,
             u.unit_no, u.id as unit_id, bl.code as building, b.crm_user_id, c.name as created_by_name, b.created_by, a.name as approved_by_name,
             (select string_agg(y.name, ' & ' order by ap.seq) from booking_applicants ap join buyers y on y.id = ap.buyer_id where ap.booking_id = b.id) as buyers,
             bb.demanded, bb.credit_av, bb.outstanding, bb.overdue, ${REG_NEXT}

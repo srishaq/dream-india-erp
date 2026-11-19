@@ -95,6 +95,26 @@ let n = 0; const step = async (name, fn) => { await fn(); n++; console.log('  âœ
       console.log('    total outstanding in the ERP ledger:', Math.round(tot));
     }
   });
+  await step("contractor's flats: bookings at the flat rate, no demands, no messages, their own list", async () => {
+    const r = await admin('/api/import', { action: 'aspire-contractor', projectId: asp.id, rate: 22800 });
+    assert.equal(r.status, 200, r.error);
+    console.log('   ', JSON.stringify(r));
+    if (!real) {
+      assert.equal(r.flats, 1); assert.equal(r.total, 459 * 22800); assert.equal(r.resold, 1);
+      const b = await db.one("select b.id, b.sale_type, b.agreement_value, (select count(*)::int from demands d where d.booking_id = b.id) as d, u.status from bookings b join units u on u.id = b.unit_id where u.unit_no = 'A-204' and u.project_id = $1", [asp.id]);
+      assert.equal(b.sale_type, 'contractor'); assert.equal(b.d, 0); assert.equal(b.status, 'registered');
+      // a bill adjustment entered as a receipt sends nothing to the buyer
+      const rm = require('../lib/receipt-mail');
+      const rc = await db.one("insert into receipts (project_id, booking_id, received_on, amount, mode, status, approved_at, note) values ($1, $2, '2026-11-20', 500000, 'other', 'approved', now(), 'Adjusted against RA bill 12') returning id", [asp.id, b.id]);
+      await db.q("insert into receipt_splits (receipt_id, head, amount) values ($1, 'av', 500000)", [rc.id]);
+      assert.deepEqual(await rm.autoSend(rc.id, 'final'), { skipped: "contractor's flat" });
+      const l = await admin(`/api/bookings?project=${asp.id}`);
+      const row = l.rows.find((x) => x.unit_no === 'A-204');
+      assert.equal(row.sale_type, 'contractor'); assert.equal(Number(row.credit_av), 500000); assert.equal(Number(row.overdue || 0), 0);
+    }
+    const again = await admin('/api/import', { action: 'aspire-contractor', projectId: asp.id, rate: 22800 });
+    assert.equal(again.status, 409);
+  });
   await step('a second run is refused', async () => {
     const r = await admin('/api/import', { action: 'aspire-commit', projectId: asp.id });
     assert.equal(r.status, 409);
