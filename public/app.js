@@ -572,7 +572,7 @@
     accdash: 'chart', balances: 'rupee', bankauto: 'check', 'reg-cancellations': 'users', bookscrm: 'check', checks: 'check', queries: 'check', dues: 'rupee', audit: 'book', ca: 'chart', accsetup: 'grid' };
   const DEPTS = [
     { key: 'crm', title: 'Sales & CRM', sub: 'Today’s work, every flat and buyer in one place, receipts, collections and the inbox', icon: 'chart', tone: '#2B5C8A', group: 'CRM', more: 'CRM tools',
-      sections: [['Every day', ['crmtodo', 'flats', 'receipts', 'comms', 'team']], ['Sales', ['units', 'parking', 'sc-appr', 'prices', 'partners']],
+      sections: [['Every day', ['crmtodo', 'flats', 'receipts', 'comms']], ['Sales', ['units', 'parking', 'sc-appr', 'prices', 'partners']],
         ['Collections', ['dues', 'collections', 'demands', 'letters']], ['Records and checks', ['custdocs', 'verify']]] },
     { key: 'accounts', title: 'Accounts', sub: 'Bank, receipts, payments, PDC, TDS, SRA rent, GST, SDR and Tally', icon: 'book', tone: '#117A65', group: 'Accounts', skip: ['ca', 'bookscrm', 'checks'],
       sections: [['Every day', ['acctodo', 'acc-bank', 'acc-money', 'accteam']], ['Taxes & compliance', ['acc-tax']], ['Refunds, partners & tenants', ['reg-cancellations', 'cpacc', 'acc-sra']], ['Reports & set-up', ['accdash', 'accreports', 'accsetup']]] },
