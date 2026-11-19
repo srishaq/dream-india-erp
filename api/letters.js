@@ -53,7 +53,11 @@ module.exports = route({
     // a letter PDF for WhatsApp to fetch: no login, only a signed link that expires (lib/whatsapp.js fileLink)
     if ((req.query || {}).wa) {
       const t = require('../lib/whatsapp').checkLink(req.query.wa);
-      if (!t || t.kind !== 'letter') throw fail(404, 'This link has expired.');
+      if (!t || !['letter', 'receipt'].includes(t.kind)) throw fail(404, 'This link has expired.');
+      if (t.kind === 'receipt') { // the payment receipt PDF, for WhatsApp to fetch
+        const f = await require('../lib/receipt-mail').receiptFigures(null, t.id);
+        return sendPdf(res, require('../lib/demand-letter').buildReceipt(f.doc), `Receipt_${f.doc.receiptNo.replace(/[^A-Za-z0-9-]+/g, '_')}_${f.doc.unit}.pdf`);
+      }
       const l = await db.one('select l.figures, l.letter_type, l.run_id, u.unit_no from demand_letters l join bookings b on b.id = l.booking_id join units u on u.id = b.unit_id where l.id = $1', [t.id]);
       if (!l) throw fail(404, 'Letter not found.');
       return sendPdf(res, await require('../lib/letters').letterPdf(l), `${l.unit_no}_${l.letter_type}.pdf`);
@@ -109,7 +113,7 @@ module.exports = route({
       if (b.testEmail != null) v.testEmail = emails(b.testEmail).slice(0, 1).join('');
       if (b.testMobile != null) { const m = require('../lib/comms').mobile(b.testMobile); if (b.testMobile && !m) throw fail(400, 'Test mobile: a 10-digit Indian mobile number.'); v.testMobile = m || ''; }
       if (b.waEmailTemplate != null) v.waEmailTemplate = str(b.waEmailTemplate, 100).replace(/[^A-Za-z0-9_-]/g, '') || null;
-      for (const k of ['waPdfTemplate', 'waReminderTemplate', 'waReceivedTemplate', 'waRegTemplate']) if (b[k] != null) v[k] = str(b[k], 100).replace(/[^A-Za-z0-9_-]/g, '') || null;
+      for (const k of ['waPdfTemplate', 'waReminderTemplate', 'waReceivedTemplate', 'waRegTemplate', 'waReceiptPdfTemplate']) if (b[k] != null) v[k] = str(b[k], 100).replace(/[^A-Za-z0-9_-]/g, '') || null;
       if (b.autoReminders != null) v.autoReminders = !!b.autoReminders;
       if (b.signatory != null) v.signatory = str(b.signatory, 80) || null;
       if (b.signatoryTitle != null) v.signatoryTitle = str(b.signatoryTitle, 80) || null;
