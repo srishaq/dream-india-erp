@@ -64,6 +64,22 @@ module.exports = route({
       return res.json(c);
     }
     if (req.query.banks) return res.json({ banks: await db.q("select name from acc_banks where active order by name") });
+    // all the flat's receipts in one PDF, and with ?letter=1 the latest demand letter and its architect's certificate
+    if (req.query.pdfAll) {
+      const bk = await bookingFor(u, intOr(req.query.pdfAll));
+      const ids = await db.q("select id from receipts where booking_id = $1 and status in ('pending', 'approved') order by received_on, id", [bk.id]);
+      const docs = []; for (const x of ids) docs.push((await receiptFigures(u, x.id)).doc);
+      let letter = null;
+      if (req.query.letter) {
+        const l = await db.one("select figures, run_id from demand_letters where booking_id = $1 and letter_type = 'Demand Letter' order by created_at desc limit 1", [bk.id]);
+        if (l) letter = { figures: l.figures, annex: await require('../lib/letters').runPages(l.run_id) };
+      }
+      if (!docs.length && !letter) throw fail(404, 'No receipts on this flat yet.');
+      const unit = (docs[0] || (letter && letter.figures) || {}).unit || 'flat';
+      res.setHeader('Content-Type', 'application/pdf');
+      res.setHeader('Content-Disposition', `inline; filename="${String(unit).replace(/[^A-Za-z0-9-]+/g, '_')}_${letter ? 'receipts_and_demand_letter' : 'all_receipts'}.pdf"`);
+      return res.end(require('../lib/demand-letter').buildPack(docs, letter));
+    }
     if (req.query.pdf) {
       const f = await receiptFigures(u, intOr(req.query.pdf));
       const buf = require('../lib/demand-letter').buildReceipt(f.doc);

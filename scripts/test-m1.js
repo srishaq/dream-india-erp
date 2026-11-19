@@ -289,6 +289,10 @@ const n = (v) => Number(v);
     const dbx = require('../lib/db'), lt = await dbx.one('select id from demand_letters where run_id = $1 order by id limit 1', [r.id]); assert.ok(lt, 'letters carry the run');
     const pdfTxt = Buffer.from(await (await crm(`/api/letters?pdf=${lt.id}`, null, true)).arrayBuffer()).toString('latin1'); assert.ok((pdfTxt.match(/\/Type \/Page\b/g) || []).length >= 3, 'letter + 2 certificate pages');
     assert.ok(mails.some((m) => /Architect_Certificate/.test(m)), 'the email carries the certificate');
+    // a flat's papers for the bank: every receipt, then the latest demand letter with its certificate
+    const lb = await dbx.one('select booking_id from demand_letters where id = $1', [lt.id]);
+    const pack = await crm(`/api/receipts?pdfAll=${lb.booking_id}&letter=1`, null, true); assert.equal(pack.headers.get('content-type'), 'application/pdf');
+    const pk = Buffer.from(await pack.arrayBuffer()).toString('latin1'); assert.ok((pk.match(/\/Type \/Page\b/g) || []).length >= 3);
     assert.equal(ok.letters.letters, ok.raised); assert.equal(ok.letters.emailed + ok.letters.noEmail, ok.raised, JSON.stringify(ok.letters)); assert.ok(ok.letters.emailed >= 1 && ok.letters.noEmail >= 1);
     const h = await crm(`/api/followups?booking=${b1}`); assert.ok(h.rows.some((x) => /no email on file/.test(x.note || '')));
     assert.ok(rcpts.length > before);
