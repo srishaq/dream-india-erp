@@ -17,6 +17,25 @@ const audit = require('../lib/audit');
 const SOURCE_TABS = { bookings: ["Developer's Bookings", 'A:AS'], crm: ['CRM Follow up', 'A:AK'], ledger: ['Ledger', 'A:D'], bank: ['Rera Bank Stat.', 'A:P'] };
 const sheetId = () => process.env.CRM_SHEET_ID || sheets.SHEET_ID;
 
+// Dream Aspire: the newest "Master Slab Wise Collection" workbook in the Aspire CRM folder on Drive (or an uploaded copy).
+const ASPIRE_CRM_FOLDER = () => process.env.ASPIRE_CRM_FOLDER || '1sICMmbJra_Qzn_cSda8W3nJ3tLi38GyQ';
+async function readAspire(b) {
+  const aspire = require('../lib/import-aspire');
+  let buf, name;
+  if (b.fileB64) { buf = Buffer.from(String(b.fileB64), 'base64'); name = String(b.fileName || 'uploaded workbook').slice(0, 200); }
+  else if (process.env.IMPORT_ASPIRE_FIXTURE && process.env.VERCEL !== '1') { buf = /\.js$/.test(process.env.IMPORT_ASPIRE_FIXTURE) ? null : require('fs').readFileSync(process.env.IMPORT_ASPIRE_FIXTURE); name = 'Master Slab Wise Collection 17 Nov 2026 (fixture)'; }
+  else {
+    const drive = require('../lib/drive');
+    const files = (await drive.statementFiles([ASPIRE_CRM_FOLDER()]).catch((e) => { throw fail(400, `Could not open the Aspire CRM folder on Drive: ${e.message}. Share it with ${sheets.serviceEmail() || 'the ERP'} or upload the workbook.`); }))
+      .filter((f) => /slab\s*wise|collection/i.test(f.name));
+    if (!files.length) throw fail(400, 'No "Master Slab Wise Collection" workbook in the Aspire CRM folder.');
+    buf = await drive.download(files[0]); name = `${files[0].name} (Drive, ${String(files[0].modifiedTime).slice(0, 10)})`;
+  }
+  let tabs; try { tabs = /\.js$/.test(process.env.IMPORT_ASPIRE_FIXTURE || '') && !b.fileB64 && process.env.VERCEL !== '1' ? require(process.env.IMPORT_ASPIRE_FIXTURE) : require('../lib/xlsx').read(buf); } catch { throw fail(400, 'The workbook could not be read. Save it again as .xlsx.'); }
+  const asOf = /^\d{4}-\d{2}-\d{2}$/.test(b.asOf || '') ? b.asOf : (() => { const m = name.match(/(\d{1,2})\s*([A-Za-z]{3})[A-Za-z]*\s*(\d{4})/); const M = { jan: 1, feb: 2, mar: 3, apr: 4, may: 5, jun: 6, jul: 7, aug: 8, sep: 9, oct: 10, nov: 11, dec: 12 }[m?.[2]?.toLowerCase()]; return m && M ? `${m[3]}-${String(M).padStart(2, '0')}-${m[1].padStart(2, '0')}` : new Date().toISOString().slice(0, 10); })();
+  return { parsed: aspire.parse(tabs, { asOf }), name };
+}
+
 async function readAndParse(projectId, stageDates) {
   let tabs;
   if (process.env.IMPORT_FIXTURE && process.env.VERCEL !== '1') tabs = require(process.env.IMPORT_FIXTURE); // local tests only
@@ -41,6 +60,14 @@ module.exports = route({
   POST: async (req, res, b) => {
     const u = await auth.guard(req, res, 'users.manage'); if (!u) return;
     const projectId = needProject(u, intOr(b.projectId));
+    if (b.action === 'aspire-preview' || b.action === 'aspire-commit') {
+      const prj = await db.one('select code from projects where id = $1', [projectId]);
+      if (prj?.code !== 'ASPIRE') throw fail(400, 'This import is for Dream Aspire only.');
+      const { parsed, name } = await readAspire(b);
+      if (b.action === 'aspire-preview') return res.json({ file: name, summary: parsed.summary, issues: parsed.issues, plans: parsed.plans.map((p) => ({ name: p.name, bookings: p.n, offered: !!p.active })), sample: parsed.bookings.slice(0, 10).map((x) => ({ unit: x.unit_no, buyer: x.applicants.map((a) => a.name).join(' / '), av: x.agreement_value, received: x.received, dueNow: x.dueNow, demanded: x.demands.map((d) => d.stage_name) })) });
+      const out = await db.tx(async (t) => { await t.q("set local statement_timeout = '120s'").catch(() => {}); return require('../lib/import-aspire').commit(t, parsed, { projectId, user: u, source: `Aspire CRM workbook: ${name}` }); });
+      return res.json({ ok: true, file: name, ...out });
+    }
     if (b.action === 'preview') {
       const p = await readAndParse(projectId, b.stageDates);
       const kinds = {};
