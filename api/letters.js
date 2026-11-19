@@ -94,7 +94,7 @@ module.exports = route({
       if (!template) throw fail(400, 'Choose the template to test.');
       const phone = live() ? str(b.mobile, 20) || set.testMobile : set.testMobile;
       if (!phone) throw fail(400, 'Set a test mobile in Letter settings first.');
-      const r = await wa.send({ bookingId: null, phone, template, params: /^payment_/.test(template) ? ['Rahul Sharma', 'Rs. 4,85,000', 'A-1001', '05-Nov-2026'] : /^registration_/.test(template) ? ['Rahul Sharma', 'A-1001', '12-Nov-2026', '11:00 am at the Andheri registrar office'] : ['Rahul Sharma', 'A-1001', 'Rs. 4,85,000', '05-Nov-2026'], userId: u.id, kind: 'test', status: 'dismissed',
+      const r = await wa.send({ bookingId: null, phone, template, params: /^_?payment_/.test(template) ? ['Rahul Sharma', 'Rs. 4,85,000', 'A-1001', '05-Nov-2026'] : /^_?registration_/.test(template) ? ['Rahul Sharma', 'A-1001', '12-Nov-2026', '11:00 am at the Andheri registrar office'] : ['Rahul Sharma', 'A-1001', 'Rs. 4,85,000', '05-Nov-2026'], userId: u.id, kind: 'test', status: 'dismissed',
         document: b.withPdf ? { url: 'https://www.w3.org/WAI/ER/tests/xhtml/testfiles/resources/pdf/dummy.pdf', filename: 'Test_letter.pdf' } : null });
       await audit.record(db.q, { user: u, action: 'whatsapp-test', entity: 'settings', after: { template, to: r.to } });
       return res.json({ ok: true, to: r.to, id: r.id });
