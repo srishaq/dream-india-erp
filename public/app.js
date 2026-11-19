@@ -333,8 +333,8 @@
     { key: 'flats', label: 'Flats & buyers', show: () => anyOf('inventory.view', 'ledger.view') },
     { key: 'units', label: 'Book a flat (inventory)', show: () => can('inventory.view') },
     { key: 'receipts', label: 'Receipts', show: () => anyOf('receipt.enter', 'receipt.approve', 'ledger.view') },
-    { key: 'sc-dev', label: 'Developer’s bookings', show: () => anyOf('inventory.view', 'ledger.view'), href: () => '#/flats?t=developer' },
-    { key: 'sc-con', label: 'Contractor’s bookings', show: () => anyOf('inventory.view', 'ledger.view'), href: () => '#/flats?t=contractor' },
+    { key: 'sc-dev', label: 'Developer’s bookings', show: () => anyOf('inventory.view', 'ledger.view') && ctrProject(), href: () => '#/flats?t=developer' },
+    { key: 'sc-con', label: 'Contractor’s bookings', show: () => anyOf('inventory.view', 'ledger.view') && ctrProject(), href: () => '#/flats?t=contractor' },
     { key: 'sc-appr', label: 'Bookings & approvals', show: () => anyOf('inventory.view', 'ledger.view'), href: () => '#/flats?f=approval' },
     { key: 'comms', label: 'Inbox', show: () => can('ledger.view') },
     { key: 'team', label: 'Dream Chat', show: () => anyOf('ledger.view', 'receipt.enter') && !(can('accounts.enter') && !can('demand.raise') && !can('booking.create')) },
@@ -401,6 +401,8 @@
   ];
   const DETAIL = { report: 'reports', booking: 'flats', statement: 'flats', run: 'demands', pre: 'demands', bankauto: 'bankauto', project: 'home', team: 'team', accteam: 'accteam', cp: 'partners' };
   let projectList = null, proj = null;
+  // projects with contractor's flats (Dream Aspire) get the Developer's / Contractor's bookings tiles; others stay as they were
+  const ctrProject = (id = proj) => !!((projectList || []).find((p) => p.id === id)?.contractor_flats > 0);
   const store = { get: (k) => { try { return localStorage.getItem(k); } catch { return null; } }, set: (k, v) => { try { localStorage.setItem(k, v); } catch {} } };
 
   // Sidebar: one heading per department (CRM, Accounts, Set-up). Tapping a heading opens its pages and folds the others;
@@ -570,7 +572,7 @@
     accdash: 'chart', balances: 'rupee', bankauto: 'check', 'reg-cancellations': 'users', bookscrm: 'check', checks: 'check', queries: 'check', dues: 'rupee', audit: 'book', ca: 'chart', accsetup: 'grid' };
   const DEPTS = [
     { key: 'crm', title: 'Sales & CRM', sub: 'Today’s work, every flat and buyer in one place, receipts, collections and the inbox', icon: 'chart', tone: '#2B5C8A', group: 'CRM', more: 'CRM tools',
-      sections: [['Every day', ['crmtodo', 'sc-dev', 'sc-con', 'receipts', 'comms']], ['Sales', ['units', 'parking', 'sc-appr', 'prices', 'partners']],
+      sections: [['Every day', ['crmtodo', 'flats', 'receipts', 'comms', 'team']], ['Sales', ['units', 'parking', 'sc-appr', 'prices', 'partners']],
         ['Collections', ['dues', 'collections', 'demands', 'letters']], ['Records and checks', ['custdocs', 'verify']]] },
     { key: 'accounts', title: 'Accounts', sub: 'Bank, receipts, payments, PDC, TDS, SRA rent, GST, SDR and Tally', icon: 'book', tone: '#117A65', group: 'Accounts', skip: ['ca', 'bookscrm', 'checks'],
       sections: [['Every day', ['acctodo', 'acc-bank', 'acc-money', 'accteam']], ['Taxes & compliance', ['acc-tax']], ['Refunds, partners & tenants', ['reg-cancellations', 'cpacc', 'acc-sra']], ['Reports & set-up', ['accdash', 'accreports', 'accsetup']]] },
@@ -645,15 +647,16 @@
     const d = await api('/api/masters');
     const p = d.projects.find((x) => x.id === id && x.active);
     if (!p) { $('#page').innerHTML = '<div class="err">This project is not in the ERP.</div>'; return; }
-    if (proj !== p.id) { proj = p.id; store.set('erp_project', proj); if ($('#proj')) $('#proj').value = proj; }
+    if (proj !== p.id) { proj = p.id; store.set('erp_project', proj); return shell(); } // the menu is redrawn for this project
     const dept = DEPTS.find((x) => x.key === location.hash.split('/')[3]);
     if (dept && !dept.soon && !dept.direct) {
       const tiles = pagesOf(dept).map((pg) => ({ title: pg.label, sub: SUB[pg.key] || '', icon: PICON[pg.key] || dept.icon, tone: dept.tone, href: hrefOf(pg) }))
         .concat((dept.later || []).map((t) => ({ title: t, sub: '', icon: dept.icon, tone: dept.tone, soon: true })));
       if (dept.sections) {
-        // the Contractor's bookings tile only where the project has contractor's flats
-        const pg = (k) => (k === 'sc-con' && !p.contractor_flats ? null : PAGES.find((x) => x.key === k && !x.group && x.show()));
-        const secs = dept.sections.map(([h, keys]) => [h, keys.map(pg).filter(Boolean).map((x) => ({ title: x.label, sub: SUB[x.key] || '', icon: PICON[x.key] || dept.icon, tone: dept.tone, href: hrefOf(x) }))]).filter(([, t]) => t.length);
+        const pg = (k) => PAGES.find((x) => x.key === k && !x.group && x.show());
+        // a project with contractor's flats (Dream Aspire): Developer's and Contractor's bookings in the top row instead of Flats & buyers and Dream Chat
+        const sections = dept.key === 'crm' && p.contractor_flats > 0 ? dept.sections.map(([h, keys]) => [h, h === 'Every day' ? ['crmtodo', 'sc-dev', 'sc-con', 'receipts', 'comms'] : keys]) : dept.sections;
+        const secs = sections.map(([h, keys]) => [h, keys.map(pg).filter(Boolean).map((x) => ({ title: x.label, sub: SUB[x.key] || '', icon: PICON[x.key] || dept.icon, tone: dept.tone, href: hrefOf(x) }))]).filter(([, t]) => t.length);
         $('#page').innerHTML = heroHtml(p.name, dept.title, dept.sub, [`#/project/${p.id}`, p.name]) + `<div class="hm">${secs.map(([h, t]) => `<section class="hgroup"><h2>${esc(h)}</h2><div class="tiles five">${t.map(tile).join('')}</div></section>`).join('') || '<p class="muted">Your login has no pages in this section.</p>'}</div>`;
         return;
       }
