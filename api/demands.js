@@ -69,7 +69,22 @@ module.exports = route({
       const rows = run.status === 'draft' ? await eligible(run)
         : await db.q(`select d.booking_id, u.unit_no, d.pct, d.amount, d.gst, (select string_agg(y.name, ' & ' order by ap.seq) from booking_applicants ap join buyers y on y.id = ap.buyer_id where ap.booking_id = d.booking_id) as buyers
                         from demands d join bookings b on b.id = d.booking_id join units u on u.id = b.unit_id where d.run_id = $1 order by u.unit_no`, [run.id]);
-      return res.json({ run, rows });
+      const att = await db.one('select count(*)::int as pages from demand_run_pages where run_id = $1', [run.id]);
+      const L = require('../lib/letters'), wa = require('../lib/whatsapp'), set = await L.settings();
+      const letters = run.status === 'approved' ? await db.one(`select count(*)::int as n, count(*) filter (where sent_via = 'email')::int as emailed, count(*) filter (where wa_sent_at is not null)::int as whatsapp,
+          count(*) filter (where wa_error is not null and wa_sent_at is null)::int as wa_failed, max(wa_error) filter (where wa_sent_at is null) as wa_error from demand_letters where run_id = $1`, [run.id]) : null;
+      return res.json({ run, rows, attach: att.pages ? { name: run.attach_name || "Architect's certificate", pages: att.pages } : null, letters,
+        whatsapp: { connected: wa.configured(), provider: wa.provider(), template: !!(set.waPdfTemplate || set.waEmailTemplate), live: L.live(), testMobile: set.testMobile || null },
+        mail: { cannot: L.cannotEmail(set), live: L.live(), testEmail: set.testEmail || null } });
+    }
+    if (req.query.runAttach) {
+      const run = await db.one('select project_id, attach_name from demand_runs where id = $1', [intOr(req.query.runAttach)]);
+      if (!run) throw fail(404, 'Run not found.');
+      needProject(u, run.project_id);
+      const pages = await require('../lib/letters').runPages(intOr(req.query.runAttach));
+      if (!pages.length) throw fail(404, 'No certificate on this run.');
+      res.setHeader('Content-Type', 'application/pdf'); res.setHeader('Content-Disposition', 'inline; filename="Architect_Certificate.pdf"');
+      return res.end(require('../lib/demand-letter').buildAnnex(pages, run.attach_name || 'Architect certificate'));
     }
     const pid = needProject(u, intOr(req.query.project));
     const o = await overview(pid);
@@ -138,6 +153,39 @@ module.exports = route({
       return res.json({ ok: true, id, ...(await overview(bld.project_id)) });
     }
 
+    // The architect's certificate for the run's stage (19 Nov 2026): the browser turns the PDF or photo into page images
+    // and sends them one by one (i = 0 replaces any earlier certificate). It goes with every letter of the run.
+    if (b.action === 'run.page' || b.action === 'run.unattach' || b.action === 'run.whatsapp') {
+      const run = await db.one('select * from demand_runs where id = $1', [intOr(b.id)]);
+      if (!run) throw fail(404, 'Run not found.');
+      needProject(u, run.project_id);
+      if (!has(u, 'demand.raise') && !has(u, 'demand.approve')) throw fail(403, 'Your role does not allow this.');
+      if (run.status === 'cancelled') throw fail(409, 'This run was cancelled.');
+      if (b.action === 'run.whatsapp') {
+        if (run.status !== 'approved') throw fail(409, 'Approve the run first; the letters are made then.');
+        const ids = (await db.q('select id from demand_letters where run_id = $1 and wa_sent_at is null order by id limit 40', [run.id])).map((x) => x.id);
+        if (!ids.length) return res.json({ ok: true, sent: 0, left: 0 });
+        await db.q('update demand_letters set wa_error = null where id = any($1::int[])', [ids]); // tried again
+        const r = await require('../lib/letters').whatsappLetters(ids, { userId: u.id });
+        if (r.skipped) throw fail(409, `WhatsApp: ${r.skipped}.`);
+        const left = await db.one('select count(*)::int as n from demand_letters where run_id = $1 and wa_sent_at is null and wa_error is null', [run.id]);
+        return res.json({ ok: true, ...r, left: left.n });
+      }
+      if (b.action === 'run.unattach') {
+        await db.q('delete from demand_run_pages where run_id = $1', [run.id]); await db.q('update demand_runs set attach_name = null where id = $1', [run.id]);
+        await audit.record(db.q, { user: u, action: 'remove-certificate', entity: 'demand-run', entityId: run.id, projectId: run.project_id });
+        return res.json({ ok: true });
+      }
+      const i = intOr(b.i), total = intOr(b.total);
+      if (!(i >= 0) || !(total >= 1) || total > 12 || i >= total) throw fail(400, 'Up to 12 pages.');
+      const buf = Buffer.from(String(b.data || ''), 'base64');
+      if (buf.length < 1000 || buf[0] !== 0xff || buf[1] !== 0xd8) throw fail(400, 'The page did not come through as a picture. Please try again.');
+      if (buf.length > 2.5e6) throw fail(400, 'A page is too large.');
+      if (i === 0) { await db.q('delete from demand_run_pages where run_id = $1', [run.id]); await db.q('update demand_runs set attach_name = $2 where id = $1', [run.id, str(b.name, 160) || "Architect's certificate"]); }
+      await db.q('insert into demand_run_pages (run_id, i, data) values ($1, $2, $3) on conflict (run_id, i) do update set data = excluded.data', [run.id, i, buf]);
+      if (i === total - 1) await audit.record(db.q, { user: u, action: 'add-certificate', entity: 'demand-run', entityId: run.id, projectId: run.project_id, after: { name: str(b.name, 160), pages: total } });
+      return res.json({ ok: true, i });
+    }
     if (b.action === 'run.approve' || b.action === 'run.cancel') {
       const run = await db.one('select * from demand_runs where id = $1', [intOr(b.id)]);
       if (!run) throw fail(404, 'Run not found.');

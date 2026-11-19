@@ -1247,7 +1247,7 @@
         <div class="panel"><h2>Receipts ${live && can('receipt.enter') ? '<button class="small" id="receipt2" style="float:right">Enter a receipt</button>' : ''}</h2><div class="table-wrap"><table><tr><th>Date</th><th>Bank / instrument</th><th class="num">Amount</th><th>Split</th><th>Status</th><th>Cheque</th><th></th></tr>
           ${d.receipts.map((r) => `<tr><td>${fmtD(r.received_on)}</td><td>${esc([r.bank, r.instrument_no].filter(Boolean).join(' · ') || r.mode)}</td><td class="num">${inr(r.amount, 2)}</td>
             <td class="small">${Object.entries(r.splits).map(([h, v]) => `${HEAD[h] || h} ${inr(v, 2)}`).join(' · ')}</td><td>${rStatus(r)}</td><td class="small">${r.opening ? '' : chequeCell(r)}</td>
-            <td>${['pending', 'approved'].includes(r.status) && !r.opening ? `<button class="ghost small" data-doc="${r.id}">Receipt</button>` : ''}</td></tr>`).join('') || '<tr><td colspan="7" class="muted">No receipts yet.</td></tr>'}</table></div></div>
+            <td>${['pending', 'approved'].includes(r.status) && !r.opening ? `<button class="ghost small" data-doc="${r.id}">Receipt</button> <a class="btn ghost small" target="_blank" rel="noopener" href="/api/receipts?pdf=${r.id}">Print</a>` : ''}</td></tr>`).join('') || '<tr><td colspan="7" class="muted">No receipts yet.</td></tr>'}</table></div></div>
         <div class="panel"><h2>Payment plan</h2><div class="table-wrap"><table><tr><th class="num">#</th><th>Stage</th><th class="num">%</th><th class="num">Amount</th><th>Demanded on</th><th>Due</th></tr>
           ${d.plan.map((s) => { const x = demanded.get(s.name); return `<tr class="${x ? '' : 'dim'}"><td class="num">${s.seq}</td><td>${esc(s.name)}</td><td class="num">${toNum(s.pct)}%</td><td class="num">${inr(toNum(b.agreement_value) * toNum(s.pct) / 100)}</td><td>${x ? fmtD(x.demand_date) : 'not yet'}</td><td>${x ? fmtD(x.due_date) : ''}</td></tr>`; }).join('')}</table></div></div>
         ${can('ledger.view') ? `<div class="panel" id="ffLedger"><h2>Ledger <a class="btn ghost small" style="float:right" href="#/statement/${b.id}">Print statement</a></h2><p class="muted small">Loading…</p></div>` : ''}
@@ -1474,10 +1474,16 @@
   function receiptDocDialog(id) {
     const dl = dialog(`<h2>Payment receipt for the buyer</h2>
       <p class="muted">Opening the receipt gives it its number (DS/2026-27/0001 and so on). A cheque not yet cleared is marked "subject to realisation".</p>
-      <div class="actions"><a class="btn" target="_blank" rel="noopener" href="/api/receipts?pdf=${id}">Open the receipt (PDF)</a><button type="button" class="ghost" id="rcEmail">Email it to the buyer</button>
-        <button type="button" class="ghost" disabled title="Switches on once WhatsApp is connected">Send on WhatsApp (once connected)</button></div>
+      <div class="actions"><a class="btn" target="_blank" rel="noopener" href="/api/receipts?pdf=${id}">Print / open the receipt (PDF)</a><button type="button" class="ghost" id="rcEmail">Email it to the buyer</button>
+        <button type="button" class="ghost" id="rcWa">Send on WhatsApp</button></div>
       <p class="small muted" id="rcMsg"></p>`, async () => {});
     $('[value=save]', dl).remove(); $('[value=cancel]', dl).textContent = 'Close';
+    $('#rcWa', dl).onclick = async (e) => {
+      e.target.disabled = true;
+      try { const r = await api('/api/receipts', { action: 'receipt-whatsapp', id }); $('#rcMsg', dl).innerHTML = `<b class="good-t">✓ Sent on WhatsApp</b> to ${esc(r.to || 'the buyer')}.`; }
+      catch (err) { $('#rcMsg', dl).innerHTML = `<span class="bad-t">${esc(err.message)}</span>`; }
+      e.target.disabled = false;
+    };
     $('#rcEmail', dl).onclick = async (e) => {
       e.target.disabled = true;
       e.target.textContent = 'Sending…';
@@ -1512,7 +1518,7 @@
           ${['pending', 'approved'].includes(r.status) && anyOf('booking.approve', 'receipt.approve', 'accounts.manage') ? `<button class="ghost small" data-chg="${r.id}" title="Change the amount, date or split: made once Rafi Sir or Sameer approves">Change…</button>` : ''}
           ${r.status === 'bounced' && can('receipt.approve') ? `<button class="ghost small" data-unbounce="${r.id}" title="Marked bounced by mistake">Not bounced</button>` : ''}
           ${r.mode === 'cheque' && !r.bank_status && ['pending', 'approved'].includes(r.status) ? `${!r.handed_on && !r.deposited_on && can('receipt.enter') ? `<button class="ghost small" data-hand="${r.id}">Given to Accounts</button>` : ''}${!r.acc_received_at && !r.deposited_on && canDep ? ` <button class="ghost small" data-rcv="${r.id}" title="The cheque has reached Accounts">Received</button>` : ''}${!r.deposited_on && canDep ? ` <button class="ghost small" data-dep="${r.id}">Deposited</button>` : ''}` : ''}
-          ${['pending', 'approved'].includes(r.status) && !r.opening ? `<button class="ghost small" data-doc="${r.id}" title="${r.receipt_no ? 'Receipt ' + esc(r.receipt_no) + (r.receipt_sent_at ? ', emailed' : '') : 'Give the buyer a payment receipt'}">${r.receipt_no ? 'Receipt ✓' : 'Receipt'}</button>` : ''}
+          ${['pending', 'approved'].includes(r.status) && !r.opening ? `<button class="ghost small" data-doc="${r.id}" title="${r.receipt_no ? 'Receipt ' + esc(r.receipt_no) + (r.receipt_sent_at ? ', emailed' : '') : 'Give the buyer a payment receipt'}">${r.receipt_no ? 'Receipt ✓' : 'Receipt'}</button> <a class="btn ghost small" target="_blank" rel="noopener" href="/api/receipts?pdf=${r.id}" title="Open the receipt to print and hand to the buyer">Print</a>` : ''}
           <a class="btn link small" href="#/${can('accounts.view') && !can('demand.raise') ? 'accteam' : 'team'}/${r.booking_id}" title="Dream Chat with the other team about this flat">Chat</a></td></tr>`).join('') || '<tr><td colspan="10" class="muted">Nothing here.</td></tr>'}</table></div>`;
     document.querySelectorAll('.tab[data-t]').forEach((t) => (t.onclick = () => { store.set('erp_rtab', t.dataset.t); receipts(); }));
     $('#q').oninput = (e) => { const q = e.target.value.toLowerCase(); document.querySelectorAll('tr[data-s]').forEach((tr) => (tr.style.display = tr.dataset.s.includes(q) ? '' : 'none')); };
@@ -1625,17 +1631,69 @@
       async (x) => { await api('/api/demands', { action: 'settings', ...x }); demands(); });
   }
 
+  // A PDF or a photo as page images (JPEG, base64), made here in the browser: the server keeps no PDF library.
+  async function filePages(file) {
+    const jpeg = (c) => c.toDataURL('image/jpeg', 0.82).split(',')[1];
+    const canvas = (w, h) => { const c = document.createElement('canvas'); c.width = Math.ceil(w); c.height = Math.ceil(h); const x = c.getContext('2d'); x.fillStyle = '#fff'; x.fillRect(0, 0, c.width, c.height); return [c, x]; };
+    if (file.type === 'application/pdf' || /\.pdf$/i.test(file.name)) {
+      await loadScript('/vendor/pdfjs/pdf.js');
+      const lib = window.pdfjsLib; lib.GlobalWorkerOptions.workerSrc = '/vendor/pdfjs/pdf.worker.js';
+      const pdf = await lib.getDocument({ data: new Uint8Array(await file.arrayBuffer()), isEvalSupported: false, disableFontFace: true }).promise;
+      if (pdf.numPages > 12) throw new Error('The certificate has more than 12 pages.');
+      const out = [];
+      for (let p = 1; p <= pdf.numPages; p++) {
+        const page = await pdf.getPage(p), v1 = page.getViewport({ scale: 1 });
+        const v = page.getViewport({ scale: Math.min(2.5, 1700 / Math.max(v1.width, v1.height)) });
+        const [c, x] = canvas(v.width, v.height); await page.render({ canvasContext: x, viewport: v }).promise; out.push(jpeg(c));
+      }
+      return out;
+    }
+    if (/^image\//.test(file.type)) {
+      const bmp = await createImageBitmap(file), k = Math.min(1, 1800 / Math.max(bmp.width, bmp.height));
+      const [c, x] = canvas(bmp.width * k, bmp.height * k); x.drawImage(bmp, 0, 0, c.width, c.height); return [jpeg(c)];
+    }
+    throw new Error('Choose a PDF or a photo (JPG or PNG).');
+  }
+
   async function runPage(id) {
     const d = await api(`/api/demands?run=${id}`);
-    const r = d.run;
+    const r = d.run, W = d.whatsapp || {}, Lt = d.letters;
     const total = d.rows.reduce((a, x) => a + toNum(x.amount), 0), gst = d.rows.reduce((a, x) => a + toNum(x.gst), 0);
+    const edit = anyOf('demand.raise', 'demand.approve') && r.status !== 'cancelled';
+    const waLine = !W.connected ? '<span class="bad-t">WhatsApp is not connected to the ERP yet</span>, so letters go by email only. It needs the Click Connect API key and sender number added in Vercel (CCM_API_KEY, CCM_SENDER).'
+      : !W.template ? '<span class="bad-t">No WhatsApp template is set in Letter settings.</span>'
+      : `WhatsApp through ${esc(W.provider)}: the demand letter PDF${d.attach ? ' with the certificate' : ''} goes to every buyer's mobile${W.live ? '' : ` (test version: only to ${esc(W.testMobile || 'the test mobile in Letter settings')})`}.`;
     $('#page').innerHTML = `<p class="crumbs"><a href="#/demands">Stages & demands</a> › ${esc(r.building || '')} · ${esc(r.stage_name)}</p>
       <div class="page-head"><div><h1>${esc(r.building || '')} · ${esc(r.stage_name)}</h1><p class="muted">Demand date ${fmtD(r.demand_date)} · due ${fmtD(r.due_date)} · ${r.status === 'draft' ? 'waiting for approval: these buyers will be charged' : r.status === 'approved' ? 'raised' : 'cancelled'}</p></div>
       <div class="actions" style="margin:0">${r.status === 'draft' && can('demand.approve') ? '<button id="ok">Approve and raise demands</button>' : ''}${r.status === 'draft' && anyOf('demand.raise', 'demand.approve') ? '<button class="ghost" id="cancel">Cancel run</button>' : ''}</div></div>
-      <div class="panel"><div class="kpis">${kpi(d.rows.length, 'buyers')}${kpi(inr(total), 'demand amount')}${kpi(inr(gst), 'GST')}</div></div>
+      <div class="panel"><div class="kpis">${kpi(d.rows.length, 'buyers')}${kpi(inr(total), 'demand amount')}${kpi(inr(gst), 'GST')}${Lt ? kpi(Lt.emailed, 'emailed') + kpi(Lt.whatsapp, 'on WhatsApp', W.connected && Lt.whatsapp < Lt.n ? 'bad' : '') : ''}</div></div>
+      <div class="panel"><h2>Architect's certificate</h2>
+        ${d.attach ? `<p>📎 <a href="/api/demands?runAttach=${r.id}" target="_blank" rel="noopener"><b>${esc(d.attach.name)}</b></a> · ${d.attach.pages} page${d.attach.pages > 1 ? 's' : ''}. It goes with every demand letter of this run: attached to the email, and after the letter on WhatsApp and in print.</p>`
+          : `<p class="small muted">Not attached yet. Upload the architect's certificate for this stage (PDF or a photo) ${r.status === 'draft' ? 'before approving' : ''}; it then goes with every demand letter of this run.</p>`}
+        ${r.status === 'approved' ? `<p class="small muted">The letters were made when the run was approved${d.attach ? '' : '; emails already sent did not have it, but WhatsApp and printing from now on will'}.</p>` : ''}
+        ${edit ? `<div class="actions" style="margin:0"><label class="btn ghost" style="cursor:pointer">${d.attach ? 'Replace' : 'Upload'} the certificate<input type="file" id="attF" accept="application/pdf,image/*" hidden></label>${d.attach ? '<button class="ghost" id="attX">Remove</button>' : ''}<span class="small muted" id="attMsg"></span></div>` : ''}</div>
+      <div class="panel"><h2>Email and WhatsApp</h2>
+        <p class="small">Email: ${d.mail && d.mail.cannot ? `<span class="bad-t">${esc(d.mail.cannot)}</span>` : `every buyer with an email address gets the letter${d.attach ? ' and the certificate' : ''} by email${d.mail && !d.mail.live ? ` (test version: only to ${esc(d.mail.testEmail || 'the test address')})` : ''}.`}<br>${waLine}</p>
+        ${Lt ? `<p class="small">${Lt.n} letters · ${Lt.emailed} emailed · ${Lt.whatsapp} sent on WhatsApp${Lt.wa_failed ? ` · <span class="bad-t">${Lt.wa_failed} could not go on WhatsApp${Lt.wa_error ? ' (' + esc(Lt.wa_error) + ')' : ''}</span>` : ''} · <a href="#/letters">Demand letters page</a></p>
+          ${W.connected && W.template && Lt.whatsapp < Lt.n ? `<div class="actions" style="margin:0"><button id="waGo">Send on WhatsApp now (${Lt.n - Lt.whatsapp} left)</button><span class="small muted" style="align-self:center">The rest also go by themselves every 5 minutes.</span></div>` : ''}` : ''}</div>
       <div class="panel table-wrap"><table><tr><th>Unit</th><th>Buyer</th><th class="num">%</th><th class="num">Amount</th><th class="num">GST</th></tr>
         ${d.rows.map((x) => `<tr><td><a href="#/booking/${x.booking_id}">${esc(x.unit_no)}</a></td><td>${esc(x.buyers || '')}</td><td class="num">${toNum(x.pct)}%</td><td class="num">${inr(x.amount, 2)}</td><td class="num">${inr(x.gst, 2)}</td></tr>`).join('') || '<tr><td colspan="5" class="muted">No buyers to charge.</td></tr>'}</table></div>`;
-    if ($('#ok')) $('#ok').onclick = async () => { if (!confirm(`Raise ${d.rows.length} demands totalling ${inr(total)} plus GST?`)) return; try { const o = await api('/api/demands', { action: 'run.approve', id: r.id }); const L = o.letters || {}; toast(`${o.raised} demands raised. ` + (L.error ? 'Letters: ' + L.error : L.notEmailed ? `${L.letters} letters ready on the Demand letters page (${L.notEmailed})` : L.letters ? `${L.emailed} letters emailed${L.waiting ? ', ' + L.waiting + ' more within 5 minutes' : ''}${L.whatsapp ? ', ' + L.whatsapp + ' WhatsApps sent' : ''}${L.noEmail ? `. ${L.noEmail} buyer${L.noEmail > 1 ? 's have' : ' has'} no email: see Print and courier on Today` : ''}${L.errors ? ', ' + L.errors + ' could not be sent' : ''}.` : ''), 8000); runPage(id); } catch (e) { alert(e.message); } };
+    if ($('#attF')) $('#attF').onchange = async (e) => {
+      const file = e.target.files[0]; if (!file) return;
+      const msg = $('#attMsg');
+      try {
+        msg.textContent = 'Reading the file…';
+        const pages = await filePages(file);
+        for (let i = 0; i < pages.length; i++) { msg.textContent = `Uploading page ${i + 1} of ${pages.length}…`; await api('/api/demands', { action: 'run.page', id: r.id, i, total: pages.length, name: file.name.replace(/\.[a-z0-9]+$/i, ''), data: pages[i] }); }
+        toast(`Certificate attached (${pages.length} page${pages.length > 1 ? 's' : ''}).`); runPage(id);
+      } catch (err) { msg.textContent = ''; alert(err.message); }
+    };
+    if ($('#attX')) $('#attX').onclick = async () => { if (!confirm('Remove the certificate from this run?')) return; try { await api('/api/demands', { action: 'run.unattach', id: r.id }); runPage(id); } catch (e) { alert(e.message); } };
+    if ($('#waGo')) $('#waGo').onclick = async (e) => {
+      e.target.disabled = true; e.target.textContent = 'Sending…';
+      try { const o = await api('/api/demands', { action: 'run.whatsapp', id: r.id }); toast(`${o.sent} sent on WhatsApp${o.errors ? `, ${o.errors} could not be sent${o.firstError ? ' (' + o.firstError + ')' : ''}` : ''}${o.left ? `. ${o.left} left: press again or they go by themselves` : ''}.`, 9000); runPage(id); } catch (err) { alert(err.message); runPage(id); }
+    };
+    if ($('#ok')) $('#ok').onclick = async () => { if (!confirm(`Raise ${d.rows.length} demands totalling ${inr(total)} plus GST?${d.attach ? '' : "\n\nNo architect's certificate is attached: the letters will go without it."}`)) return; try { const o = await api('/api/demands', { action: 'run.approve', id: r.id }); const L = o.letters || {}; toast(`${o.raised} demands raised. ` + (L.error ? 'Letters: ' + L.error : L.notEmailed ? `${L.letters} letters ready on the Demand letters page (${L.notEmailed})` : L.letters ? `${L.emailed} letters emailed${L.waiting ? ', ' + L.waiting + ' more within 5 minutes' : ''}${L.whatsapp ? ', ' + L.whatsapp + ' WhatsApps sent' : L.whatsappNote ? ' (WhatsApp: ' + L.whatsappNote + ')' : ''}${L.noEmail ? `. ${L.noEmail} buyer${L.noEmail > 1 ? 's have' : ' has'} no email: see Print and courier on Today` : ''}${L.errors ? ', ' + L.errors + ' could not be sent' : ''}.` : ''), 9000); runPage(id); } catch (e) { alert(e.message); } };
     if ($('#cancel')) $('#cancel').onclick = async () => { if (!confirm('Cancel this draft run?')) return; try { await api('/api/demands', { action: 'run.cancel', id: r.id }); go('#/demands'); } catch (e) { alert(e.message); } };
   }
 

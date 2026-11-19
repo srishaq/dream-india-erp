@@ -33,6 +33,20 @@ async function list(projectId, status) {
       order by (r.status = 'pending') desc, r.received_on desc, r.id desc limit 1000`, [projectId, status]);
 }
 
+// The buyer's WhatsApp for a receipt (payment_received template: name, amount, flat, date), once per receipt unless
+// sent again by hand. Says why when it could not go (WhatsApp not connected, no mobile, no template).
+async function receiptWhatsapp(id, u, again = false) {
+  const L = require('../lib/letters');
+  const r = await db.one('select id, booking_id, amount, received_on, opening, wa_sent_at, status from receipts where id = $1', [id]);
+  if (!r || r.opening || !['pending', 'approved'].includes(r.status)) return { skipped: 'not a live receipt' };
+  if (r.wa_sent_at && !again) return { skipped: 'already sent' };
+  const k = await db.one(`select u.unit_no, (select string_agg(y.name, ' & ' order by a.seq) from booking_applicants a join buyers y on y.id = a.buyer_id where a.booking_id = b.id) as names
+      from bookings b join units u on u.id = b.unit_id where b.id = $1`, [r.booking_id]);
+  const w = await L.waNotice({ bookingId: r.booking_id, kind: 'received', userId: u ? u.id : null, params: [k.names, L.rs(r.amount), k.unit_no, L.dmy(r.received_on)] });
+  if (w.sent) await db.q('update receipts set wa_sent_at = now() where id = $1', [r.id]);
+  return w;
+}
+
 module.exports = route({
   GET: async (req, res) => {
     const u = await auth.guard(req, res); if (!u) return;
@@ -113,9 +127,20 @@ module.exports = route({
       if (mode === 'cheque') await require('../lib/team').system('accounts', `Cheque to deposit: ${bk.unit_no}, ₹${Math.round(rupees(amount)).toLocaleString('en-IN')}${instrument ? ', cheque ' + instrument : ''}${b.bank ? ' (' + str(b.bank, 80) + ')' : ''}, received ${on}, entered by ${u.name}. Mark it Received when you have it, and Deposited when it goes to the bank.`, { bookingId: bk.id, receiptId: id, needsAction: true });
       // the buyer gets the provisional receipt ("subject to clearance") straight away
       const mail = await require('../lib/receipt-mail').autoSend(id, 'provisional', u);
-      return res.json({ ok: true, id, mail });
+      // and on WhatsApp (19 Nov 2026: as soon as the receipt is entered, not only once it is approved)
+      const whatsapp = await receiptWhatsapp(id, u).catch((e) => ({ error: e.message }));
+      return res.json({ ok: true, id, mail, whatsapp });
     }
 
+    // WhatsApp the buyer about this receipt by hand (the receipt window's button)
+    if (b.action === 'receipt-whatsapp') {
+      const rc = await db.one('select project_id from receipts where id = $1', [intOr(b.id)]);
+      if (!rc) throw fail(404, 'Receipt not found.');
+      needProject(u, rc.project_id);
+      const w = await receiptWhatsapp(intOr(b.id), u, true);
+      if (w.skipped) throw fail(409, `Not sent on WhatsApp: ${w.skipped}.`);
+      return res.json({ ok: true, ...w });
+    }
     // Email the payment receipt (PDF attached) to the buyer; until the ERP is live, to the test address only.
     if (b.action === 'receipt-email') {
       if (!(has(u, 'receipt.enter') || has(u, 'receipt.approve') || has(u, 'demand.raise'))) throw fail(403, 'Your role does not allow this.');
@@ -185,12 +210,7 @@ module.exports = route({
       });
       // the buyer gets a WhatsApp thank-you once the payment is approved (payment_received template)
       let whatsapp = null;
-      if (status === 'approved' && !r.opening) {
-        const L = require('../lib/letters');
-        const k = await db.one(`select u.unit_no, (select string_agg(y.name, ' & ' order by a.seq) from booking_applicants a join buyers y on y.id = a.buyer_id where a.booking_id = b.id) as names
-            from bookings b join units u on u.id = b.unit_id where b.id = $1`, [r.booking_id]).catch(() => null);
-        if (k) whatsapp = await L.waNotice({ bookingId: r.booking_id, kind: 'received', userId: u.id, params: [k.names, L.rs(r.amount), k.unit_no, L.dmy(r.received_on)] }).catch((e) => ({ error: e.message }));
-      }
+      if (status === 'approved' && !r.opening && !r.wa_sent_at) whatsapp = await receiptWhatsapp(r.id, u).catch((e) => ({ error: e.message }));
       // the final receipt, with its number, by email
       const mail = status === 'approved' && !r.opening ? await require('../lib/receipt-mail').autoSend(r.id, 'final', u) : null;
       return res.json({ ok: true, whatsapp, mail });

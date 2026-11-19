@@ -54,9 +54,9 @@ module.exports = route({
     if ((req.query || {}).wa) {
       const t = require('../lib/whatsapp').checkLink(req.query.wa);
       if (!t || t.kind !== 'letter') throw fail(404, 'This link has expired.');
-      const l = await db.one('select l.figures, l.letter_type, u.unit_no from demand_letters l join bookings b on b.id = l.booking_id join units u on u.id = b.unit_id where l.id = $1', [t.id]);
+      const l = await db.one('select l.figures, l.letter_type, l.run_id, u.unit_no from demand_letters l join bookings b on b.id = l.booking_id join units u on u.id = b.unit_id where l.id = $1', [t.id]);
       if (!l) throw fail(404, 'Letter not found.');
-      return sendPdf(res, buildLetter(l.figures), `${l.unit_no}_${l.letter_type}.pdf`);
+      return sendPdf(res, await require('../lib/letters').letterPdf(l), `${l.unit_no}_${l.letter_type}.pdf`);
     }
     const u = await auth.guard(req, res); if (!u) return;
     if (!has(u, 'demand.raise') && !has(u, 'ledger.view')) throw fail(403, 'Your role does not allow this.');
@@ -67,8 +67,10 @@ module.exports = route({
       const rows = await db.q('select l.*, u.project_id, u.unit_no from demand_letters l join bookings b on b.id = l.booking_id join units u on u.id = b.unit_id where l.id = any($1::int[]) order by u.unit_no', [ids]);
       if (!rows.length) throw fail(404, 'Letter not found.');
       for (const r of rows) needProject(u, r.project_id);
-      if (rows.length === 1) return sendPdf(res, buildLetter(rows[0].figures), `${rows[0].unit_no}_${rows[0].letter_type}.pdf`);
-      return sendPdf(res, buildMany(rows.map((r) => r.figures)), `demand_letters_${today()}.pdf`);
+      // with the architect's certificate of the letter's demand run after each letter
+      const L = require('../lib/letters'), cache = new Map(), annex = []; for (const r of rows) annex.push(await L.runPages(r.run_id, cache));
+      if (rows.length === 1) return sendPdf(res, buildLetter(rows[0].figures, annex[0]), `${rows[0].unit_no}_${rows[0].letter_type}.pdf`);
+      return sendPdf(res, buildMany(rows.map((r) => r.figures), annex), `demand_letters_${today()}.pdf`);
     }
     if (q.preview) {
       await bookingFor(u, intOr(q.preview));

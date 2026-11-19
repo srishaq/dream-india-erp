@@ -7,13 +7,13 @@ process.env.ONE_CHEQUE_FROM = '2026-10-28'; // cheques from this date pay one fl
 const server = require('./dev-server');
 // A fake mail server on this machine records who each email was addressed to.
 const net = require('net');
-const rcpts = [];
+const rcpts = [], mails = [];
 const smtp = net.createServer((sock) => {
   sock.setEncoding('utf8'); let data = false, buf = '', authStep = 0;
   sock.write('220 test\r\n');
   sock.on('data', (d) => {
     buf += d;
-    if (data) { if (buf.includes('\r\n.\r\n')) { data = false; buf = ''; sock.write('250 ok\r\n'); } return; }
+    if (data) { if (buf.includes('\r\n.\r\n')) { mails.push(buf); data = false; buf = ''; sock.write('250 ok\r\n'); } return; }
     let i; while ((i = buf.indexOf('\r\n')) >= 0) {
       const line = buf.slice(0, i); buf = buf.slice(i + 2);
       if (/^EHLO/i.test(line)) sock.write('250 hello\r\n');
@@ -278,7 +278,17 @@ const n = (v) => Number(v);
     if (!st.ok) return console.log('   (skipped: ' + (st.error || 'no next stage') + ')');
     const r = await crm('/api/demands', { action: 'run.create', buildingId: A.id, stageName: next, demandDate: '2026-10-21' });
     const before = rcpts.length;
+    // the architect's certificate for the stage, uploaded as page images, goes with every letter of the run
+    const jpg = require('fs').readFileSync(require('path').join(__dirname, '../lib/demand-assets/header.jpg')).toString('base64');
+    assert.equal((await crm('/api/demands', { action: 'run.page', id: r.id, i: 0, total: 2, name: 'Plinth certificate', data: jpg })).ok, true);
+    assert.equal((await crm('/api/demands', { action: 'run.page', id: r.id, i: 1, total: 2, name: 'Plinth certificate', data: jpg })).ok, true);
+    assert.equal((await crm('/api/demands', { action: 'run.page', id: r.id, i: 0, total: 1, data: 'bm90IGEgcGljdHVyZQ==' })).status, 400);
+    const rv = await crm(`/api/demands?run=${r.id}`); assert.deepEqual(rv.attach, { name: 'Plinth certificate', pages: 2 });
+    const cert = Buffer.from(await (await crm(`/api/demands?runAttach=${r.id}`, null, true)).arrayBuffer()).toString('latin1'); assert.match(cert, /%PDF/); assert.equal((cert.match(/\/Type \/Page\b/g) || []).length, 2);
     const ok = await headcrm('/api/demands', { action: 'run.approve', id: r.id });
+    const dbx = require('../lib/db'), lt = await dbx.one('select id from demand_letters where run_id = $1 order by id limit 1', [r.id]); assert.ok(lt, 'letters carry the run');
+    const pdfTxt = Buffer.from(await (await crm(`/api/letters?pdf=${lt.id}`, null, true)).arrayBuffer()).toString('latin1'); assert.ok((pdfTxt.match(/\/Type \/Page\b/g) || []).length >= 3, 'letter + 2 certificate pages');
+    assert.ok(mails.some((m) => /Architect_Certificate/.test(m)), 'the email carries the certificate');
     assert.equal(ok.letters.letters, ok.raised); assert.equal(ok.letters.emailed + ok.letters.noEmail, ok.raised, JSON.stringify(ok.letters)); assert.ok(ok.letters.emailed >= 1 && ok.letters.noEmail >= 1);
     const h = await crm(`/api/followups?booking=${b1}`); assert.ok(h.rows.some((x) => /no email on file/.test(x.note || '')));
     assert.ok(rcpts.length > before);
@@ -297,9 +307,11 @@ const n = (v) => Number(v);
       const sends = got.filter((g) => g.url.startsWith('/api/v1/whatsapp/single?sval=1&api_key=test-key')).map((g) => JSON.parse(g.body));
       assert.equal(sends.length, 2);
       assert.ok(sends.every((m) => m.to === '919800000001' && m.sender === '919811100000')); // the test mobile, never the buyer
-      const em = sends.find((m) => m.template_id === 'demand_letter_emailed_abc123'), pdf = sends.find((m) => m.template_id === 'demand_letter_pdf_xyz789');
-      assert.ok(em && !em.sample.media); assert.equal(em.sample.bodyvar.length, 4);
+      // 19 Nov 2026: the letter PDF goes to every buyer on WhatsApp, emailed or not
+      assert.ok(sends.every((m) => m.template_id === 'demand_letter_pdf_xyz789' && m.sample.bodyvar.length === 4), JSON.stringify(sends.map((m) => m.template_id)));
+      const pdf = sends.find((m) => m.template_id === 'demand_letter_pdf_xyz789');
       assert.ok(pdf && /\/api\/letters\?wa=letter\./.test(pdf.sample.media));
+      assert.equal((await L.whatsappLetters([withEmail.id, noEmail.id], {})).sent, 0); // each letter goes once
       const f = await fetch(pdf.sample.media); assert.equal(f.headers.get('content-type'), 'application/pdf'); // WhatsApp can fetch the PDF without a login
       assert.equal((await fetch(pdf.sample.media.replace(/.$/, (c) => (c === 'a' ? 'b' : 'a')))).status, 404); // a changed link does not open
       const q = await crm(`/api/letters?project=${sig.id}`); assert.ok(!q.courier.some((c) => c.id === noEmail.id));
