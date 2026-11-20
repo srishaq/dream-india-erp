@@ -421,7 +421,7 @@
     const sp = $('#sendPost', dl); if (sp) sp.onclick = () => { $('[name=send]', dl).value = '1'; $('form', dl).requestSubmit(); };
     const bp = $('#backPost', dl); if (bp) bp.onclick = async () => { const note = prompt('What should change?'); if (!note || !note.trim()) return; await C.api('/api/marketing', { action: 'post.sendback', data: { id: p.id, note } }); dl.close(); dl.remove(); C.toast('Sent back to the marketing team.'); await load(); paint(); };
     $$('[data-rmf]', dl).forEach((b) => (b.onclick = async () => { if (!confirm('Remove this file?')) return; await C.api('/api/marketing', { action: 'post.file.delete', data: { id: +b.dataset.rmf } }); b.closest('.mk-file').remove(); await load(); }));
-    const ap = $('#apprPost', dl); if (ap) ap.onclick = async () => { await C.api('/api/marketing', { action: 'post.status', data: { id: p.id, status: 'approved' } }); dl.close(); dl.remove(); C.toast('Approved.'); await load(); paint(); };
+    const ap = $('#apprPost', dl); if (ap) ap.onclick = async () => { const r = await C.api('/api/marketing', { action: 'post.status', data: { id: p.id, status: 'approved' } }); dl.close(); dl.remove(); C.toast((r && r.note) || 'Approved.', 7000); await load(); paint(); };
     const dp = $('#delPost', dl); if (dp) dp.onclick = async (e) => { e.preventDefault(); if (!confirm('Delete this post from the calendar?')) return; await C.api('/api/marketing', { action: 'post.delete', data: { id: p.id } }); dl.close(); dl.remove(); await load(); paint(); };
   }
 

@@ -717,7 +717,19 @@ const handler = route({
     if (a === 'post.status') {
       const id = intOr(d.id); let st = d.status;
       if (!STATUSES.includes(st)) throw fail(400, 'Unknown status.');
-      if (st === 'approved') { if (!canApprove(u)) throw fail(403, 'Management approves posts.'); await db.q("update mkt_posts set status = 'approved', approved_by = $2, approved_at = now(), review_note = null, updated_at = now() where id = $1", [id, u.id]); }
+      let note = null;
+      if (st === 'approved') {
+        if (!canApprove(u)) throw fail(403, 'Management approves posts.');
+        const r = await db.one("update mkt_posts set status = 'approved', approved_by = $2, approved_at = now(), review_note = null, updated_at = now() where id = $1 returning publish_at, array_to_json(channels) as channels, (select count(*)::int from mkt_post_files f where f.post_id = mkt_posts.id) as files", [id, u.id]);
+        // say plainly when (or whether) it will go out by itself
+        const auto = (r.channels || []).filter((c) => ['instagram', 'facebook'].includes(c));
+        const when = r.publish_at ? new Date(r.publish_at) : null;
+        if (!auto.length) note = 'Approved. This post is not for Instagram or Facebook, so it is posted by hand.';
+        else if (!when) note = 'Approved, but it has no date and time: set one and it posts itself then.';
+        else if (when < new Date(Date.now() - 3 * 864e5)) note = 'Approved, but its date has passed: set a new date and time and it posts itself then.';
+        else if (auto.includes('instagram') && !r.files) note = 'Approved, but Instagram needs the design attached: attach it and it posts itself.';
+        else note = when <= new Date() ? 'Approved: it posts within 5 minutes.' : `Approved: it posts itself on ${when.toLocaleString('en-IN', { timeZone: 'Asia/Kolkata', day: 'numeric', month: 'short', hour: 'numeric', minute: '2-digit' })}.`;
+      }
       else {
         editOnly();
         // with approvals on, a post not approved yet goes for review instead of to the calendar (as when it is saved)
@@ -728,7 +740,7 @@ const handler = route({
         await db.q('update mkt_posts set status = $2, post_url = coalesce($3, post_url), updated_by = $4, updated_at = now() where id = $1', [id, st, url(d.postUrl), u.id]);
       }
       await log('status', 'mkt-post', id, { status: st });
-      return res.json({ ok: true, status: st });
+      return res.json({ ok: true, status: st, note });
     }
     // the finished design: an image, PDF or short video exported from Canva (up to 3 MB; a longer video goes as a Drive link)
     if (a === 'post.file') {
