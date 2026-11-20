@@ -118,12 +118,13 @@ module.exports = route({
       // Rules agreed in the 4 Nov meeting:
       //  - one cheque pays one flat: a cheque dated from ONE_CHEQUE_FROM (go-live) that is already entered on another flat is refused
       //    (separate cheques per flat). Older cheques were sometimes written for two or three flats: those may still be split, with a confirm;
-      //  - the same cheque / UTR with the same date and amount on the same flat is a double entry and is refused.
+      //  - the same cheque / UTR for the same amount on the same flat is a double entry and is refused (any date, unless the first bounced).
       if (instrument) {
         const norm = "upper(regexp_replace(r.instrument_no, '\\s', '', 'g')) = upper(regexp_replace($2, '\\s', '', 'g'))";
         const twin = await db.one(`select r.id, u.unit_no from receipts r join bookings bb on bb.id = r.booking_id join units u on u.id = bb.unit_id
-            where r.booking_id = $1 and ${norm} and r.received_on = $3 and r.amount = $4 and r.status not in ('rejected', 'reversed') limit 1`, [bk.id, instrument, on, rupees(amount)]);
-        if (twin) throw Object.assign(fail(409, `This receipt is already entered: ${twin.unit_no}, ${mode === 'cheque' ? 'cheque' : 'UTR'} ${instrument}, same date and amount. It cannot be entered twice.`), { duplicate: twin.id, blocked: true });
+            where r.booking_id = $1 and ${norm} and r.amount = $3 and r.status not in ('rejected', 'reversed', 'bounced') limit 1`, [bk.id, instrument, rupees(amount)]);
+        // 20 Nov 2026: refused whatever the date (B-1502's cheque 505765 was entered on 16 and 20 Nov); a bounced cheque presented again is allowed
+        if (twin) throw Object.assign(fail(409, `This receipt is already entered: ${twin.unit_no}, ${mode === 'cheque' ? 'cheque' : 'UTR'} ${instrument} for the same amount. It cannot be entered twice.`), { duplicate: twin.id, blocked: true });
         if (mode === 'cheque' && on >= ONE_CHEQUE_FROM) {
           const other = await db.one(`select r.id, u.unit_no from receipts r join bookings bb on bb.id = r.booking_id join units u on u.id = bb.unit_id
               where r.project_id = $1 and r.booking_id <> $3 and r.mode = 'cheque' and ${norm} and r.status not in ('rejected', 'reversed', 'bounced') limit 1`, [bk.project_id, instrument, bk.id]);

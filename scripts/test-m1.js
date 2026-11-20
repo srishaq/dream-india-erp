@@ -375,6 +375,8 @@ const n = (v) => Number(v);
     assert.ok(rcpts.length > before); assert.ok(rcpts.slice(before).every((x) => x === 'tester@erp.test'));
     const twin = await crm('/api/receipts', { action: 'create', bookingId: b1, receivedOn: '2026-10-25', amount: '5000', mode: 'cheque', instrumentNo: 'chq7771', splits: { av: '5000' }, allowDuplicate: true });
     assert.equal(twin.status, 409); assert.equal(twin.blocked, true); assert.match(twin.error, /cannot be entered twice/);
+    const later = await crm('/api/receipts', { action: 'create', bookingId: b1, receivedOn: '2026-10-28', amount: '5000', mode: 'cheque', instrumentNo: 'CHQ 7771', splits: { av: '5000' }, allowDuplicate: true });
+    assert.equal(later.status, 409); assert.equal(later.blocked, true, 'the same cheque and amount on another date is still a double entry');
     // an old cheque (before go-live) for two flats: asked, then allowed
     const ask = await crm('/api/receipts', { action: 'create', bookingId: bEmail, receivedOn: '2026-10-25', amount: '3000', mode: 'cheque', instrumentNo: 'CHQ7771', splits: { av: '3000' } });
     assert.equal(ask.status, 409); assert.ok(!ask.blocked); assert.match(ask.error, /split across flats/);
