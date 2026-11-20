@@ -1124,6 +1124,9 @@
     const todo = (r) => r.status === 'pending' ? '<span class="pill">needs approval</span>' : r.cancel_requested_at && r.status === 'active' ? '<span class="pill bad">cancel requested</span>' : r.transfer_requested_at && r.status === 'active' ? '<span class="pill warn">transfer requested</span>'
       : r.status !== 'active' ? `<span class="pill grey">${esc(r.status)}</span>` : f === 'regpending' && r.reg_next ? `<span class="pill warn">next: ${esc(r.reg_next)}</span>` : r.def ? '<span class="pill bad">defaulter</span>' : r.f && r.f.broken ? '<span class="pill bad">promise broken</span>' : r.f && r.f.due ? '<span class="pill warn">call today</span>' : toNum(r.overdue) > 0 ? '<span class="pill warn">overdue</span>' : '<span class="pill good">on track</span>';
     const live = rows.filter((r) => r.status === 'active'), sumOf = (k) => live.reduce((a, r) => a + toNum(r[k]), 0);
+    // money columns for logins that see the ledger (Sales sees the flats, not the money)
+    const money = can('ledger.view') || rows.some((r) => r.credit_av != null);
+    const pctPaid = (r) => { const av = toNum(r.agreement_value); return av > 0 ? (Math.round(toNum(r.credit_av) / av * 1000) / 10) + '%' : '—'; };
     const devHead = qt === 'developer' ? `<div class="panel"><div class="grid4">
         <div><div class="muted small">Flats sold</div><b>${live.length}</b></div><div><div class="muted small">Agreement value</div><b>${inr(sumOf('agreement_value'))}</b></div>
         <div><div class="muted small">Collected (incl. TDS)</div><b>${inr(sumOf('credit_av'))}</b></div><div><div class="muted small">Balance due now / overdue</div><b>${inr(sumOf('outstanding'))}</b> / <b class="${sumOf('overdue') > 0 ? 'bad-t' : ''}">${inr(sumOf('overdue'))}</b></div>
@@ -1131,15 +1134,31 @@
     $('#page').innerHTML = `<div class="page-head"><div>${qt ? `<p class="crumbs"><a href="#/flats">Flats &amp; buyers</a> › ${qt === 'developer' ? 'Developer’s bookings' : ''}</p>` : ''}<h1>${qt === 'developer' ? 'Developer’s bookings' : 'Flats &amp; buyers'}</h1><p class="muted">Every flat and buyer in one list. Open a flat to see and do everything for it: payments, calls, messages, documents and history.</p></div>
       ${can('booking.create') ? '<div class="actions" style="margin:0"><a class="btn" href="#/units">+ Book a flat</a></div>' : ''}</div>
       ${devHead}<div class="chips">${SETS.map(([k, l, fn, hint]) => { const n = rows.filter(fn).filter(mine).length; return `<button type="button" class="chip ${k === f ? 'on' : ''} ${['call', 'broken'].includes(k) && n ? 'hot' : ''}" data-f="${k}" title="${esc(hint)}">${l} <b>${n}</b></button>`; }).join('')}</div>
-      <div class="panel table-wrap"><input class="search" id="q" placeholder="Search a flat number, buyer name or phone" autofocus>
+      <div class="panel table-wrap"><div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap"><input class="search" id="q" placeholder="Search a flat number, buyer name or phone" autofocus style="flex:1;min-width:200px;margin:0">
+      ${money ? '<button type="button" class="ghost small" id="flatsXl">Download (Excel)</button>' : ''}</div>
       <p class="small muted" style="margin:4px 0 10px">${esc(cur[3])} · ${list.length} flat${list.length === 1 ? '' : 's'}${whoId ? ` · <b>${esc(((T && T.crmUsers) || []).find((x) => x.id === whoId)?.name || 'one person')}'s list</b>${myWings.length ? ' (wing ' + myWings.join(', ') + ')' : ''} · <a href="#/flats?f=${f}">show everyone</a>` : ''}</p>
-      <table class="flats"><tr><th>Flat</th><th>Buyer</th><th>Status</th><th class="num">Balance due</th><th class="num">Overdue</th><th>Last contact</th><th>Next call</th><th>Contact</th></tr>
+      <table class="flats"><tr><th>Flat</th><th>Buyer</th>${money ? '<th class="num">Agreement value</th><th class="num">Paid so far</th><th class="num">% paid</th><th class="num">Due now</th>' : ''}<th>Status</th>${money ? '<th class="num">Overdue</th>' : ''}<th>Last contact</th><th>Next call</th><th>Contact</th></tr>
       ${list.map((r) => `<tr class="click" data-b="${r.id}" data-s="${esc((r.unit_no + ' ' + (r.buyers || '') + ' ' + (r.f && r.f.mobile || '')).toLowerCase())}">
-        <td><b>${esc(r.unit_no)}</b>${r.sample ? ' <span class="pill grey">sample</span>' : ''}</td><td>${esc(r.buyers || '')}</td><td>${todo(r)}</td>
-        <td class="num">${inr(r.outstanding)}</td><td class="num ${toNum(r.overdue) > 0 ? 'bad-t' : ''}">${toNum(r.overdue) > 0 ? inr(r.overdue) : '—'}</td>
+        <td><b>${esc(r.unit_no)}</b>${r.sample ? ' <span class="pill grey">sample</span>' : ''}</td><td>${esc(r.buyers || '')}</td>
+        ${money ? `<td class="num">${inr(r.agreement_value)}</td><td class="num">${inr(r.credit_av)}</td><td class="num"><b>${pctPaid(r)}</b></td><td class="num ${toNum(r.outstanding) > 0 ? 'warn-t' : ''}">${toNum(r.outstanding) > 0 ? inr(r.outstanding) : '—'}</td>` : ''}
+        <td>${todo(r)}</td>
+        ${money ? `<td class="num ${toNum(r.overdue) > 0 ? 'bad-t' : ''}">${toNum(r.overdue) > 0 ? inr(r.overdue) : '—'}</td>` : ''}
         <td class="small">${r.f && r.f.count ? `${fmtD(r.f.last_at.slice(0, 10))} · ${esc(r.f.outcome || r.f.kind || '')}` : r.f ? '<span class="muted">never</span>' : ''}</td>
         <td class="small">${r.f && r.f.next_date ? fmtD(r.f.next_date) : ''}${r.f && r.f.promise_date ? `<br><span class="muted">promised ${fmtD(r.f.promise_date)}</span>` : ''}</td>
-        <td class="small" style="white-space:nowrap">${r.f && r.f.mobile && r.f.wa ? `<a href="tel:+91${esc(r.f.mobile)}" data-stop>Call</a> · <a href="${esc(r.f.wa)}" target="_blank" rel="noopener" data-stop>WhatsApp</a>` : ''}</td></tr>`).join('') || '<tr><td colspan="8" class="muted">Nothing here.</td></tr>'}</table></div>`;
+        <td class="small" style="white-space:nowrap">${r.f && r.f.mobile && r.f.wa ? `<a href="tel:+91${esc(r.f.mobile)}" data-stop>Call</a> · <a href="${esc(r.f.wa)}" target="_blank" rel="noopener" data-stop>WhatsApp</a>` : ''}</td></tr>`).join('') || `<tr><td colspan="${money ? 11 : 6}" class="muted">Nothing here.</td></tr>`}</table></div>`;
+    // the list as it stands (chip and search) to Excel, with the money columns
+    const xl = $('#flatsXl'); if (xl) xl.onclick = () => {
+      const q = ($('#q').value || '').toLowerCase().trim();
+      const shown = list.filter((r) => !q || (r.unit_no + ' ' + (r.buyers || '') + ' ' + (r.f && r.f.mobile || '')).toLowerCase().includes(q));
+      const plain = (h) => { const d = document.createElement('div'); d.innerHTML = h; return d.textContent.trim(); };
+      const cell = (v) => `"${String(v == null ? '' : v).replace(/"/g, '""')}"`;
+      const head = ['Flat', 'Buyer', 'Agreement value', 'Paid so far (incl. TDS)', '% paid', 'Due now', 'Overdue', 'Balance of agreement value', 'Status', 'Last contact', 'Next call', 'Mobile'];
+      const lines = shown.map((r) => { const av = toNum(r.agreement_value), pd = toNum(r.credit_av);
+        return [r.unit_no, r.buyers || '', av, pd, av > 0 ? (Math.round(pd / av * 1000) / 10) + '%' : '', toNum(r.outstanding), toNum(r.overdue), Math.max(0, Math.round((av - pd) * 100) / 100), plain(todo(r)),
+          r.f && r.f.last_at ? String(r.f.last_at).slice(0, 10) : '', r.f && r.f.next_date ? String(r.f.next_date).slice(0, 10) : '', r.f && r.f.mobile || ''].map(cell).join(','); });
+      const a = document.createElement('a'); a.href = URL.createObjectURL(new Blob(['\ufeff' + [head.map(cell).join(','), ...lines].join('\r\n')], { type: 'text/csv' }));
+      a.download = `flats-and-buyers-${f}-${todayIso()}.csv`; a.click(); setTimeout(() => URL.revokeObjectURL(a.href), 2000);
+    };
     document.querySelectorAll('.chip[data-f]').forEach((x) => (x.onclick = () => { const qs = [x.dataset.f !== 'bookings' && 'f=' + x.dataset.f, qt && 't=' + qt, whoId && 'who=' + whoId].filter(Boolean).join('&'); history.replaceState(null, '', '#/flats' + (qs ? '?' + qs : '')); flats(); }));
     document.querySelectorAll('tr[data-b]').forEach((tr) => (tr.onclick = (e) => { if (e.target.closest('[data-stop]')) return; go(`#/booking/${tr.dataset.b}`); }));
     $('#q').oninput = (e) => { const q = e.target.value.toLowerCase().trim(); document.querySelectorAll('tr[data-s]').forEach((tr) => (tr.style.display = tr.dataset.s.includes(q) ? '' : 'none')); };

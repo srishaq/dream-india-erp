@@ -688,3 +688,4 @@ tr.tot td { border-top: 2px solid var(--line, #ddd); }
 .ss-b.ss-click:hover, .ss-b.ss-click:focus { box-shadow: 0 4px 14px rgba(20, 12, 89, .12); transform: translateY(-1px); outline: none; }
 .ss-go { color: var(--brand); font-weight: 700; }
 dialog.wide { width: min(760px, 94vw); }
+.warn-t { color: var(--warn); font-weight: 600; }
