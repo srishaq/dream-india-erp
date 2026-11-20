@@ -285,6 +285,13 @@ let n = 0; const step = async (name, fn) => { await fn(); n++; console.log('  âœ
     assert.equal(row.grp, 'ASPIRE'); assert.equal(Math.round(row.closing * 100), 2558620344);
     assert.ok(!b.rows.some((x) => x.bank === 'ASPIRE CA 30%'), 'the old hand-kept Aspire row no longer counts');
   });
+  await step('an Aspire statement is never read as one of Prime\'s accounts', async () => {
+    const { bankFor } = require('../lib/bank-statements');
+    assert.equal(bankFor('Dream Aspire HDFC 100% - 6462.xlsx').key, 'asp6462');
+    assert.equal(bankFor('Dream Aspire HDFC GST - 2044.xlsx').key, 'asp2044');
+    assert.equal(bankFor('Dream Aspire HDFC 100%.xlsx'), null);
+    assert.equal(bankFor('Yes Bank RERA 700 Ac.xlsx').key, 'rera700');
+  });
   console.log(`bank auto, PDC and CA: ${n} checks passed`);
   server.close(); process.exit(0);
 })().catch((e) => { console.error(e); process.exit(1); });
