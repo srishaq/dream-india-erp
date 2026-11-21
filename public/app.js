@@ -579,7 +579,7 @@
     { key: 'audit', title: 'CRM/Accounts Audit', sub: 'Tally against the CRM, checks, reconciling items and cancelled flats', icon: 'check', tone: '#0E8C9B', pages: ['queries', 'bookscrm', 'checks', 'reg-recon', 'reg-cancellations', 'verify', 'audit'] },
     { key: 'reportsd', title: 'Reports', sub: 'Every report from the CRM and Accounts in one place, with search and Excel', icon: 'chart', tone: '#2B5C8A', direct: 'reports' },
     { key: 'cpdept', title: 'Channel Partners', sub: 'Every partner firm: brokerage earned, bills, pass back, payments and what is still owed', icon: 'users', tone: '#0E8C9B', direct: 'partners' },
-    { key: 'ca', title: 'CA / Tax', sub: 'GST, TDS payable, RERA quarterly, cash flow and compliance', icon: 'chart', tone: '#7A5C99', direct: 'ca' },
+    { key: 'ca', title: 'CA / Tax', sub: 'GST, TDS payable, RERA filings (Forms 1, 2, 3 and 5), cash flow and compliance', icon: 'chart', tone: '#7A5C99', direct: 'ca' },
     { key: 'construction', title: 'Construction', sub: 'Site Office: slab cycle, daily progress reports, hindrances, materials and stages', icon: 'hammer', tone: '#B7791F', pages: ['site', 'stages'], later: ['Contractor billing'] },
     { key: 'purchase', title: 'Purchase', sub: 'Requests, approvals, orders, receipts at site and payment for RMC, steel, cement and more', icon: 'cart', tone: '#117A65', direct: 'purchase' },
     { key: 'drawings', title: 'Drawings', sub: 'Architect, structural and MEP drawings from the Site Plans folder', icon: 'grid', tone: '#2B5C8A', direct: 'drawings' },
@@ -3363,8 +3363,8 @@
     $('#page').innerHTML = `<div class="page-head ca-head"><div><h1>CA / Tax</h1><div class="ca-meta"><span class="dot"></span><span id="asof"></span><span id="live">Loading…</span><span id="user" hidden></span></div></div>
         <div class="actions" style="margin:0;align-items:center"><label class="small" style="margin:0;display:flex;gap:6px;align-items:center">Period <select id="per" aria-label="Period" style="width:auto"></select></label><button class="ghost small" id="reload" type="button" hidden>Refresh</button></div></div>
       <div class="ca-scope"><nav class="ca-nav" aria-label="Sections">${SECS.map(([id, l], i) => `<button type="button" data-sec="${id}" class="${i ? '' : 'on'}">${l}</button>`).join('')}</nav>${body}</div>`;
-    await loadScript('/drill.js'); await loadScript('/page-ca.js');
-    window.CAPage();
+    await loadScript('/drill.js'); await loadScript('/page-ca.js'); await loadScript('/rera-filing.js');
+    window.CAPage(); window.ReraFiling(document.getElementById('reraFiling'));
   }
 
   // Management dashboard, Today: a table of wings side by side (Wing A vs Wing B, Inventory)
