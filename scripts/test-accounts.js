@@ -162,7 +162,7 @@ let n = 0; const step = async (name, fn) => { await fn(); n++; console.log('  âœ
     assert.equal(pr.rows.length, rmc.n); assert.match(pr.head.filters, /Cash Flow Head: RMC/); assert.equal(pr.groups.by, 'payee');
   });
   await step('an approved purchase bill is paid from Payments Out and marked Paid', async () => {
-    const kv = require('../lib/portal/kv');
+    const kv = require('../lib/portal/kv'), db = require('../lib/db');
     await kv.hset('po:orders', 'PO123456', { id: 'PO123456', material: 'RMC', line: 'A wing|5th slab', status: 'accounts_ok', order: { vendor: 'Concrete Ltd', amount: 250000, billNo: 'B-77', billDate: '2026-10-20' }, accounts: { by: 'hacc', at: '2026-10-21T10:00:00Z', payable: 250000 }, history: [] });
     const B = await admin('/api/accounts?view=bills'); const b = B.bills.find((x) => x.id === 'PO123456');
     assert.ok(b); assert.equal(b.amount, 250000); assert.equal(b.head, 'RMC'); assert.equal(B.tds.RMC.sec, '194Q');
@@ -185,6 +185,18 @@ let n = 0; const step = async (name, fn) => { await fn(); n++; console.log('  âœ
     // a bill less TDS: approved 1,00,000, paid 99,900 with TDS of 100 on the row
     await kv.hset('po:orders', 'PO654321', { id: 'PO654321', material: 'Steel', line: 'A wing|5th slab', status: 'accounts_ok', order: { vendor: 'Steel Co', amount: 100000 }, accounts: { by: 'hacc', at: '2026-10-21T10:00:00Z', payable: 100000 }, history: [] });
     assert.equal((await admin('/api/accounts', { action: 'save', reg: 'payments', poId: 'PO654321', data: { ...pay, amount: '99900', tds_deducted: '100', payee: 'Steel Co', reference: 'UTR77' } })).billPaid, true);
+    // bank rows come from the statements: Accounts cannot add one by hand, only cash; a bill is paid on the statement's row
+    const hand = await hc('/api/accounts', { action: 'save', reg: 'receipts', data: { txn_date: '2026-10-27', bank: 'Yes RERA Collection 100% (0700)', amount: '703800', unit_no: 'A-101' } });
+    assert.equal(hand.status, 403, JSON.stringify(hand)); assert.match(hand.error, /bank statements/);
+    const handP = await hc('/api/accounts', { action: 'save', reg: 'payments', data: { txn_date: '2026-10-27', bank: 'Yes RERA Collection 100% (0700)', amount: '5000', head: 'RMC' } });
+    assert.equal(handP.status, 403);
+    await db.q("insert into acc_banks (book, name) values ('signature', 'Cash') on conflict do nothing");
+    const cashR = await hc('/api/accounts', { action: 'save', reg: 'payments', data: { txn_date: '2026-10-27', bank: 'Cash', amount: '500', head: 'RMC', payee: 'Tea' } }); assert.equal(cashR.ok, true, JSON.stringify(cashR));
+    const stRow = await db.one("insert into acc_payments (book, ref_id, txn_date, bank, amount, description, source) values ('signature', 'BP99901', '2026-10-27', 'Prime HDFC (8650)', 49950, 'NEFT STEEL CO', 'Bank statement auto') returning id");
+    await kv.hset('po:orders', 'PO888888', { id: 'PO888888', material: 'Steel', line: 'A wing|6th slab', status: 'accounts_ok', order: { vendor: 'Steel Co', amount: 50000 }, accounts: { by: 'hacc', payable: 50000 }, history: [] });
+    const onRow = await admin('/api/accounts', { action: 'save', reg: 'payments', id: stRow.id, poId: 'PO888888', data: { payee: 'Steel Co', head: 'RMC', tds_deducted: '50' } });
+    assert.equal(onRow.billPaid, true, JSON.stringify(onRow));
+    assert.equal((await db.one('select amount from acc_payments where id = $1', [stRow.id])).amount, '49950.00');
     // the Purchase page can no longer mark a bill Paid without a Payments Out row
     await kv.hset('po:orders', 'PO777777', { id: 'PO777777', no: 'PR-0777', material: 'Steel', line: 'A wing|5th slab', status: 'accounts_ok', order: { vendor: 'Steel Co', amount: 5000 }, accounts: { by: 'hacc', payable: 5000 }, history: [] });
     const pp = await admin('/api/me?purchase=1', { op: 'paid', id: 'PO777777', data: { amount: 5000, ref: 'X', date: '2026-10-27' } });
@@ -223,7 +235,7 @@ let n = 0; const step = async (name, fn) => { await fn(); n++; console.log('  âœ
     assert.equal((await s('/api/accounts', { action: 'save', reg: 'payments', data: row })).status, 403);
     assert.equal((await admin('/api/accounts', { action: 'save', reg: 'payments', data: row })).status, 400);
     const ok = await admin('/api/accounts', { action: 'save', reg: 'payments', data: row, reason: 'Bank charge found late' }); assert.equal(ok.ok, true);
-    assert.equal((await s('/api/accounts', { action: 'save', reg: 'payments', data: { ...row, txn_date: '2026-10-02' } })).ok, true); // an open month is as before
+    assert.equal((await s('/api/accounts', { action: 'save', reg: 'payments', data: { ...row, bank: 'Cash', txn_date: '2026-10-02' } })).ok, true); // an open month is as before (Accounts adds only cash rows by hand)
     const a = await admin('/api/audit?limit=50'); assert.ok(a.rows.some((x) => x.action === 'create-closed-month' && /Bank charge found late/.test(x.note || '')));
     assert.equal((await admin('/api/accounts?view=checks')).closed.date, '2026-09-30');
   });

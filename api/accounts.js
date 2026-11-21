@@ -180,6 +180,10 @@ module.exports = route({
       if (reg.readOnly) throw fail(400, `${reg.title} change only through Tally (Sync with Tally).`);
       const id = intOr(b.id);
       const data = await acc.cleanRow(b.reg, b.data || {}, { partial: !!id });
+      // Receipts and Payments Out come from the bank statements (Mrunali, 21 Nov 2026): a new row by hand only for cash,
+      // which is on no statement. Admin can still add one when a statement line is truly missing (it is logged).
+      if (!id && ['receipts', 'payments'].includes(b.reg) && String(data.bank || '').toLowerCase() !== 'cash' && u.role !== 'admin')
+        throw fail(403, `${b.reg === 'receipts' ? 'Receipts' : 'Payments Out'} come from the bank statements, so a row cannot be added by hand. Find the line the statement brought in (search by amount or date) and fill its head, unit and payer there. Only cash entries are added by hand (Bank Account: Cash).`);
       // Payments Out: the TDS section and rate come from the payment head when not typed; TDS = taxable value × rate.
       if (b.reg === 'payments' && data.head) {
         const T = (await acc.headTds())[data.head];
@@ -203,17 +207,19 @@ module.exports = route({
       const prev = id && dk ? await db.one(`select ${dk} as d from ${reg.table} where id = $1 and book = $2`, [id, acc.BOOK]) : null;
       const closedOn = dk ? await guardClosed(u, b.reg, [data[dk], prev && prev.d], b.reason) : null;
       // paid against an approved purchase bill: checked, saved and the Purchase order marked Paid in one transaction
-      const poId = b.reg === 'payments' && b.poId && !id ? str(b.poId, 60) : null;
+      // a purchase bill is paid on the statement's own payment row (or on a new cash payment)
+      const poId = b.reg === 'payments' && b.poId ? str(b.poId, 60) : null;
       const out = await db.tx(async (t) => {
-        const bill = poId ? await acc.billToPay(t, poId, { amount: data.amount, tds: data.tds_deducted, user: u }) : null;
+        const before = id ? await t.one(`select * from ${reg.table} where id = $1 and book = $2`, [id, acc.BOOK]) : null;
+        const bill = poId ? await acc.billToPay(t, poId, { amount: data.amount ?? (before && before.amount), tds: data.tds_deducted ?? (before && before.tds_deducted), user: u }) : null;
         if (id) {
-          const before = await t.one(`select * from ${reg.table} where id = $1 and book = $2`, [id, acc.BOOK]);
           if (!before) throw fail(404, 'Row not found.');
           const cols = Object.keys(data); if (!cols.length) throw fail(400, 'Nothing to change.');
           await t.q(`update ${reg.table} set ${cols.map((c, i) => `${c} = $${i + 2}`).join(', ')}, updated_by = $${cols.length + 2}, updated_at = now() where id = $1`, [id, ...cols.map((c) => data[c]), u.id]);
           const changed = Object.fromEntries(cols.filter((c) => String(before[c] ?? '') !== String(data[c] ?? '')).map((c) => [c, data[c]]));
-          await audit.record(t.q, { user: u, action: closedOn ? 'update-closed-month' : 'update', entity: 'acc-' + b.reg, entityId: id, before: Object.fromEntries(Object.keys(changed).map((c) => [c, before[c]])), after: changed, note: closedOn ? `Books closed to ${closedOn}. Reason: ${str(b.reason, 300)}` : null });
-          return { id, ref_id: before.ref_id };
+          await audit.record(t.q, { user: u, action: closedOn ? 'update-closed-month' : 'update', entity: 'acc-' + b.reg, entityId: id, before: Object.fromEntries(Object.keys(changed).map((c) => [c, before[c]])), after: { ...changed, ...(poId ? { purchaseBill: poId } : {}) }, note: closedOn ? `Books closed to ${closedOn}. Reason: ${str(b.reason, 300)}` : null });
+          if (bill) await acc.markBillPaid(t, poId, bill, { amount: data.amount ?? before.amount, ref: data.reference ?? before.reference, date: data[dk] ?? before[dk], paymentId: before.ref_id, user: u });
+          return { id, ref_id: before.ref_id, ...(bill ? { billPaid: true } : {}) };
         }
         const ref = await acc.nextRef(t, reg);
         const cols = Object.keys(data).filter((c) => data[c] !== null);

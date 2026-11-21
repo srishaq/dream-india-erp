@@ -2469,7 +2469,7 @@
     }
     const R = d.reg, cols = R.cols, show = ACC_SHOW[key] ? ACC_SHOW[key].map((k) => (k === 'ref_id' ? { key: 'ref_id', label: R.idLabel, type: 'text' } : cols.find((c) => c.key === k))) : [...(R.prefix ? [{ key: 'ref_id', label: R.idLabel, type: 'text' }] : []), ...cols];
     $('#page').innerHTML = `<div class="page-head"><div><h1>${esc(R.title)}</h1><p class="muted">${esc(R.help)}</p></div>
-        ${d.can.enter ? `<div class="actions" style="margin:0"><button id="accNew">Add a row</button></div>` : ''}</div>
+        ${d.can.enter ? `<div class="actions" style="margin:0"><button id="accNew">${['receipts', 'payments'].includes(key) && me.role !== 'admin' ? 'Add a cash entry' : 'Add a row'}</button></div>` : ''}</div>
       <div class="panel"><div class="row" style="align-items:end;gap:10px;grid-template-columns:2fr 1fr 1fr auto">
         <div><label>Search</label><input id="aq" value="${esc(state.q)}" placeholder="Any word, name, unit or reference"></div>
         ${R.cols.some((c) => c.type === 'date') ? `<div><label>From</label><input type="date" id="af" value="${esc(state.from)}"></div><div><label>To</label><input type="date" id="at" value="${esc(state.to)}"></div>` : '<div></div><div></div>'}
@@ -2545,7 +2545,8 @@
       sum();
     };
     const form = (row) => {
-      const v = (c) => (row ? row[c.key] : c.key === R.cols.find((x) => x.type === 'date')?.key ? todayIso() : '');
+      const cashOnly = !row && ['receipts', 'payments'].includes(key) && me.role !== 'admin'; // the statements bring in every bank row
+      const v = (c) => (row ? row[c.key] : c.key === R.cols.find((x) => x.type === 'date')?.key ? todayIso() : cashOnly && c.key === 'bank' ? 'Cash' : '');
       const field = (c) => {
         if (c.calc) return row && row[c.key] != null && row[c.key] !== '' ? `<div><label>${esc(c.label)}</label><input value="${esc(c.type === 'money' ? inr(row[c.key]) : c.type === 'date' ? fmtD(String(row[c.key]).slice(0, 10)) : row[c.key])}" disabled></div>` : '';
         const val = v(c) == null ? '' : v(c), req = c.required ? 'required' : '', dis = d.can.enter ? '' : 'disabled';
@@ -2559,7 +2560,8 @@
         return `<div><label>${esc(c.label)}${c.hint ? ` <span class="small muted">(${esc(c.hint)})</span>` : ''}</label><input type="${t}" name="${c.key}" value="${esc(shown)}" ${c.type === 'money' || c.type === 'num' ? 'inputmode="decimal"' : ''} ${c.unit ? 'placeholder="A-1001"' : ''} ${req} ${dis}></div>`;
       };
       const main = cols.filter((c) => !c.bill), bill = cols.filter((c) => c.bill);
-      const dl = dialog(`<h2>${row ? esc(R.title) + (row.ref_id ? ' · ' + esc(row.ref_id) : '') : 'New row · ' + esc(R.title)}</h2>
+      const dl = dialog(`<h2>${row ? esc(R.title) + (row.ref_id ? ' · ' + esc(row.ref_id) : '') : (cashOnly ? 'New cash entry · ' : 'New row · ') + esc(R.title)}</h2>
+        ${cashOnly ? '<p class="small muted">Bank rows come in from the statements: open the statement\'s row and fill its head and unit. Add here only money paid or received in cash.</p>' : ''}
         ${row && row.imported ? '<p class="small muted">Came in from the accounts sheet.</p>' : ''}
         <div class="acc-form">${main.map(field).join('')}</div>
         ${key === 'payments' && row && row.id ? '<div id="jvBox" class="panel" style="margin:12px 0;padding:10px 12px"><b>Journal entries this payment settles</b> <span class="small muted">Loading…</span></div>' : ''}
@@ -2611,18 +2613,18 @@
         if (base && rate && F('tds_deducted') && !F('tds_deducted').dataset.typed) F('tds_deducted').value = Math.round(base * rate);
         const tot = toNum(F('total_bill') && F('total_bill').value), ded = toNum(F('tds_deducted') && F('tds_deducted').value);
         if (tot && F('net_payable') && !F('net_payable').dataset.typed) F('net_payable').value = Math.round((tot - ded) * 100) / 100;
-        if (form.poId && F('net_payable') && toNum(F('net_payable').value) && F('amount')) F('amount').value = toNum(F('net_payable').value); // pay the bill less TDS
+        if (form.poId && !row && F('net_payable') && toNum(F('net_payable').value) && F('amount')) F('amount').value = toNum(F('net_payable').value); // pay the bill less TDS (a statement row keeps its own amount)
       };
       ['head', 'taxable_value', 'tds_rate', 'total_bill', 'tds_deducted'].forEach((k) => F(k) && F(k).addEventListener('change', work));
       ['tds_deducted', 'net_payable'].forEach((k) => F(k) && F(k).addEventListener('input', () => (F(k).dataset.typed = 1)));
-      if (row || !P.bills.length) return;
+      if ((row && row.bill_ids) || !P.bills.length) return; // a statement's payment row can be matched to the bill it pays
       const box = document.createElement('div'); box.className = 'note'; box.style.margin = '0 0 10px';
       box.innerHTML = `<label style="margin:0 0 4px"><b>Paying an approved purchase bill?</b> (${P.bills.length} approved by Accounts, waiting to be paid)</label><select id="poPick"><option value="">No, an ordinary payment</option>${P.bills.map((b) => `<option value="${esc(b.id)}">${esc(b.vendor || 'Vendor')} · ${esc(b.material || '')}${b.billNo ? ' · bill ' + esc(b.billNo) : ''} · ${inr(b.amount)}</option>`).join('')}</select>
-        <p class="small muted" style="margin:4px 0 0">Choosing one fills the payee, head, amount and bill details. When you save, the order is marked Paid on the Purchase page.</p>`;
+        <p class="small muted" style="margin:4px 0 0">Choosing one fills the payee, head${row ? '' : ', amount'} and bill details. When you save, the order is marked Paid on the Purchase page.</p>`;
       const h2 = dl.querySelector('h2'); h2.after(box);
       $('#poPick', dl).onchange = (e) => {
         const b = P.bills.find((x) => x.id === e.target.value); form.poId = b ? b.id : null; if (!b) return;
-        setV('payee', b.vendor); setV('head', b.head); setV('amount', b.amount); setV('total_bill', b.amount); setV('bill_no', b.billNo); setV('bill_date', b.billDate); setV('bill_ids', b.poNo || b.id);
+        setV('payee', b.vendor); setV('head', b.head); if (!row) setV('amount', b.amount); setV('total_bill', b.amount); setV('bill_no', b.billNo); setV('bill_date', b.billDate); setV('bill_ids', b.poNo || b.id);
         setV('description', `${b.material || 'Purchase'} · ${b.line ? b.line.replace('|', ' ') : ''}`.trim()); setV('remark', 'Against approved purchase bill ' + (b.poNo || b.id));
         const det = dl.querySelector('details'); if (det) det.open = true; work();
       };
