@@ -97,6 +97,27 @@ async function run(req, res, job) {
       r.leadsOverdue = await require('../lib/mkt-leads').overdue({}).catch((e) => ({ error: e.message })); // new leads nobody called for 2 hours
       r.leadStages = await require('../lib/mkt-leads').capi({}).catch((e) => ({ error: e.message })); // lead stages back to Meta
       r.tmCampaigns = await require('../lib/tm-campaigns').tick().catch((e) => ({ error: e.message })); // the next batch of SMS / AI calls (within the hours)
+      // the 8 pm day reports, when their own 8 pm run did not happen (Vercel skipped it or cut it short, as on 20 Nov):
+      // yesterday's is sent by the next 5-minute run, today's from 8:15 pm; once each (a lock stops two runs sending together)
+      r.dayReport = await (async () => {
+        const db = require('../lib/db'), ist = new Date(Date.now() + 5.5 * 3600000);
+        const today = ist.toISOString().slice(0, 10), yest = new Date(ist.getTime() - 86400000).toISOString().slice(0, 10);
+        const due = [yest];
+        if (ist.getUTCHours() > 20 || (ist.getUTCHours() === 20 && ist.getUTCMinutes() >= 15)) due.push(today);
+        for (const d of due) {
+          if (d < '2026-11-20') continue; // nothing older than the first miss
+          if (await db.one('select 1 as x from job_marks where key = $1', ['day-report:' + d])) continue;
+          const lock = await db.one("insert into job_marks (key, info) values ($1, '{}') on conflict do nothing returning key", ['day-report-lock:' + d]);
+          if (!lock) continue;
+          const t0 = Date.now();
+          try {
+            const out = await require('../lib/day-report').send({ d });
+            if (!out.skipped) await require('../lib/watchdog').record('evening', true, { ok: true, catchUp: d, ...out }, null, Date.now() - t0);
+            return { catchUp: d, ...out };
+          } catch (e) { await db.q('delete from job_marks where key = $1', ['day-report-lock:' + d]); return { error: e.message }; }
+        }
+        return null;
+      })().catch((e) => ({ error: e.message }));
       // Click Connect: once the key is in Vercel, point its webhook at the ERP by itself (once; again if the key changes)
       r.whatsappHook = await (async () => {
         const wa = require('../lib/whatsapp'); if (!wa.ccm()) return null;
