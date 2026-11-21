@@ -64,7 +64,7 @@ module.exports = route({
       }
       if (v.finance) next.finance = Object.fromEntries(['ownEstimated', 'securedEstimated', 'unsecuredEstimated', 'customerEstimated'].map((k) => [k, num(v.finance[k]) || 0]));
       if (v.engineerEstimate) next.engineerEstimate = { building: num(v.engineerEstimate.building) || 0, external: num(v.engineerEstimate.external) || 0 };
-      for (const k of ['rrPerSqm', 'depositPct', 'letterheadCm']) if (v[k] != null && num(v[k]) != null) next[k] = num(v[k]);
+      for (const k of ['rrPerSqm', 'depositPct', 'letterheadCm', 'maxFloor']) if (v[k] != null && num(v[k]) != null) next[k] = num(v[k]);
       if (v.form1) next.form1 = { date: txt(v.form1.date, 10), a: (v.form1.a || []).slice(0, 11).map(num), b: (v.form1.b || []).slice(0, 14).map(num) };
       if (Array.isArray(v.comments)) next.comments = v.comments.map((x) => txt(x, 2000)).filter(Boolean);
       if (v.autoSend != null) next.autoSend = !!v.autoSend;

@@ -42,7 +42,7 @@ window.ReraFiling = (() => {
         ${card('', 'Estimated cost (Table A)', rs(F.estTotal), 'Land ' + rs(F.estLand) + ' · development ' + rs(F.estDev))}
         ${card('in', 'Cost incurred (Table B)', rs(F.incTotal), F.pct + '% of the estimated cost')}
         ${card('', 'Net withdrawable', rs(F.net), 'Withdrawable ' + rs(F.withdrawable) + ' less withdrawn ' + rs(F.withdrawn))}
-        ${card('', 'Units', nf(U.sold + U.booked) + ' of ' + nf(U.sold + U.booked + U.unsold), `${nf(U.sold)} sold (registered), ${nf(U.booked)} booked, ${nf(U.unsold)} unsold`)}
+        ${card('', 'Units', nf(U.sold + U.booked) + ' of ' + nf(U.sold + U.booked + U.unsold), `${nf(U.sold)} sold (registered), ${nf(U.booked)} booked, ${nf(U.unsold)} unsold${U.maxFloor ? ` · up to floor ${U.maxFloor}` : ''}${U.above && U.above.units ? `; ${nf(U.above.units)} more above it` : ''}`)}
         ${card(des && des.closing > 0 ? 'in' : 'out tint', 'Designated RERA account', rs(F.tableE.closing), des ? esc(des.account) : 'not set')}
         ${card(D.outside ? 'out tint' : 'in', 'Buyer money outside RERA accounts', D.outside ? rs(D.outsideAmt) : 'None', D.outside ? `${nf(D.outside)} receipt${D.outside === 1 ? '' : 's'} in the quarter` : 'in the quarter')}
       </div>
@@ -90,7 +90,7 @@ window.ReraFiling = (() => {
         ${f('ca.firm', 'CA firm', S.ca.firm)}${f('ca.membership', 'CA membership no.', S.ca.membership)}${f('ca.email', 'CA email (the pack goes here)', S.ca.email)}
         ${f('designated.bank', 'Designated account (bank name in the registers)', S.designated.bank)}${f('designated.accountNo', 'Designated account no.', S.designated.accountNo)}${f('designated.bankName', 'Bank & branch', S.designated.bankName)}
         ${f('designated.ifsc', 'IFSC', S.designated.ifsc)}${f('collection', 'Collection account(s), comma separated', (S.collection || []).join(', '))}${f('otherRera', 'Other RERA accounts', (S.otherRera || []).join(', '))}
-        ${f('rrPerSqm', 'Ready reckoner rate per sq m (unsold value)', money(S.rrPerSqm))}${f('depositPct', 'Deposit % when receivables exceed balance cost', S.depositPct)}${f('letterheadCm', 'Space left for the letterhead (cm)', S.letterheadCm)}
+        ${f('maxFloor', 'Form 3 counts units up to floor (CC)', S.maxFloor)}${f('rrPerSqm', 'Ready reckoner rate per sq m (unsold value)', money(S.rrPerSqm))}${f('depositPct', 'Deposit % when receivables exceed balance cost', S.depositPct)}${f('letterheadCm', 'Space left for the letterhead (cm)', S.letterheadCm)}
       </div>
       <h3 style="margin:16px 0 6px">Table A: estimated cost, and the last certified cost incurred</h3>
       <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:10px">
