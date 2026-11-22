@@ -26,7 +26,9 @@ async function readSheet() {
 
 // Month-end close: once Head Accounts closes a month, a row dated on or before that day can be changed only by
 // Head Accounts or the Admin, with a reason, and the change is marked in the audit log.
-async function closedTo() { return (await db.one("select value from settings where key = 'acc_closed_to'"))?.value || null; }
+// books closed to a date: Prime Realtors' key is acc_closed_to, each other company's acc_closed_to:<book>
+const closedKey = () => (acc.BOOK === 'signature' ? 'acc_closed_to' : 'acc_closed_to:' + acc.BOOK);
+async function closedTo() { return (await db.one('select value from settings where key = $1', [closedKey()]))?.value || null; }
 async function guardClosed(u, reg, dates, reason) {
   const c = await closedTo(); if (!c || !c.date) return null;
   const hit = dates.filter(Boolean).map((d) => String(d instanceof Date ? d.toISOString() : d).slice(0, 10)).some((d) => d <= c.date);
@@ -125,7 +127,7 @@ module.exports = route({
       }
       case 'bills': return res.json({ bills: has(u, 'accounts.enter') ? await acc.approvedBills() : [], tds: await acc.headTds(), can });
       case 'balances': { const dd = DATE.test(q.date || '') ? q.date : today(); const cf = await db.one("select done_at, info from job_marks where key = $1", ['daily-confirm:' + dd]); return res.json({ ...(await acc.balances(dd)), confirmed: cf ? { at: cf.done_at, ...cf.info } : null, closed: await closedTo(), can }); }
-      case 'lists': return res.json({ lists: await acc.lists(), heads: await db.q("select * from acc_heads where book = 'signature' order by side, name"), banks: await db.q("select * from acc_banks where book = 'signature' order by name"), dailyBanks: await db.q("select * from acc_daily_banks where book = 'signature' order by seq, id"), can });
+      case 'lists': return res.json({ lists: await acc.lists(), heads: await db.q('select * from acc_heads where book = $1 order by side, name', [acc.BOOK]), banks: await db.q('select * from acc_banks where book = $1 order by name', [acc.BOOK]), dailyBanks: await db.q('select * from acc_daily_banks where book = $1 order by seq, id', [acc.BOOK]), book: require('../lib/book').info(), can });
       case 'checks': return res.json({ rows: await acc.checks(q.project ? needProject(u, intOr(q.project)) : null), closed: await closedTo(), can });
       case 'report': {
         const R = await acc.report(str(q.name, 20), { projectId: q.project ? needProject(u, intOr(q.project)) : null, fy: intOr(q.fy), head: str(q.head, 80), from: str(q.from, 7), to: str(q.to, 7), bank: str(q.bank, 120) });
@@ -167,6 +169,9 @@ module.exports = route({
     }
   },
   POST: async (req, res, b) => {
+    // Tally and the Master Accounts sheet belong to Prime Realtors' books (Dream Signature) only
+    if (acc.BOOK !== 'signature' && /^(tally-(?!ack)|import|tds-portal-replace|clear-accounts)/.test(String(b.action || '')))
+      throw fail(400, 'Tally and the accounts-sheet imports are for Dream Signature\'s books (Prime Realtors). Switch the project to Dream Signature for this.');
     if (b.action === 'tally-ack') {
       const TF = require('../lib/tally-feed');
       if (!(await TF.check(req.headers['x-erp-key'] || b.key))) throw fail(401, 'Wrong or missing key.');
@@ -297,8 +302,8 @@ module.exports = route({
       const v = b.reopen ? { date: end, by: u.name, at: new Date().toISOString(), reopenedFrom: before && before.date } : { date: end, by: u.name, at: new Date().toISOString() };
       if (b.reopen) { if (!str(b.reason, 300)) throw fail(400, 'Say why the books are being reopened.'); if (!before || end >= before.date) throw fail(400, 'Reopen to a month before the one closed now.'); }
       await db.tx(async (t) => {
-        await t.q("insert into settings (key, value) values ('acc_closed_to', $1) on conflict (key) do update set value = excluded.value", [v]);
-        await audit.record(t.q, { user: u, action: b.reopen ? 'reopen-books' : 'close-month', entity: 'settings', entityId: 'acc_closed_to', before, after: v, note: str(b.reason, 300) || null });
+        await t.q("insert into settings (key, value) values ($2, $1) on conflict (key) do update set value = excluded.value", [v, closedKey()]);
+        await audit.record(t.q, { user: u, action: b.reopen ? 'reopen-books' : 'close-month', entity: 'settings', entityId: closedKey(), before, after: v, note: str(b.reason, 300) || null });
       });
       return res.json({ ok: true, closed: v });
     }
@@ -354,7 +359,7 @@ module.exports = route({
       const rate = b.tdsRate === '' || b.tdsRate == null ? null : Number(String(b.tdsRate).replace(/[%\s]/g, '')) / 100; // typed as a percentage: 1 = 1%
       if (rate != null && !(rate >= 0 && rate <= 1)) throw fail(400, 'TDS rate: a percentage, e.g. 1 or 0.1.');
       await db.tx(async (t) => {
-        await t.q(`insert into acc_heads (book, side, name, section, indirect_line, tds_section, tds_rate, category, note, needs_bill, payee_type, active) values ('signature', $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
+        await t.q(`insert into acc_heads (book, side, name, section, indirect_line, tds_section, tds_rate, category, note, needs_bill, payee_type, active) values ('${acc.BOOK}', $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
                    on conflict (book, side, name) do update set section = excluded.section, indirect_line = excluded.indirect_line, tds_section = excluded.tds_section, tds_rate = excluded.tds_rate,
                    category = excluded.category, note = excluded.note, needs_bill = excluded.needs_bill, payee_type = excluded.payee_type, active = excluded.active`,
         [side, name, str(b.section, 60) || null, str(b.indirectLine, 120) || null, str(b.tdsSection, 20) || null, Number.isFinite(rate) ? rate : null, str(b.category, 120) || null, str(b.note, 300) || null, !!b.needsBill, str(b.payeeType, 60) || null, b.active !== false]);
@@ -365,7 +370,7 @@ module.exports = route({
     if (b.action === 'bank') {
       need('accounts.manage');
       const name = str(b.name, 120); if (!name) throw fail(400, 'Give the bank account name as it should appear in Receipts and Payments Out.');
-      await db.tx(async (t) => { await t.q("insert into acc_banks (book, name, account_no) values ('signature', $1, $2) on conflict (book, name) do update set account_no = excluded.account_no", [name, str(b.accountNo, 40) || null]); await audit.record(t.q, { user: u, action: 'bank', entity: 'acc-bank', entityId: name, after: b }); });
+      await db.tx(async (t) => { await t.q('insert into acc_banks (book, name, account_no) values ($3, $1, $2) on conflict (book, name) do update set account_no = excluded.account_no', [name, str(b.accountNo, 40) || null, acc.BOOK]); await audit.record(t.q, { user: u, action: 'bank', entity: 'acc-bank', entityId: name, after: b }); });
       return res.json({ ok: true });
     }
     if (b.action === 'jv-link' || b.action === 'jv-unlink') {

@@ -46,7 +46,9 @@ async function run(req, res, job) {
     if (job === 'bank') {
       if (await ba.ranWithin('schedule', 120)) return res.json({ ok: true, skipped: 'Already ran in this slot.' }); // 2 pm and 7 pm: once each
       const r = await ba.runFromDrive({ trigger: 'schedule' });
-      return res.json({ ok: true, id: r.id, added: r.added, updated: r.updated, differences: r.differences.length });
+      // Dream Aspire's own books, from its statements (Dream India Builders)
+      const a = await require('../lib/book').run('aspire', () => ba.runFromDrive({ trigger: 'schedule' })).catch((e) => ({ error: e.message }));
+      return res.json({ ok: true, id: r.id, added: r.added, updated: r.updated, differences: r.differences.length, aspire: a.error ? { error: a.error } : { id: a.id, added: a.added, tagged: a.tagged } });
     }
     if (job === 'morning') {
       const out = {};

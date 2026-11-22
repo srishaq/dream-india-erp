@@ -6,8 +6,10 @@
   const fmtDate = (iso) => (iso ? new Date(iso).toLocaleString('en-IN', { day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' }) : '');
   let me = null;
 
+  // the accounts books follow the project on the picker: Dream Aspire is Dream India Builders' own books
+  const bookOf = () => { try { const p = (projectList || []).find((x) => x.id === proj); return p && p.code === 'ASPIRE' ? 'aspire' : 'signature'; } catch { return 'signature'; } };
   async function api(path, body) {
-    const opt = body ? { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) } : {};
+    const opt = body ? { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-Book': bookOf() }, body: JSON.stringify(body) } : { headers: { 'X-Book': bookOf() } };
     const r = await fetch(path, { credentials: 'same-origin', ...opt });
     let j = {};
     try { j = await r.json(); } catch {}
