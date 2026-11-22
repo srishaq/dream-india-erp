@@ -458,7 +458,7 @@
         ${navHtml(nav, cur)}
       </nav>
       <div class="main">
-        <div class="top no-print"><div class="who">${projectList.length > 1 ? `<select id="proj" class="proj">${projectList.map((p) => `<option value="${p.id}" ${p.id === proj ? 'selected' : ''}>${esc(p.name)}</option>`).join('')}</select>` : `<b>${esc(projectList[0]?.name || '')}</b>`}</div>
+        <div class="top no-print"><div class="who">${projectList.length > 1 ? `<select id="proj" class="proj">${projectList.map((p) => `<option value="${p.id}" ${p.id === proj ? 'selected' : ''}>${esc(p.name)}</option>`).join('')}</select>` : `<b>${esc(projectList[0]?.name || '')}</b>`}${bookOf() === 'aspire' ? ' <span class="small muted" title="Accounts pages show Dream India Builders\' own books while Dream Aspire is chosen">Books: Dream India Builders</span>' : ''}</div>
           <div class="who"><span><b>${esc(me.name)}</b> · ${esc(me.roleLabel)}</span>
             <a class="btn small dcomm" href="/chat" target="dreamcomm" id="dcomm" title="DreamComm: the company chat">💬 DreamComm<span class="chatn" id="dcommN" hidden></span></a>
             ${installButton()}<button class="ghost small" id="cpw">Change password</button><button class="ghost small" id="out">Sign out</button></div></div>
