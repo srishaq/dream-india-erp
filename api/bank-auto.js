@@ -13,7 +13,7 @@ const { has } = require('../lib/roles');
 const { route, fail, str, intOr } = require('../lib/http');
 
 const KEYS = ['statement_start', 'statement_folders', 'pdc_to', 'pdc_cc'];
-const settings = async () => Object.fromEntries((await db.q('select key, value from acc_settings where book = $1 and key = any($2)', ['signature', KEYS])).map((r) => [r.key, r.value]));
+const settings = async () => Object.fromEntries((await db.q('select key, value from acc_settings where book = $1 and key = any($2)', [require('../lib/book').cur(), KEYS])).map((r) => [r.key, r.value]));
 
 module.exports = route({
   GET: async (req, res) => {
@@ -54,8 +54,8 @@ module.exports = route({
       if (b.statement_folders != null) v.statement_folders = String(b.statement_folders).split(/[\s,]+/).map((x) => (x.match(/folders\/([\w-]{10,})/) || [null, x])[1]).filter((x) => /^[\w-]{10,}$/.test(x)).join(',');
       for (const k of ['pdc_to', 'pdc_cc']) if (b[k] != null) v[k] = String(b[k]).split(/[\s,;]+/).filter((e) => /^[^@\s]+@[^@\s]+\.[a-z]{2,}$/i.test(e)).join(', ');
       await db.tx(async (t) => {
-        for (const [k, val] of Object.entries(v)) await t.q('insert into acc_settings (book, key, value) values ($1, $2, $3) on conflict (book, key) do update set value = excluded.value', ['signature', k, val]);
-        await audit.record(t.q, { user: u, action: 'settings', entity: 'bank-auto', entityId: 'signature', after: v });
+        for (const [k, val] of Object.entries(v)) await t.q('insert into acc_settings (book, key, value) values ($1, $2, $3) on conflict (book, key) do update set value = excluded.value', [require('../lib/book').cur(), k, val]);
+        await audit.record(t.q, { user: u, action: 'settings', entity: 'bank-auto', entityId: require('../lib/book').cur(), after: v });
       });
       return res.json({ ok: true, settings: await settings() });
     }
