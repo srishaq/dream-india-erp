@@ -270,7 +270,7 @@ let n = 0; const step = async (name, fn) => { await fn(); n++; console.log('  âœ
     const bc2 = await admin(`/api/books-crm?project=${sig.id}`); assert.equal(bc2.rows.find((x) => x.unit === 'A-1001').booksAv, 485700); // the CRM still has this buyer, so his money stays
     const g = await admin('/api/bank-auto'); assert.equal(g.runs[0].trigger, 'compare'); assert.ok(!g.last || g.last.trigger !== 'compare');
   });
-  await step('Dream Aspire statements: balance only, under ASPIRE; nothing matched or added; a misread future date takes the line above's', async () => {
+  await step('Dream Aspire statements: balance only, under ASPIRE; nothing matched or added; a misread future date takes the date of the line above', async () => {
     const q = require('../lib/db');
     await q.q("insert into acc_daily_banks (book, name, grp, seq, bf_balance) values ('signature', 'ASPIRE CA 30%', 'SIGNATURE', 50, 6909000) on conflict do nothing");
     const asp = makeXlsx('Statement', [[], ['Date', 'Narration', 'Chq./Ref.No.', 'Value Dt', 'Withdrawal Amt.', 'Deposit Amt.', 'Closing Balance'],
