@@ -90,6 +90,60 @@ function usedOf(line, mat) {
   for (const o of Object.values(D.orders)) if (o.line === line.key && o.material === mat && !['rejected', 'cancelled'].includes(o.status)) u += +shownQty(o) || 0;
   return u;
 }
+// Grade / bar size used across the BOQ (or on one floor): each request's quantity (received, else ordered, else
+// requested) shared over its grades or sizes as asked. Quantities from before the portal have no grade.
+const specKey = (m, spec) => (m === 'Steel' ? String(spec || '').replace(/\D/g, '') : String(spec || '').trim());
+function specUsed(m, key, lineKey) {
+  let u = 0;
+  for (const o of Object.values(D.orders)) {
+    if (o.material !== m || ['rejected', 'cancelled'].includes(o.status) || (lineKey && o.line !== lineKey)) continue;
+    const its = o.items && o.items.length ? o.items : [{ spec: o.spec, qty: o.qty }], tot = its.reduce((a, x) => a + (+x.qty || 0), 0) || 1, done = +shownQty(o) || 0;
+    for (const x of its) if (specKey(m, x.spec) === key) u += done * ((+x.qty || 0) / tot);
+  }
+  return u;
+}
+function spentOn(m) {
+  let s = 0;
+  for (const o of Object.values(D.orders)) if (o.material === m && o.order && !['rejected', 'cancelled'].includes(o.status)) s += +o.order.amount || 0;
+  return s;
+}
+// The BOQ by grade and bar size, its value at today's rates, and what has been ordered and spent
+function renderBoqCost() {
+  const B = D.budget, box = $('#boqCost');
+  if (!box || !B.totals) { if (box) box.innerHTML = ''; return; }
+  const money = !!B.rates;
+  const row = (label, boq, used, unit, rate) => `<tr><td>${esc(label)}</td><td class="n">${q(boq)}</td><td class="n">${q(used)}</td><td class="n ${boq - used < 0 ? 'neg' : ''}">${q(boq - used)}</td>${money ? `<td class="n">${rate ? inr(rate) : '–'}</td><td class="n">${rate ? inr(boq * rate) : '–'}</td>` : ''}</tr>`;
+  const g = B.grades.filter((k) => B.totals.grades[k]), d = B.dias.filter((k) => B.totals.dias[k]);
+  const gVal = g.reduce((a, k) => a + B.totals.grades[k] * ((money && B.rates.rmc[k]) || 0), 0), dVal = d.reduce((a, k) => a + B.totals.dias[k] * ((money && B.rates.steel[k]) || 0), 0);
+  const ns = B.lines.find((l) => l.noGradeSplit), nsVal = ns && money ? ns.rmc * B.rates.nsRmc + ns.steel * (dVal / (d.reduce((a, k) => a + B.totals.dias[k], 0) || 1)) : 0;
+  const head = (u) => `<tr><th></th><th class="n">BOQ ${u}</th><th class="n">Used ${u}</th><th class="n">Balance ${u}</th>${money ? `<th class="n">Rate ₹ per ${u}</th><th class="n">BOQ value</th>` : ''}</tr>`;
+  const hist = money && B.rates.history && B.rates.history.length ? `<details style="margin-top:8px"><summary class="note">Rate changes (${B.rates.history.length})</summary>${B.rates.history.slice(0, 20).map((h) => `<p class="note" style="margin:4px 0">${when(h.at)} · ${who(h.by)}: ${h.changes.map((c) => `${esc(c.item)} ${inr(c.from)} → ${inr(c.to)}`).join(', ')}</p>`).join('')}</details>` : '';
+  box.innerHTML = `<h3 style="margin:22px 0 4px">BOQ and cost</h3>
+    <p class="note" style="margin:0 0 10px">The structure as a whole, with wastage (concrete ${q(B.wastage ? B.wastage.rmc * 100 : 1.5)}%, steel ${q(B.wastage ? B.wastage.steel * 100 : 5)}%). Used = requests on the portal by grade or bar size; deliveries from before the portal are counted on each floor's total only.${money ? ' Values at today\'s rates.' : ''}</p>
+    <div class="tbl"><table><thead>${head('m³')}</thead><tbody>${g.map((k) => row('Concrete ' + k, B.totals.grades[k], specUsed('RMC', k), 'm³', money && B.rates.rmc[k])).join('')}
+      ${ns ? row('Concrete, non-structural walls (no grade given)', ns.rmc, 0, 'm³', money && B.rates.nsRmc) : ''}</tbody></table></div>
+    <div class="tbl" style="margin-top:10px"><table><thead>${head('MT')}</thead><tbody>${d.map((k) => row(`Steel ${k} mm`, B.totals.dias[k], specUsed('Steel', k), 'MT', money && B.rates.steel[k])).join('')}
+      ${ns ? row('Steel, non-structural walls (no size given)', ns.steel, 0, 'MT', null) : ''}</tbody></table></div>
+    ${money ? `<div class="tiles" style="margin-top:12px"><div class="tile"><b>${inr(gVal + dVal + nsVal)}</b><span>BOQ value, concrete and steel</span></div><div class="tile"><b>${inr(spentOn('RMC'))}</b><span>RMC ordered so far</span></div><div class="tile"><b>${inr(spentOn('Steel'))}</b><span>Steel ordered so far</span></div></div>
+      ${D.can.approve ? '<p><button class="btn" id="boqRates">Change rates</button> <span class="note">For new requests from now on; requests already raised keep their rates.</span></p>' : ''}${hist}` : ''}
+    <p class="note">${esc(B.source)}. Replaces ${esc(B.replaces || '')}.</p>`;
+  const btn = $('#boqRates'); if (btn) btn.onclick = changeRates;
+}
+function changeRates() {
+  const R = D.budget.rates;
+  const inp = (grp, k, label) => `<label class="field">${esc(label)}<input data-g="${grp}" data-k="${esc(k)}" inputmode="decimal" value="${R[grp][k]}"></label>`;
+  open(`<div class="top"><h3>BOQ rates</h3><button class="x" data-close aria-label="Close">×</button></div>
+    <p class="note">Including GST. Used for the BOQ value and as the budget rate on new requests; Purchase sees "Rate above budget" when a bill is dearer.</p>
+    <h4 style="margin:8px 0 4px">RMC, ₹ per m³</h4><div class="form">${D.budget.grades.map((k) => inp('rmc', k, k)).join('')}<label class="field">Non-structural walls<input data-g="nsRmc" inputmode="decimal" value="${R.nsRmc}"></label></div>
+    <h4 style="margin:12px 0 4px">Steel, ₹ per MT</h4><div class="form">${D.budget.dias.map((k) => inp('steel', k, k + ' mm')).join('')}</div>
+    <p class="err"></p><div class="acts"><button class="btn" data-close>Cancel</button><button class="btn go" id="saveRates">Save rates</button></div>`);
+  $('#saveRates').onclick = async () => {
+    const data = { rmc: {}, steel: {} };
+    $$('#sheet input[data-g]').forEach((x) => { if (x.dataset.g === 'nsRmc') data.nsRmc = x.value; else data[x.dataset.g][x.dataset.k] = x.value; });
+    try { const r = await api('POST', { op: 'boq_rates', data }); close(); D = await api('GET'); render(); $('#pageErr').textContent = ''; $('#bSrc').textContent = (r.changed.length ? `Rates saved: ${r.changed.map((c) => c.item).join(', ')}. ` : 'No rate changed. ') + $('#bSrc').textContent; }
+    catch (e) { $('#sheet .err').textContent = e.message; }
+  };
+}
 function cell(budget, used) {
   if (budget == null) return '<td class="n">–</td><td class="n">–</td><td class="n">–</td><td></td>';
   const bal = budget - used, pct = budget ? Math.min(100, (used / budget) * 100) : 0;
@@ -107,8 +161,9 @@ function renderBudget() {
     if (l.rmc == null && l.steel == null) return `<tr><td><b>${esc(l.floor)}</b></td><td colspan="8" class="note">No budget. Requests here are tracked but not checked.</td></tr>`;
     return `<tr><td><b>${esc(l.floor)}</b>${l.opening ? `<br><span class="note">${esc(l.opening.note)}</span>` : ''}</td>${cell(l.rmc, usedOf(l, 'RMC'))}${cell(l.steel, usedOf(l, 'Steel'))}</tr>`;
   }).join('');
-  $('#bSrc').textContent = `Budget: ${D.budget.source}. Used = delivered before the portal (where shown) plus every open or completed request on the portal.`;
-  $('#bFoot').textContent = `Delivered before the portal, from the site trackers (${D.budget.trackers.asOf}): steel ${q(D.budget.trackers.steel, 2)} MT, RMC ${q(D.budget.trackers.rmc, 0)} m³. Sale A wing / B wing split is pending from the structural consultant, so Sale budgets are per floor for both wings together.`;
+  $('#bSrc').textContent = `BOQ: ${D.budget.source}. Used = delivered before the portal (where shown) plus every open or completed request on the portal.`;
+  $('#bFoot').textContent = `Delivered before the portal, from the site trackers (${D.budget.trackers.asOf}): steel ${q(D.budget.trackers.steel, 2)} MT, RMC ${q(D.budget.trackers.rmc, 0)} m³. The three wings are one structure, so the BOQ is per floor for the whole structure, not per wing.`;
+  renderBoqCost();
 }
 function render() {
   renderTiles();
@@ -146,7 +201,7 @@ function newRequest() {
     <label class="field wide" id="specTF" hidden>Item<input name="specText" placeholder="e.g. shuttering plywood 12 mm" autocomplete="off"></label>
     <div class="wide items" id="items"></div>
     <label class="field">Needed by<input name="neededBy" type="date" value="${today()}"></label>
-    <label class="field">Building<select name="building"><option>Sale</option><option>Rehab</option><option>Project</option></select></label>
+    <label class="field">Building<select name="building"><option value="Structure">Whole structure (A, B and Rehab)</option><option>Project</option></select></label>
     <label class="field">Floor<select name="line"></select></label>
     <label class="field">Wing<select name="wing"></select></label>
     <label class="field">Element / location<input name="element" placeholder="e.g. columns and shear walls" autocomplete="off"></label>
@@ -200,7 +255,12 @@ function newRequest() {
     const used = f === 'cement' ? Object.values(D.orders).filter((o) => o.line === line.key && !['rejected', 'cancelled'].includes(o.status)).reduce((s, o) => s + (+shownQty(o) || 0), 0) : usedOf(line, m);
     const bal = line[f] - used, after = bal - qty, over = used + qty > line[f] * (1 + D.tolerance);
     chk.className = 'chk' + (over ? ' over' : '');
-    chk.textContent = `${line.floor}: budget ${q(line[f])} ${M.unit}, used ${q(used)}, balance ${q(bal)}.` + (qty ? ` After this request: ${q(after)}.` : '') + (over ? ' This goes over budget. Management will see that when approving.' : '');
+    const src = m === 'RMC' ? line.grades : m === 'Steel' ? line.dias : null;
+    const specTxt = src && Object.keys(src).length ? readItems().filter((x) => x.spec).map((x) => { const k = specKey(m, x.spec), b = src[k] || 0, u = specUsed(m, k, line.key), a = b - u - num(x.qty);
+      return b ? `${x.spec}: BOQ ${q(b)}, used ${q(u)}, after this ${q(a)}${a < -b * D.tolerance ? ' (over)' : ''}` : `${x.spec}: not in this floor's BOQ`; }).join(' · ') : '';
+    const specOver = /\(over\)|not in this floor/.test(specTxt);
+    chk.className = 'chk' + (over || specOver ? ' over' : '');
+    chk.textContent = `${line.floor}: budget ${q(line[f])} ${M.unit}, used ${q(used)}, balance ${q(bal)}.` + (qty ? ` After this request: ${q(after)}.` : '') + (specTxt ? ` ${specTxt}.` : '') + (over || specOver ? ' This goes over the BOQ. Management will see that when approving.' : '');
   };
   form.addEventListener('input', sync); form.addEventListener('change', sync); sync();
   $('#send').addEventListener('click', async () => {

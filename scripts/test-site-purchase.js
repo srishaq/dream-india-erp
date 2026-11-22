@@ -294,6 +294,24 @@ const JPEG = 'data:image/jpeg;base64,/9j/4AAQSkZJRgABAQEASABIAAD/2wBDAP/////////
     assert.equal(R.parse('{"date":"30/10/2026","items":[]}').date, '');
   });
 
+  await step('BOQ of 16 Nov: one combined structure, checked by grade and bar size; old floor lines count on the new ones; Management sets the rates', async () => {
+    const g = await P(sameer);
+    assert.equal(g.budget.version, '2026-11-16'); assert.ok(Math.abs(g.budget.totals.rmc - 63243.667) < 0.01);
+    const f3 = g.budget.lines.find((l) => l.key === 'Structure|Floor 3'); assert.ok(f3 && f3.grades.M60 > 0 && f3.rmcRate > 0);
+    const ok = await P(siteeng, { op: 'request', data: { material: 'RMC', items: [{ spec: 'M60', qty: 10 }], line: 'Structure|Floor 3', wing: 'A wing' } });
+    assert.equal(ok.status, 200, ok.error); assert.equal(ok.doc.budgetAtRequest.specs[0].spec, 'M60'); assert.ok(Math.abs(ok.doc.budgetAtRequest.specs[0].budget - f3.grades.M60) < 0.001); assert.equal(ok.doc.budgetAtRequest.over, false);
+    assert.equal((await kv.hget('po:orders', ok.doc.id)).budgetRates.M60, 7758);
+    const bad = await P(siteeng, { op: 'request', data: { material: 'RMC', items: [{ spec: 'M35', qty: 5 }], line: 'Structure|Floor 3', wing: 'A wing' } });
+    assert.equal(bad.doc.budgetAtRequest.specs[0].notInBoq, true); assert.equal(bad.doc.budgetAtRequest.over, true);
+    await kv.hset('po:orders', 'oldline1', { id: 'oldline1', no: 'PR-9001', material: 'RMC', spec: 'M60', qty: 100, line: 'Sale|Floor 6 (podium parking)', building: 'Sale', floor: 'Floor 6 (podium parking)', status: 'received', receipt: { qty: 100 }, history: [] });
+    const g2 = await P(sameer); assert.equal(g2.orders.oldline1.line, 'Structure|Floor 6'); assert.equal(g2.orders.oldline1.building, 'Structure');
+    assert.equal((await P(siteeng, { op: 'boq_rates', data: { rmc: { M60: 8000 } } })).status, 403);
+    const ch = await P(sameer, { op: 'boq_rates', data: { rmc: { M60: '8,000' }, steel: { 25: 61500 } } });
+    assert.equal(ch.status, 200, ch.error); assert.equal(ch.changed.length, 2);
+    const g3 = await P(sameer); assert.equal(g3.budget.rates.rmc.M60, 8000); assert.equal(g3.budget.rates.steel['25'], 61500); assert.equal(g3.budget.rates.history[0].changes[0].from, 7758);
+    assert.equal((await P(siteeng)).budget.rates, undefined); // site never sees rates
+  });
+
   console.log(`\nAll ${passed} site and purchase checks passed.`);
   server.close(); smtp.close(); ccm.close(); await wait(50); process.exit(0);
 })().catch((e) => { console.error(e); process.exit(1); });

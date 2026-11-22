@@ -95,18 +95,19 @@ tr.click{cursor:pointer}tr.click:hover td{background:#F7F8F5}
     <div class="tools">
       <label class="field">Show<select id="fStatus"><option value="open">Open</option><option value="mine">Waiting for me</option><option value="paid">Paid</option><option value="closed">Rejected or cancelled</option><option value="all">All</option></select></label>
       <label class="field">Material<select id="fMat"><option value="">All materials</option></select></label>
-      <label class="field">Building<select id="fBld"><option value="">All buildings</option><option>Sale</option><option>Rehab</option><option>Project</option></select></label>
+      <label class="field">Building<select id="fBld"><option value="">All buildings</option><option value="Structure">Whole structure</option><option>Project</option></select></label>
       <label class="field">Search<input type="search" id="fQ" placeholder="Request no., vendor, floor, challan"></label>
     </div>
     <div class="tbl" style="margin-top:14px"><table><thead><tr><th>Request</th><th>Material</th><th class="n">Quantity</th><th>For</th><th>Status</th><th class="n">Bill ₹</th></tr></thead><tbody id="rows"></tbody></table></div>
   </section>
   <section class="panel" id="budgetView" hidden>
     <div class="tools">
-      <label class="field">Building<select id="bBld"><option>Sale</option><option>Rehab</option><option>Project</option></select></label>
+      <label class="field">Building<select id="bBld"><option value="Structure">Whole structure (A, B and Rehab)</option><option>Project</option></select></label>
       <p class="note" id="bSrc" style="margin:0;flex:1 1 300px"></p>
     </div>
     <div class="tbl" style="margin-top:14px"><table><thead><tr><th>Floor</th><th class="n">RMC budget m³</th><th class="n">Used m³</th><th class="n">Balance m³</th><th></th><th class="n">Steel budget MT</th><th class="n">Used MT</th><th class="n">Balance MT</th><th></th></tr></thead><tbody id="brows"></tbody></table></div>
     <p class="note" id="bFoot" style="margin:10px 0 0"></p>
+    <div id="boqCost"></div>
   </section>
   <p class="err" id="pageErr"></p>
 </main>
