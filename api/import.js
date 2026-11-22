@@ -68,6 +68,30 @@ module.exports = route({
       const out = await db.tx((t) => require('../lib/import-aspire').contractorCommit(t, parsed, { projectId, user: u, rate, contractor, source: name }));
       return res.json({ ok: true, file: name, ...out });
     }
+    // Aspire buyers' actual payments (the CRM's "transaction details" workbook) replace the opening receipts
+    if (b.action === 'aspire-receipts-preview' || b.action === 'aspire-receipts-commit') {
+      const prj = await db.one('select code from projects where id = $1', [projectId]);
+      if (prj?.code !== 'ASPIRE') throw fail(400, 'This import is for Dream Aspire only.');
+      const R = require('../lib/import-aspire-receipts');
+      let buf, name;
+      if (b.fileB64) { buf = Buffer.from(String(b.fileB64), 'base64'); name = String(b.fileName || 'uploaded workbook').slice(0, 200); }
+      else if (process.env.IMPORT_ASPIRE_TXN_FIXTURE && process.env.VERCEL !== '1') { buf = require('fs').readFileSync(process.env.IMPORT_ASPIRE_TXN_FIXTURE); name = 'transaction details (fixture)'; }
+      else {
+        const drive = require('../lib/drive');
+        const files = (await drive.statementFiles([ASPIRE_CRM_FOLDER()]).catch((e) => { throw fail(400, `Could not open the Aspire CRM folder on Drive: ${e.message}.`); })).filter((f) => /transaction/i.test(f.name));
+        if (!files.length) throw fail(400, 'No "transaction details" workbook in the Aspire CRM folder.');
+        buf = await drive.download(files[0]); name = `${files[0].name} (Drive, ${String(files[0].modifiedTime).slice(0, 10)})`;
+      }
+      let parsed; try { parsed = R.parse(require('../lib/xlsx').read(buf)); } catch (e) { throw fail(400, 'The workbook could not be read: ' + e.message); }
+      if (b.action === 'aspire-receipts-preview') {
+        const { rows, issues } = await R.plan(db.q, parsed, projectId);
+        const sum = (k) => Math.round(rows.reduce((a, r) => a + r[k], 0));
+        return res.json({ file: name, summary: parsed.summary, flats: rows.length, avBefore: sum('avBefore'), avAfter: sum('avAfter'), gstBefore: sum('gstBefore'), gstAfter: sum('gstAfter'), issues,
+          differ: rows.filter((r) => Math.abs(r.avBefore - r.avAfter) > 1).map((r) => ({ unit: r.f.unit, before: r.avBefore, after: r.avAfter, payments: r.f.lines.length })) });
+      }
+      const out = await db.tx(async (t) => { await t.q("set local statement_timeout = '120s'").catch(() => {}); return R.commit(t, parsed, { projectId, user: u, source: name }); });
+      return res.json({ ok: true, file: name, ...out });
+    }
     if (b.action === 'aspire-preview' || b.action === 'aspire-commit') {
       const prj = await db.one('select code from projects where id = $1', [projectId]);
       if (prj?.code !== 'ASPIRE') throw fail(400, 'This import is for Dream Aspire only.');
