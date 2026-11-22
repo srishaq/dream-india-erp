@@ -270,7 +270,7 @@ let n = 0; const step = async (name, fn) => { await fn(); n++; console.log('  âœ
     const bc2 = await admin(`/api/books-crm?project=${sig.id}`); assert.equal(bc2.rows.find((x) => x.unit === 'A-1001').booksAv, 485700); // the CRM still has this buyer, so his money stays
     const g = await admin('/api/bank-auto'); assert.equal(g.runs[0].trigger, 'compare'); assert.ok(!g.last || g.last.trigger !== 'compare');
   });
-  await step('Dream Aspire statements: balance only, under ASPIRE; nothing matched or added; misread future dates left out', async () => {
+  await step('Dream Aspire statements: balance only, under ASPIRE; nothing matched or added; a misread future date takes the line above's', async () => {
     const q = require('../lib/db');
     await q.q("insert into acc_daily_banks (book, name, grp, seq, bf_balance) values ('signature', 'ASPIRE CA 30%', 'SIGNATURE', 50, 6909000) on conflict do nothing");
     const asp = makeXlsx('Statement', [[], ['Date', 'Narration', 'Chq./Ref.No.', 'Value Dt', 'Withdrawal Amt.', 'Deposit Amt.', 'Closing Balance'],
@@ -282,7 +282,7 @@ let n = 0; const step = async (name, fn) => { await fn(); n++; console.log('  âœ
     assert.ok(!r.differences.some((d) => /Aspire/.test(d.bank || '')), JSON.stringify(r.differences.filter((d) => /Aspire/.test(d.bank || ''))));
     const b = await admin('/api/accounts?view=balances&date=2026-10-20');
     const row = b.rows.find((x) => x.bank === 'ASPIRE HDFC 30% (7044)'); assert.ok(row, 'the Aspire bank is on the Daily Bank Balance');
-    assert.equal(row.grp, 'ASPIRE'); assert.equal(Math.round(row.closing * 100), 2558620344);
+    assert.equal(row.grp, 'ASPIRE'); assert.equal(Math.round(row.closing * 100), 2558620844); // the 10/10/32 line is dated 19/10/26
     assert.ok(!b.rows.some((x) => x.bank === 'ASPIRE CA 30%'), 'the old hand-kept Aspire row no longer counts');
   });
   await step('an Aspire statement is never read as one of Prime\'s accounts', async () => {
