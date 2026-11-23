@@ -199,7 +199,7 @@ async function approvalMail(p, by, req) {
   const when = p.publish_at ? new Date(p.publish_at).toLocaleString('en-IN', { day: 'numeric', month: 'short', hour: 'numeric', minute: '2-digit', timeZone: 'Asia/Kolkata' }) : 'no date yet';
   const html = `<p>${e(by.name)} has sent a post for your approval.</p><p><b>${e(p.title)}</b><br>${e((Array.isArray(p.channels) ? p.channels : String(p.channels || '').replace(/[{}"]/g, '').split(',')).filter(Boolean).join(', '))} · goes out ${e(when)}</p>
     ${p.caption ? `<p style="white-space:pre-wrap;background:#F7F7FB;padding:10px;border-radius:8px">${e(String(p.caption).slice(0, 1500))}</p>` : ''}
-    <p>${files.length ? `${files.length} design file${files.length > 1 ? 's' : ''} attached in the ERP.` : 'No design file attached.'}${p.canva_url ? ` <a href="${e(p.canva_url)}">Open the design in Canva</a>.` : ''}</p>
+    <p>${files.length ? `${files.length} design file${files.length > 1 ? 's' : ''} attached in the ERP.` : 'No design file attached.'}${p.canva_url ? ` <a href="${host}/api/marketing?canvaopen=${p.id}">Open the design in Canva</a>.` : ''}</p>
     <p><a href="${host}/#/marketing" style="display:inline-block;background:#140C59;color:#fff;padding:10px 16px;border-radius:8px;text-decoration:none">Open Marketing to approve</a></p>`;
   return F.send(people, `For your approval: ${p.title}`, html, { text: `${by.name} has sent "${p.title}" for your approval. Open ${host}/#/marketing`, skipped: 'No Management login has an email address.' });
 }
@@ -428,9 +428,13 @@ async function proxyImg(res, src, okHost) {
   let h = null; try { const x = new URL(src); h = x.protocol === 'https:' || (!process.env.VERCEL && x.hostname === '127.0.0.1') ? x.hostname : null; } catch { h = null; }
   if (!h || !(okHost(h) || (!process.env.VERCEL && h === '127.0.0.1'))) return res.status(404).json({ error: 'No picture.' });
   const r = await fetch(src, { redirect: 'follow', signal: AbortSignal.timeout(15000) }).catch(() => null);
-  const type = r && r.headers.get('content-type');
-  if (!r || !r.ok || !/^image\//.test(type || '')) return res.status(404).json({ error: 'No picture.' });
+  if (!r || !r.ok) return res.status(404).json({ error: 'No picture.' });
   const buf = Buffer.from(await r.arrayBuffer()); if (buf.length > 6e6) return res.status(404).json({ error: 'Too big.' });
+  // Canva's thumbnails come from storage as "binary/octet-stream": the picture is known by its first bytes
+  const sniff = buf[0] === 0x89 && buf[1] === 0x50 ? 'image/png' : buf[0] === 0xff && buf[1] === 0xd8 ? 'image/jpeg' : buf.slice(0, 4).toString() === 'RIFF' && buf.slice(8, 12).toString() === 'WEBP' ? 'image/webp' : buf.slice(0, 3).toString() === 'GIF' ? 'image/gif' : null;
+  const given = r.headers.get('content-type') || '';
+  const type = /^image\//.test(given) ? given : sniff;
+  if (!type) return res.status(404).json({ error: 'No picture.' });
   res.setHeader('Content-Type', type); res.setHeader('Cache-Control', 'private, max-age=86400'); return res.end(buf);
 }
 // The ads (designs) of one Meta campaign: last 7 and 30 days, cost per lead, and whether the ad is tiring.
@@ -654,6 +658,21 @@ const handler = route({
     if (q.adimg) {
       const a = await db.one('select thumb from mkt_ads where id = $1', [intOr(q.adimg)]);
       return proxyImg(res, a && a.thumb, (h) => /(^|\.)(fbcdn\.net|facebook\.com|cdninstagram\.com)$/.test(h));
+    }
+    // "Open in Canva" on a post: the design's own address (opens for the whole Canva team). A post saved with Canva's
+    // one-person edit link is looked up in Canva by its title and its link corrected.
+    if (q.canvaopen) {
+      const T = require('../lib/mkt-tools');
+      const p = await db.one('select id, title, canva_url from mkt_posts where id = $1', [intOr(q.canvaopen)]);
+      if (!p) throw fail(404, 'Post not found.');
+      let to = p.canva_url && /canva\.com\/design\/[A-Za-z0-9_-]+\/edit/.test(p.canva_url) && !/canva\.com\/api\//.test(p.canva_url) ? p.canva_url : null;
+      if (!to && p.canva_url && !/canva\.com\/api\//.test(p.canva_url) && /canva\.com|canva\.link/.test(p.canva_url)) to = p.canva_url; // a link someone pasted
+      if (!to) {
+        const find = async (query) => ((await T.canvaDesigns({ query }).catch(() => ({ items: [] }))).items || []).find((d) => String(d.title || '').includes(`(ERP post ${p.id})`) || String(d.title || '').trim().toLowerCase() === String(p.title || '').trim().toLowerCase());
+        const d = (await find(`ERP post ${p.id}`)) || (await find(p.title || ''));
+        if (d) { to = T.designUrl(d.id); await db.q('update mkt_posts set canva_url = $2 where id = $1', [p.id, to]); }
+      }
+      res.statusCode = 302; res.setHeader('Location', to || 'https://www.canva.com/'); return res.end();
     }
     if (q.cimg) return proxyImg(res, String(q.cimg), (h) => require('../lib/mkt-tools').okCanvaImg('https://' + h + '/'));
     if (q.spendfile) {
