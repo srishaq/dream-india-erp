@@ -448,7 +448,7 @@ module.exports = route({
       if (!/^[AB]-\d{3,4}$/.test(unit)) throw fail(400, 'Type the flat as A-1001.');
       if (!reason) throw fail(400, 'Say why it belongs to that flat.');
       const r = await db.one('select * from acc_receipts where id = $1 and book = $2', [id, acc.BOOK]); if (!r) throw fail(404, 'Receipt not found.');
-      if (!(await db.one("select 1 as x from units u join projects p on p.id = u.project_id where p.code = 'SIGNATURE' and u.unit_no = $1", [unit]))) throw fail(400, `${unit} is not a flat of Dream Signature.`);
+      if (!(await db.one("select 1 as x from units u join projects p on p.id = u.project_id where p.code = $2 and u.unit_no = $1", [unit, require('../lib/book').code()]))) throw fail(400, `${unit} is not a flat of ${require('../lib/book').code() === 'ASPIRE' ? 'Dream Aspire' : 'Dream Signature'}.`);
       await db.tx(async (t) => {
         await t.q("update acc_receipts set unit_no = $2, head = case when coalesce(head, '') in ('', 'Not given in Tally') or head !~* 'transfer' then 'Receipts From Customers' else head end, payer_type = 'Current buyer', updated_by = $3, updated_at = now(), remark = concat_ws(' · ', nullif(remark, ''), $4::text) where id = $1", [id, unit, u.id, `Moved from ${r.unit_no || 'no flat'} to ${unit}: ${reason}`]);
         await audit.record(t.q, { user: u, action: 'move-receipt', entity: 'acc-receipts', entityId: id, before: { unit_no: r.unit_no }, after: { unit_no: unit }, note: reason });

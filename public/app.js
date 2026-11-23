@@ -9,7 +9,9 @@
   // the accounts books follow the project on the picker: Dream Aspire is Dream India Builders' own books
   const bookOf = () => { try { const p = (projectList || []).find((x) => x.id === proj); return p && p.code === 'ASPIRE' ? 'aspire' : 'signature'; } catch { return 'signature'; } };
   async function api(path, body) {
-    const opt = body ? { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-Book': bookOf() }, body: JSON.stringify(body) } : { headers: { 'X-Book': bookOf() } };
+    const ctx = { 'X-Book': bookOf() };
+    try { if (/^\d+$/.test(String(proj ?? ''))) ctx['X-Project'] = String(proj); } catch { /* the picker is not set up yet */ }
+    const opt = body ? { method: 'POST', headers: { 'Content-Type': 'application/json', ...ctx }, body: JSON.stringify(body) } : { headers: ctx };
     const r = await fetch(path, { credentials: 'same-origin', ...opt });
     let j = {};
     try { j = await r.json(); } catch {}

@@ -57,10 +57,12 @@ async function run(req, res, job) {
       out.reraPack = await require('../lib/rera').morning().catch((e) => ({ error: e.message })); // the quarter's MahaRERA figures to the CA, from the 3rd
       out.cheques = await require('../lib/cheque-match').run({ trigger: 'morning' }).catch((e) => ({ error: e.message }));
       out.autoClear = await (async () => { const db = require('../lib/db'); const sys = await db.one("select * from users where role = 'admin' and not disabled order by id limit 1"); const out2 = {}; for (const p of await db.q("select id from projects where active")) out2[p.id] = (await require('../lib/auto-clear').run({ projectId: p.id, user: sys, dry: false })).closedTotal; return out2; })().catch((e) => ({ error: e.message })); // Data to verify items that need nobody
-      for (const dept of ['accounts', 'crm']) {
-        if (!secret && await dt.ranToday(dept)) { out[dept] = 'already ran'; continue; }
-        const r = await dt.run(dept, { trigger: 'schedule' });
-        out[dept] = { found: r.found.length, error: r.run.error, mail: r.run.mail };
+      // each project's own lists (Dream Signature and Dream Aspire apart)
+      for (const p of await dt.projects()) for (const dept of ['accounts', 'crm']) {
+        const k = `${dept}:${p.code}`;
+        if (!secret && await dt.ranToday(dept, undefined, p.id)) { out[k] = 'already ran'; continue; }
+        const r = await dt.run(dept, { trigger: 'schedule', projectId: p.id }).catch((e) => ({ run: { error: e.message }, found: [] }));
+        out[k] = { found: r.found.length, error: r.run.error, mail: r.run.mail };
       }
       return res.json({ ok: true, ...out });
     }
