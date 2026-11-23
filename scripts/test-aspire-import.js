@@ -119,6 +119,34 @@ let n = 0; const step = async (name, fn) => { await fn(); n++; console.log('  âœ
     const r = await admin('/api/import', { action: 'aspire-commit', projectId: asp.id });
     assert.equal(r.status, 409);
   });
+  await step("buyers' contact details from the CRM's collection report: filled where empty, a missing co-buyer added, a different name only listed", async () => {
+    if (real) return;
+    const H = ['SR.NO.', 'FLAT NO.', 'OWNED BY', 'SQ.FT', 'PARTICULARS', ...Array(24).fill(null), 'CONTACT NUMBER', 'EMAIL ID', 'ADDRESS for 1 st applicant ', 'ADDRESS for 2nd  applicant ', 'ADDRESS for 3rd   applicant ', '1st applicant  Pan card', '2nd applicant pan card ', '3nd applicant pan card '];
+    const row = (no, names, ph, em, a1, a2, p1, p2) => [1, no, 'DIB', 459, names, ...Array(24).fill(null), ph, em, a1, a2, null, p1, p2, null];
+    const rows = [[], [], H,
+      row(201, 'Test Buyer One/Test Buyer Two', '98200 11111', 'one@example.com;two@example.com', 'Flat 1, Test Road', 'Same as above', 'ABCDE1234F', 'ABCDE1234G'),
+      row(202, 'Test Buyer Three Fullname/Test Co Buyer', '+44 7700 900123', 'three@example.com', 'Flat 2, Test Road', 'Flat 3, Test Road', 'XYZAB1234C', 'bad'),
+      row(203, 'Someone Else', '9000000000', null, 'Flat 4', null, null, null),
+      row(305, 'Assigned to Adani', null, null, null, null, null, null)];
+    const fileB64 = require('../lib/xlsx-write').write([{ name: 'DATA', rows }]).toString('base64');
+    const pv = await admin('/api/import', { action: 'aspire-contacts-preview', projectId: asp.id, fileB64 });
+    assert.equal(pv.status, 200, pv.error);
+    assert.deepEqual(pv.added, [{ unit: 'A-202', name: 'Test Co Buyer' }]);
+    assert.ok(pv.differ.some((d) => d.unit === 'A-203' && d.what === 'name'));
+    assert.ok(pv.issues.some((i) => i.unit === 'A-202' && i.kind === 'pan'));
+    const r = await admin('/api/import', { action: 'aspire-contacts-commit', projectId: asp.id, fileB64 });
+    assert.equal(r.ok, true, r.error);
+    const who = async (u) => db.q('select a.seq, y.name, y.phone, y.email, y.address, y.pan from booking_applicants a join buyers y on y.id = a.buyer_id join bookings b on b.id = a.booking_id join units u on u.id = b.unit_id where u.unit_no = $1 and u.project_id = $2 order by a.seq', [u, asp.id]);
+    const a = await who('A-201');
+    assert.deepEqual(a.map((x) => [x.phone, x.email, x.pan]), [['9820011111', 'one@example.com', 'ABCDE1234F'], [null, 'two@example.com', 'ABCDE1234G']]);
+    assert.equal(a[1].address, 'Flat 1, Test Road');
+    const b = await who('A-202');
+    assert.equal(b[0].name, 'Test Buyer Three Fullname'); assert.equal(b[0].phone, '+447700900123');
+    assert.equal(b[1].name, 'Test Co Buyer'); assert.equal(b[1].address, 'Flat 3, Test Road'); assert.equal(b[1].pan, null);
+    const c = await who('A-203');
+    assert.equal(c[0].name, 'Test Buyer Four'); assert.equal(c[0].address, null); // a different person: only the flat's number
+    assert.equal(c[0].phone, '9000000000');
+  });
   console.log(`${n} passed`);
   server.close?.(); await db.end?.(); process.exit(0);
 })().catch((e) => { console.error(e); process.exit(1); });

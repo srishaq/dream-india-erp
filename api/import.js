@@ -92,6 +92,32 @@ module.exports = route({
       const out = await db.tx(async (t) => { await t.q("set local statement_timeout = '120s'").catch(() => {}); return R.commit(t, parsed, { projectId, user: u, source: name }); });
       return res.json({ ok: true, file: name, ...out });
     }
+    // Aspire buyers' names, numbers, emails, addresses and PANs from the CRM's collection report (sheet DATA)
+    if (b.action === 'aspire-contacts-preview' || b.action === 'aspire-contacts-commit') {
+      const prj = await db.one('select code from projects where id = $1', [projectId]);
+      if (prj?.code !== 'ASPIRE') throw fail(400, 'This import is for Dream Aspire only.');
+      const C = require('../lib/import-aspire-contacts');
+      let buf, name;
+      if (b.fileB64) { buf = Buffer.from(String(b.fileB64), 'base64'); name = String(b.fileName || 'uploaded workbook').slice(0, 200); }
+      else if (process.env.IMPORT_ASPIRE_CONTACTS_FIXTURE && process.env.VERCEL !== '1') { buf = require('fs').readFileSync(process.env.IMPORT_ASPIRE_CONTACTS_FIXTURE); name = 'collection report (fixture)'; }
+      else {
+        const drive = require('../lib/drive');
+        const files = (await drive.statementFiles([ASPIRE_CRM_FOLDER()]).catch((e) => { throw fail(400, `Could not open the Aspire CRM folder on Drive: ${e.message}.`); }))
+          .filter((f) => /collection report/i.test(f.name)).sort((x, y) => String(y.modifiedTime).localeCompare(String(x.modifiedTime)));
+        if (!files.length) throw fail(400, 'No "Collection Report" workbook in the Aspire CRM folder.');
+        buf = await drive.download(files[0]); name = `${files[0].name} (Drive, ${String(files[0].modifiedTime).slice(0, 10)})`;
+      }
+      let parsed; try { parsed = C.parse(require('../lib/xlsx').read(buf)); } catch (e) { throw fail(400, 'The workbook could not be read: ' + e.message); }
+      if (b.action === 'aspire-contacts-preview') {
+        const p = await C.plan(db.q, parsed, projectId);
+        const n = (k) => p.changes.filter((c) => c.set[k]).length;
+        return res.json({ file: name, flats: parsed.flats.length, bookings: p.bookings, buyers: p.changes.length, names: n('name'), phones: n('phone'), emails: n('email'), addresses: n('address'), pans: n('pan'),
+          added: p.adds.map((a) => ({ unit: a.unit, name: a.name })), differ: p.differ, issues: p.issues, notInSheet: p.notInSheet });
+      }
+      const out = await db.tx((t) => C.commit(t, parsed, { projectId, user: u, source: name }));
+      const { plan: _p, ...rest } = out;
+      return res.json({ ok: true, file: name, ...rest });
+    }
     if (b.action === 'aspire-preview' || b.action === 'aspire-commit') {
       const prj = await db.one('select code from projects where id = $1', [projectId]);
       if (prj?.code !== 'ASPIRE') throw fail(400, 'This import is for Dream Aspire only.');
