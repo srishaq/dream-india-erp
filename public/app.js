@@ -2615,12 +2615,15 @@
         if (T) { if (F('tds_section') && !F('tds_section').value) F('tds_section').value = T.sec; if (F('tds_rate') && !F('tds_rate').value && T.rate != null) F('tds_rate').value = (T.rate * 100) + '%'; }
         const base = toNum(F('taxable_value') && F('taxable_value').value), rate = F('tds_rate') && F('tds_rate').value ? pctIn(F('tds_rate')) : 0;
         if (base && rate && F('tds_deducted') && !F('tds_deducted').dataset.typed) F('tds_deducted').value = Math.round(base * rate);
+        // the invoice: total bill = taxable value + GST; the bank paid total bill − TDS
+        const gstV = F('gst_on_bill') && F('gst_on_bill').value !== '' ? toNum(F('gst_on_bill').value) : null;
+        if (base && gstV != null && F('total_bill') && !F('total_bill').dataset.typed) F('total_bill').value = Math.round((base + gstV) * 100) / 100;
         const tot = toNum(F('total_bill') && F('total_bill').value), ded = toNum(F('tds_deducted') && F('tds_deducted').value);
         if (tot && F('net_payable') && !F('net_payable').dataset.typed) F('net_payable').value = Math.round((tot - ded) * 100) / 100;
         if (form.poId && !row && F('net_payable') && toNum(F('net_payable').value) && F('amount')) F('amount').value = toNum(F('net_payable').value); // pay the bill less TDS (a statement row keeps its own amount)
       };
-      ['head', 'taxable_value', 'tds_rate', 'total_bill', 'tds_deducted'].forEach((k) => F(k) && F(k).addEventListener('change', work));
-      ['tds_deducted', 'net_payable'].forEach((k) => F(k) && F(k).addEventListener('input', () => (F(k).dataset.typed = 1)));
+      ['head', 'taxable_value', 'gst_on_bill', 'tds_rate', 'total_bill', 'tds_deducted'].forEach((k) => F(k) && F(k).addEventListener('change', work));
+      ['tds_deducted', 'net_payable', 'total_bill'].forEach((k) => F(k) && F(k).addEventListener('input', () => (F(k).dataset.typed = 1)));
       if ((row && row.bill_ids) || !P.bills.length) return; // a statement's payment row can be matched to the bill it pays
       const box = document.createElement('div'); box.className = 'note'; box.style.margin = '0 0 10px';
       box.innerHTML = `<label style="margin:0 0 4px"><b>Paying an approved purchase bill?</b> (${P.bills.length} approved by Accounts, waiting to be paid)</label><select id="poPick"><option value="">No, an ordinary payment</option>${P.bills.map((b) => `<option value="${esc(b.id)}">${esc(b.vendor || 'Vendor')} · ${esc(b.material || '')}${b.billNo ? ' · bill ' + esc(b.billNo) : ''} · ${inr(b.amount)}</option>`).join('')}</select>

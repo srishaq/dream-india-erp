@@ -198,6 +198,11 @@ module.exports = route({
           if ((data.tds_deducted == null || data.tds_deducted === '') && data.taxable_value != null && data.taxable_value !== '' && data.tds_rate != null) data.tds_deducted = Math.round(Number(data.taxable_value) * Number(data.tds_rate));
         }
       }
+      // the bill: total = taxable value + GST, paid = total − TDS; the empty figures are worked out from the typed ones
+      if (b.reg === 'payments') {
+        const B = ['amount', 'taxable_value', 'gst_on_bill', 'total_bill', 'tds_rate', 'tds_deducted', 'net_payable'];
+        if (B.some((k) => k in data)) acc.billMath(data, id ? (await db.one(`select ${B.join(', ')} from acc_payments where id = $1 and book = $2`, [id, acc.BOOK])) || {} : {});
+      }
       // a refund on a cancelled flat goes only to the buyer whose booking was cancelled (RERA; meeting of 5 Nov 2026)
       if (b.reg === 'payments') {
         const cur = id ? await db.one('select head, payee, unit_no from acc_payments where id = $1 and book = $2', [id, acc.BOOK]) : {};

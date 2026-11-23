@@ -310,6 +310,16 @@ let n = 0; const step = async (name, fn) => { await fn(); n++; console.log('  âœ
     const again = (await admin('/api/accounts?reg=payments&limit=300')).rows.find((x) => x.id === part.id);
     assert.equal(again.bill_no, 'INV-201'); assert.equal(again.ref_id, part.ref_id);
   });
+  await step('a vendor bill: total = taxable value + GST, paid = total âˆ’ TDS; a bank row with only TDS gets its total', async () => {
+    const r = await admin('/api/accounts', { action: 'save', reg: 'payments', data: { txn_date: '2026-10-29', bank: 'Cash', amount: '1,16,000', head: 'RMC', payee: 'Bill Math Co', tds_deducted: '2,000', tds_rate: '2%' } });
+    assert.equal(r.ok, true, r.error);
+    const p = await require('../lib/db').one('select taxable_value, gst_on_bill, total_bill, net_payable from acc_payments where id = $1', [r.id]);
+    assert.deepEqual([p.taxable_value, p.gst_on_bill, p.total_bill, p.net_payable].map(Number), [100000, 18000, 118000, 116000]);
+    // a total that does not add up is flagged
+    await admin('/api/accounts', { action: 'save', reg: 'payments', id: r.id, data: { gst_on_bill: '10,000' } });
+    const row = (await admin('/api/accounts?reg=payments&q=Bill Math')).rows.find((x) => x.id === r.id);
+    assert.match(row.needs || '', /total bill is not taxable value \+ GST/);
+  });
   console.log(`\nAll ${n} accounts checks passed.`);
   server.close(); require('../lib/db').reset(); process.exit(0);
 })().catch((e) => { console.error('\nFAILED:', e); process.exit(1); });
