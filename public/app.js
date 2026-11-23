@@ -4200,8 +4200,9 @@
             <h3>Largest payments that paid no single bill (on account or part payments)</h3>${li(p.unmatchedTop.map((x) => `${esc(x.date)} ${esc(x.payee)} ${inr(x.amount)}`))}
             <div class="actions"><button id="tbGo">Save the ${p.bills} bills and fill ${p.filled} payments</button></div>`;
           $('#tbGo').onclick = async () => {
-            if (!confirm(`Save ${p.bills} Tally bills and fill the bill details on ${p.filled} payments?`)) return;
-            $('#tbGo').disabled = true; $('#tbGo').textContent = 'Saving…';
+            // two clicks, no browser dialog (some browsers block it, and the button then seems dead)
+            if (!$('#tbGo').dataset.sure) { $('#tbGo').dataset.sure = 1; $('#tbGo').textContent = `Click again to save ${p.bills} bills and fill ${p.filled} payments`; return; }
+            $('#tbGo').disabled = true; $('#tbGo').textContent = 'Saving… (up to two minutes)';
             try { const r = await api('/api/import', { action: 'tally-bills-commit', projectId: proj }); toast(`Saved ${r.bills} bills; filled ${r.filled} payments.`); $('#tbGo').textContent = 'Done'; } catch (e) { alert(e.message); $('#tbGo').disabled = false; }
           };
         } catch (e) { alert(e.message); }
@@ -4225,7 +4226,7 @@
             <h3>Booked flats not on the sheet (${p.notInSheet.length})</h3><p class="small">${esc(p.notInSheet.join(', '))}</p>
             <div class="actions"><button id="ctGo">Update ${p.buyers} buyers and add ${p.added.length} co-buyers</button></div>`;
           $('#ctGo').onclick = async () => {
-            if (!confirm(`Fill the details of ${p.buyers} buyers and add ${p.added.length} co-buyers from the collection report?`)) return;
+            if (!$('#ctGo').dataset.sure) { $('#ctGo').dataset.sure = 1; $('#ctGo').textContent = `Click again to update ${p.buyers} buyers and add ${p.added.length} co-buyers`; return; }
             $('#ctGo').disabled = true; $('#ctGo').textContent = 'Updating…';
             try { const r = await api('/api/import', { action: 'aspire-contacts-commit', projectId: proj }); toast(`Updated ${r.buyers} buyers, added ${r.added} co-buyers.`); $('#ctGo').textContent = 'Done'; } catch (e) { alert(e.message); $('#ctGo').disabled = false; }
           };
