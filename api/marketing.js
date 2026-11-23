@@ -739,15 +739,7 @@ const handler = route({
       let note = null;
       if (st === 'approved') {
         if (!canApprove(u)) throw fail(403, 'Management approves posts.');
-        const r = await db.one("update mkt_posts set status = 'approved', approved_by = $2, approved_at = now(), review_note = null, updated_at = now() where id = $1 returning publish_at, array_to_json(channels) as channels, (select count(*)::int from mkt_post_files f where f.post_id = mkt_posts.id) as files", [id, u.id]);
-        // say plainly when (or whether) it will go out by itself
-        const auto = (r.channels || []).filter((c) => ['instagram', 'facebook'].includes(c));
-        const when = r.publish_at ? new Date(r.publish_at) : null;
-        if (!auto.length) note = 'Approved. This post is not for Instagram or Facebook, so it is posted by hand.';
-        else if (!when) note = 'Approved, but it has no date and time: set one and it posts itself then.';
-        else if (when < new Date(Date.now() - 3 * 864e5)) note = 'Approved, but its date has passed: set a new date and time and it posts itself then.';
-        else if (auto.includes('instagram') && !r.files) note = 'Approved, but Instagram needs the design attached: attach it and it posts itself.';
-        else note = when <= new Date() ? 'Approved: it posts within 5 minutes.' : `Approved: it posts itself on ${when.toLocaleString('en-IN', { timeZone: 'Asia/Kolkata', day: 'numeric', month: 'short', hour: 'numeric', minute: '2-digit' })}.`;
+        note = (await require('../lib/mkt-flow').approvePost(id, u)).note;
       }
       else {
         editOnly();
@@ -780,8 +772,10 @@ const handler = route({
       const p = await db.one("update mkt_posts set status = 'review', sent_at = now(), sent_by = $2, review_note = null, updated_at = now() where id = $1 and status <> 'published' returning *", [intOr(d.id), u.id]);
       if (!p) throw fail(404, 'That post is not there any more.');
       await log('send-for-approval', 'mkt-post', p.id, { title: p.title });
-      const mail = await approvalMail(p, u, req).catch((e) => ({ error: e.message }));
-      return res.json({ ok: true, mail });
+      // each approver: an email with the design and one-tap Approve / Send back, and the WhatsApp (when its template is set)
+      const mail = await require('../lib/mkt-flow').postApprovalSend({ ...p, channels: p.channels }, u).catch((e) => ({ error: e.message }));
+      const ms = Object.values(mail.email || {}), to = ms.flatMap((x) => (x && x.to) || []);
+      return res.json({ ok: true, mail: to.length ? { to } : { skipped: (ms.find((x) => x && (x.skipped || x.error)) || {}).skipped || mail.error || 'No approver has an email address.' }, whatsapp: mail.whatsapp });
     }
     // Management sends it back with a comment
     if (a === 'post.sendback') {

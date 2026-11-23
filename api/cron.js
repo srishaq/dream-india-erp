@@ -97,6 +97,7 @@ async function run(req, res, job) {
       r.autoLetters = await require('../lib/letters').sendPendingAuto().catch((e) => ({ error: e.message }));
       r.preDemand = await require('../lib/predemand').sendPending().catch((e) => ({ error: e.message })); // pre-demand notices still to email
       r.approvals = await require('../lib/staff-alerts').runApprovals().catch((e) => ({ error: e.message }));
+      r.postApprovals = await require('../lib/mkt-flow').approvalsDue().catch((e) => ({ error: e.message })); // posts in review: one-tap approval to Management
       r.socialPosts = await require('../lib/mkt-flow').publishDue().catch((e) => ({ error: e.message })); // approved posts that are due: Instagram and Facebook
       r.website = await require('./marketing').webAggregate().catch((e) => ({ error: e.message })); // today's website visits into the figures
       r.leadsOverdue = await require('../lib/mkt-leads').overdue({}).catch((e) => ({ error: e.message })); // new leads nobody called for 2 hours

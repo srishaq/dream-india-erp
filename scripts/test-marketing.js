@@ -158,6 +158,15 @@ let n = 0; const step = async (name, fn) => { await fn(); n++; console.log('  âœ
     const b = (await rupali('/api/marketing?scope=company')).posts.find((x) => x.id === postId); assert.equal(b.status, 'draft'); assert.match(b.review_note, /Bigger logo/);
     await M(rupali, 'post.send', { id: postId }); assert.equal((await M(sameer, 'post.status', { id: postId, status: 'approved' })).ok, true);
     const c = (await rupali('/api/marketing?scope=company')).posts.find((x) => x.id === postId); assert.equal(c.status, 'approved'); assert.equal(c.review_note, null);
+    // one tap from the phone (the email / WhatsApp link): the page shows the design; Approve needs no sign-in
+    await db.q("update mkt_posts set status = 'review' where id = $1", [postId]);
+    const F = require('../lib/mkt-flow'); const sid = (await db.one("select id from users where username = 'sameer'")).id;
+    const link = `/api/marketing?approve=${encodeURIComponent(await F.sign({ p: postId, k: 'post', u: sid, e: Date.now() + 864e5 }))}`;
+    const pg = await fetch(BASE + link); const html = await pg.text(); assert.equal(pg.status, 200); assert.match(html, /Approve/); assert.match(html, /api\/marketing\?pub=/);
+    const done = await fetch(BASE + link, { method: 'POST', headers: { 'Content-Type': 'application/x-www-form-urlencoded' }, body: 'do=approve' });
+    assert.match(await done.text(), /Approved/); assert.equal((await db.one('select status from mkt_posts where id = $1', [postId])).status, 'approved');
+    const bad = `/api/marketing?approve=${encodeURIComponent(await F.sign({ p: postId, k: 'post', u: (await db.one("select id from users where username = 'rupali'")).id, e: Date.now() + 864e5 }))}`;
+    assert.match(await (await fetch(BASE + bad)).text(), /Not allowed/);
   });
 
   await step('Leads: typed in, a duplicate number warned, tagged to a campaign; a buyer in the CRM is recognised', async () => {

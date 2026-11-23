@@ -3453,9 +3453,10 @@
         <label>Today's message</label><pre style="white-space:pre-wrap;background:#F7F8F5;border:1px solid #DDE1DB;border-radius:8px;padding:12px;font:13px/1.45 inherit;max-height:320px;overflow:auto">${esc(r.summary.text)}</pre>
         ${admin ? `<div class="row"><div><label>WhatsApp template for the 10 am message (Click Connect ID, 5 values)</label><input name="summaryTemplate" value="${esc(S.summaryTemplate)}" placeholder="e.g. daily_summary_ab12"></div>
           <div><label>WhatsApp template for purchase approvals (Click Connect ID, 6 values)</label><input name="approvalTemplate" value="${esc(S.approvalTemplate)}" placeholder="e.g. purchase_approval_cd34"></div></div>
+          <label>WhatsApp template for social media post approvals (Click Connect ID, 3 values: post, goes out, approval link)</label><input name="postTemplate" value="${esc(S.postTemplate || '')}" placeholder="e.g. post_approval_ef56">
           <label style="display:flex;gap:8px;align-items:center"><input type="checkbox" name="summaryOff" ${S.summaryOff ? 'checked' : ''} style="width:auto"> Switch the 10 am message off</label>` : ''}
         <p><button type="button" class="ghost" id="sumSend">Send it now</button></p>`,
-      async (x) => { if (admin) await api('/api/mgmt', { action: 'summary-settings', settings: { summaryTemplate: x.summaryTemplate, approvalTemplate: x.approvalTemplate, summaryOff: x.summaryOff === 'on' } }); toast('Saved.'); });
+      async (x) => { if (admin) await api('/api/mgmt', { action: 'summary-settings', settings: { summaryTemplate: x.summaryTemplate, approvalTemplate: x.approvalTemplate, postTemplate: x.postTemplate, summaryOff: x.summaryOff === 'on' } }); toast('Saved.'); });
       if (!admin) $('[value=save]', dl).hidden = true;
       $('#sumSend', dl).onclick = async (e) => { e.target.disabled = true; try { const s2 = (await api('/api/mgmt', { action: 'summary-send' })).result;
         toast(s2.email && s2.email.sent ? `Sent to ${s2.email.to.join(', ')}.` : `Not emailed: ${(s2.email && s2.email.reason) || 'unknown'}`); } catch (er) { toast(er.message); } e.target.disabled = false; };
