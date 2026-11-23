@@ -194,7 +194,12 @@ module.exports = route({
         const T = (await acc.headTds())[data.head];
         if (T) {
           if (data.tds_section == null || data.tds_section === '') data.tds_section = T.sec;
-          if ((data.tds_rate == null || data.tds_rate === '') && T.rate != null) data.tds_rate = T.rate;
+          if ((data.tds_rate == null || data.tds_rate === '') && T.rate != null) {
+            data.tds_rate = T.rate;
+            // 194C: 1% for an individual or HUF (4th letter of the PAN P or H), 2% for a firm or company
+            const pan = String(data.vendor_pan || (id ? ((await db.one('select vendor_pan from acc_payments where id = $1', [id])) || {}).vendor_pan || '' : '')).toUpperCase();
+            if (/^194C$/i.test(String(data.tds_section || T.sec || '')) && /^[A-Z]{5}\d{4}[A-Z]$/.test(pan)) data.tds_rate = /^[A-Z]{3}[PH]/.test(pan) ? 0.01 : 0.02;
+          }
           if ((data.tds_deducted == null || data.tds_deducted === '') && data.taxable_value != null && data.taxable_value !== '' && data.tds_rate != null) data.tds_deducted = Math.round(Number(data.taxable_value) * Number(data.tds_rate));
         }
       }
