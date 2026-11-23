@@ -206,7 +206,19 @@ module.exports = route({
       // the bill: total = taxable value + GST, paid = total − TDS; the empty figures are worked out from the typed ones
       if (b.reg === 'payments') {
         const B = ['amount', 'taxable_value', 'gst_on_bill', 'total_bill', 'tds_rate', 'tds_deducted', 'net_payable'];
-        if (B.some((k) => k in data)) acc.billMath(data, id ? (await db.one(`select ${B.join(', ')} from acc_payments where id = $1 and book = $2`, [id, acc.BOOK])) || {} : {});
+        const cur = id ? (await db.one(`select head, ${B.join(', ')} from acc_payments where id = $1 and book = $2`, [id, acc.BOOK])) || {} : {};
+        if (B.some((k) => k in data)) acc.billMath(data, cur);
+        // a payment under a head that needs a bill (vendors, contractors, consultants, CPs, rent) is closed only with the
+        // bill: its total (amount + GST) and the TDS deducted (0 if none) (Rafi Sir, 23 Nov 2026). Checked when the head is
+        // given or changed, or the bill figures are touched, so old rows can still take a remark.
+        const head = 'head' in data ? data.head : cur.head;
+        const H = head ? (await acc.headMap()).payment[head] : null;
+        if (H && H.needs_bill && !b.poId && ('head' in data || !id || B.some((k) => k !== 'amount' && k in data))) { // a purchase bill paid here is checked against the approved bill instead
+          const val = (k) => (k in data ? data[k] : cur[k]);
+          const miss = [val('total_bill') == null || val('total_bill') === '' ? 'the bill amount with GST (Total Bill, or Taxable Value and GST on Bill)' : null,
+            val('tds_deducted') == null || val('tds_deducted') === '' ? 'TDS Deducted (0 if none)' : null].filter(Boolean);
+          if (miss.length) throw fail(400, `${head} needs the vendor's bill before this payment is closed. Enter ${miss.join(' and ')}.`);
+        }
       }
       // a refund on a cancelled flat goes only to the buyer whose booking was cancelled (RERA; meeting of 5 Nov 2026)
       if (b.reg === 'payments') {

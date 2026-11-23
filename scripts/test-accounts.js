@@ -140,7 +140,10 @@ let n = 0; const step = async (name, fn) => { await fn(); n++; console.log('  âœ
     assert.equal(Number((await admin('/api/accounts?reg=payments&q=' + r.ref_id)).rows[0].tds_rate), 0.001);
   });
   await step('Payments Out report: filter by head and payee, totals by head and by month, in print and Excel', async () => {
-    await admin('/api/accounts', { action: 'save', reg: 'payments', data: { txn_date: '2026-10-28', bank: 'Yes RERA Collection 100% (0700)', amount: '5,000', head: 'RMC', payee: 'Other RMC' } });
+    // a vendor's payment is closed only with the bill: total with GST and the TDS (23 Nov 2026)
+    const no = await admin('/api/accounts', { action: 'save', reg: 'payments', data: { txn_date: '2026-10-28', bank: 'Yes RERA Collection 100% (0700)', amount: '5,000', head: 'RMC', payee: 'Other RMC' } });
+    assert.equal(no.status, 400); assert.match(no.error, /needs the vendor's bill/);
+    assert.equal((await admin('/api/accounts', { action: 'save', reg: 'payments', data: { txn_date: '2026-10-28', bank: 'Yes RERA Collection 100% (0700)', amount: '5,000', head: 'RMC', payee: 'Other RMC', total_bill: '5,000', tds_deducted: '0' } })).ok, true);
     const all = await admin('/api/accounts?reg=payments&by=head');
     const rmc = all.groups.rows.find((g) => g.name === 'RMC'); assert.ok(rmc && rmc.n >= 2, JSON.stringify(all.groups));
     assert.equal(Math.round(all.groups.rows.reduce((a, g) => a + g.amount, 0)), Math.round(all.amount));
@@ -191,7 +194,7 @@ let n = 0; const step = async (name, fn) => { await fn(); n++; console.log('  âœ
     const handP = await hc('/api/accounts', { action: 'save', reg: 'payments', data: { txn_date: '2026-10-27', bank: 'Yes RERA Collection 100% (0700)', amount: '5000', head: 'RMC' } });
     assert.equal(handP.status, 403);
     await db.q("insert into acc_banks (book, name) values ('signature', 'Cash') on conflict do nothing");
-    const cashR = await hc('/api/accounts', { action: 'save', reg: 'payments', data: { txn_date: '2026-10-27', bank: 'Cash', amount: '500', head: 'RMC', payee: 'Tea' } }); assert.equal(cashR.ok, true, JSON.stringify(cashR));
+    const cashR = await hc('/api/accounts', { action: 'save', reg: 'payments', data: { txn_date: '2026-10-27', bank: 'Cash', amount: '500', head: 'RMC', payee: 'Tea', total_bill: '500', tds_deducted: '0' } }); assert.equal(cashR.ok, true, JSON.stringify(cashR));
     const stRow = await db.one("insert into acc_payments (book, ref_id, txn_date, bank, amount, description, source) values ('signature', 'BP99901', '2026-10-27', 'Prime HDFC (8650)', 49950, 'NEFT STEEL CO', 'Bank statement auto') returning id");
     await kv.hset('po:orders', 'PO888888', { id: 'PO888888', material: 'Steel', line: 'A wing|6th slab', status: 'accounts_ok', order: { vendor: 'Steel Co', amount: 50000 }, accounts: { by: 'hacc', payable: 50000 }, history: [] });
     const onRow = await admin('/api/accounts', { action: 'save', reg: 'payments', id: stRow.id, poId: 'PO888888', data: { payee: 'Steel Co', head: 'RMC', tds_deducted: '50' } });
@@ -231,7 +234,7 @@ let n = 0; const step = async (name, fn) => { await fn(); n++; console.log('  âœ
     assert.equal((await s('/api/accounts', { action: 'close-month', month: '2026-09' })).status, 403);
     assert.equal((await admin('/api/accounts', { action: 'close-month', month: new Date(Date.now() + 330 * 60000).toISOString().slice(0, 7) })).status, 400); // this month: not ended yet
     assert.equal((await admin('/api/accounts', { action: 'close-month', month: '2026-09' })).ok, true);
-    const row = { txn_date: '2026-09-20', bank: 'Yes RERA Collection 100% (0700)', amount: '500', head: 'RMC', payee: 'Y' };
+    const row = { txn_date: '2026-09-20', bank: 'Yes RERA Collection 100% (0700)', amount: '500', head: 'RMC', payee: 'Y', total_bill: '500', tds_deducted: '0' };
     assert.equal((await s('/api/accounts', { action: 'save', reg: 'payments', data: row })).status, 403);
     assert.equal((await admin('/api/accounts', { action: 'save', reg: 'payments', data: row })).status, 400);
     const ok = await admin('/api/accounts', { action: 'save', reg: 'payments', data: row, reason: 'Bank charge found late' }); assert.equal(ok.ok, true);
