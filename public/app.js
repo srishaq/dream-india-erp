@@ -4181,6 +4181,31 @@
         <div class="actions"><button id="reset" class="danger">Clear imported data</button></div></div>` : ''}
       ${s.counts.real ? '' : `<div class="panel"><h2>Step 1: read the sheet</h2><p class="muted">Nothing is saved at this step.${s.counts.sample ? ' The sample data currently loaded will be removed when you import.' : ''}</p>
         <div class="actions"><button id="read" ${s.configured ? '' : 'disabled'}>Read the sheet and check it</button></div></div><div id="preview"></div>`}`;
+    // Dream Aspire: the buyers' names, numbers, emails, addresses and PANs from the CRM's collection report
+    if (bookOf() === 'aspire') {
+      page.insertAdjacentHTML('afterbegin', `<div class="panel"><h2>Buyers' contact details (Dream Aspire)</h2><p class="muted">Reads the latest "Collection Report" in the Aspire CRM folder on Drive (sheet DATA): names, contact number, email, address and PAN of each buyer. Only empty details are filled; a buyer on the sheet that the booking lacks is added; anything that differs is listed for the CRM to check, not changed.</p>
+        <div class="actions"><button id="ctRead">Check the collection report</button></div><div id="ctOut"></div></div>`);
+      const li = (a) => (a.length ? `<ul class="small">${a.map((x) => `<li>${x}</li>`).join('')}</ul>` : '<p class="small muted">None.</p>');
+      $('#ctRead').onclick = async () => {
+        $('#ctRead').disabled = true; $('#ctRead').textContent = 'Reading…';
+        try {
+          const p = await api('/api/import', { action: 'aspire-contacts-preview', projectId: proj });
+          $('#ctOut').innerHTML = `<p class="small muted">${esc(p.file)}: ${p.flats} flats on the sheet, ${p.bookings} bookings in the ERP.</p>
+            <div class="kpis">${kpi(p.buyers, 'buyers updated')}${kpi(p.phones, 'numbers')}${kpi(p.emails, 'emails')}${kpi(p.addresses, 'addresses')}${kpi(p.pans, 'PANs')}${kpi(p.names, 'names in full')}${kpi(p.added.length, 'co-buyers added')}</div>
+            <h3>Co-buyers to add</h3>${li(p.added.map((x) => `${esc(x.unit)}: ${esc(x.name)}`))}
+            <h3>Different in the ERP and the sheet (not changed: check each)</h3>${li(p.differ.map((d) => `${esc(d.unit)} buyer ${d.applicant}, ${esc(d.what)}: ERP "${esc(d.erp)}", sheet "${esc(d.sheet)}"`))}
+            <h3>Points on the sheet</h3>${li(p.issues.map((i) => `${esc(i.unit)}: ${esc(i.note)}`))}
+            <h3>Booked flats not on the sheet (${p.notInSheet.length})</h3><p class="small">${esc(p.notInSheet.join(', '))}</p>
+            <div class="actions"><button id="ctGo">Update ${p.buyers} buyers and add ${p.added.length} co-buyers</button></div>`;
+          $('#ctGo').onclick = async () => {
+            if (!confirm(`Fill the details of ${p.buyers} buyers and add ${p.added.length} co-buyers from the collection report?`)) return;
+            $('#ctGo').disabled = true; $('#ctGo').textContent = 'Updating…';
+            try { const r = await api('/api/import', { action: 'aspire-contacts-commit', projectId: proj }); toast(`Updated ${r.buyers} buyers, added ${r.added} co-buyers.`); $('#ctGo').textContent = 'Done'; } catch (e) { alert(e.message); $('#ctGo').disabled = false; }
+          };
+        } catch (e) { alert(e.message); }
+        $('#ctRead').disabled = false; $('#ctRead').textContent = 'Check again';
+      };
+    }
     if ($('#reset')) $('#reset').onclick = async () => {
       const t = prompt('This removes all imported data for this project so it can be imported again. Type CLEAR to confirm.');
       if (t === null) return;
