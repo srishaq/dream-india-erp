@@ -4184,6 +4184,30 @@
         <div class="actions"><button id="reset" class="danger">Clear imported data</button></div></div>` : ''}
       ${s.counts.real ? '' : `<div class="panel"><h2>Step 1: read the sheet</h2><p class="muted">Nothing is saved at this step.${s.counts.sample ? ' The sample data currently loaded will be removed when you import.' : ''}</p>
         <div class="actions"><button id="read" ${s.configured ? '' : 'disabled'}>Read the sheet and check it</button></div></div><div id="preview"></div>`}`;
+    // Dream Signature: vendor bills, GST and TDS from Tally (the Tally Reports folder on Drive)
+    if (bookOf() === 'signature') {
+      page.insertAdjacentHTML('afterbegin', `<div class="panel"><h2>Vendor bills, GST and TDS from Tally</h2><p class="muted">Reads the Purchase, Journal and Payment Registers and the TDS workings in the "Tally Reports – Vendor bills, TDS &amp; GST" folder on Drive. Every bill is kept (for the CA / Tax page), and each Payments Out row that paid a bill (same vendor, amount = bill less TDS, or a few bills together) gets the bill no., taxable value, GST, total, TDS and the vendor's PAN, where empty.</p>
+        <div class="actions"><button id="tbRead">Check the Tally reports</button></div><div id="tbOut"></div></div>`);
+      const li = (a) => (a.length ? `<ul class="small">${a.map((x) => `<li>${x}</li>`).join('')}</ul>` : '<p class="small muted">None.</p>');
+      const inr = (v) => '₹' + Math.round(Number(v) || 0).toLocaleString('en-IN');
+      $('#tbRead').onclick = async () => {
+        $('#tbRead').disabled = true; $('#tbRead').textContent = 'Reading… (up to a minute)';
+        try {
+          const p = await api('/api/import', { action: 'tally-bills-preview', projectId: proj });
+          $('#tbOut').innerHTML = `<p class="small muted">${esc(p.files.join(', '))}</p>
+            <div class="kpis">${kpi(p.bills, 'bills in Tally')}${kpi(p.payments, 'vendor payments in the ERP')}${kpi(p.matched, 'paid a bill')}${kpi(p.filled, 'payments to fill')}${kpi(p.pan, 'PANs')}${kpi(p.unmatched, 'payments on account')}</div>
+            <h3>Already filled and different from Tally (not changed)</h3>${li(p.differ.map((d) => `${esc(d.ref)} ${esc(d.payee)} ${inr(d.amount)}: ${d.differ.map((x) => `${esc(x.what)} ERP ${inr(x.erp)}, Tally ${inr(x.tally)}`).join('; ')}`))}
+            <h3>Largest payments that paid no single bill (on account or part payments)</h3>${li(p.unmatchedTop.map((x) => `${esc(x.date)} ${esc(x.payee)} ${inr(x.amount)}`))}
+            <div class="actions"><button id="tbGo">Save the ${p.bills} bills and fill ${p.filled} payments</button></div>`;
+          $('#tbGo').onclick = async () => {
+            if (!confirm(`Save ${p.bills} Tally bills and fill the bill details on ${p.filled} payments?`)) return;
+            $('#tbGo').disabled = true; $('#tbGo').textContent = 'Saving…';
+            try { const r = await api('/api/import', { action: 'tally-bills-commit', projectId: proj }); toast(`Saved ${r.bills} bills; filled ${r.filled} payments.`); $('#tbGo').textContent = 'Done'; } catch (e) { alert(e.message); $('#tbGo').disabled = false; }
+          };
+        } catch (e) { alert(e.message); }
+        $('#tbRead').disabled = false; $('#tbRead').textContent = 'Check again';
+      };
+    }
     // Dream Aspire: the buyers' names, numbers, emails, addresses and PANs from the CRM's collection report
     if (bookOf() === 'aspire') {
       page.insertAdjacentHTML('afterbegin', `<div class="panel"><h2>Buyers' contact details (Dream Aspire)</h2><p class="muted">Reads the latest "Collection Report" in the Aspire CRM folder on Drive (sheet DATA): names, contact number, email, address and PAN of each buyer. Only empty details are filled; a buyer on the sheet that the booking lacks is added; anything that differs is listed for the CRM to check, not changed.</p>

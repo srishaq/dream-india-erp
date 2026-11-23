@@ -93,6 +93,38 @@ module.exports = route({
       return res.json({ ok: true, file: name, ...out });
     }
     // Aspire buyers' names, numbers, emails, addresses and PANs from the CRM's collection report (sheet DATA)
+    // Vendor bills, GST and TDS from Tally (Purchase, Journal and Payment Registers and the TDS workings in the Tally
+    // Reports folder on Drive): filled into the Payments Out rows that paid them (Dream Signature's books)
+    if (b.action === 'tally-bills-preview' || b.action === 'tally-bills-commit') {
+      const prj = await db.one('select code from projects where id = $1', [projectId]);
+      if (prj?.code !== 'SIGNATURE') throw fail(400, 'The Tally reports are Prime Realtors\' (Dream Signature) books.');
+      const TB = require('../lib/tally-bills');
+      const files = [];
+      if (process.env.TALLY_BILLS_FIXTURE_DIR && process.env.VERCEL !== '1') {
+        const fs = require('fs'), path = require('path');
+        for (const f of fs.readdirSync(process.env.TALLY_BILLS_FIXTURE_DIR)) if (/\.xlsx$/i.test(f)) files.push({ name: f, buf: fs.readFileSync(path.join(process.env.TALLY_BILLS_FIXTURE_DIR, f)) });
+      } else {
+        const drive = require('../lib/drive');
+        const list = await drive.statementFiles([process.env.TALLY_BILLS_FOLDER || '1dErcA7AQ-h2fbDFMF0ii2Dh0TLv5Uepy']).catch((e) => { throw fail(400, `Could not open the Tally Reports folder on Drive: ${e.message}.`); });
+        for (const f of list) files.push({ name: f.name, buf: await drive.download(f) });
+      }
+      const V = [], W = [], used = [];
+      for (const f of files) {
+        if (/tds/i.test(f.name) && !/register/i.test(f.name)) { W.push(...TB.workings(f.buf, f.name)); used.push(f.name); continue; }
+        if (/purchase|journal|payment/i.test(f.name)) { V.push(...TB.read(f.buf, f.name)); used.push(f.name); }
+      }
+      if (!V.length) throw fail(400, 'No Purchase, Journal or Payment Register in the Tally Reports folder.');
+      const pans = {}; for (const w of W) if (w.pan) pans[w.key] = w.pan;
+      const data = { bills: TB.bills(V), pans, tpays: TB.payments(V) };
+      if (b.action === 'tally-bills-preview') {
+        const p = await TB.plan(db.q, data, { book: 'signature' });
+        const n = (k) => p.fills.filter((f) => f.set[k] != null).length;
+        return res.json({ files: used, bills: p.bills, payments: p.payments, matched: p.matched, filled: p.fills.length, totals: n('total_bill'), tds: n('tds_deducted'), pan: n('vendor_pan'),
+          differ: p.differ.slice(0, 100), unmatched: p.unmatched.length, unmatchedTop: p.unmatched.sort((x, y) => y.amount - x.amount).slice(0, 30), openBills: p.openBills, sample: p.fills.slice(0, 15) });
+      }
+      const out = await db.tx(async (t) => { await t.q("set local statement_timeout = '120s'").catch(() => {}); return TB.commit(t, data, { book: 'signature', user: u, source: used.join(', ') }); });
+      return res.json({ ok: true, files: used, bills: out.bills, filled: out.fills.length, differ: out.differ.length, unmatched: out.unmatched.length });
+    }
     if (b.action === 'aspire-contacts-preview' || b.action === 'aspire-contacts-commit') {
       const prj = await db.one('select code from projects where id = $1', [projectId]);
       if (prj?.code !== 'ASPIRE') throw fail(400, 'This import is for Dream Aspire only.');
