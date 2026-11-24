@@ -23,6 +23,11 @@ async function mineSql(u) {
   const parts = [`b.crm_user_id = ${+u.id}`];
   if (w.length) parts.push(`(b.crm_user_id is null and bl.code in (${wingList(w)}))`);
   if (u.role === 'head_crm') parts.push(`(b.crm_user_id is null and ${noTeam.length ? `bl.code in (${wingList(noTeam)})` : 'false'})`);
+  // a project none of the wing teams can open (Dream Aspire): its own CRM people look after every flat there
+  const ids = [...new Set(Object.values(t).flat().map(Number).filter(Boolean))];
+  const open = ids.length ? (await db.q(`select distinct p.id from projects p where exists (select 1 from users x where x.id = any($1) and not x.disabled and (x.all_projects or x.role = 'admin' or exists (select 1 from user_projects up where up.user_id = x.id and up.project_id = p.id)))`, [ids])).map((r) => r.id) : [];
+  const free = (u.projects || []).filter((pid) => !open.includes(pid));
+  if (['crm', 'head_crm'].includes(u.role) && free.length) parts.push(`(b.crm_user_id is null and u.project_id in (${free.map(Number).join(',')}))`);
   return '(' + parts.join(' or ') + ')';
 }
 const act = (u) => has(u, 'demand.raise') || has(u, 'booking.create');
