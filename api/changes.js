@@ -7,7 +7,8 @@ const { has } = require('../lib/roles');
 const { needProject } = require('../lib/access');
 const { route, fail, str, intOr } = require('../lib/http');
 
-const canAsk = (u) => ['booking.approve', 'receipt.approve', 'accounts.manage'].some((p) => has(u, p));
+// anyone who enters receipts may ask (CRM Team too, 24 Nov 2026); the change is made only when Rafi Sir or Sameer approves
+const canAsk = (u) => ['booking.approve', 'receipt.approve', 'accounts.manage', 'receipt.enter'].some((p) => has(u, p));
 
 module.exports = route({
   GET: async (req, res) => {
