@@ -158,11 +158,14 @@ module.exports = route({
         return res.json(r);
       }
       case 'import': {
-        const last = await db.one("select at as created_at, after, (select name from users where id = audit_log.user_id) as by_name from audit_log where action = 'import-accounts' order by id desc limit 1");
-        const lastTally = await db.one("select at as created_at, after, (select name from users where id = audit_log.user_id) as by_name from audit_log where action = 'import-tally' order by id desc limit 1");
-        const lastRefunds = await db.one("select at as created_at, after, (select name from users where id = audit_log.user_id) as by_name from audit_log where action = 'import-refund-list' order by id desc limit 1");
-        const lastSync = await db.one("select at as created_at, after, (select name from users where id = audit_log.user_id) as by_name from audit_log where action = 'tally-sync' order by id desc limit 1").catch(() => null);
-        const lastNotes = await db.one("select at as created_at, after, (select name from users where id = audit_log.user_id) as by_name from audit_log where action = 'tally-notes' order by id desc limit 1").catch(() => null);
+        // this project's runs only (entries from before projects were recorded are Signature's)
+        const books_ = require('../lib/book'), P = [await books_.projectId(), books_.cur() === 'signature'];
+        const mine = '(project_id = $1 or (project_id is null and $2))';
+        const last = await db.one("select at as created_at, after, (select name from users where id = audit_log.user_id) as by_name from audit_log where action = 'import-accounts' and " + mine + " order by id desc limit 1", P);
+        const lastTally = await db.one("select at as created_at, after, (select name from users where id = audit_log.user_id) as by_name from audit_log where action = 'import-tally' and " + mine + " order by id desc limit 1", P);
+        const lastRefunds = await db.one("select at as created_at, after, (select name from users where id = audit_log.user_id) as by_name from audit_log where action = 'import-refund-list' and " + mine + " order by id desc limit 1", P);
+        const lastSync = await db.one("select at as created_at, after, (select name from users where id = audit_log.user_id) as by_name from audit_log where action = 'tally-sync' and " + mine + " order by id desc limit 1", P).catch(() => null);
+        const lastNotes = await db.one("select at as created_at, after, (select name from users where id = audit_log.user_id) as by_name from audit_log where action = 'tally-notes' and " + mine + " order by id desc limit 1", P).catch(() => null);
         return res.json({ configured: sheets.configured() || !!(process.env.ACC_FIXTURE && process.env.VERCEL !== '1'), sheetId: accImport.SHEET_ID, last, lastTally, lastRefunds, lastSync, lastNotes, can, live: process.env.ERP_LIVE === '1' });
       }
       default: throw fail(400, 'Unknown view.');

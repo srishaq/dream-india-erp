@@ -11,7 +11,8 @@ module.exports = route({
     const u = await auth.guard(req, res); if (!u) return;
     if (!has(u, 'mgmt.view')) throw fail(403, 'The Management dashboard is for Admin and Management logins.');
     const p = intOr(req.query.project);
-    const projectId = p ? needProject(u, p) : undefined;
+    // the project asked for, else the one on the picker (not Dream Signature by default: 24 Nov 2026)
+    const projectId = p ? needProject(u, p) : (require('../lib/book').project() || undefined);
     return res.json(await mgmt.build({ projectId }));
   },
   // the limits for "Needs your attention" (days, amounts)

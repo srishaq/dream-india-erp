@@ -36,6 +36,9 @@ const PAGES = [
   '/api/accounts?view=lists', '/api/accounts?view=report&name=flats&project={P}', '/api/accounts?view=report&name=unitmoney&project={P}',
   '/api/books-crm?project={P}', '/api/leads?project={P}', '/api/masters',
   '/api/bookings?id={B}', '/api/ledger?booking={B}', '/api/followups?booking={B}', '/api/comms?booking={B}', '/api/verify?booking={B}', '/api/team?booking={B}',
+  // 24 Nov 2026: screens that showed Signature on Aspire (a shared one-minute cache, books fixed to Signature)
+  '/api/mgmt?project={P}', '/api/mgmt', '/api/ca', '/api/ca?detail=1', '/api/acc-dashboard', '/api/acc-dashboard?detail=1', '/api/changes', '/api/changes?status=all',
+  '/api/custdocs?tenants=1', '/api/accounts?view=import', '/api/accounts?view=todo', '/api/accounts?view=bills', '/api/accounts?reg=journals&limit=1000',
 ];
 
 (async () => {

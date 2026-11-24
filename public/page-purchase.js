@@ -289,7 +289,7 @@ function actionBox(o) {
   }
   if (o.status === 'requested' && c.order) return `<div class="box"><h4>Place the order and enter the bill</h4>
     <p class="note" style="margin:0">Enter the quantity and rate for each size; put 0 for a size you are not buying now. Each size can have its own vendor, bill and PO no., and one size can be split between vendors with "+ Another vendor" (for example 18 m³ as 6 + 6 + 6 from three plants). Leave the vendor blank when it is the same as the row above. Each vendor's sizes become a separate order (${esc(o.no)}, ${esc(o.no)}-B…), so the site confirms and Accounts pays each vendor's bill on its own.</p>
-    <div class="items">${itemsOf(o).map((it, i) => `<div class="pline" data-spec="${esc(it.spec)}"><div class="irow r3"><b>${esc(it.spec)}<br><span class="note">approved ${q(it.qty, 3)} ${u}</span></b><label class="field">Qty ordered (${u})<input data-k="qty" inputmode="decimal" value="${it.qty}"></label><label class="field">Rate per ${u}, incl. GST (₹)<input data-k="rate" inputmode="decimal" placeholder="${((o.budgetRates || {})[it.spec] || o.budgetRate) ? 'Budget ₹' + Math.round((o.budgetRates || {})[it.spec] || o.budgetRate).toLocaleString('en-IN') : ''}"></label></div>
+    <div class="items">${itemsOf(o).map((it, i) => `<div class="nvpick" data-for="${esc(it.spec)}" data-qty="${it.qty}" style="display:flex;gap:6px;align-items:center;margin:10px 0 4px"><span class="note">How many vendors for ${esc(it.spec)}?</span>${[1, 2, 3, 4].map((n) => `<button type="button" class="btn small${n === 1 ? ' go' : ''}" data-nv="${n}">${n}</button>`).join('')}</div><div class="pline" data-spec="${esc(it.spec)}"><div class="irow r3"><b>${esc(it.spec)}<br><span class="note">approved ${q(it.qty, 3)} ${u}</span></b><label class="field">Qty ordered (${u})<input data-k="qty" inputmode="decimal" value="${it.qty}"></label><label class="field">Rate per ${u}, incl. GST (₹)<input data-k="rate" inputmode="decimal" placeholder="${((o.budgetRates || {})[it.spec] || o.budgetRate) ? 'Budget ₹' + Math.round((o.budgetRates || {})[it.spec] || o.budgetRate).toLocaleString('en-IN') : ''}"></label></div>
       <div class="irow r4"><label class="field">Vendor<input data-k="vendor" autocomplete="off" placeholder="${i ? 'Same as above' : ''}"></label><label class="field">Bill amount, incl. GST (₹)<input data-k="amount" inputmode="decimal" placeholder="Qty × rate"></label><label class="field">Bill no.<input data-k="billNo" autocomplete="off" placeholder="${i ? 'Same vendor: same bill' : ''}"></label><label class="field">PO no.<input data-k="poNo" autocomplete="off"></label></div><div class="acts" style="justify-content:flex-start;margin:2px 0 6px"><button type="button" class="btn small" data-addv>+ Another vendor for ${esc(it.spec)}</button></div></div>`).join('')}</div>
     <div class="form"><label class="field">Bill date<input name="billDate" type="date" value="${today()}"></label>
     <label class="field wide">Note<textarea name="note"></textarea></label></div><p class="err"></p>
@@ -368,6 +368,17 @@ function showOrder(id, okMsg) {
     root.querySelectorAll('[data-addv]').forEach((bt) => bt.addEventListener('click', () => addv(bt)));
     root.querySelectorAll('[data-rmv]').forEach((bt) => bt.addEventListener('click', () => bt.closest('.pline').remove()));
   };
+  // "How many vendors?" 1–4: that many rows for the size, the approved quantity shared evenly (each can be changed)
+  $$('#sheet .nvpick [data-nv]').forEach((bt) => bt.addEventListener('click', () => {
+    const pick = bt.closest('.nvpick'), spec = pick.dataset.for, n = +bt.dataset.nv, total = +pick.dataset.qty || 0;
+    pick.querySelectorAll('[data-nv]').forEach((x) => x.classList.toggle('go', x === bt));
+    const rowsOf = () => $$('#sheet .pline').filter((r) => r.dataset.spec === spec);
+    while (rowsOf().length < n) { const r = rowsOf(); addv(r[r.length - 1].querySelector('[data-addv]')); }
+    while (rowsOf().length > n) rowsOf().pop().remove();
+    const each = Math.floor((total / n) * 1000) / 1000;
+    rowsOf().forEach((r, i) => { const q = r.querySelector('[data-k="qty"]'); if (q) q.value = String(i === n - 1 ? Math.round((total - each * (n - 1)) * 1000) / 1000 : each); });
+    const v = rowsOf()[0] && rowsOf()[0].querySelector('[data-k="vendor"]'); if (v) v.focus();
+  }));
   const items0 = $('#sheet .items'); if (items0) wire(items0);
   $$('#sheet [data-op]').forEach((b) => b.addEventListener('click', () => {
     const op = b.dataset.op, data = {};

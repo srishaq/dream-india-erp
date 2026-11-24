@@ -9,7 +9,8 @@ const db = require('../lib/db');
 const { route, fail } = require('../lib/http');
 const { has } = require('../lib/roles');
 
-let cache = { at: 0, model: null, detail: null };
+// one cache per project's books (24 Nov 2026: Aspire showed Signature's figures when both were opened within a minute)
+const caches = new Map();
 const TTL_MS = 60 * 1000;
 const QE = /^\d{4}-(03-31|06-30|09-30|12-31)$/;
 const canEdit = (u) => has(u, 'accounts.manage') || u.role === 'admin';
@@ -32,9 +33,12 @@ module.exports = route({
       }
       return res.json({ ...(await R.status(qe)), can: { edit: canEdit(u) }, live: process.env.ERP_LIVE === '1' });
     }
+    const bk = require('../lib/book').code();
+    let cache = caches.get(bk) || { at: 0, model: null, detail: null };
     if (q.refresh === '1' || !cache.model || Date.now() - cache.at > TTL_MS) {
       const { summary, detail } = await ca.model();
       cache = { at: Date.now(), model: { ...summary, readAt: new Date().toISOString() }, detail };
+      caches.set(bk, cache);
     }
     // the model is shared for a minute; who is looking is added to each response, never kept in the cache
     return res.json(q.detail === '1' ? { ...cache.detail, readAt: cache.model.readAt } : { ...cache.model, user: { name: u.name, role: u.roleLabel || u.role } });

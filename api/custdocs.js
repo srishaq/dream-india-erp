@@ -115,7 +115,7 @@ module.exports = route({
       const rows = await db.q(`select t.id, t.survey_no, t.name, t.area, t.status,
           (select count(*)::int from customer_docs d where d.tenant_id = t.id and d.status = 'ready') as docs,
           (select count(*)::int from customer_docs d where d.tenant_id = t.id and d.status = 'ready' and d.kind = 'Agreement (signed)') as agreements
-        from acc_sra_tenants t where t.book = 'signature' order by t.survey_no nulls last, t.id`);
+        from acc_sra_tenants t where t.book = $1 order by t.survey_no nulls last, t.id`, [require('../lib/book').cur()]); // this project's tenants only
       return res.json({ rows, canAdd: canAdd(u, 'tenant') });
     }
     if (q.project) {
