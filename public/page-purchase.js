@@ -274,6 +274,13 @@ function newRequest() {
   });
 }
 
+// what of an order's approval is still to be ordered (an order placed before the rest was kept as its own request)
+function restOf(o) {
+  if (!o.order || o.restNo || !(o.approval && o.approval.ok) || ['requested', 'pending_approval', 'rejected', 'cancelled'].includes(o.status)) return [];
+  const got = (o.order.items && o.order.items.length ? o.order.items : [{ spec: o.spec, qty: o.order.qty }]);
+  return itemsOf(o).map((it) => ({ spec: it.spec, qty: Math.round(((+it.qty || 0) - got.filter((x) => x.spec === it.spec).reduce((a, x) => a + (+x.qty || 0), 0)) * 1000) / 1000 }))
+    .filter((x) => x.qty > 0.001 && x.qty > (+(itemsOf(o).find((i) => i.spec === x.spec) || {}).qty || 0) * (D.tolerance || 0.02));
+}
 function actionBox(o) {
   const c = D.can, u = o.unit;
   if (o.status === 'pending_approval' && c.approve) {
@@ -310,6 +317,9 @@ function actionBox(o) {
     <label class="field wide">Delivery challan no(s).<input name="challan" placeholder="Separate several challans with commas" autocomplete="off"></label>
     <label class="field wide">Note<textarea name="note" placeholder="Quality issues, rejected trucks…"></textarea></label></div><p class="err"></p>
     <div class="acts"><button class="btn go" data-op="receive">Confirm received</button></div></div>`;
+  const rest = c.order ? restOf(o) : [];
+  const restBox = rest.length ? `<div class="box"><h4>Order the rest</h4><p class="note" style="margin:0">Management approved more than was ordered: ${rest.map((x) => `${esc(x.spec)} ${q(x.qty, 3)} ${u}`).join(', ')} still to order. This makes it a request of its own, approved, for Purchase to order (from one vendor or several).</p><div class="acts"><button class="btn go" data-op="rest">Order the rest: ${rest.map((x) => `${q(x.qty, 3)} ${u}`).join(' + ')}</button></div></div>` : '';
+  if (restBox && !(o.status === 'ordered' && c.receive)) return restBox;
   if (o.status === 'ordered' && c.receive) return `<div class="box"><h4>Confirm what arrived at site</h4>
     <div class="form"><label class="field">Quantity received (${u})<input name="qty" inputmode="decimal" value="${o.order.qty}"></label>
     <label class="field">Date received<input name="date" type="date" value="${today()}"></label>

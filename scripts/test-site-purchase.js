@@ -209,6 +209,23 @@ const JPEG = 'data:image/jpeg;base64,/9j/4AAQSkZJRgABAQEASABIAAD/2wBDAP/////////
     assert.deepEqual(r3.balance[0].items.map((x) => [x.spec, x.qty]), [['M60', 4]]);
   });
 
+  await step('An order placed short of the approval before balances existed: "Order the rest" makes the remainder its own request', async () => {
+    const g = await P(siteeng), line = g.budget.lines.find((l) => l.rmc > 0).key;
+    const pr = (await P(siteeng, { op: 'request', data: { material: 'RMC', items: [{ spec: 'M10', qty: 18 }], line, wing: g.wings[line.split('|')[0]][0] } })).doc;
+    await P(sameer, { op: 'approve', id: pr.id, data: {} });
+    // as on the old portal: the order carries 6 and the request still says 18
+    const kv = require('../lib/portal/kv'); const doc = await kv.hget('po:orders', pr.id);
+    Object.assign(doc, { status: 'ordered', order: { vendor: 'unwal rmc llp', qty: 6, rate: 6018, amount: 36108, items: [{ spec: 'M10', qty: 6, rate: 6018 }] } });
+    await kv.hset('po:orders', pr.id, doc);
+    assert.equal((await P(siteeng, { op: 'rest', id: pr.id, data: {} })).status, 403);
+    const r = await P(buyer1, { op: 'rest', id: pr.id, data: {} });
+    assert.equal(r.status, 200, r.error);
+    assert.deepEqual([r.doc.qty, r.doc.restNo, r.balance[0].qty, r.balance[0].status, !!r.balance[0].approval.ok], [6, r.balance[0].no, 12, 'requested', true]);
+    assert.equal((await P(buyer1, { op: 'rest', id: pr.id, data: {} })).status, 409);
+    const o2 = await P(buyer1, { op: 'order', id: r.balance[0].id, data: { qty: 12, rate: 6018, vendor: 'Plant B', amount: 72216 } });
+    assert.equal(o2.status, 200, o2.error); assert.ok(!o2.balance);
+  });
+
   await step('A problem report can carry a photo, kept apart from the entry', async () => {
     const r = await siteeng('/api/site', { op: 'add', col: 'hindrances', data: { tower: 'A', category: 'Labour shortage', from: '2026-10-30', description: 'Only 20 men today', status: 'open', photo: JPEG } });
     assert.equal(r.status, 200, r.error); assert.ok(r.doc.photo); assert.ok(!String(JSON.stringify(r.doc)).includes('base64'));
