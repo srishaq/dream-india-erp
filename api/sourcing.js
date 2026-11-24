@@ -67,7 +67,7 @@ module.exports = route({
     if (canAll(u)) {
       const projs = u.projects.map(Number).filter(Boolean);
       // each person's visits per day, last 14 days
-      out.team = await db.q(`select us.id as user_id, us.name, ((v.at + interval '330 minutes')::date)::text as day, count(*)::int as visits,
+      out.team = await db.q(`select us.id as user_id, us.name, ((v.at at time zone 'Asia/Kolkata')::date)::text as day, count(*)::int as visits,
           count(*) filter (where v.verified)::int as verified, count(distinct v.cp_id)::int as partners
         from cp_visits v join users us on us.id = v.user_id where v.at > now() - interval '14 days' group by 1, 2, 3 order by 3 desc, 2`);
       out.unverified = await db.q(`select ${visitCols} from ${visitFrom} where not v.verified and v.at > now() - interval '30 days' order by v.at desc limit 200`);
