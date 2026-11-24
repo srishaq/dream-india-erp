@@ -675,6 +675,10 @@ const handler = route({
         const d = (await find(`ERP post ${p.id}`)) || (await find(p.title || ''));
         if (d) { to = T.designUrl(d.id); await db.q('update mkt_posts set canva_url = $2 where id = $1', [p.id, to]); }
       }
+      // a design the ERP made sits with the person who connected Canva: put it in the team folder so the whole team
+      // (Rupali included) can open it; moving one already there does nothing
+      const did = (String(to || '').match(/canva\.com\/design\/([A-Za-z0-9_-]+)\//) || [])[1];
+      if (did) await T.toTeam(did).catch(() => false);
       res.statusCode = 302; res.setHeader('Location', to || 'https://www.canva.com/'); return res.end();
     }
     if (q.cimg) return proxyImg(res, String(q.cimg), (h) => require('../lib/mkt-tools').okCanvaImg('https://' + h + '/'));
