@@ -407,6 +407,7 @@
   let projectList = null, proj = null;
   // projects with contractor's flats (Dream Aspire) get the Developer's / Contractor's bookings tiles; others stay as they were
   const ctrProject = (id = proj) => !!((projectList || []).find((p) => p.id === id)?.contractor_flats > 0);
+  const accKey = (reg) => 'erp_acc_' + (bookOf() === 'aspire' ? 'aspire_' : '') + reg; // filters remembered per project's books
   const store = { get: (k) => { try { return localStorage.getItem(k); } catch { return null; } }, set: (k, v) => { try { localStorage.setItem(k, v); } catch {} } };
 
   // Sidebar: one heading per department (CRM, Accounts, Set-up). Tapping a heading opens its pages and folds the others;
@@ -2460,7 +2461,7 @@
   }
 
   async function accRegister(key, opts = {}) {
-    const st = JSON.parse(store.get('erp_acc_' + key) || '{}');
+    const st = JSON.parse(store.get(accKey(key)) || '{}');
     const f0 = ACC_FILTERS[key] ? ACC_FILTERS[key][0][0] : '';
     const state = { q: st.q || '', from: st.from || '', to: st.to || '', filter: st.filter ?? f0, m: st.m || {}, by: st.by || '', limit: 200, ...opts };
     // column filters (m_head=Salary|Rent) and "totals by" (by=head | month): the same on screen, in print and in Excel
@@ -2486,16 +2487,17 @@
       ${d.groups ? accGroupsPanel(d.groups, d.amount, d.total, state.from || state.to ? `${state.from ? fmtD(state.from) : 'start'} to ${state.to ? fmtD(state.to) : 'today'}` : 'all dates') : ''}
       <div class="panel"><div class="table-wrap acc-grid"><table><tr>${show.map((c) => `<th class="${['money', 'num', 'pct'].includes(c.type) ? 'num' : ''}">${esc(c.label)}</th>`).join('')}</tr>
         ${accSplitRows(d.rows, show).map(({ r, head, part }) => head ? `<tr class="split-h">${show.map((c) => `<td class="${['money', 'num', 'pct'].includes(c.type) ? 'num' : c.type === 'long' ? 'small wrap' : ''}">${c.key in head && head[c.key] ? accFmt(c, head[c.key]) : ''}</td>`).join('')}</tr>`
-          : `<tr data-id="${r.id}" class="${r.cheque_status === 'Bounced' ? 'dim' : ''}${part ? ' split-p' : ''}">${show.map((c) => `<td class="${['money', 'num', 'pct'].includes(c.type) ? 'num' : c.type === 'long' || c.key === 'needs' ? 'small wrap' : ''}">${c.key === 'needs' && r.needs ? `<span class="bad-t">${esc(r.needs)}</span>` : part && c.key === 'ref_id' ? '↳ ' + accFmt(c, r[c.key]) : accFmt(c, r[c.key])}${key === 'journals' && c.key === 'narration' && r._paidBy ? ` <span class="ok small">· paid by ${esc(r._paidBy.join(', '))}</span>` : ''}</td>`).join('')}</tr>${accJvRows(r, show)}`).join('') || `<tr><td colspan="${show.length}" class="muted">Nothing here.</td></tr>`}</table></div>
+          : `<tr data-id="${r.id}" class="${r.cheque_status === 'Bounced' ? 'dim' : ''}${part ? ' split-p' : ''}">${show.map((c) => `<td class="${['money', 'num', 'pct'].includes(c.type) ? 'num' : c.type === 'long' || c.key === 'needs' ? 'small wrap' : ''}">${c.key === 'needs' && r.needs ? `<span class="bad-t">${esc(r.needs)}</span>` : part && c.key === 'ref_id' ? '↳ ' + accFmt(c, r[c.key]) : accFmt(c, r[c.key])}${key === 'journals' && c.key === 'narration' && r._paidBy ? ` <span class="ok small">· paid by ${esc(r._paidBy.join(', '))}</span>` : ''}</td>`).join('')}</tr>${accJvRows(r, show)}`).join('') || `<tr><td colspan="${show.length}" class="muted">${Object.values(state.m).some(Boolean) ? 'No rows match the filters above. <button class="ghost small" id="aclear2">Clear filters</button>' : 'Nothing here.'}</td></tr>`}</table></div>
         ${d.rows.length < d.total ? '<div class="actions"><button class="ghost" id="amore">Show more</button></div>' : ''}</div>`;
     if (['tenants', 'rentLinks', 'cancellations'].includes(key) && d.rows.length) $('.acc-grid table tr').insertAdjacentHTML('afterend', `<tr class="tot">${show.map((c, i) => `<td class="num"><b>${c.type === 'money' && !['monthly_rent', 'split_amount'].includes(c.key) ? inr(d.rows.reduce((a, r) => a + toNum(r[c.key]), 0)) : i === 0 ? 'Totals' : ''}</b></td>`).join('')}</tr>`);
-    const save = () => store.set('erp_acc_' + key, JSON.stringify({ q: state.q, from: state.from, to: state.to, filter: state.filter, m: state.m, by: state.by }));
+    const save = () => store.set(accKey(key), JSON.stringify({ q: state.q, from: state.from, to: state.to, filter: state.filter, m: state.m, by: state.by }));
     const reload = (o = {}) => { Object.assign(state, o); save(); accRegister(key, { limit: state.limit }); };
     const readM = () => { const m = {}; document.querySelectorAll('.amf').forEach((el) => { if (el.value.trim()) m[el.dataset.k] = el.value.trim(); }); return m; };
     $('#ago').onclick = () => reload({ q: $('#aq').value.trim(), from: $('#af') ? $('#af').value : '', to: $('#at') ? $('#at').value : '', m: readM(), by: $('#aby') ? $('#aby').value : state.by });
     document.querySelectorAll('select.amf, #aby').forEach((el) => (el.onchange = () => $('#ago').click()));
     document.querySelectorAll('input.amf').forEach((el) => (el.onkeydown = (e) => { if (e.key === 'Enter') $('#ago').click(); }));
     if ($('#aclear')) $('#aclear').onclick = () => reload({ m: {}, by: '' });
+    if ($('#aclear2')) $('#aclear2').onclick = () => reload({ m: {}, by: '' });
     // a row of the totals: show just those rows
     document.querySelectorAll('tr[data-g]').forEach((tr) => (tr.onclick = () => { if (d.groups.by === 'month') { const [y, mo] = tr.dataset.g.split('-').map(Number); const last = new Date(Date.UTC(y, mo, 0)).getUTCDate(); reload({ from: `${tr.dataset.g}-01`, to: `${tr.dataset.g}-${String(last).padStart(2, '0')}` }); } else reload({ m: { ...state.m, [d.groups.by]: tr.dataset.g } }); }));
     $('#aq').onkeydown = (e) => { if (e.key === 'Enter') $('#ago').click(); };
@@ -3510,7 +3512,7 @@
     document.querySelectorAll('.td-title a[href*="?"]').forEach((a) => (a.onclick = (e) => {
       const [h, qs] = a.getAttribute('href').split('?'); const p = new URLSearchParams(qs), reg = h.replace('#/reg-', '');
       if (!/^#\/reg-/.test(h)) return; e.preventDefault();
-      const k = 'erp_acc_' + reg, cur = JSON.parse(store.get(k) || '{}');
+      const k = accKey(reg), cur = JSON.parse(store.get(k) || '{}');
       store.set(k, JSON.stringify({ ...cur, filter: p.get('filter') || '', q: p.get('q') || '', from: '', to: '', m: {}, by: '' }));
       location.hash = h;
     }));
@@ -3888,7 +3890,7 @@
       if ($('#cpSave')) $('#cpSave').onclick = async () => { try { await api('/api/accounts', { action: 'ca-pack', to: $('#cpTo').value, cc: $('#cpCc').value, on: $('#cpOn').value === '1' }); toast('Saved.'); } catch (e) { alert(e.message); } };
       if ($('#cpSend')) $('#cpSend').onclick = async (e) => { e.target.disabled = true; try { const r = await api('/api/accounts', { action: 'ca-pack', send: true, month: lm }); toast('Sent to ' + r.to.join(', ') + (r.test ? ' (test address)' : '')); accChecks(); } catch (x) { e.target.disabled = false; alert(x.message); } };
     })();
-    const openReg = (reg, patch) => { const k = 'erp_acc_' + reg, cur = JSON.parse(store.get(k) || '{}'); store.set(k, JSON.stringify({ ...cur, q: '', filter: '', from: '', to: '', m: {}, by: '', ...patch })); location.hash = '#/reg-' + reg; };
+    const openReg = (reg, patch) => { const k = accKey(reg), cur = JSON.parse(store.get(k) || '{}'); store.set(k, JSON.stringify({ ...cur, q: '', filter: '', from: '', to: '', m: {}, by: '', ...patch })); location.hash = '#/reg-' + reg; };
     $('#ckT').addEventListener('click', (e) => {
       const id = e.target.closest('a.ckid'); if (id) { e.preventDefault(); return openReg(id.dataset.reg, { q: id.dataset.id }); }
       const all = e.target.closest('a.ckall'); if (all) { e.preventDefault(); return openReg(all.dataset.reg, { m: { [all.dataset.col]: all.dataset.v || '(blank)' } }); }
@@ -3931,13 +3933,13 @@
     $('#bhq').oninput = (e) => { const w = e.target.value.trim().toLowerCase(); document.querySelectorAll('#bhgrids tr').forEach((tr) => { if (tr.querySelector('th') || tr.classList.contains('tot')) return; tr.hidden = !!w && !tr.textContent.toLowerCase().includes(w); }); };
     document.querySelectorAll('a.bhl').forEach((a) => (a.onclick = (e) => {
       e.preventDefault(); const [y, mo] = d.to.split('-').map(Number), last = new Date(Date.UTC(y, mo, 0)).getUTCDate();
-      const k = 'erp_acc_' + a.dataset.reg, cur = JSON.parse(store.get(k) || '{}');
+      const k = accKey(a.dataset.reg), cur = JSON.parse(store.get(k) || '{}');
       store.set(k, JSON.stringify({ ...cur, q: '', filter: '', from: d.from ? `${d.from}-01` : '', to: d.to ? `${d.to}-${String(last).padStart(2, '0')}` : '', m: { ...(d.bank ? { bank: d.bank } : {}), [a.dataset.col]: a.dataset.h === '(no head)' ? '(blank)' : a.dataset.h }, by: '' }));
       location.hash = '#/reg-' + a.dataset.reg;
     }));
     document.querySelectorAll('a.bh').forEach((a) => (a.onclick = (e) => {
       e.preventDefault(); const [y, mo] = a.dataset.m.split('-').map(Number), last = new Date(Date.UTC(y, mo, 0)).getUTCDate();
-      const k = 'erp_acc_' + a.dataset.reg, cur = JSON.parse(store.get(k) || '{}');
+      const k = accKey(a.dataset.reg), cur = JSON.parse(store.get(k) || '{}');
       store.set(k, JSON.stringify({ ...cur, q: '', filter: '', from: `${a.dataset.m}-01`, to: `${a.dataset.m}-${String(last).padStart(2, '0')}`, m: { ...(d.bank ? { bank: d.bank } : {}), [a.dataset.col]: a.dataset.h === '(no head)' ? '(blank)' : a.dataset.h }, by: '' }));
       location.hash = '#/reg-' + a.dataset.reg;
     }));
@@ -3950,7 +3952,7 @@
   }
   // Opens a register (Receipts, Payments Out) filtered to one payee, head or flat: that payee's or head's ledger.
   function openLedger(reg, col, v, from = '', to = '') {
-    const k = 'erp_acc_' + reg, cur = JSON.parse(store.get(k) || '{}');
+    const k = accKey(reg), cur = JSON.parse(store.get(k) || '{}');
     const m = col === 'unit_no' ? {} : { [col]: v === '(no payee)' || v === '(no head)' ? '(blank)' : v };
     store.set(k, JSON.stringify({ ...cur, q: col === 'unit_no' ? v : '', filter: '', from, to, m, by: '' }));
     location.hash = '#/reg-' + reg;
