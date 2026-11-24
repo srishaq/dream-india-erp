@@ -817,7 +817,7 @@
       <div><label>Mobile (sign-in codes on WhatsApp, approvals and alerts)</label><input name="phone" inputmode="tel" value="${esc(u?.phone)}" ${u && u.id === me.id && u.phone ? 'disabled title="Another Admin changes your own mobile"' : ''}></div></div>
       <label>Own email (sign-in codes when WhatsApp cannot be used, approval links, daily summaries, buyers' replies)</label><input name="email" type="email" value="${esc(u?.email)}" maxlength="120" placeholder="e.g. ayesha@dreamindiagroup.com" ${u && u.id === me.id && u.email ? 'disabled title="Another Admin changes your own email"' : ''}>
       <label>Designation (shown under the name in emails to buyers)</label><input name="designation" value="${esc(u?.designation)}" maxlength="80" placeholder="e.g. Senior Executive – Customer Relations">
-      ${u ? `<label class="check"><input type="checkbox" name="staySignedIn" ${u.stay_signed_in ? 'checked' : ''}> Stay signed in for 30 days on this person's phone and iPad (otherwise the ERP asks again every 12 hours)</label>` : ''}
+      ${u ? `<p class="small muted" style="margin:4px 0">Everyone stays signed in for 30 days on their own phone or computer, then gives the password again.</p><input type="hidden" name="staySignedIn" value="${u.stay_signed_in ? 'on' : ''}">` : ''}
       <label>Projects</label>
       <label class="check"><input type="checkbox" name="allProjects" ${u?.all_projects ? 'checked' : ''}> All projects, including future ones</label>
       ${d.projects.map((p) => `<label class="check"><input type="checkbox" name="p${p.id}" ${u?.projects.includes(p.id) ? 'checked' : ''}> ${esc(p.name)}</label>`).join('')}`;
