@@ -226,6 +226,40 @@ const JPEG = 'data:image/jpeg;base64,/9j/4AAQSkZJRgABAQEASABIAAD/2wBDAP/////////
     assert.equal(o2.status, 200, o2.error); assert.ok(!o2.balance);
   });
 
+  await step('The bill: ordered without a bill, the site signs it, Purchase checks it, Accounts enter it, Management approves it, then it can be paid', async () => {
+    const g = await P(siteeng), line = g.budget.lines.find((l) => l.rmc > 0).key;
+    const pr = (await P(siteeng, { op: 'request', data: { material: 'RMC', items: [{ spec: 'M20', qty: 10 }], line, wing: g.wings[line.split('|')[0]][0] } })).doc;
+    await P(sameer, { op: 'approve', id: pr.id, data: {} });
+    // the order: vendor, quantity, rate and PO, no bill yet
+    const o = await P(buyer1, { op: 'order', id: pr.id, data: { qty: 10, rate: 6000, vendor: 'Plant Z', poNo: 'PO-77' } });
+    assert.equal(o.status, 200, o.error); assert.equal(o.doc.order.amount, 60000);
+    const today = new Date(Date.now() + 5.5 * 3600e3).toISOString().slice(0, 10);
+    assert.equal((await P(siteeng, { op: 'receive', id: pr.id, data: { qty: 9.5, challan: 'DC-9', date: today } })).status, 200);
+    // Accounts cannot enter it before Purchase has checked it; Purchase checks it
+    assert.equal((await P(acc, { op: 'bill_enter', id: pr.id, data: {} })).status, 409);
+    assert.equal((await P(siteeng, { op: 'bill_check', id: pr.id, data: {} })).status, 403);
+    const ck = await P(buyer1, { op: 'bill_check', id: pr.id, data: { billNo: 'Z-101' } });
+    assert.equal(ck.status, 200, ck.error); assert.equal(ck.doc.status, 'with_accounts');
+    // the old one-step approval by Accounts is gone
+    assert.equal((await P(acc, { op: 'accounts_ok', id: pr.id, data: {} })).status, 409);
+    assert.match((await P(acc, { op: 'bill_enter', id: pr.id, data: { billNo: 'Z-101', billDate: today } })).error, /bill amount/);
+    const be = await P(acc, { op: 'bill_enter', id: pr.id, data: { billNo: 'Z-101', billDate: today, amount: 59000, gst: 9000 } });
+    assert.equal(be.status, 200, be.error);
+    assert.deepEqual([be.doc.status, be.doc.bill.vendor, be.doc.bill.poNo, be.doc.bill.amount, be.doc.bill.expect, be.doc.bill.over], ['bill_approval', 'Plant Z', 'PO-77', 59000, 57000, true]);
+    // not payable yet; Accounts cannot approve it; Management sends it back, then approves it from the link
+    assert.equal((await P(acc, { op: 'bill_ok', id: pr.id, data: {} })).status, 403);
+    const back = await P(sameer, { op: 'bill_back', id: pr.id, data: { note: 'Pay for 9.5 m³ only' } });
+    assert.equal(back.status, 200, back.error); assert.equal(back.doc.status, 'with_accounts');
+    await P(acc, { op: 'bill_enter', id: pr.id, data: { billNo: 'Z-101', billDate: today, amount: 57000 } });
+    const r = await require('../lib/portal/purchase-api').decideById(pr.id, 'sameer', true, '', 'from the approval link');
+    assert.equal(r.ok, true, r.error); assert.equal(r.state, 'accounts_ok');
+    const bills = await require('../lib/book').run('signature', () => require('../lib/accounts').approvedBills());
+    const b = bills.find((x) => x.id === pr.id);
+    assert.deepEqual([b.vendor, b.billNo, b.poNo, b.amount], ['Plant Z', 'Z-101', 'PO-77', 57000]);
+    // site logins never see the bill
+    const sv = (await P(siteeng)).orders[pr.id]; assert.ok(!sv.bill && !sv.accounts);
+  });
+
   await step('A problem report can carry a photo, kept apart from the entry', async () => {
     const r = await siteeng('/api/site', { op: 'add', col: 'hindrances', data: { tower: 'A', category: 'Labour shortage', from: '2026-10-30', description: 'Only 20 men today', status: 'open', photo: JPEG } });
     assert.equal(r.status, 200, r.error); assert.ok(r.doc.photo); assert.ok(!String(JSON.stringify(r.doc)).includes('base64'));

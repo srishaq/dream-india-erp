@@ -5,8 +5,8 @@ const q = (n, d = 1) => n == null || n === '' || isNaN(n) ? '–' : (+n).toLocal
 const day = (iso) => iso ? new Date(iso).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' }) : '';
 const when = (iso) => iso ? new Date(iso).toLocaleString('en-IN', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' }) : '';
 const today = () => new Date(Date.now() + 5.5 * 3600e3).toISOString().slice(0, 10);
-const LABEL = { pending_approval: 'Waiting for Management approval', requested: 'To order', ordered: 'Ordered, awaiting delivery', received: 'Received, bill with Accounts', accounts_ok: 'Approved, to pay', paid: 'Paid', rejected: 'Rejected', cancelled: 'Cancelled' };
-const OPEN = ['pending_approval', 'requested', 'ordered', 'received', 'accounts_ok'];
+const LABEL = { pending_approval: 'Waiting for Management approval', requested: 'To order', ordered: 'Ordered, awaiting delivery', received: 'Received, Purchase to check the bill', with_accounts: 'Bill with Accounts', bill_approval: 'Bill waiting for Management', accounts_ok: 'Bill approved, to pay', paid: 'Paid', rejected: 'Rejected', cancelled: 'Cancelled' };
+const OPEN = ['pending_approval', 'requested', 'ordered', 'received', 'with_accounts', 'bill_approval', 'accounts_ok'];
 let D = null, tab = 'list', tileFilter = null;
 
 async function api(method, payload) {
@@ -19,7 +19,9 @@ const who = (u) => esc(D.people[u] || u || '');
 // Which open requests are waiting for this login, by status.
 function waitingFor(o) {
   const c = D.can;
-  return (o.status === 'pending_approval' && c.approve) || (o.status === 'requested' && c.order) || (o.status === 'ordered' && c.receive) || ((o.status === 'received' || o.status === 'accounts_ok') && c.accounts);
+  // the bill: Purchase checks it against the order, Accounts enter it, Management approves it, Accounts pay it (24 Nov 2026)
+  return (o.status === 'pending_approval' && c.approve) || (o.status === 'requested' && c.order) || (o.status === 'ordered' && c.receive)
+    || (o.status === 'received' && c.order) || ((o.status === 'with_accounts' || o.status === 'accounts_ok') && c.accounts) || (o.status === 'bill_approval' && c.approve);
 }
 function flags(o) {
   const f = o.flags || {}, out = [];
@@ -28,7 +30,8 @@ function flags(o) {
   if (f.amountMismatch) out.push('Bill ≠ qty × rate');
   if (f.short) out.push('Short delivery');
   if (f.excess) out.push('Excess delivery');
-  if (o.hold && o.status === 'received') out.push('On hold');
+  if (o.hold && ['received', 'with_accounts'].includes(o.status)) out.push('On hold');
+  if (o.bill && o.bill.over && o.status === 'bill_approval') out.push('Bill above delivery');
   return out.map((x) => `<span class="flag">${x}</span>`).join('');
 }
 const shownQty = (o) => o.receipt ? o.receipt.qty : o.order ? o.order.qty : o.qty;
@@ -55,11 +58,13 @@ function receivedValue(o) {
 function renderTiles() {
   const c = D.can, os = Object.values(D.orders), n = (st) => os.filter((o) => o.status === st).length;
   const T = [];
-  if (c.approve) T.push(['pending_approval', 'To approve']);
-  if (c.order) T.push(['requested', 'To order']);
+  if (c.approve) { T.push(['pending_approval', 'To approve']); T.push(['bill_approval', 'Bills to approve']); }
+  if (c.order) { T.push(['requested', 'To order']); T.push(['received', 'Bills to check']); }
   if (c.receive) T.push(['ordered', 'Awaiting delivery']);
-  if (c.accounts) { T.push(['received', 'Bills to approve']); T.push(['accounts_ok', 'Approved, to pay']); }
-  if (!T.length) T.push(['pending_approval', 'With Management'], ['requested', 'To order'], ['ordered', 'Awaiting delivery'], ['received', 'With Accounts']);
+  if (c.accounts) { T.push(['with_accounts', 'Bills to enter']); if (!c.approve) T.push(['bill_approval', 'With Management']); T.push(['accounts_ok', 'Approved, to pay']); }
+  if (!T.length) T.push(['pending_approval', 'With Management'], ['requested', 'To order'], ['ordered', 'Awaiting delivery'], ['with_accounts', 'With Accounts']);
+  // one tile per status
+  for (let i = T.length - 1; i >= 0; i--) if (T.findIndex((x) => x[0] === T[i][0]) !== i) T.splice(i, 1);
   $('#tiles').innerHTML = T.map(([st, l]) => `<button class="tile ${n(st) ? 'hot' : ''}" data-st="${st}" aria-pressed="${tileFilter === st}"><b>${n(st)}</b><span>${l}</span></button>`).join('');
 }
 function renderList() {
@@ -305,7 +310,7 @@ function actionBox(o) {
     <div class="form"><label class="field">Vendor<input name="vendor" autocomplete="off"></label>
     <label class="field">Quantity ordered (${u})<input name="qty" inputmode="decimal" value="${o.qty}"></label>
     <label class="field">Rate per ${u}, incl. GST (₹)<input name="rate" inputmode="decimal" placeholder="${o.budgetRate ? 'Budget ₹' + o.budgetRate.toLocaleString('en-IN') : ''}"></label>
-    <label class="field">Bill amount, incl. GST (₹)<input name="amount" inputmode="decimal"></label>
+    <label class="field">Bill amount, incl. GST (₹) <span class="note">if the bill came with the order</span><input name="amount" inputmode="decimal"></label>
     <label class="field">Bill no.<input name="billNo" autocomplete="off"></label>
     <label class="field">Bill date<input name="billDate" type="date" value="${today()}"></label>
     <label class="field">PO no. (optional)<input name="poNo" autocomplete="off"></label>
@@ -326,12 +331,30 @@ function actionBox(o) {
     <label class="field wide">Delivery challan no(s).<input name="challan" placeholder="Separate several challans with commas" autocomplete="off"></label>
     <label class="field wide">Note<textarea name="note" placeholder="Quality issues, rejected trucks…"></textarea></label></div><p class="err"></p>
     <div class="acts"><button class="btn go" data-op="receive">Confirm received</button></div></div>`;
-  if (o.status === 'received' && c.accounts) return `<div class="box"><h4>Check the bill</h4>
+  // the bill came to site with the material and the site signed it: Purchase checks it against the order
+  if (o.status === 'received' && c.order) return `<div class="box"><h4>Check the bill against the order</h4>
     ${itemTable(o)}
-    <p class="note" style="margin:0">Bill ${o.order.billNo ? esc(o.order.billNo) + ' ' : ''}for ${inr(o.order.amount)} (${q(o.order.qty, 2)} ${u} at ${multi(o) ? 'an average of ' : ''}${inr(o.order.rate)}). Site received ${q(o.receipt.qty, 2)} ${u}${o.receipt.qty !== o.order.qty ? `, so the bill for the quantity received is ${inr(receivedValue(o))}` : ''}.</p>
-    <div class="form"><label class="field">Amount payable (₹)<input name="payable" inputmode="decimal" value="${Math.round(o.receipt.qty !== o.order.qty ? receivedValue(o) : o.order.amount)}"></label>
+    <p class="note" style="margin:0">Ordered ${q(o.order.qty, 2)} ${u} from ${esc(o.order.vendor)}${o.order.rate ? ` at ${multi(o) ? 'an average of ' : ''}${inr(o.order.rate)}` : ''}${o.order.poNo ? `, PO ${esc(o.order.poNo)}` : ''}. Site received ${q(o.receipt.qty, 2)} ${u} (challan ${esc(o.receipt.challan)}). Check the signed bill against this, then hand it to Accounts.</p>
+    <div class="form"><label class="field">Bill no.<input name="billNo" autocomplete="off" value="${esc(o.order.billNo || '')}"></label>
+    <label class="field wide">Note<textarea name="note" placeholder="Anything Accounts should know"></textarea></label></div><p class="err"></p>
+    <div class="acts"><button class="btn go" data-op="bill_check">Bill checked, hand to Accounts</button></div></div>`;
+  // Accounts enter the bill; it then goes to Management (WhatsApp and email) for approval
+  if (o.status === 'with_accounts' && c.accounts) return `<div class="box"><h4>Enter the bill</h4>
+    ${o.billApproval && !o.billApproval.ok ? `<p class="note bad">Sent back by ${who(o.billApproval.by)}: ${esc(o.billApproval.note || '')}</p>` : ''}
+    <p class="note" style="margin:0">Received ${q(o.receipt ? o.receipt.qty : o.order.qty, 2)} ${u}${o.order.rate ? ` at the order rate of ${inr(o.order.rate)}: ${inr(receivedValue(o))}` : ''}. Saving sends the bill to Management for approval; once approved, pay it from Payments Out.</p>
+    <div class="form"><label class="field">Vendor<input name="vendor" autocomplete="off" value="${esc((o.bill && o.bill.vendor) || o.order.vendor || '')}"></label>
+    <label class="field">PO no.<input name="poNo" autocomplete="off" value="${esc((o.bill && o.bill.poNo) || o.order.poNo || '')}"></label>
+    <label class="field">Bill no.<input name="billNo" autocomplete="off" value="${esc((o.bill && o.bill.billNo) || (o.billCheck && o.billCheck.billNo) || o.order.billNo || '')}"></label>
+    <label class="field">Bill date<input name="billDate" type="date" value="${esc((o.bill && o.bill.billDate) || o.order.billDate || '')}"></label>
+    <label class="field">Bill amount, incl. GST (₹)<input name="amount" inputmode="decimal" value="${o.bill ? o.bill.amount : ''}"></label>
+    <label class="field">GST in the bill (₹)<input name="gst" inputmode="decimal" value="${o.bill && o.bill.gst != null ? o.bill.gst : ''}"></label>
     <label class="field wide">Note<textarea name="note" placeholder="Reason, needed to put on hold"></textarea></label></div><p class="err"></p>
-    <div class="acts"><button class="btn warn" data-op="hold">Put on hold</button><button class="btn go" data-op="accounts_ok">Approve for payment</button></div></div>`;
+    <div class="acts"><button class="btn warn" data-op="hold">Put on hold</button><button class="btn go" data-op="bill_enter">Save and send for approval</button></div></div>`;
+  if (o.status === 'bill_approval' && c.approve) return `<div class="box"><h4>Approve the bill for payment</h4>
+    <p class="note" style="margin:0">${esc(o.bill.vendor)}, bill ${esc(o.bill.billNo)} of ${esc(o.bill.billDate)}: <b>${inr(o.bill.amount)}</b>${o.bill.gst != null ? ` (GST ${inr(o.bill.gst)})` : ''}${o.bill.poNo ? `, PO ${esc(o.bill.poNo)}` : ''}. Received ${q(o.receipt ? o.receipt.qty : o.order.qty, 2)} ${u}${o.bill.expect ? `, ${inr(o.bill.expect)} at the order rate` : ''}.${o.bill.over ? ' <b class="bad">The bill is above what was delivered.</b>' : ''}</p>
+    <div class="form"><label class="field wide">Note<textarea name="note" placeholder="Reason, needed to send it back"></textarea></label></div><p class="err"></p>
+    <div class="acts"><button class="btn warn" data-op="bill_back">Send back to Accounts</button><button class="btn go" data-op="bill_ok">Approve for payment</button></div></div>`;
+  if (o.status === 'bill_approval' && c.accounts) return `<div class="box"><h4>Waiting for Management</h4><p class="note" style="margin:0">The bill (${inr(o.bill.amount)}) is with Management for approval. They were sent it on WhatsApp and email.</p></div>`;
   if (o.status === 'accounts_ok' && c.accounts) return `<div class="box"><h4>Pay this bill</h4>
     <p class="note" style="margin:0">Approved for ${inr(o.accounts.payable || o.order.amount)}. Pay it from <b>Accounts → Payments Out</b> in the ERP: add a row and choose this bill under "Paying an approved purchase bill?". Saving that payment marks the bill Paid here, so every payment is in the books.</p>
     <div class="acts"><a class="btn go" href="/#/reg-payments">Open Payments Out</a></div></div>`;
@@ -402,7 +425,7 @@ function showOrder(id, okMsg) {
     }
     if (op === 'order' && data.items && !data.amount && !data.items.some((x) => x.vendor)) { const v = data.items.reduce((s, x) => s + num(x.qty) * num(x.rate), 0); if (v) data.amount = String(Math.round(v)); }
     if (op === 'order' && !data.amount && data.qty && data.rate) data.amount = String(Math.round(+data.qty.replace(/,/g, '') * +data.rate.replace(/,/g, '')));
-    const msg = { approve: 'Approved. It is now with Purchase.', reject: 'Rejected.', order: 'Order and bill saved. The site will confirm delivery.', receive: 'Receipt confirmed. The bill is now with Accounts.', accounts_ok: 'Approved for payment.', hold: 'Put on hold.', paid: 'Payment recorded.', cancel: 'Cancelled.' }[op];
+    const msg = { approve: 'Approved. It is now with Purchase.', reject: 'Rejected.', receive: 'Receipt confirmed. Purchase checks the bill next.', order: 'Order saved. The site will confirm delivery.', accounts_ok: 'Approved for payment.', bill_check: 'Bill handed to Accounts.', bill_enter: 'Bill saved and sent to Management for approval.', bill_ok: 'Bill approved. Accounts can pay it.', bill_back: 'Bill sent back to Accounts.', hold: 'Put on hold.', paid: 'Payment recorded.', cancel: 'Cancelled.' }[op];
     act({ op, id: o.id, data }, msg);
   }));
   const amt = $('#sheet [name=amount]'), qy = $('#sheet .box [name=qty]'), rt = $('#sheet [name=rate]');
