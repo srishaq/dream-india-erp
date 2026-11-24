@@ -161,6 +161,30 @@ const JPEG = 'data:image/jpeg;base64,/9j/4AAQSkZJRgABAQEASABIAAD/2wBDAP/////////
     assert.equal(one.status, 200, one.error); assert.ok(!one.split); assert.deepEqual([one.doc.order.vendor, one.doc.order.poNo, one.doc.order.amount], ['Skyway RMC', 'PO-600', 65800]);
   });
 
+  await step('One grade split between vendors: 18 m³ of M25 from three plants, each its own order and bill', async () => {
+    const g = await P(siteeng), line = g.budget.lines.find((l) => l.rmc > 0).key;
+    const pr = (await P(siteeng, { op: 'request', data: { material: 'RMC', items: [{ spec: 'M25', qty: 18 }], line, wing: g.wings[line.split('|')[0]][0] } })).doc;
+    assert.equal((await P(sameer, { op: 'approve', id: pr.id, data: {} })).status, 200);
+    // more than approved across the vendors: refused for the buyer
+    const over = await P(buyer1, { op: 'order', id: pr.id, data: { parts: [{ spec: 'M25', qty: 10, rate: 7000, vendor: 'Plant A' }, { spec: 'M25', qty: 10, rate: 7100, vendor: 'Plant B' }] } });
+    assert.equal(over.status, 409); assert.match(over.error, /add up to 20/);
+    const r = await P(buyer1, { op: 'order', id: pr.id, data: { billDate: '2026-11-24', parts: [
+      { spec: 'M25', qty: 6, rate: 7000, vendor: 'Plant A', billNo: 'A-1' },
+      { spec: 'M25', qty: 6, rate: 7100, vendor: 'Plant B', billNo: 'B-1', poNo: 'PO-B' },
+      { spec: 'M25', qty: 6, rate: 7200, vendor: 'Plant C', amount: 43200 }] } });
+    assert.equal(r.status, 200, r.error); assert.equal(r.split.length, 3);
+    assert.deepEqual(r.split.map((x) => x.no), [pr.no, pr.no + '-B', pr.no + '-C']);
+    assert.deepEqual(r.split.map((x) => [x.order.vendor, x.qty, x.order.qty, x.order.rate, x.order.amount, x.status]),
+      [['Plant A', 6, 6, 7000, 42000, 'ordered'], ['Plant B', 6, 6, 7100, 42600, 'ordered'], ['Plant C', 6, 6, 7200, 43200, 'ordered']]);
+    assert.deepEqual([r.split[1].order.billNo, r.split[1].order.poNo], ['B-1', 'PO-B']);
+    assert.ok(r.split.every((x) => x.approval.ok));
+    // two rows of the same vendor: one ordinary order
+    const pr2 = (await P(siteeng, { op: 'request', data: { material: 'RMC', items: [{ spec: 'M25', qty: 8 }], line, wing: g.wings[line.split('|')[0]][0] } })).doc;
+    await P(sameer, { op: 'approve', id: pr2.id, data: {} });
+    const one = await P(buyer1, { op: 'order', id: pr2.id, data: { parts: [{ spec: 'M25', qty: 4, rate: 7000, vendor: 'Plant A' }, { spec: 'M25', qty: 4, rate: 7000, vendor: 'plant a' }] } });
+    assert.equal(one.status, 200, one.error); assert.ok(!one.split); assert.deepEqual([one.doc.order.vendor, one.doc.order.qty, one.doc.order.amount], ['Plant A', 8, 56000]);
+  });
+
   await step('A problem report can carry a photo, kept apart from the entry', async () => {
     const r = await siteeng('/api/site', { op: 'add', col: 'hindrances', data: { tower: 'A', category: 'Labour shortage', from: '2026-10-30', description: 'Only 20 men today', status: 'open', photo: JPEG } });
     assert.equal(r.status, 200, r.error); assert.ok(r.doc.photo); assert.ok(!String(JSON.stringify(r.doc)).includes('base64'));

@@ -286,10 +286,10 @@ function actionBox(o) {
     <label class="field">Note<textarea name="note" placeholder="Reason, needed for a rejection"></textarea></label><p class="err"></p>
     <div class="acts"><button class="btn warn" data-op="reject">Reject</button><button class="btn go" data-op="approve">Approve</button></div></div>`;
   }
-  if (o.status === 'requested' && c.order && multi(o)) return `<div class="box"><h4>Place the order and enter the bill</h4>
-    <p class="note" style="margin:0">Enter the quantity and rate for each size; put 0 for a size you are not buying now. Each size can have its own vendor, bill and PO no. Leave the vendor blank when it is the same as the size above. Each vendor's sizes become a separate order (${esc(o.no)}, ${esc(o.no)}-B…), so the site confirms and Accounts pays each vendor's bill on its own.</p>
+  if (o.status === 'requested' && c.order) return `<div class="box"><h4>Place the order and enter the bill</h4>
+    <p class="note" style="margin:0">Enter the quantity and rate for each size; put 0 for a size you are not buying now. Each size can have its own vendor, bill and PO no., and one size can be split between vendors with "+ Another vendor" (for example 18 m³ as 6 + 6 + 6 from three plants). Leave the vendor blank when it is the same as the row above. Each vendor's sizes become a separate order (${esc(o.no)}, ${esc(o.no)}-B…), so the site confirms and Accounts pays each vendor's bill on its own.</p>
     <div class="items">${itemsOf(o).map((it, i) => `<div class="pline" data-spec="${esc(it.spec)}"><div class="irow r3"><b>${esc(it.spec)}<br><span class="note">approved ${q(it.qty, 3)} ${u}</span></b><label class="field">Qty ordered (${u})<input data-k="qty" inputmode="decimal" value="${it.qty}"></label><label class="field">Rate per ${u}, incl. GST (₹)<input data-k="rate" inputmode="decimal" placeholder="${((o.budgetRates || {})[it.spec] || o.budgetRate) ? 'Budget ₹' + Math.round((o.budgetRates || {})[it.spec] || o.budgetRate).toLocaleString('en-IN') : ''}"></label></div>
-      <div class="irow r4"><label class="field">Vendor<input data-k="vendor" autocomplete="off" placeholder="${i ? 'Same as above' : ''}"></label><label class="field">Bill amount, incl. GST (₹)<input data-k="amount" inputmode="decimal" placeholder="Qty × rate"></label><label class="field">Bill no.<input data-k="billNo" autocomplete="off" placeholder="${i ? 'Same vendor: same bill' : ''}"></label><label class="field">PO no.<input data-k="poNo" autocomplete="off"></label></div></div>`).join('')}</div>
+      <div class="irow r4"><label class="field">Vendor<input data-k="vendor" autocomplete="off" placeholder="${i ? 'Same as above' : ''}"></label><label class="field">Bill amount, incl. GST (₹)<input data-k="amount" inputmode="decimal" placeholder="Qty × rate"></label><label class="field">Bill no.<input data-k="billNo" autocomplete="off" placeholder="${i ? 'Same vendor: same bill' : ''}"></label><label class="field">PO no.<input data-k="poNo" autocomplete="off"></label></div><div class="acts" style="justify-content:flex-start;margin:2px 0 6px"><button type="button" class="btn small" data-addv>+ Another vendor for ${esc(it.spec)}</button></div></div>`).join('')}</div>
     <div class="form"><label class="field">Bill date<input name="billDate" type="date" value="${today()}"></label>
     <label class="field wide">Note<textarea name="note"></textarea></label></div><p class="err"></p>
     <div class="acts"><button class="btn go" data-op="order">Save order and bill</button></div></div>`;
@@ -348,11 +348,36 @@ function showOrder(id, okMsg) {
     if (del.dataset.sure !== '1') { del.dataset.sure = '1'; del.textContent = 'Click again to delete permanently'; return; }
     try { await api('POST', { op: 'delete', id: o.id }); delete D.orders[o.id]; close(); render(); } catch (e) { const er = $$('#sheet .err').pop(); if (er) er.textContent = e.message; }
   });
+  // the same size from another vendor: a copy of the row, blank, with its own vendor, quantity, rate and bill
+  const addv = (bt) => {
+    const row = bt.closest('.pline'), cp = row.cloneNode(true);
+    cp.querySelectorAll('[data-k]').forEach((el) => { el.value = ''; });
+    const q = cp.querySelector('[data-k="qty"]'); if (q) q.placeholder = 'Qty from this vendor';
+    const v = cp.querySelector('[data-k="vendor"]'); if (v) v.placeholder = 'Vendor';
+    const bn = cp.querySelector('[data-k="billNo"]'); if (bn) bn.placeholder = '';
+    const note = cp.querySelector('.irow b .note'); if (note) note.textContent = 'another vendor';
+    const acts = cp.querySelector('[data-addv]').parentNode;
+    acts.innerHTML = '<button type="button" class="btn small" data-addv>+ Another vendor for ' + esc(row.dataset.spec) + '</button> <button type="button" class="btn warn small" data-rmv>Remove this vendor</button>';
+    let end = row; while (end.nextElementSibling && end.nextElementSibling.dataset.spec === row.dataset.spec) end = end.nextElementSibling;
+    end.after(cp);
+    wire(cp);
+    if (q) q.focus();
+  };
+  const wire = (root) => {
+    root.querySelectorAll('[data-addv]').forEach((bt) => bt.addEventListener('click', () => addv(bt)));
+    root.querySelectorAll('[data-rmv]').forEach((bt) => bt.addEventListener('click', () => bt.closest('.pline').remove()));
+  };
+  const items0 = $('#sheet .items'); if (items0) wire(items0);
   $$('#sheet [data-op]').forEach((b) => b.addEventListener('click', () => {
     const op = b.dataset.op, data = {};
     $$('#sheet .box [name]').forEach((el) => (data[el.name] = el.value));
     const rows = $$('#sheet .box [data-spec]');
     if (rows.length) data.items = rows.map((r) => { const x = { spec: r.dataset.spec }; r.querySelectorAll('[data-k]').forEach((el) => (x[el.dataset.k] = el.value)); return x; });
+    // one size from several vendors: every row goes as a part; one row per size on a one-size order: the plain fields
+    if (op === 'order' && data.items) {
+      if (data.items.length > new Set(data.items.map((x) => x.spec)).size) { data.parts = data.items; delete data.items; }
+      else if (!multi(o) && data.items.length === 1) { const x = data.items[0]; for (const k of ['qty', 'rate', 'vendor', 'amount', 'billNo', 'poNo']) if (x[k] != null && x[k] !== '') data[k] = x[k]; delete data.items; }
+    }
     if (op === 'order' && data.items && !data.amount && !data.items.some((x) => x.vendor)) { const v = data.items.reduce((s, x) => s + num(x.qty) * num(x.rate), 0); if (v) data.amount = String(Math.round(v)); }
     if (op === 'order' && !data.amount && data.qty && data.rate) data.amount = String(Math.round(+data.qty.replace(/,/g, '') * +data.rate.replace(/,/g, '')));
     const msg = { approve: 'Approved. It is now with Purchase.', reject: 'Rejected.', order: 'Order and bill saved. The site will confirm delivery.', receive: 'Receipt confirmed. The bill is now with Accounts.', accounts_ok: 'Approved for payment.', hold: 'Put on hold.', paid: 'Payment recorded.', cancel: 'Cancelled.' }[op];
