@@ -2606,6 +2606,44 @@
       };
       form.poId = null;
       if (key === 'payments' && d.can.enter) payHelp(dl, row);
+      if (key === 'receipts' && d.can.enter) recHelp(dl, row);
+    };
+    // Receipts (bank): type the flat and the rest fills itself (24 Nov 2026, accounts: "map the unit and customer
+    // directly in the ERP"): the buyer's name, Current buyer / earlier buyer, the head, and AV or GST by the bank.
+    // Flats are also suggested from the bank narration when a buyer's name is in it.
+    let recBooks = null;
+    const recHelp = async (dl, row) => {
+      const f = $('form', dl), I = (k) => f.elements[k];
+      if (!I('unit_no')) return;
+      const box = document.createElement('div'); box.className = 'wide small'; box.style.margin = '-4px 0 6px';
+      I('unit_no').closest('div').after(box);
+      try { recBooks = recBooks || (await api('/api/bookings?project=' + encodeURIComponent($('#proj')?.value || ''))).rows || []; } catch { recBooks = []; }
+      const norm = (u) => { const m = String(u || '').toUpperCase().replace(/\s+/g, '').match(/^([A-Z]+)-?(\d{2,4})$/); return m ? `${m[1]}-${m[2]}` : String(u || '').trim().toUpperCase(); };
+      const of = (u) => { const L = recBooks.filter((b) => b.unit_no === u); return { cur: L.find((b) => ['active', 'pending'].includes(b.status)), old: L.filter((b) => !['active', 'pending'].includes(b.status)) }; };
+      const set = (k, v, force) => { const e = I(k); if (!e || v == null) return; if (force || !e.value) { if (e.tagName === 'SELECT' && ![...e.options].some((o) => o.value === v)) e.add(new Option(v, v)); e.value = v; } };
+      const fill = (force) => {
+        const u = norm(I('unit_no').value); if (!u) { box.innerHTML = ''; return; }
+        I('unit_no').value = u;
+        const { cur, old } = of(u);
+        if (!cur && !old.length) { box.innerHTML = `<span class="bad-t">${esc(u)} has no booking in this project. Check the flat number.</span>`; return; }
+        const who = cur ? cur.buyers : old[0].buyers;
+        set('payer_name', `${u} ${who || ''}`.trim(), force);
+        set('payer_type', cur ? 'Current buyer' : 'Other / earlier buyer', true);
+        set('head', 'Receipts From Customers');
+        set('payment_head', /gst/i.test(I('bank')?.value || '') ? 'GST' : 'AV');
+        box.innerHTML = `${esc(u)}: <b>${esc(who || '')}</b> · ${cur ? 'current buyer' : 'earlier buyer (cancelled booking)'}${cur && old.length ? ` · earlier: ${esc(old.map((b) => b.buyers).join(', '))}` : ''}`;
+      };
+      I('unit_no').addEventListener('change', () => fill(true));
+      // flats whose buyer's name is in the narration
+      if (!I('unit_no').value) {
+        const text = ` ${String(I('description')?.value || row?.description || '').toUpperCase().replace(/[^A-Z]/g, ' ')} `;
+        const score = (b) => String(b.buyers || '').toUpperCase().split(/[^A-Z]+/).filter((w) => w.length >= 4 && text.includes(` ${w} `)).length;
+        const sug = recBooks.filter((b) => ['active', 'pending'].includes(b.status)).map((b) => [b, score(b)]).filter(([, n]) => n >= 1).sort((a, b) => b[1] - a[1]).slice(0, 4);
+        if (sug.length) {
+          box.innerHTML = `From the narration: ${sug.map(([b]) => `<button type="button" class="ghost sm" data-u="${esc(b.unit_no)}">${esc(b.unit_no)} ${esc(b.buyers || '')}</button>`).join(' ')}`;
+          box.querySelectorAll('[data-u]').forEach((bt) => (bt.onclick = () => { I('unit_no').value = bt.dataset.u; fill(true); }));
+        }
+      } else if (row) fill(false);
     };
     // Payments Out: pay an approved purchase bill (fills the row), and TDS from the head's section and rate
     const payHelp = async (dl, row) => {
