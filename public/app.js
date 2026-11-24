@@ -795,8 +795,8 @@
     const rlabel = (k) => d.roles.find((r) => r.key === k)?.label || k;
     $('#page').innerHTML = `<div class="page-head"><div><h1>Logins</h1><p class="muted">Each person gets their own login. New logins and resets use a temporary password that must be changed at first sign-in.</p></div>
       <div class="actions" style="margin:0">${me.role === 'admin' ? '<button class="ghost" id="bulkReset">New passwords for many…</button>' : ''}<button id="add">Add login</button></div></div>
-      <div class="panel table-wrap"><table><tr><th>Name</th><th>Username</th><th>Role</th><th>Projects</th><th>Status</th><th></th></tr>
-      ${d.users.map((u) => `<tr><td>${esc(u.name)}</td><td>${esc(u.username)}</td><td>${esc(rlabel(u.role))}</td>
+      <div class="panel table-wrap"><input class="search" id="uq" placeholder="Search name, username, email, role or project"><table id="ut"><tr><th>Name</th><th>Username</th><th>Role</th><th>Projects</th><th>Status</th><th></th></tr>
+      ${d.users.map((u) => `<tr data-s="${esc([u.name, u.username, u.email, u.mobile, rlabel(u.role), u.role === 'admin' || u.all_projects ? 'All projects' : u.projects.map(pname).join(' '), u.disabled ? 'disabled' : u.must_change ? 'awaiting first sign-in' : 'active'].filter(Boolean).join(' ').toLowerCase())}"><td>${esc(u.name)}</td><td>${esc(u.username)}</td><td>${esc(rlabel(u.role))}</td>
         <td>${u.role === 'admin' || u.all_projects ? 'All projects' : esc(u.projects.map(pname).join(', ') || 'None')}</td>
         <td>${u.disabled ? '<span class="pill bad">disabled</span>' : u.must_change ? '<span class="pill grey">awaiting first sign-in</span>' : '<span class="pill good">active</span>'}</td>
         <td class="num" style="white-space:nowrap"><button class="ghost small" data-edit="${u.id}">Edit</button> <button class="ghost small" data-reset="${u.id}">Reset password</button>
@@ -830,6 +830,7 @@
     };
     if ($('#bulkReset')) $('#bulkReset').onclick = () => bulkReset(d);
     $('#add').onclick = () => dialog(form(null), async (x) => { const r = await api('/api/users', { action: 'create', ...pick(x) }); users(r); showTemp(r); });
+    if ($('#uq')) { const uf = () => { const q = $('#uq').value.trim().toLowerCase(); document.querySelectorAll('#ut tr[data-s]').forEach((tr) => { tr.style.display = !q || q.split(/\s+/).every((w) => tr.dataset.s.includes(w)) ? '' : 'none'; }); }; $('#uq').oninput = uf; $('#uq').focus(); }
     document.querySelectorAll('[data-edit]').forEach((b) => (b.onclick = () => { const u = d.users.find((x) => x.id === +b.dataset.edit); dialog(form(u), async (x) => users(await api('/api/users', { action: 'update', id: u.id, ...pick(x, u) }))); }));
     document.querySelectorAll('[data-reset]').forEach((b) => (b.onclick = async () => { const u = d.users.find((x) => x.id === +b.dataset.reset); if (!confirm(`Reset the password for ${u.name}? They will be signed out.`)) return; const r = await api('/api/users', { action: 'reset', id: u.id }); users(r); showTemp(r); }));
     document.querySelectorAll('[data-toggle]').forEach((b) => (b.onclick = async () => { const u = d.users.find((x) => x.id === +b.dataset.toggle); if (!u.disabled && !confirm(`Disable ${u.name}? They will be signed out at once.`)) return; users(await api('/api/users', { action: u.disabled ? 'enable' : 'disable', id: u.id })); }));
