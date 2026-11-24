@@ -342,12 +342,13 @@ function actionBox(o) {
     <label class="field wide">Note<textarea name="note" placeholder="Quality issues, rejected trucks…"></textarea></label></div><p class="err"></p>
     <div class="acts"><button class="btn go" data-op="receive">Confirm received</button></div></div>`;
   // the bill came to site with the material and the site signed it: Purchase checks it against the order
-  if (o.status === 'received' && c.order) return `<div class="box"><h4>Check the bill against the order</h4>
+  if (o.status === 'received' && c.order) return `<div class="box"><h4>Verify the bill against the purchase order</h4>
     ${itemTable(o)}
-    <p class="note" style="margin:0">Ordered ${q(o.order.qty, 2)} ${u} from ${esc(o.order.vendor)}${o.order.rate ? ` at ${multi(o) ? 'an average of ' : ''}${inr(o.order.rate)}` : ''}${o.order.poNo ? `, PO ${esc(o.order.poNo)}` : ''}. Site received ${q(o.receipt.qty, 2)} ${u} (challan ${esc(o.receipt.challan)}). Check the signed bill against this, then hand it to Accounts.</p>
+    <p class="note" style="margin:0">Ordered ${q(o.order.qty, 2)} ${u} from ${esc(o.order.vendor)}${o.order.rate ? ` at ${multi(o) ? 'an average of ' : ''}${inr(o.order.rate)}` : ''}${o.order.poNo ? `, PO ${esc(o.order.poNo)}` : ''}. Site received ${q(o.receipt.qty, 2)} ${u} (challan ${esc(o.receipt.challan)}). Check the bill the site manager signed against the PO and the amount, then hand the physical copy to Accounts.</p>
     <div class="form"><label class="field">Bill no.<input name="billNo" autocomplete="off" value="${esc(o.order.billNo || '')}"></label>
-    <label class="field wide">Note<textarea name="note" placeholder="Anything Accounts should know"></textarea></label></div><p class="err"></p>
-    <div class="acts"><button class="btn go" data-op="bill_check">Bill checked, hand to Accounts</button></div></div>`;
+    <label class="field">Bill amount, incl. GST (₹)<input name="billAmount" inputmode="decimal" placeholder="${o.order.rate ? 'PO: ' + inr(receivedValue(o)) : ''}"></label>
+    <label class="field wide">Note<textarea name="note" placeholder="Needed if the bill does not match the PO"></textarea></label></div><p class="err"></p>
+    <div class="acts"><button class="btn go" data-op="bill_check">Verified, hand the bill to Accounts</button></div></div>`;
   // Accounts enter the bill; it then goes to Management (WhatsApp and email) for approval
   if (o.status === 'with_accounts' && c.accounts) return `<div class="box"><h4>Enter the bill</h4>
     ${o.billApproval && !o.billApproval.ok ? `<p class="note bad">Sent back by ${who(o.billApproval.by)}: ${esc(o.billApproval.note || '')}</p>` : ''}
@@ -356,7 +357,7 @@ function actionBox(o) {
     <label class="field">PO no.<input name="poNo" autocomplete="off" value="${esc((o.bill && o.bill.poNo) || o.order.poNo || '')}"></label>
     <label class="field">Bill no.<input name="billNo" autocomplete="off" value="${esc((o.bill && o.bill.billNo) || (o.billCheck && o.billCheck.billNo) || o.order.billNo || '')}"></label>
     <label class="field">Bill date<input name="billDate" type="date" value="${esc((o.bill && o.bill.billDate) || o.order.billDate || '')}"></label>
-    <label class="field">Bill amount, incl. GST (₹)<input name="amount" inputmode="decimal" value="${o.bill ? o.bill.amount : ''}"></label>
+    <label class="field">Bill amount, incl. GST (₹)<input name="amount" inputmode="decimal" value="${o.bill ? o.bill.amount : (o.billCheck && o.billCheck.amount) || ''}"></label>
     <label class="field">GST in the bill (₹)<input name="gst" inputmode="decimal" value="${o.bill && o.bill.gst != null ? o.bill.gst : ''}"></label>
     <label class="field wide">Scan of the signed bill (photo or PDF)${o.bill && o.bill.scan ? ` · <a href="/api/me?purchase=1&photo=${encodeURIComponent(o.id + 'bill')}" target="_blank" rel="noopener">see the one attached</a>` : ''}<input type="file" id="billScan" accept="image/*,application/pdf" capture="environment"><span class="note" id="billScanNote"></span></label>
     <label class="field wide">Note<textarea name="note" placeholder="Reason, needed to put on hold"></textarea></label></div><p class="err"></p>
@@ -450,7 +451,7 @@ function showOrder(id, okMsg) {
     }
     if (op === 'order' && data.items && !data.amount && !data.items.some((x) => x.vendor)) { const v = data.items.reduce((s, x) => s + num(x.qty) * num(x.rate), 0); if (v) data.amount = String(Math.round(v)); }
     if (op === 'order' && !data.amount && data.qty && data.rate) data.amount = String(Math.round(+data.qty.replace(/,/g, '') * +data.rate.replace(/,/g, '')));
-    const msg = { approve: 'Approved. It is now with Purchase.', reject: 'Rejected.', receive: 'Receipt confirmed. Purchase checks the bill next.', order: 'Order saved. The site will confirm delivery.', accounts_ok: 'Approved for payment.', bill_check: 'Bill handed to Accounts.', bill_enter: 'Bill saved and sent to Management for approval.', bill_ok: 'Bill approved. Accounts can pay it.', bill_back: 'Bill sent back to Accounts.', hold: 'Put on hold.', paid: 'Payment recorded.', cancel: 'Cancelled.' }[op];
+    const msg = { approve: 'Approved. It is now with Purchase.', reject: 'Rejected.', receive: 'Receipt confirmed. Purchase checks the bill next.', order: 'Order saved. The site will confirm delivery.', accounts_ok: 'Approved for payment.', bill_check: 'Verified. Hand the physical bill to Accounts.', bill_enter: 'Bill saved and sent to Management for approval.', bill_ok: 'Bill approved. Accounts can pay it.', bill_back: 'Bill sent back to Accounts.', hold: 'Put on hold.', paid: 'Payment recorded.', cancel: 'Cancelled.' }[op];
     act({ op, id: o.id, data }, msg);
   }));
   const amt = $('#sheet [name=amount]'), qy = $('#sheet .box [name=qty]'), rt = $('#sheet [name=rate]');

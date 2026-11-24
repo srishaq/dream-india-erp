@@ -238,7 +238,9 @@ const JPEG = 'data:image/jpeg;base64,/9j/4AAQSkZJRgABAQEASABIAAD/2wBDAP/////////
     // Accounts cannot enter it before Purchase has checked it; Purchase checks it
     assert.equal((await P(acc, { op: 'bill_enter', id: pr.id, data: {} })).status, 409);
     assert.equal((await P(siteeng, { op: 'bill_check', id: pr.id, data: {} })).status, 403);
-    const ck = await P(buyer1, { op: 'bill_check', id: pr.id, data: { billNo: 'Z-101' } });
+    assert.match((await P(buyer1, { op: 'bill_check', id: pr.id, data: { billNo: 'Z-101' } })).error, /bill amount/);
+    assert.match((await P(buyer1, { op: 'bill_check', id: pr.id, data: { billNo: 'Z-101', billAmount: 59000 } })).error, /more than the delivered quantity/);
+    const ck = await P(buyer1, { op: 'bill_check', id: pr.id, data: { billNo: 'Z-101', billAmount: 59000, note: 'Pump charges extra' } });
     assert.equal(ck.status, 200, ck.error); assert.equal(ck.doc.status, 'with_accounts');
     // the old one-step approval by Accounts is gone
     assert.equal((await P(acc, { op: 'accounts_ok', id: pr.id, data: {} })).status, 409);
