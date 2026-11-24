@@ -4190,8 +4190,8 @@
         <div class="actions"><button id="reset" class="danger">Clear imported data</button></div></div>` : ''}
       ${s.counts.real ? '' : `<div class="panel"><h2>Step 1: read the sheet</h2><p class="muted">Nothing is saved at this step.${s.counts.sample ? ' The sample data currently loaded will be removed when you import.' : ''}</p>
         <div class="actions"><button id="read" ${s.configured ? '' : 'disabled'}>Read the sheet and check it</button></div></div><div id="preview"></div>`}`;
-    // Dream Signature: vendor bills, GST and TDS from Tally (the Tally Reports folder on Drive)
-    if (bookOf() === 'signature') {
+    // vendor bills, GST and TDS from Tally (each project's Tally Reports folder on Drive)
+    if (bookOf() === 'signature' || bookOf() === 'aspire') {
       page.insertAdjacentHTML('afterbegin', `<div class="panel"><h2>Vendor bills, GST and TDS from Tally</h2><p class="muted">Reads the Purchase, Journal and Payment Registers and the TDS workings in the "Tally Reports – Vendor bills, TDS &amp; GST" folder on Drive. Every bill is kept (for the CA / Tax page), and each Payments Out row that paid a bill (same vendor, amount = bill less TDS, or a few bills together) gets the bill no., taxable value, GST, total, TDS and the vendor's PAN, where empty.</p>
         <div class="actions"><button id="tbRead">Check the Tally reports</button></div><div id="tbOut"></div></div>`);
       const li = (a) => (a.length ? `<ul class="small">${a.map((x) => `<li>${x}</li>`).join('')}</ul>` : '<p class="small muted">None.</p>');
