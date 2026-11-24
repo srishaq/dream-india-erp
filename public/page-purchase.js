@@ -286,6 +286,16 @@ function restOf(o) {
   return itemsOf(o).map((it) => ({ spec: it.spec, qty: Math.round(((+it.qty || 0) - got.filter((x) => x.spec === it.spec).reduce((a, x) => a + (+x.qty || 0), 0)) * 1000) / 1000 }))
     .filter((x) => x.qty > 0.001 && x.qty > (+(itemsOf(o).find((i) => i.spec === x.spec) || {}).qty || 0) * (D.tolerance || 0.02));
 }
+// a phone photo of the bill, made small enough for site mobile data but readable (about 300–600 KB)
+function shrinkBill(file, max = 2000, quality = 0.8) {
+  return new Promise((ok, bad) => { const fr = new FileReader();
+    fr.onerror = () => bad(new Error('That photo could not be opened. Take it again.'));
+    fr.onload = () => { const img = new Image();
+      img.onload = () => { const k = Math.min(1, max / Math.max(img.width, img.height)), c = document.createElement('canvas'); c.width = Math.round(img.width * k); c.height = Math.round(img.height * k);
+        c.getContext('2d').drawImage(img, 0, 0, c.width, c.height); ok(c.toDataURL('image/jpeg', quality)); };
+      img.onerror = () => bad(new Error('That photo could not be opened. Take it again.')); img.src = fr.result; };
+    fr.readAsDataURL(file); });
+}
 function actionBox(o) {
   const c = D.can, u = o.unit;
   if (o.status === 'pending_approval' && c.approve) {
@@ -348,10 +358,11 @@ function actionBox(o) {
     <label class="field">Bill date<input name="billDate" type="date" value="${esc((o.bill && o.bill.billDate) || o.order.billDate || '')}"></label>
     <label class="field">Bill amount, incl. GST (₹)<input name="amount" inputmode="decimal" value="${o.bill ? o.bill.amount : ''}"></label>
     <label class="field">GST in the bill (₹)<input name="gst" inputmode="decimal" value="${o.bill && o.bill.gst != null ? o.bill.gst : ''}"></label>
+    <label class="field wide">Scan of the signed bill (photo or PDF)${o.bill && o.bill.scan ? ` · <a href="/api/me?purchase=1&photo=${encodeURIComponent(o.id + 'bill')}" target="_blank" rel="noopener">see the one attached</a>` : ''}<input type="file" id="billScan" accept="image/*,application/pdf" capture="environment"><span class="note" id="billScanNote"></span></label>
     <label class="field wide">Note<textarea name="note" placeholder="Reason, needed to put on hold"></textarea></label></div><p class="err"></p>
     <div class="acts"><button class="btn warn" data-op="hold">Put on hold</button><button class="btn go" data-op="bill_enter">Save and send for approval</button></div></div>`;
   if (o.status === 'bill_approval' && c.approve) return `<div class="box"><h4>Approve the bill for payment</h4>
-    <p class="note" style="margin:0">${esc(o.bill.vendor)}, bill ${esc(o.bill.billNo)} of ${esc(o.bill.billDate)}: <b>${inr(o.bill.amount)}</b>${o.bill.gst != null ? ` (GST ${inr(o.bill.gst)})` : ''}${o.bill.poNo ? `, PO ${esc(o.bill.poNo)}` : ''}. Received ${q(o.receipt ? o.receipt.qty : o.order.qty, 2)} ${u}${o.bill.expect ? `, ${inr(o.bill.expect)} at the order rate` : ''}.${o.bill.over ? ' <b class="bad">The bill is above what was delivered.</b>' : ''}</p>
+    <p class="note" style="margin:0">${esc(o.bill.vendor)}, bill ${esc(o.bill.billNo)} of ${esc(o.bill.billDate)}: <b>${inr(o.bill.amount)}</b>${o.bill.gst != null ? ` (GST ${inr(o.bill.gst)})` : ''}${o.bill.poNo ? `, PO ${esc(o.bill.poNo)}` : ''}. Received ${q(o.receipt ? o.receipt.qty : o.order.qty, 2)} ${u}${o.bill.expect ? `, ${inr(o.bill.expect)} at the order rate` : ''}.${o.bill.over ? ' <b class="bad">The bill is above what was delivered.</b>' : ''}${o.bill.scan ? ` <a href="/api/me?purchase=1&photo=${encodeURIComponent(o.id + 'bill')}" target="_blank" rel="noopener">View the scanned bill</a>` : ''}</p>
     <div class="form"><label class="field wide">Note<textarea name="note" placeholder="Reason, needed to send it back"></textarea></label></div><p class="err"></p>
     <div class="acts"><button class="btn warn" data-op="bill_back">Send back to Accounts</button><button class="btn go" data-op="bill_ok">Approve for payment</button></div></div>`;
   if (o.status === 'bill_approval' && c.accounts) return `<div class="box"><h4>Waiting for Management</h4><p class="note" style="margin:0">The bill (${inr(o.bill.amount)}) is with Management for approval. They were sent it on WhatsApp and email.</p></div>`;
@@ -370,7 +381,7 @@ function showOrder(id, okMsg) {
   ${o.budgetAtRequest && !o.budgetAtRequest.noBudget ? kv('Floor balance at request', `${q(o.budgetAtRequest.balance)} ${esc(o.unit)} of ${q(o.budgetAtRequest.budget)}`) : ''}${kv('Budget rate', o.budgetRate ? inr(o.budgetRate) + ' per ' + esc(o.unit) : '')}
   ${o.approval ? kv(o.approval.ok ? 'Approved by' : 'Rejected by', `${who(o.approval.by)}, ${when(o.approval.at)}${o.approval.note ? '<br><span class="note">' + esc(o.approval.note) + '</span>' : ''}`) : ''}
   ${o.order ? kv('Vendor', esc(o.order.vendor)) + kv('Ordered', `${q(o.order.qty, 2)} ${esc(o.unit)} at ${multi(o) ? 'avg. ' : ''}${inr(o.order.rate)}`) + kv('Bill', `${[o.order.billNo ? esc(o.order.billNo) : '', o.order.billDate ? day(o.order.billDate) : ''].filter(Boolean).join(', ')}${o.order.billNo || o.order.billDate ? ': ' : ''}${inr(o.order.amount)}`) + kv('PO no.', esc(o.order.poNo)) : ''}
-  ${o.receipt ? kv('Received', `${q(o.receipt.qty, 2)} ${esc(o.unit)} on ${day(o.receipt.date)}`) + kv('Challan', esc(o.receipt.challan) + (o.receipt.photo ? ` · <a href="/api/me?purchase=1&photo=${encodeURIComponent(o.id)}" target="_blank" rel="noopener">See the photo</a>` : '') + (o.receipt.vehicle ? ` · vehicle ${esc(o.receipt.vehicle)}` : '')) : ''}${o.approval && o.approval.via ? kv('Decided', esc(o.approval.via)) : ''}
+  ${o.bill ? kv('Bill (Accounts)', `${esc(o.bill.billNo)} of ${day(o.bill.billDate)}: ${inr(o.bill.amount)}${o.bill.scan ? ` · <a href="/api/me?purchase=1&photo=${encodeURIComponent(o.id + 'bill')}" target="_blank" rel="noopener">scan</a>` : ''}`) : ''}  ${o.receipt ? kv('Received', `${q(o.receipt.qty, 2)} ${esc(o.unit)} on ${day(o.receipt.date)}`) + kv('Challan', esc(o.receipt.challan) + (o.receipt.photo ? ` · <a href="/api/me?purchase=1&photo=${encodeURIComponent(o.id)}" target="_blank" rel="noopener">See the photo</a>` : '') + (o.receipt.vehicle ? ` · vehicle ${esc(o.receipt.vehicle)}` : '')) : ''}${o.approval && o.approval.via ? kv('Decided', esc(o.approval.via)) : ''}
   ${o.accounts ? kv('Approved for payment', `${inr(o.accounts.payable)} by ${who(o.accounts.by)}`) : ''}${o.payment ? kv('Paid', `${inr(o.payment.amount)} on ${day(o.payment.date)}, ${esc(o.payment.ref)}`) : ''}
   ${kv('Note', esc(o.note))}${o.hold && o.status === 'received' ? kv('On hold', esc(o.hold.note)) : ''}</div>
   ${o.status === 'received' && D.can.accounts || o.status === 'pending_approval' && D.can.approve ? '' : itemTable(o)}
@@ -381,6 +392,19 @@ function showOrder(id, okMsg) {
   if (del) del.addEventListener('click', async () => {
     if (del.dataset.sure !== '1') { del.dataset.sure = '1'; del.textContent = 'Click again to delete permanently'; return; }
     try { await api('POST', { op: 'delete', id: o.id }); delete D.orders[o.id]; close(); render(); } catch (e) { const er = $$('#sheet .err').pop(); if (er) er.textContent = e.message; }
+  });
+  // the scanned bill: a photo is made small (as the site's challan photos), a PDF is sent as it is (up to 4 MB)
+  let billScan = '';
+  const bs = $('#billScan');
+  if (bs) bs.addEventListener('change', async () => {
+    const f = bs.files && bs.files[0], note = $('#billScanNote'); billScan = ''; if (!f) return;
+    try {
+      if (/pdf/i.test(f.type)) {
+        if (f.size > 4e6) throw new Error('The PDF is over 4 MB. Scan it at a lower quality.');
+        billScan = await new Promise((ok, bad) => { const r = new FileReader(); r.onload = () => ok(r.result); r.onerror = () => bad(new Error('That file could not be opened.')); r.readAsDataURL(f); });
+      } else billScan = await shrinkBill(f);
+      note.textContent = `Attached: ${f.name}`;
+    } catch (e) { note.textContent = e.message; }
   });
   // the same size from another vendor: a copy of the row, blank, with its own vendor, quantity, rate and bill
   const addv = (bt) => {
@@ -419,6 +443,7 @@ function showOrder(id, okMsg) {
     const rows = $$('#sheet .box [data-spec]');
     if (rows.length) data.items = rows.map((r) => { const x = { spec: r.dataset.spec }; r.querySelectorAll('[data-k]').forEach((el) => (x[el.dataset.k] = el.value)); return x; });
     // one size from several vendors: every row goes as a part; one row per size on a one-size order: the plain fields
+    if (op === 'bill_enter' && billScan) data.scan = billScan;
     if (op === 'order' && data.items) {
       if (data.items.length > new Set(data.items.map((x) => x.spec)).size) { data.parts = data.items; delete data.items; }
       else if (!multi(o) && data.items.length === 1) { const x = data.items[0]; for (const k of ['qty', 'rate', 'vendor', 'amount', 'billNo', 'poNo']) if (x[k] != null && x[k] !== '') data[k] = x[k]; delete data.items; }

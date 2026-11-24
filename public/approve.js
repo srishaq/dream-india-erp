@@ -25,7 +25,8 @@
     const facts = `<dl><dt>For</dt><dd>${esc(o.material)} ${esc(o.items.map((i) => i.spec).join(', '))}, ${esc(o.building)} · ${esc(o.floor)}</dd>
       <dt>Bill</dt><dd>${esc(B.billNo)} of ${esc(day(B.billDate))}${B.gst != null ? `, GST ${inr(B.gst)}` : ''}</dd>${B.poNo ? `<dt>PO</dt><dd>${esc(B.poNo)}</dd>` : ''}
       <dt>Ordered</dt><dd>${q(O.qty)} ${esc(o.unit)}${O.rate ? ` at ${inr(O.rate)}` : ''}</dd>${R.qty != null ? `<dt>Delivered</dt><dd>${q(R.qty)} ${esc(o.unit)}, challan ${esc(R.challan)}, ${esc(day(R.date))}</dd>` : ''}
-      <dt>Entered by</dt><dd>${esc(B.by)} (Accounts)</dd>${B.note ? `<dt>Note</dt><dd>${esc(B.note)}</dd>` : ''}</dl>`;
+      <dt>Entered by</dt><dd>${esc(B.by)} (Accounts)</dd>${B.note ? `<dt>Note</dt><dd>${esc(B.note)}</dd>` : ''}</dl>
+      ${B.scan ? `<p><a class="scan" href="/api/me?purchase=1&scan=1&t=${encodeURIComponent(t)}" target="_blank" rel="noopener">View the scanned bill</a></p>` : ''}`;
     const chk = B.over ? ['over', `Above what was delivered: ${inr(B.expect)} at the order rate.`] : ['ok', `Matches the order${B.expect ? ` (${inr(B.expect)})` : ''}.`];
     if (o.status !== 'bill_approval') {
       const a = o.billApproval;

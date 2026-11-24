@@ -243,7 +243,8 @@ const JPEG = 'data:image/jpeg;base64,/9j/4AAQSkZJRgABAQEASABIAAD/2wBDAP/////////
     // the old one-step approval by Accounts is gone
     assert.equal((await P(acc, { op: 'accounts_ok', id: pr.id, data: {} })).status, 409);
     assert.match((await P(acc, { op: 'bill_enter', id: pr.id, data: { billNo: 'Z-101', billDate: today } })).error, /bill amount/);
-    const be = await P(acc, { op: 'bill_enter', id: pr.id, data: { billNo: 'Z-101', billDate: today, amount: 59000, gst: 9000 } });
+    assert.match((await P(acc, { op: 'bill_enter', id: pr.id, data: { billNo: 'Z-101', billDate: today, amount: 59000 } })).error, /scan/);
+    const be = await P(acc, { op: 'bill_enter', id: pr.id, data: { billNo: 'Z-101', billDate: today, amount: 59000, gst: 9000, scan: JPEG } });
     assert.equal(be.status, 200, be.error);
     assert.deepEqual([be.doc.status, be.doc.bill.vendor, be.doc.bill.poNo, be.doc.bill.amount, be.doc.bill.expect, be.doc.bill.over], ['bill_approval', 'Plant Z', 'PO-77', 59000, 57000, true]);
     // not payable yet; Accounts cannot approve it; Management sends it back, then approves it from the link
@@ -256,8 +257,11 @@ const JPEG = 'data:image/jpeg;base64,/9j/4AAQSkZJRgABAQEASABIAAD/2wBDAP/////////
     const bills = await require('../lib/book').run('signature', () => require('../lib/accounts').approvedBills());
     const b = bills.find((x) => x.id === pr.id);
     assert.deepEqual([b.vendor, b.billNo, b.poNo, b.amount], ['Plant Z', 'Z-101', 'PO-77', 57000]);
-    // site logins never see the bill
+    // site logins never see the bill; the approver's link opens the scan
     const sv = (await P(siteeng)).orders[pr.id]; assert.ok(!sv.bill && !sv.accounts);
+    const tok = await require('../lib/staff-alerts').token(pr.id, 'sameer');
+    const sc = await fetch(`http://localhost:${process.env.PORT}/api/me?purchase=1&scan=1&t=${encodeURIComponent(tok)}`);
+    assert.equal(sc.status, 200); assert.equal(sc.headers.get('content-type'), 'image/jpeg');
   });
 
   await step('A problem report can carry a photo, kept apart from the entry', async () => {
