@@ -1,10 +1,12 @@
 // Pre-sales & Sales (/leads): the caller's and the sales person's lists, one lead's calls, and the call form.
 // Data: /api/leads. Pre-sales sees every lead; a sales person sees the leads handed to them.
+// Three tabs: Pre-sales (call, qualify, transfer), Sales (pipeline, walk-ins, cost sheets, booking) and Sourcing
+// (channel partner visits, /api/sourcing, see sourcing.js). Each login opens on its own tab; managers see all three.
 (function () {
   const $ = (s, r = document) => r.querySelector(s);
   const $$ = (s, r = document) => [...r.querySelectorAll(s)];
   const e = (x) => String(x == null ? '' : x).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
-  const S = { d: null, tab: null, proj: 'all', q: '' };
+  const S = { d: null, tab: null, proj: 'all', q: '', main: null, who: 'all', src: null, stab: null };
   const SRC = { ivr: 'IVR call', website: 'Website', instagram: 'Instagram', facebook: 'Facebook', meta_ads: 'Meta ad form', google_ads: 'Google Ads', whatsapp: 'WhatsApp', '99acres': '99acres', magicbricks: 'MagicBricks', housing: 'Housing.com', walk_in: 'Walk-in', referral: 'Referral', channel_partner: 'Channel partner', telecalling: 'Telecalling', hoarding: 'Hoarding', event: 'Event', youtube: 'YouTube', other: 'Other' };
   const BHK = ['1 BHK', '2 BHK', '3 BHK', '4 BHK or more', 'Shop', 'Office', 'Not sure'];
   const PURPOSE = ['Own use', 'Investment', 'Both'];
@@ -29,8 +31,8 @@
   // where a lead stands with sales: new from pre-sales → visit booked → visited → offer → won / lost
   const stage = (l) => (l.status === 'booked' ? 'won' : l.status === 'lost' ? 'lost' : l.offer && ['given', 'pending', 'approved'].includes(l.offer.status) ? 'offer' : l.visit_at ? 'visited' : l.visit_date ? 'visit' : 'new');
   function tabs() {
-    const t = S.d.today, all = S.d.me.all;
-    const T = all ? [
+    const t = S.d.today;
+    const T = S.main === 'presales' ? [
       ['now', 'Call now', (l) => l.status === 'new' && !l.first_contact_at && !l.handed_to && fresh(l)],
       ['today', 'Call today', (l) => open(l) && l.first_contact_at && l.next_date && day(l.next_date) <= t && !(l.visit_date && day(l.visit_date) === t)],
       ['visits', 'Site visits', (l) => open(l) && l.visit_date && day(l.visit_date) >= t],
@@ -39,33 +41,55 @@
       ['old', 'Older, never called', (l) => l.status === 'new' && !l.first_contact_at && !l.handed_to && !fresh(l)],
       ['closed', 'Booked / lost', (l) => !open(l)],
     ] : [
-      // the sales person's pipeline: only the leads handed to him
+      // the sales pipeline: a sales person's own leads; a manager sees every lead with sales
       ['s_new', 'New from pre-sales', (l) => open(l) && stage(l) === 'new'],
       ['s_visit', 'Site visits', (l) => open(l) && stage(l) === 'visit'],
-      ['s_visited', 'Visited', (l) => open(l) && stage(l) === 'visited'],
-      ['s_offer', 'Offers', (l) => open(l) && stage(l) === 'offer'],
+      ['s_visited', 'Visited / walk-ins', (l) => open(l) && stage(l) === 'visited'],
+      ['s_offer', 'Offer / cost sheet sent', (l) => open(l) && stage(l) === 'offer'],
       ['today', 'Follow-ups due', (l) => open(l) && l.next_date && day(l.next_date) <= t],
       ['won', 'Booked', (l) => l.status === 'booked'],
       ['lost', 'Lost', (l) => l.status === 'lost'],
     ];
-    if (S.d.me.approver && S.d.approvals.length) T.unshift(['appr', `Discounts to approve`, (l) => S.d.approvals.some((a) => a.lead_id === l.id)]);
+    if (S.d.me.approver && S.d.approvals.length && S.main !== 'presales') T.unshift(['appr', `Discounts to approve`, (l) => S.d.approvals.some((a) => a.lead_id === l.id)]);
     return T;
   }
 
   function draw() {
-    const d = S.d, T = tabs();
+    const d = S.d;
+    if (!S.main || !d.me.tabs.includes(S.main)) S.main = d.me.tabs[0];
+    $('#add').textContent = S.main === 'sales' ? '+ Add a walk-in' : S.main === 'sourcing' ? '+ Log a visit' : '+ Add a lead';
+    $('#q').placeholder = S.main === 'sourcing' ? 'Search partner or person' : 'Search name or number';
+    if (S.main === 'sourcing') { top(); return window.Sourcing.draw(S, { $, $$, e, api, toast, when, nice, top }); }
+    const T = tabs();
     if (!S.tab || !T.some((x) => x[0] === S.tab)) S.tab = T[0][0];
-    $('#proj').innerHTML = `<option value="all">All projects</option>${d.projects.map((p) => `<option value="${p.id}" ${String(S.proj) === String(p.id) ? 'selected' : ''}>${e(p.name)}</option>`).join('')}<option value="none" ${S.proj === 'none' ? 'selected' : ''}>Project not known yet</option>`;
+    top();
     const q = S.q.toLowerCase().replace(/\s/g, '');
-    const base = d.leads.filter((l) => (S.proj === 'all' || (S.proj === 'none' ? !l.project_id : String(l.project_id) === String(S.proj))) && (!q || `${l.name || ''}${l.phone || ''}${l.email || ''}`.toLowerCase().replace(/\s/g, '').includes(q)));
+    const base = d.leads.filter((l) => (S.main !== 'sales' || !d.me.all || (l.handed_to && (S.who === 'all' || String(l.handed_to) === S.who))) && (S.proj === 'all' || (S.proj === 'none' ? !l.project_id : String(l.project_id) === String(S.proj))) && (!q || `${l.name || ''}${l.phone || ''}${l.email || ''}`.toLowerCase().replace(/\s/g, '').includes(q)));
     $('#tabs').innerHTML = T.map(([k, n, f]) => `<button class="btn ${S.tab === k ? 'on' : ''}" data-tab="${k}">${n}<small>${base.filter(f).length}</small></button>`).join('');
     const f = T.find((x) => x[0] === S.tab)[2];
     let rows = base.filter(f);
     if (S.tab === 'visits') rows.sort((a, b) => day(a.visit_date).localeCompare(day(b.visit_date)));
     else if (S.tab === 'today') rows.sort((a, b) => day(a.next_date).localeCompare(day(b.next_date)));
     else if (S.tab === 'now') rows.sort((a, b) => b.created_at.localeCompare(a.created_at)); // newest first: the warmest leads
-    $('#list').innerHTML = rows.length ? rows.slice(0, 300).map(row).join('') + (rows.length > 300 ? `<p class="empty">and ${rows.length - 300} more: search or pick a project.</p>` : '') : `<div class="empty">${S.tab === 'now' ? 'Nobody waiting for a call. Well done.' : 'Nothing here.'}</div>`;
+    // pre-sales: a lead not called within 2 hours is flagged at the top
+    const late = S.main === 'presales' ? base.filter((l) => l.status === 'new' && !l.first_contact_at && !l.handed_to && fresh(l) && Date.now() - Date.parse(l.created_at) > 2 * 36e5).length : 0;
+    $('#list').innerHTML = (late && S.tab !== 'now' ? `<div class="late" data-tab="now">⚠ ${late} lead${late > 1 ? 's' : ''} waiting more than 2 hours for a first call. Open “Call now”.</div>` : '') + (rows.length ? rows.slice(0, 300).map(row).join('') + (rows.length > 300 ? `<p class="empty">and ${rows.length - 300} more: search or pick a project.</p>` : '') : `<div class="empty">${S.tab === 'now' ? 'Nobody waiting for a call. Well done.' : 'Nothing here.'}</div>`);
     stats();
+  }
+
+  const NAMES = { presales: 'Pre-sales', sales: 'Sales', sourcing: 'Sourcing' };
+  const short = (n) => String(n || '').replace(/^Dream\s+/i, '');
+  function top() {
+    const d = S.d, me = d.me;
+    const mains = me.tabs.length > 1 ? `<div class="mains">${me.tabs.map((k) => `<button class="main ${S.main === k ? 'on' : ''}" data-main="${k}">${NAMES[k]}</button>`).join('')}</div>` : '';
+    let chips = '';
+    if (S.main !== 'sourcing' && d.projects.length) {
+      const c = [['all', 'All'], ...d.projects.map((p) => [String(p.id), short(p.name)]), ['none', 'Not sure']];
+      chips = `<div class="pchips">${c.map(([k, n]) => `<button class="pc ${String(S.proj) === k ? 'on' : ''}" data-proj="${k}">${e(n)}</button>`).join('')}
+        ${S.main === 'sales' && me.all ? `<select id="who" aria-label="Sales person"><option value="all">Every sales person</option>${d.people.filter((x) => x.role === 'sales').map((x) => `<option value="${x.id}" ${S.who === String(x.id) ? 'selected' : ''}>${e(x.name)}</option>`).join('')}</select>` : ''}</div>`;
+    }
+    $('#top').innerHTML = mains + chips;
+    if ($('#who')) $('#who').onchange = (ev) => { S.who = ev.target.value; draw(); };
   }
 
   function row(l) {
@@ -80,7 +104,9 @@
     else if (l.status === 'lost') right = `<span class="chip">Lost</span>`;
     else if (l.visit_date && day(l.visit_date) >= S.d.today) right = `<span class="chip good">Visit ${nice(day(l.visit_date))}</span>`;
     else if (l.next_date) right = `<span class="chip ${day(l.next_date) < S.d.today ? 'warn' : ''}">Call ${day(l.next_date) === S.d.today ? 'today' : nice(day(l.next_date))}</span>`;
-    const who = S.d.me.all && l.handed_name ? `<div>with ${e(l.handed_name)}</div>` : '';
+    const RS = { visit: 'site visit', info: 'more info', costsheet: 'cost sheet', walkin: 'walk-in' };
+    const who = (S.d.me.all && l.handed_name ? `<div>with ${e(l.handed_name)}</div>` : '') + (S.main === 'sales' && l.handover_reason ? `<div><span class="chip ${l.handover_reason === 'walkin' ? 'good' : ''}">${RS[l.handover_reason] || ''}</span></div>` : '')
+      + (S.main === 'presales' && l.sent_back_at && !l.handed_to ? '<div><span class="chip warn">sent back by sales</span></div>' : '');
     return `<div class="row" data-id="${l.id}"><div class="who"><b>${e(l.name || l.phone || l.email)}</b><div class="s">${l.name && l.phone ? e(l.phone) + ' · ' : ''}${e(what)}</div><div class="s">${e(src)} · came in ${when(l.created_at)}${l.calls ? ` · ${l.calls} call${l.calls > 1 ? 's' : ''}` : ''}${l.is_buyer ? ' · <b style="color:var(--good)">Buyer in CRM ✓</b>' : ''}</div>${l.last_note ? `<div class="s">“${e(l.last_note)}”</div>` : ''}</div><div class="right">${right}${who}</div></div>`;
   }
 
@@ -132,12 +158,16 @@
         <div class="err" id="err"></div>
         <div style="margin-top:10px"><button class="btn pri" type="submit" style="width:100%">Save the call</button></div>
       </div></form>
-      ${(me.all || me.role === 'presales') && sales.length && !l.handed_to && ['new', 'contacted', 'visit'].includes(l.status) ? `<div class="box"><h3>Hand over to sales</h3><div class="grid2">
-        <div><label>Sales person</label><select id="hto">${sales.map((x) => `<option value="${x.id}">${e(x.name)}</option>`).join('')}</select></div>
+      ${(me.all || me.role === 'presales') && sales.length && !l.handed_to && ['new', 'contacted', 'visit'].includes(l.status) ? `<div class="box"><h3>Transfer to Sales</h3><div class="grid2">
+        <div><label>Why</label><select id="hwhy">${Object.entries(S.d.reasons || {}).map(([k, v]) => `<option value="${k}">${e(v)}</option>`).join('')}</select></div>
+        <div><label>Sales person</label><select id="hto"><option value="auto">Whose turn it is (the ERP picks)</option>${sales.map((x) => `<option value="${x.id}">${e(x.name)}</option>`).join('')}</select></div>
         <div><label>Site visit on</label><input type="date" id="hvisit" min="${S.d.today}" value="${day(l.visit_date)}"></div></div>
         <div class="f"><label>Anything sales should know</label><textarea id="hnote" rows="2"></textarea></div>
-        <button class="btn pri" id="hand" style="margin-top:8px;width:100%">Hand over</button><div class="err" id="herr"></div></div>` : ''}
+        <button class="btn pri" id="hand" style="margin-top:8px;width:100%">Transfer to Sales</button><div class="err" id="herr"></div></div>` : ''}
       ${(me.sells || me.all) && l.status !== 'lost' ? salesBox(l, j) : ''}
+      ${l.handed_to && (me.all || l.handed_to === me.id) && ['new', 'contacted', 'visit'].includes(l.status) && l.handover_reason !== 'walkin' ? `<details class="box"><summary style="cursor:pointer;font-weight:600;color:var(--maroon)">Send back to pre-sales</summary>
+        <div class="f"><label>Why (pre-sales sees this)</label><textarea id="sbnote" rows="2" placeholder="e.g. Not reachable after 4 calls; wants to come after Diwali"></textarea></div>
+        <button class="btn" id="sendback" style="margin-top:8px;width:100%">Send back</button><div class="err" id="sberr"></div></details>` : ''}
       <div class="box"><h3>Every call so far</h3>${evs || '<p style="color:var(--mut);margin:0">No calls noted yet.</p>'}
         ${l.note ? `<details style="margin-top:6px"><summary style="cursor:pointer;color:var(--mut);font-size:13px">Earlier notes</summary><pre style="white-space:pre-wrap;font:13px/1.45 inherit;margin:6px 0 0">${e(l.note)}</pre></details>` : ''}
         ${j.ivr.length ? `<details style="margin-top:6px" class="calls"><summary style="cursor:pointer;color:var(--mut);font-size:13px">Their calls to our IVR (${j.ivr.length})</summary>${j.ivr.map((c) => `<div class="t" style="font-size:13px;margin:4px 0">${when(c.called_at)} · ${e(c.status || '')}${c.duration ? ` · ${c.duration}s` : ''}${c.recording_url ? ` · <a href="${e(c.recording_url)}" target="_blank" rel="noopener">recording</a>` : ''}</div>`).join('')}</details>` : ''}
@@ -162,8 +192,12 @@
       } catch (x) { err.textContent = x.message; }
     };
     wireSales(p, l, j, close);
+    if ($('#sendback', p)) $('#sendback', p).onclick = async () => {
+      try { const r = await api({ action: 'sendback', id: l.id, note: $('#sbnote', p).value }); toast(`Sent back to ${r.to}.`); close(); await load(); }
+      catch (x) { $('#sberr', p).textContent = x.message; }
+    };
     if ($('#hand', p)) $('#hand', p).onclick = async () => {
-      try { const r = await api({ action: 'handover', id: l.id, to: +$('#hto', p).value, visitDate: $('#hvisit', p).value, note: $('#hnote', p).value }); toast(`Handed over to ${r.to}${r.emailed ? ' (emailed)' : ''}.`); close(); await load(); }
+      try { const r = await api({ action: 'handover', id: l.id, to: $('#hto', p).value, reason: $('#hwhy', p).value, visitDate: $('#hvisit', p).value, note: $('#hnote', p).value }); toast(`Handed over to ${r.to}${r.emailed ? ' (emailed)' : ''}.`); close(); await load(); }
       catch (x) { $('#herr', p).textContent = x.message; }
     };
   }
@@ -187,7 +221,8 @@
           ${!j.hold || j.hold.id !== live.unit_id ? `<button class="btn" id="hold" data-unit="${live.unit_id}">🔒 Hold flat ${e(live.unit_no)} for ${set.holdHours} h</button>` : ''}
           <a class="btn" target="_blank" rel="noopener" href="/api/prices?unit=${live.unit_id}&parking=${live.parking}&discount=${Number(live.carpet) ? (Number(live.discount) / Number(live.carpet)).toFixed(2) : 0}&html=1">🧾 Cost sheet</a>
           ${l.phone ? `<a class="btn" target="_blank" rel="noopener" href="https://wa.me/91${e(l.phone)}?text=${encodeURIComponent(`Dear ${l.name || 'Sir/Madam'}, as discussed, flat ${live.unit_no} at ${live.project || l.project || ''}: agreement value ${inr(live.av)}, total cost ${inr(live.total)} including GST, stamp duty and registration. Happy to answer any questions.`)}">💬 Send on WhatsApp</a>` : ''}
-          <button class="btn pri" id="bookbtn">✅ Book this flat</button></div>` : ''}
+          <button class="btn pri" id="bookbtn">✅ Book this flat</button></div>
+        <div style="display:flex;gap:6px;flex-wrap:wrap;margin:0 0 8px"><input id="csmail" type="email" placeholder="Customer's email" value="${e(l.email || '')}" style="flex:1;min-width:180px"><button class="btn" id="mailcs" data-offer="${live.id}">✉️ Email the cost sheet</button></div>` : ''}
       ${live && live.status === 'pending' ? `<p style="color:var(--warn);font-size:13px;margin:6px 0">The discount is above ${set.limitPct}%: it is with the approver. You can close once it is approved.</p>` : ''}
       <details ${live ? '' : 'open'} style="margin-top:6px"><summary style="cursor:pointer;font-weight:600;color:var(--maroon)">${live ? 'Make a new offer' : 'Make an offer'}</summary>
         <div class="grid2" style="margin-top:8px">
@@ -259,6 +294,10 @@
     $$('[data-rej]', p).forEach((b) => (b.onclick = async () => { try { await api({ action: 'offer.decide', id: l.id, offerId: +b.dataset.rej, approve: false, note: $(`[data-rnote="${b.dataset.rej}"]`, p).value }); toast('Rejected. Sales has been told.'); close(); await load(); } catch (x) { toast(x.message); } }));
     if ($('#hold', p)) $('#hold', p).onclick = async (ev) => { try { const r = await api({ action: 'hold', id: l.id, unitId: +ev.target.dataset.unit }); toast(`Flat ${r.unit} held until ${when(r.until)}.`); close(); await load(); openLead(l.id); } catch (x) { toast(x.message); } };
     if ($('#release', p)) $('#release', p).onclick = async () => { try { await api({ action: 'release', id: l.id }); toast('Hold let go.'); close(); await load(); openLead(l.id); } catch (x) { toast(x.message); } };
+    if ($('#mailcs', p)) $('#mailcs', p).onclick = async (ev) => {
+      try { const r = await api({ action: 'offer.email', id: l.id, offerId: +ev.target.dataset.offer, email: $('#csmail', p).value }); toast(r.emailed ? `Cost sheet emailed to ${r.to}.` : 'Saved, but email is not set up yet.'); }
+      catch (x) { toast(x.message); }
+    };
     if ($('#bookbtn', p)) $('#bookbtn', p).onclick = () => { const f = $('#bookform', p); f.hidden = !f.hidden; if (!f.hidden) f.scrollIntoView({ behavior: 'smooth' }); };
     if ($('#bookform', p)) $('#bookform', p).onsubmit = async (ev) => {
       ev.preventDefault(); const v = Object.fromEntries(new FormData(ev.target)), be = $('#berr', p); be.textContent = '';
@@ -271,6 +310,35 @@
         const jj = await r.json().catch(() => ({})); if (!r.ok) throw new Error(jj.error || 'The booking did not go through.');
         toast('Booked: sent to the CRM for approval. 🎉'); close(); await load();
       } catch (x) { be.textContent = x.message; }
+    };
+  }
+
+  function walkIn() {
+    const me = S.d.me, sales = S.d.people.filter((p) => p.role === 'sales');
+    const p = document.createElement('div'); p.className = 'panel';
+    p.innerHTML = `<div class="sheet"><div style="display:flex;justify-content:space-between"><h2>Add a walk-in</h2><button class="btn" data-close>Close</button></div>
+      <p style="color:var(--mut);font-size:13px;margin:6px 0 0">Someone who came to the site office. It goes straight into ${me.all ? 'the sales person\'s' : 'your'} pipeline with the site visit done.</p>
+      <form id="wl"><div class="box"><div class="grid2">
+        <div><label>Mobile</label><input name="phone" inputmode="tel" required></div><div><label>Name</label><input name="name" required></div>
+        <div><label>Email</label><input name="email" type="email"></div>
+        <div><label>Project</label><select name="projectId"><option value="">Not sure</option>${S.d.projects.map((x) => `<option value="${x.id}" ${String(S.proj) === String(x.id) ? 'selected' : ''}>${e(x.name)}</option>`).join('')}</select></div>
+        <div><label>Looking for</label><select name="bhk"><option value="">—</option>${BHK.map((o) => `<option>${o}</option>`).join('')}</select></div>
+        <div><label>Budget</label><input name="budget" placeholder="e.g. 1.5 – 2 Cr"></div>
+        <div><label>Buying for</label><select name="purpose"><option value="">—</option>${PURPOSE.map((o) => `<option>${o}</option>`).join('')}</select></div>
+        <div><label>Lives in (area)</label><input name="area"></div>
+        ${me.all ? `<div><label>Met by</label><select name="to">${sales.map((x) => `<option value="${x.id}">${e(x.name)}</option>`).join('')}<option value="${me.id}">Me</option></select></div>` : ''}
+        </div><div class="f"><label>What they want</label><textarea name="note" rows="2"></textarea></div><div class="err" id="werr"></div>
+        <button class="btn pri" style="margin-top:10px;width:100%">Add the walk-in</button></div></form></div>`;
+    document.body.appendChild(p);
+    p.addEventListener('click', (ev) => { if (ev.target === p || ev.target.closest('[data-close]')) p.remove(); });
+    $('#wl', p).onsubmit = async (ev) => {
+      ev.preventDefault(); const v = Object.fromEntries(new FormData(ev.target));
+      try {
+        const r = await api({ action: 'walkin', name: v.name, phone: v.phone, email: v.email, projectId: v.projectId || null, note: v.note, to: v.to ? +v.to : undefined,
+          qualify: { bhk: v.bhk, budget: v.budget, purpose: v.purpose, area: v.area } });
+        p.remove(); toast(r.kept ? `Already a customer of ${r.with}: the visit is noted on their lead.` : r.duplicate ? 'Already a lead: moved to sales with the visit done.' : 'Walk-in added.');
+        await load(); openLead(r.id);
+      } catch (x) { $('#werr', p).textContent = x.message; }
     };
   }
 
@@ -294,12 +362,14 @@
 
   async function load() { S.d = await api(); draw(); }
   document.addEventListener('click', (ev) => {
+    const mn = ev.target.closest('[data-main]'); if (mn) { S.main = mn.dataset.main; S.tab = null; try { history.replaceState(null, '', '/leads?tab=' + S.main); } catch {} draw(); return; }
+    const pj = ev.target.closest('[data-proj]'); if (pj) { S.proj = pj.dataset.proj; draw(); return; }
     const t = ev.target.closest('[data-tab]'); if (t) { S.tab = t.dataset.tab; draw(); return; }
     const r = ev.target.closest('.row[data-id]'); if (r) openLead(+r.dataset.id);
   });
-  $('#proj').onchange = (ev) => { S.proj = ev.target.value; draw(); };
   $('#q').oninput = (ev) => { S.q = ev.target.value; draw(); };
-  $('#add').onclick = addLead;
+  $('#add').onclick = () => (S.main === 'sales' ? walkIn() : S.main === 'sourcing' ? window.Sourcing.add() : addLead());
+  const tb = location.search.match(/[?&]tab=(presales|sales|sourcing)/); if (tb) S.main = tb[1];
   const m = location.search.match(/[?&]project=(\d+)/); if (m) S.proj = m[1];
   const of = location.search.match(/[?&]offer=(\d+)/);
   load().then(() => { if (!of) return; const a = (S.d.approvals || []).find((x) => x.id === +of[1]); if (a) { S.tab = 'appr'; draw(); openLead(a.lead_id); } else toast(`OF-${of[1]} is not waiting for approval any more.`); }).catch((x) => { $('#list').innerHTML = `<div class="empty">${e(x.message)}</div>`; });

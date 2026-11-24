@@ -150,6 +150,90 @@ let n = 0; const step = async (name, fn) => { await fn(); n++; console.log('  âœ
     assert.equal((await db.one('select status from units where id = $1', [unit.id])).status, 'held', 'the live hold stays');
   });
 
+  await step('The cost sheet of a standing offer goes to the customer by email; a pending one does not', async () => {
+    const o = await db.one("select id from mkt_offers where lead_id = $1 and status = 'approved'", [offerLead]);
+    assert.equal((await amaan('/api/leads', { action: 'offer.email', id: offerLead, offerId: o.id })).status, 400, 'no email on the lead yet');
+    const r = await amaan('/api/leads', { action: 'offer.email', id: offerLead, offerId: o.id, email: 'meera@example.com' });
+    assert.equal(r.ok, true, r.error); assert.equal(r.to, 'meera@example.com');
+    assert.equal((await db.one('select email from mkt_leads where id = $1', [offerLead])).email, 'meera@example.com', 'kept on the lead');
+    assert.ok((await amaan('/api/leads?id=' + offerLead)).events.some((e) => e.kind === 'offer' && e.outcome === 'emailed'));
+  });
+
+  let sid;
+  await step('Three tabs: each login opens on its own; managers see Pre-sales, Sales and Sourcing', async () => {
+    assert.deepEqual((await asma('/api/leads')).me.tabs, ['presales']);
+    assert.deepEqual((await amaan('/api/leads')).me.tabs, ['sales']);
+    assert.deepEqual((await sameer('/api/leads')).me.tabs, ['presales', 'sales', 'sourcing']);
+    sid = await mk('sid', 'sourcing');
+    const g = await sid('/api/leads');
+    assert.equal(g.status, 200, g.error); assert.deepEqual(g.me.tabs, ['sourcing']); assert.equal(g.leads.length, 0, 'no leads for the sourcing team');
+    assert.equal((await sid('/api/leads', { action: 'add', phone: '9820099999' })).status, 403);
+  });
+
+  await step('Transfer to Sales with a reason; "whose turn" picks the sales person handed a lead longest ago', async () => {
+    const zoya = await mk('zoya', 'sales');
+    const L = require('../lib/mkt-leads');
+    const a1 = (await L.add({ phone: '98200 70001', source: 'website', projectId: sig.id, welcome: false })).id;
+    const r = await asma('/api/leads', { action: 'handover', id: a1, to: 'auto', reason: 'costsheet' });
+    assert.equal(r.ok, true, r.error); assert.equal(r.to, 'zoya', 'Zoya has never been given one; Amaan has');
+    const l = await db.one('select handed_to, handover_reason from mkt_leads where id = $1', [a1]);
+    assert.equal(l.handover_reason, 'costsheet');
+    const a2 = (await L.add({ phone: '98200 70002', source: 'website', welcome: false })).id;
+    const r2 = await asma('/api/leads', { action: 'handover', id: a2, to: 'auto', reason: 'info' });
+    assert.equal(r2.to, 'amaan', 'next turn: Amaan');
+    // the sales person sends one back with a reason; it returns to the caller who handed it
+    assert.equal((await zoya('/api/leads', { action: 'sendback', id: a1 })).status, 400, 'needs why');
+    assert.equal((await amaan('/api/leads', { action: 'sendback', id: a1, note: 'x' })).status, 404, 'not his');
+    const sb = await zoya('/api/leads', { action: 'sendback', id: a1, note: 'Not reachable after 4 calls' });
+    assert.equal(sb.ok, true, sb.error); assert.equal(sb.to, 'asma');
+    const b = await db.one('select handed_to, assigned_to, sent_back_at from mkt_leads where id = $1', [a1]);
+    assert.equal(b.handed_to, null); assert.equal(b.assigned_to, asma.id); assert.ok(b.sent_back_at);
+    assert.ok(!(await zoya('/api/leads')).leads.some((x) => x.id === a1), 'gone from her list');
+  });
+
+  await step('A walk-in goes straight into the sales person\'s pipeline with the visit done; a customer of another stays theirs', async () => {
+    const w = await amaan('/api/leads', { action: 'walkin', name: 'Kiran Desai', phone: '98200 80001', projectId: sig.id, note: 'Came with family', qualify: { bhk: '3 BHK', budget: '3 Cr' } });
+    assert.equal(w.ok, true, w.error); assert.equal(w.with, 'amaan');
+    const l = await db.one('select status, handed_to, handover_reason, visit_at, source, qualify from mkt_leads where id = $1', [w.id]);
+    assert.equal(l.status, 'visit'); assert.equal(l.handed_to, amaan.id); assert.equal(l.handover_reason, 'walkin'); assert.ok(l.visit_at); assert.equal(l.source, 'walk_in'); assert.equal(l.qualify.bhk, '3 BHK');
+    assert.ok((await amaan('/api/leads')).leads.some((x) => x.id === w.id));
+    // an existing lead of Amaan's walks in and meets someone else: it stays Amaan's
+    const zoya = await db.one("select id from users where username = 'zoya'");
+    const again = await admin('/api/leads', { action: 'walkin', name: 'Kiran Desai', phone: '9820080001', to: zoya.id });
+    assert.equal(again.kept, true); assert.equal(again.with, 'amaan');
+    assert.equal((await crm('/api/leads', { action: 'walkin', phone: '9820080002' })).status, 403);
+    assert.equal((await asma('/api/leads', { action: 'walkin', phone: '9820080003' })).status, 403, 'pre-sales does not take walk-ins');
+  });
+
+  await step('Sourcing: first visit needs a photo and saves the office; later visits are verified within 150 m', async () => {
+    const photo = 'data:image/jpeg;base64,' + Buffer.from('fake-jpeg-bytes').toString('base64');
+    const base = { purpose: 'new_partner', personName: 'Rakesh Mehta', personPhone: '9820012345', personRole: 'Owner', lat: 19.1197, lng: 72.8468, accuracy: 20 };
+    assert.equal((await sid('/api/sourcing', { action: 'visit', ...base, newName: 'Skyline Realty' })).status, 400, 'first visit needs the photo');
+    assert.equal((await sid('/api/sourcing', { action: 'visit', ...base, newName: 'Skyline Realty', photo, lat: null })).status, 400, 'needs the location');
+    const v1 = await sid('/api/sourcing', { action: 'visit', ...base, newName: 'Skyline Realty', photo, notes: 'Has 40 clients in Andheri', nextDate: '2099-01-05' });
+    assert.equal(v1.ok, true, v1.error); assert.equal(v1.savedOffice, true); assert.equal(v1.first, true);
+    const cp = await db.one('select id, office_lat from channel_partners where id = $1', [v1.cpId]); assert.ok(cp.office_lat);
+    // 50 m north: verified; no photo needed now
+    const v2 = await sid('/api/sourcing', { action: 'visit', ...base, cpId: cp.id, purpose: 'launch', lat: 19.1197 + 0.00045 });
+    assert.equal(v2.ok, true, v2.error); assert.equal(v2.verified, true); assert.ok(v2.distance >= 45 && v2.distance <= 55, String(v2.distance));
+    // 1 km away: kept, but unverified
+    const v3 = await sid('/api/sourcing', { action: 'visit', ...base, cpId: cp.id, purpose: 'client', lat: 19.1287 });
+    assert.equal(v3.verified, false); assert.ok(v3.distance > 900);
+    const g = await sid('/api/sourcing');
+    assert.equal(g.visits.length, 3); assert.equal(g.team, undefined, 'the team view is for the manager');
+    assert.ok(g.partners.find((p) => p.id === cp.id).next_date);
+    const ph = await fetch(`${BASE}/api/sourcing?photo=${(await db.one('select id from cp_visits where first_visit and cp_id = $1', [cp.id])).id}`, { headers: { Cookie: (await (async () => { const r = await fetch(BASE + '/api/session', { method: 'POST', headers: { 'Content-Type': 'application/json', Origin: BASE }, body: JSON.stringify({ action: 'login', username: 'sid', password: 'pass-word-123' }) }); return r.headers.get('set-cookie').split(';')[0]; })()) } });
+    assert.equal(ph.status, 200); assert.equal(ph.headers.get('content-type'), 'image/jpeg');
+    // the manager: each person's day, the unverified visit, what each partner brings in; resets the office
+    const m = await sameer('/api/sourcing');
+    assert.equal(m.status, 200, m.error); assert.ok(m.team.some((x) => x.name === 'sid' && x.visits === 3 && x.verified === 2));
+    assert.equal(m.unverified.length, 1); assert.ok(m.byPartner.some((x) => x.id === cp.id && x.visits === 3));
+    assert.equal((await sid('/api/sourcing', { action: 'office.reset', cpId: cp.id })).status, 403);
+    assert.equal((await sameer('/api/sourcing', { action: 'office.reset', cpId: cp.id })).ok, true);
+    assert.equal((await db.one('select office_lat from channel_partners where id = $1', [cp.id])).office_lat, null);
+    assert.equal((await amaan('/api/sourcing')).status, 403, 'sales does not open Sourcing');
+  });
+
   await step('Book this flat: the held flat is booked for this customer, goes to the CRM, and the lead closes as booked', async () => {
     const unit = await db.one("select id from units where unit_no = 'A-605'");
     const o = await db.one("select av from mkt_offers where lead_id = $1 and status = 'approved'", [offerLead]);

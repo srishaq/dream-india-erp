@@ -7,6 +7,10 @@
 //   log      {id, outcome, note?, nextDate?, visitDate?, qualify?, name?, email?, projectId?, lostReason?}
 //   handover {id, to, visitDate?, note?}            add {name?, phone, email?, projectId?, source?, note?}
 //   assign   {id, to}  (leads.all: give a lead to someone else)
+//   handover {..., to: 'auto' (the sales person whose turn it is), reason: visit | info | costsheet}
+//   walkin   {name, phone, email?, projectId?, note?, qualify?, to?}  a walk-in goes straight to the sales person who met them
+//   sendback {id, note}   sales gives a lead back to pre-sales        offer.email {id, offerId}  the cost sheet to the customer
+// Three tabs on the page: Pre-sales, Sales and Sourcing (api/sourcing.js); each login opens on its own.
 const db = require('../lib/db');
 const auth = require('../lib/auth');
 const audit = require('../lib/audit');
@@ -17,6 +21,25 @@ const O = require('../lib/mkt-offers');
 const DATE = /^\d{4}-\d{2}-\d{2}$/;
 const canAll = (u) => has(u, 'leads.all');
 const canWork = (u) => has(u, 'leads.work') || canAll(u);
+const sourcing = (u) => has(u, 'sourcing.work') || has(u, 'sourcing.all');
+const REASONS = { visit: 'Qualified: site visit', info: 'Wants more information', costsheet: 'Wants a cost sheet' };
+// the tabs a login sees: the caller Pre-sales, the sales person Sales, the sourcing team Sourcing; managers all three
+function tabsFor(u) {
+  const t = [];
+  if (u.role === 'presales') t.push('presales');
+  else if (canAll(u)) t.push('presales', 'sales');
+  else if (canWork(u)) t.push('sales');
+  if (sourcing(u)) t.push('sourcing');
+  return t;
+}
+// the sales person whose turn it is: of the sales logins that open the lead's project, the one handed a lead longest ago
+async function nextSales(projectId) {
+  const rows = await db.q(`select us.id, us.name, us.email, us.phone, (select max(handed_at) from mkt_leads l where l.handed_to = us.id) as last
+      from users us where not us.disabled and us.role = 'sales'
+        and ($1::int is null or us.all_projects or exists (select 1 from user_projects up where up.user_id = us.id and up.project_id = $1))
+      order by last nulls first, us.id limit 1`, [projectId || null]);
+  return rows[0] || null;
+}
 const istToday = () => new Date(Date.now() + 5.5 * 3600e3).toISOString().slice(0, 10);
 const addDays = (s, n) => { const d = new Date(s + 'T00:00:00Z'); d.setUTCDate(d.getUTCDate() + n); return d.toISOString().slice(0, 10); };
 const fmtAt = (d) => new Date(d).toLocaleString('en-IN', { day: 'numeric', month: 'short', hour: 'numeric', minute: '2-digit', timeZone: 'Asia/Kolkata' });
@@ -39,7 +62,7 @@ const projOk = (u) => `(l.project_id is null or l.project_id = any(array[${u.pro
 async function list(u) {
   const rows = await db.q(`select l.id, l.name, l.phone, l.email, l.project_id, p.name as project, l.source, array_to_json(l.sources) as sources, l.status, l.assigned_to, a.name as assigned_name,
         l.handed_to, h.name as handed_name, l.handed_at, l.next_date, l.visit_date, l.qualify, l.created_at, l.first_contact_at, l.visit_at, l.booked_at, l.lost_reason, l.updated_at,
-        l.booking_id, l.hold_until, hu.unit_no as hold_unit,
+        l.booking_id, l.hold_until, hu.unit_no as hold_unit, l.handover_reason, l.sent_back_at,
         (select json_build_object('id', o.id, 'status', o.status, 'av', o.av, 'discount_pct', o.discount_pct, 'unit_no', ou.unit_no) from mkt_offers o join units ou on ou.id = o.unit_id
           where o.lead_id = l.id and o.status <> 'void' order by o.id desc limit 1) as offer,
         (select count(*)::int from mkt_lead_events e where e.lead_id = l.id and e.kind = 'call') as calls,
@@ -88,7 +111,12 @@ async function event(leadId, u, kind, { outcome = null, note = null, data = null
 module.exports = route({
   GET: async (req, res) => {
     const u = await auth.guard(req, res); if (!u) return;
-    if (!canWork(u)) throw fail(403, 'Your login does not open Pre-sales & Sales.');
+    if (!canWork(u)) {
+      // the sourcing team opens the same page, on its Sourcing tab alone
+      if (sourcing(u)) return res.json({ me: { id: u.id, name: u.name, role: u.role, all: false, tabs: tabsFor(u) }, today: istToday(), leads: [],
+        projects: (await db.q('select id, name, code from projects where active order by name')).filter((p) => u.projects.includes(p.id)), people: [], outcomes: OUTCOMES, approvals: [], reasons: REASONS });
+      throw fail(403, 'Your login does not open Pre-sales & Sales.');
+    }
     const q = req.query || {};
     if (q.id) {
       const l = await lead(u, intOr(q.id)); if (!l) throw fail(404, 'That lead is not there, or it is not yours.');
@@ -99,14 +127,14 @@ module.exports = route({
       const hold = l.hold_unit_id && l.hold_until && new Date(l.hold_until) > new Date() ? await db.one('select id, unit_no from units where id = $1', [l.hold_unit_id]) : null;
       return res.json({ lead: l, events, ivr: calls, offers, hold, mayApprove: await O.mayApprove(u) });
     }
-    const projects = (await db.q('select id, name from projects where active order by name')).filter((p) => u.projects.includes(p.id));
+    const projects = (await db.q('select id, name, code from projects where active order by name')).filter((p) => u.projects.includes(p.id));
     const people = await db.q("select id, name, role from users where not disabled and role in ('presales', 'sales') order by name");
     const may = await O.mayApprove(u), set = await O.settings();
     const approvals = may ? await db.q(`select o.id, o.lead_id, o.discount, o.discount_pct, o.av, o.client_ask, o.created_at, u.unit_no, p.name as project, l.name as lead_name, l.phone, c.name as by_name
         from mkt_offers o join units u on u.id = o.unit_id join projects p on p.id = u.project_id join mkt_leads l on l.id = o.lead_id left join users c on c.id = o.created_by
         where o.status = 'pending' order by o.id`) : [];
-    return res.json({ me: { id: u.id, name: u.name, all: canAll(u), role: u.role, approver: may, sells: has(u, 'booking.create') }, today: istToday(), leads: await list(u), summary: await summary(u),
-      projects, people, outcomes: OUTCOMES, approvals, sales: { limitPct: set.limitPct, holdHours: set.holdHours } });
+    return res.json({ me: { id: u.id, name: u.name, all: canAll(u), role: u.role, approver: may, sells: has(u, 'booking.create'), tabs: tabsFor(u) }, today: istToday(), leads: await list(u), summary: await summary(u),
+      projects, people, outcomes: OUTCOMES, reasons: REASONS, approvals, sales: { limitPct: set.limitPct, holdHours: set.holdHours } });
   },
 
   POST: async (req, res, d) => {
@@ -125,6 +153,37 @@ module.exports = route({
       await event(r.id, u, 'note', { note: r.duplicate ? 'Came in again (typed in).' : 'Lead typed in.' });
       await log(r.duplicate ? 'lead-again' : 'create', r.id, { source: d.source });
       return res.json({ ok: true, id: r.id, duplicate: !!r.duplicate });
+    }
+
+    if (a === 'walkin') {
+      // someone walked into the site office: the sales person who met them takes it, the visit already done
+      if (!has(u, 'booking.create') && !(canAll(u) && u.role !== 'presales')) throw fail(403, 'Walk-ins are added by sales.');
+      const projectId = intOr(d.projectId) || null;
+      if (projectId && !u.projects.includes(projectId)) throw fail(403, 'That project is not on your login.');
+      let to = { id: u.id, name: u.name };
+      if (d.to && intOr(d.to) !== u.id) {
+        if (!canAll(u)) throw fail(403, 'A walk-in is yours: you met them.');
+        to = await db.one("select id, name from users where id = $1 and not disabled and role in ('sales', 'presales', 'management', 'admin', 'head_crm')", [intOr(d.to)]);
+        if (!to) throw fail(400, 'Choose the sales person who met them.');
+      }
+      const qualify = {};
+      for (const [k, max] of Object.entries(QUALIFY)) if (d.qualify && d.qualify[k] != null) { const val = str(d.qualify[k], max); if (val) qualify[k] = val; }
+      const note = str(d.note, 500) || null;
+      const r = await L.add({ name: str(d.name, 120), phone: d.phone, email: str(d.email, 160), source: 'walk_in', projectId, note, by: u.id, welcome: d.welcome !== false, status: 'visit', visit: true });
+      const cur = await db.one('select l.handed_to, h.name as handed_name, l.status from mkt_leads l left join users h on h.id = l.handed_to where l.id = $1', [r.id]);
+      // a buyer already with another sales person stays theirs: the visit is noted on the lead
+      const keep = cur.handed_to && cur.handed_to !== to.id && cur.status !== 'lost';
+      await db.q(`update mkt_leads set status = case when status in ('new', 'contacted', 'lost') then 'visit' else status end, visit_at = coalesce(visit_at, now()),
+          visit_date = coalesce(visit_date, $2::date), first_contact_at = coalesce(first_contact_at, now()), qualify = coalesce(qualify, '{}'::jsonb) || $3::jsonb,
+          next_date = $4, project_id = coalesce(project_id, $5), updated_at = now(),
+          handed_to = case when $6 then handed_to else $7 end, assigned_to = case when $6 then assigned_to else $7 end,
+          handed_at = case when $6 then handed_at else now() end, handed_by = case when $6 then handed_by else $8 end,
+          handover_reason = case when $6 then handover_reason else 'walkin' end,
+          note = concat_ws(E'\\n', note, $9::text) where id = $1`,
+        [r.id, istToday(), JSON.stringify(qualify), addDays(istToday(), 1), projectId, !!keep, to.id, u.id, `${fmtAt(new Date())} ${u.name}: walk-in at the site, met ${to.name}${note ? ' — ' + note : ''}`]);
+      await event(r.id, u, 'call', { outcome: 'visit_done', note: `Walk-in: met ${to.name}${note ? '. ' + note : ''}`, data: { walkin: true, to: to.id } });
+      await log(r.duplicate ? 'walkin-again' : 'walkin', r.id, { to: to.id, keep: !!keep });
+      return res.json({ ok: true, id: r.id, duplicate: !!r.duplicate, with: keep ? cur.handed_name : to.name, kept: !!keep });
     }
 
     const l = await lead(u, intOr(d.id)); if (!l) throw fail(404, 'That lead is not there, or it is not yours.');
@@ -156,22 +215,25 @@ module.exports = route({
     }
 
     if (a === 'handover') {
-      const to = await db.one("select id, name, email, phone from users where id = $1 and not disabled and role in ('sales', 'presales', 'management', 'admin')", [intOr(d.to)]);
-      if (!to) throw fail(400, 'Choose the sales person.');
+      const reason = REASONS[d.reason] ? d.reason : 'visit';
+      const auto = !d.to || d.to === 'auto';
+      const to = auto ? await nextSales(l.project_id)
+        : await db.one("select id, name, email, phone from users where id = $1 and not disabled and role in ('sales', 'presales', 'management', 'admin')", [intOr(d.to)]);
+      if (!to) throw fail(400, auto ? 'No sales login opens this project yet: choose the sales person.' : 'Choose the sales person.');
       const visitDate = DATE.test(d.visitDate || '') ? d.visitDate : l.visit_date ? new Date(l.visit_date).toISOString().slice(0, 10) : null;
       const note = str(d.note, 1000) || null;
-      await db.q(`update mkt_leads set handed_to = $2, handed_at = now(), handed_by = $3, assigned_to = $2, visit_date = coalesce($4, visit_date),
+      await db.q(`update mkt_leads set handed_to = $2, handed_at = now(), handed_by = $3, assigned_to = $2, visit_date = coalesce($4, visit_date), handover_reason = $6,
           next_date = coalesce($4, next_date), first_contact_at = coalesce(first_contact_at, now()), status = case when status = 'new' then 'contacted' else status end,
           note = concat_ws(E'\\n', note, $5::text), updated_at = now() where id = $1`,
-        [l.id, to.id, u.id, visitDate, `${fmtAt(new Date())} ${u.name}: handed over to ${to.name}${visitDate ? ', site visit ' + visitDate : ''}${note ? ' — ' + note : ''}`]);
+        [l.id, to.id, u.id, visitDate, `${fmtAt(new Date())} ${u.name}: handed over to ${to.name} (${REASONS[reason]})${visitDate ? ', site visit ' + visitDate : ''}${note ? ' — ' + note : ''}`, reason]);
       if (l.status === 'new') await L.statusChanged(l.id, 'new', 'contacted').catch(() => {});
-      await event(l.id, u, 'handover', { note, data: { to: to.id, toName: to.name, visitDate } });
+      await event(l.id, u, 'handover', { note, data: { to: to.id, toName: to.name, visitDate, reason, auto } });
       // the sales person hears about it at once (email; the ERP's test address until it is live)
       const q = l.qualify || {};
-      const rows = [['Name', l.name], ['Mobile', l.phone], ['Project', l.project], ['Budget', q.budget], ['Home', q.bhk], ['Buying for', q.purpose], ['When', q.timeline], ['Lives in', q.area], ['Site visit', visitDate], ['Note', note]].filter(([, v]) => v);
+      const rows = [['Why', REASONS[reason]], ['Name', l.name], ['Mobile', l.phone], ['Project', l.project], ['Budget', q.budget], ['Home', q.bhk], ['Buying for', q.purpose], ['When', q.timeline], ['Lives in', q.area], ['Site visit', visitDate], ['Note', note]].filter(([, v]) => v);
       const html = `<p>${u.name} handed you a lead${visitDate ? ' with a site visit on ' + visitDate : ''}.</p><table>${rows.map(([k, v]) => `<tr><td style="color:#666;padding:2px 12px 2px 0">${k}</td><td><b>${String(v).replace(/[<>&]/g, '')}</b></td></tr>`).join('')}</table><p>Open Pre-sales &amp; Sales in the ERP to see every call so far.</p>`;
       const sent = await require('../lib/mkt-flow').send([to.email], `New lead for you: ${l.name || l.phone}${visitDate ? ' · visit ' + visitDate : ''}`, html, { text: 'New lead', skipped: 'no email on the login' }).catch((e) => ({ skipped: e.message }));
-      await log('lead-handover', l.id, { to: to.id, visitDate });
+      await log('lead-handover', l.id, { to: to.id, visitDate, reason, auto });
       return res.json({ ok: true, to: to.name, emailed: !(sent && sent.skipped) });
     }
 
@@ -239,6 +301,40 @@ module.exports = route({
       await db.q('update mkt_leads set hold_unit_id = null, hold_until = null, updated_at = now() where id = $1', [l.id]);
       await event(l.id, u, 'hold', { note: 'Hold let go.' });
       return res.json({ ok: true });
+    }
+
+    if (a === 'sendback') {
+      if (!l.handed_to) throw fail(400, 'This lead is not with sales.');
+      if (!canAll(u) && l.handed_to !== u.id) throw fail(403, 'Only the sales person who has it sends it back.');
+      const note = str(d.note, 500); if (!note) throw fail(400, 'Write why it goes back to pre-sales.');
+      const back = l.handed_by ? await db.one("select id, name from users where id = $1 and not disabled and role in ('presales', 'management', 'admin')", [l.handed_by]) : null;
+      await db.q(`update mkt_leads set handed_to = null, handed_at = null, handover_reason = null, assigned_to = $2, sent_back_at = now(), next_date = $3, updated_at = now(),
+          note = concat_ws(E'\\n', note, $4::text) where id = $1`, [l.id, back ? back.id : null, istToday(), `${fmtAt(new Date())} ${u.name}: sent back to pre-sales — ${note}`]);
+      if (!back) await L.route(l.id).catch(() => {});
+      await event(l.id, u, 'sendback', { note, data: { from: l.handed_to, to: back ? back.id : null } });
+      await log('lead-sendback', l.id, { from: l.handed_to });
+      return res.json({ ok: true, to: back ? back.name : 'pre-sales' });
+    }
+
+    if (a === 'offer.email') {
+      const o = await db.one(`select o.*, un.unit_no, un.typology, p.name as project from mkt_offers o join units un on un.id = o.unit_id join projects p on p.id = un.project_id
+          where o.id = $1 and o.lead_id = $2`, [intOr(d.offerId), l.id]);
+      if (!o) throw fail(404, 'That offer is not there.');
+      if (!['given', 'approved'].includes(o.status)) throw fail(400, o.status === 'pending' ? 'The discount is still waiting for approval.' : 'Only an offer that stands goes to the customer.');
+      const email = str(d.email, 160) || l.email;
+      if (!email || !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)) throw fail(400, 'Write the customer\'s email.');
+      const inr = O.inr, cell = (k, v, b) => `<tr><td style="color:#666;padding:4px 16px 4px 0">${k}</td><td style="text-align:right">${b ? '<b>' : ''}${v}${b ? '</b>' : ''}</td></tr>`;
+      const esc = (x) => String(x == null ? '' : x).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+      const html = `<p>Dear ${esc(l.name || 'Sir/Madam')},</p><p>Thank you for your interest in ${esc(o.project)}. As discussed, here is the cost sheet for flat ${esc(o.unit_no)}${o.typology ? ' (' + esc(o.typology) + ')' : ''}.</p>
+        <table style="border-collapse:collapse;font-size:14px">${cell('Carpet area', Math.round(Number(o.carpet)) + ' sq ft')}${Number(o.parking) ? cell(`Parking (${o.parking})`, inr(o.parking_amt)) : ''}
+        ${Number(o.discount) ? cell('Agreement value (list)', inr(o.list_av)) + cell('Discount', '− ' + inr(o.discount)) : ''}${cell('Agreement value', inr(o.av), true)}${cell('GST', inr(o.gst))}
+        ${cell('Stamp duty', inr(o.stamp_duty))}${cell('Registration', inr(o.registration))}${Number(o.other_total) ? cell('Other charges', inr(o.other_total)) : ''}${cell('Total', inr(o.total), true)}</table>
+        <p style="color:#666;font-size:13px">Offer ${O.offerNo(o.id)}, ${fmtAt(new Date())}. Prices are as on today; the flat is reserved only once it is booked.</p><p>Regards,<br>${esc(u.name)}<br>Dream India Realty</p>`;
+      const sent = await require('../lib/mkt-flow').send([email], `Cost sheet: flat ${o.unit_no}, ${o.project}`, html, { text: 'Cost sheet', skipped: 'no email' });
+      if (!l.email) await db.q('update mkt_leads set email = $2 where id = $1 and email is null', [l.id, email]);
+      await event(l.id, u, 'offer', { outcome: 'emailed', note: `Cost sheet ${O.offerNo(o.id)} emailed to ${email}.`, data: { offer: o.id } });
+      await log('offer-email', l.id, { offer: o.id });
+      return res.json({ ok: true, to: email, emailed: !(sent && sent.skipped) });
     }
 
     if (a === 'assign') {

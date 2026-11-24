@@ -51,6 +51,17 @@ main{padding:14px 16px 60px;max-width:1100px;margin:0 auto}
 .err{color:var(--bad);font-size:13px;margin:6px 0 0}
 .toast{position:fixed;left:50%;bottom:24px;transform:translateX(-50%);background:#1d1b19;color:#fff;padding:9px 16px;border-radius:99px;font-size:14px;z-index:20}
 .src{width:100%;border-collapse:collapse;font-size:13px}.src td{padding:3px 6px;border-top:1px solid var(--line)}.src td:not(:first-child){text-align:right}
+.mains{display:flex;gap:4px;background:#efe9df;border-radius:12px;padding:4px;margin:0 0 12px}
+.main{flex:1;border:0;background:transparent;border-radius:9px;padding:9px 6px;font:inherit;font-size:15px;font-weight:600;color:var(--mut);cursor:pointer}
+.main.on{background:#fff;color:var(--maroon);box-shadow:0 1px 3px rgba(0,0,0,.08)}
+.pchips{display:flex;flex-wrap:wrap;gap:6px;align-items:center;margin:0 0 12px}
+.pc{border:1px solid var(--line);background:#fff;border-radius:99px;padding:5px 13px;font:inherit;font-size:13.5px;color:var(--ink);cursor:pointer}
+.pc.on{background:var(--maroon);border-color:var(--maroon);color:#fff}
+.pchips select{margin-left:auto}
+.late{background:#fde8e6;color:var(--bad);border-radius:10px;padding:9px 12px;margin:0 0 10px;font-size:14px;cursor:pointer}
+.meter{height:8px;background:#efe9df;border-radius:99px;overflow:hidden;margin:6px 0 2px}.meter i{display:block;height:100%;background:var(--good)}
+.loc{font-size:13px;padding:8px 10px;border-radius:8px;background:#f3ece2;margin:0 0 8px}.loc.good{background:#e7f4ea;color:var(--good)}.loc.bad{background:#fde8e6;color:var(--bad)}
+.thumb{max-width:100%;max-height:180px;border-radius:8px;margin-top:6px;display:block}
 @media (max-width:560px){.stats{grid-template-columns:repeat(3,1fr);gap:6px}.stat{padding:8px}.stat b{font-size:18px}.stat span{font-size:11.5px}.grid2{grid-template-columns:1fr}header{padding:8px 12px}main{padding:12px 10px 60px}}
 </style>
 </head>
@@ -58,15 +69,16 @@ main{padding:14px 16px 60px;max-width:1100px;margin:0 auto}
 <header>
   <a class="home" href="/">← Home</a>
   <h1>Pre-sales &amp; Sales</h1>
-  <select id="proj" aria-label="Project"></select>
   <input id="q" type="search" placeholder="Search name or number" style="flex:1;min-width:160px">
   <button class="btn pri" id="add">+ Add a lead</button>
 </header>
 <main>
+  <div id="top"></div>
   <div id="stats"></div>
   <div class="tabs" id="tabs"></div>
   <div id="list"></div>
 </main>
+<script src="/sourcing.js"></script>
 <script src="/leads.js"></script>
 </body>
 </html>
