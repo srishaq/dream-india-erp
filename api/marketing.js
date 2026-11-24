@@ -130,6 +130,9 @@ async function overview(u, scope, req) {
        (select coalesce(json_agg(json_build_object('id', f.id, 'name', f.name, 'mime', f.mime, 'size', f.size) order by f.id), '[]') from mkt_post_files f where f.post_id = p.id) as files
      from mkt_posts p left join users c on c.id = p.created_by left join users a on a.id = p.approved_by
      where ${inScope('p.project_id')} and (p.publish_at is null or p.publish_at > now() - interval '120 days') order by p.publish_at nulls first, p.id`);
+  // Canva's one-person edit link (canva.com/api/design/…) is never shown: it gives everyone else a 403. The ERP's own link
+  // opens the design's real address (and corrects the stored link).
+  for (const p of posts) if (/canva\.com\/api\//.test(p.canva_url || '')) p.canva_url = `/api/marketing?canvaopen=${p.id}`;
   const campaigns = await db.q(`select c.*, array_to_json(c.channels) as channels, dz.name as designs_ok_name, bz.name as budget_ok_name, sb.name as submitted_name,
        (select count(*)::int from mkt_leads l where l.campaign_id = c.id) as leads,
        (select count(*)::int from mkt_leads l where l.campaign_id = c.id and l.status = 'visit') as visit_leads,
@@ -725,7 +728,7 @@ const handler = route({
         const cur = d.id ? await db.one('select approved_at from mkt_posts where id = $1', [intOr(d.id)]) : null;
         if (!cur || !cur.approved_at) status = 'review';
       }
-      const v = [await projectOf(d.projectId), title, KINDS.includes(d.kind) ? d.kind : 'post', channels, when, status, str(d.caption, 5000) || null, url(d.canvaUrl), url(d.assetUrl), url(d.postUrl), str(d.note, 1000) || null, intOr(d.campaignId) || null, u.id];
+      const v = [await projectOf(d.projectId), title, KINDS.includes(d.kind) ? d.kind : 'post', channels, when, status, str(d.caption, 5000) || null, /^\/api\/marketing\?canvaopen=/.test(String(d.canvaUrl || '')) && d.id ? ((await db.one('select canva_url from mkt_posts where id = $1', [intOr(d.id)])) || {}).canva_url || null : url(d.canvaUrl), url(d.assetUrl), url(d.postUrl), str(d.note, 1000) || null, intOr(d.campaignId) || null, u.id];
       let id;
       if (d.id) { id = intOr(d.id); const r = await db.one('update mkt_posts set project_id=$1, title=$2, kind=$3, channels=$4, publish_at=$5, status=$6, caption=$7, canva_url=$8, asset_url=$9, post_url=$10, note=$11, campaign_id=$12, updated_by=$13, updated_at=now() where id=$14 returning id', [...v, id]); if (!r) throw fail(404, 'That post is not there any more.'); }
       else id = (await db.one('insert into mkt_posts (project_id, title, kind, channels, publish_at, status, caption, canva_url, asset_url, post_url, note, campaign_id, created_by) values ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13) returning id', v)).id;
