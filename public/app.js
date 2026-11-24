@@ -4237,6 +4237,29 @@
         } catch (e) { alert(e.message); }
         $('#ctRead').disabled = false; $('#ctRead').textContent = 'Check again';
       };
+      // the bank entries' heads, payees and flats from Accounts' cash flow workbook
+      page.insertAdjacentHTML('afterbegin', `<div class="panel"><h2>Heads and payees from the Dream Aspire Cash Flow sheet</h2><p class="muted">Reads the newest "Dream Aspire Cash Flow" workbook in Drive (01 – Accounts (Aspire) / Cash Flow, FD, Loans &amp; Refunds), sheets ASPIRE_EXPENSES and ASPIRE_COLLECTION. Each line is matched to its bank entry in Payments Out or Receipts by date, amount, bank and narration. Only empty Cash Flow Heads, payees, payers and flats are filled; a head the ERP has that differs is listed, not changed.</p>
+        <div class="actions"><button id="cfRead">Check the cash flow sheet</button></div><div id="cfOut"></div></div>`);
+      $('#cfRead').onclick = async () => {
+        $('#cfRead').disabled = true; $('#cfRead').textContent = 'Reading… (up to a minute)';
+        try {
+          const p = await api('/api/import', { action: 'aspire-cashflow-preview', projectId: proj });
+          const fills = p.paymentHeads + p.payees + p.receiptHeads + p.payers + p.units;
+          $('#cfOut').innerHTML = `<p class="small muted">${esc(p.file)}: ${p.sheet.payments.toLocaleString('en-IN')} payments and ${p.sheet.receipts.toLocaleString('en-IN')} receipts on the sheet; ${p.matched.payments.toLocaleString('en-IN')} and ${p.matched.receipts.toLocaleString('en-IN')} found in the ERP.</p>
+            <div class="kpis">${kpi(p.paymentHeads, 'payment heads')}${kpi(p.payees, 'payees')}${kpi(p.receiptHeads, 'receipt heads')}${kpi(p.payers, 'payers')}${kpi(p.units, 'flats on receipts')}${kpi(p.newHeads.length, 'new heads')}</div>
+            <p class="small">Still without a head after this: ${p.erpNoHeadLeft.payments} payments and ${p.erpNoHeadLeft.receipts} receipts (not on the sheet).</p>
+            <h3>New heads to add (${p.newHeads.length})</h3>${li(p.newHeads.map((h) => `${h.side === 'payment' ? 'Payment' : 'Receipt'}: ${esc(h.name)} (${esc(h.section)})`))}
+            <h3>Head in the ERP differs from the sheet (${p.differ}, not changed)</h3>${li(p.differTop.map((d) => `${d.side === 'payment' ? 'Payment' : 'Receipt'}: ERP "${esc(d.erp)}", sheet "${esc(d.sheet)}" × ${d.n}`))}
+            <h3>On the sheet, not found in the ERP (${p.notInErp.payments} payments, ${p.notInErp.receipts} receipts): largest</h3>${li(p.notInErp.sample.map((x) => `${x.side === 'payment' ? 'Paid' : 'Received'} ${fmtD(x.date)} ₹${Number(x.amount).toLocaleString('en-IN')} ${esc(x.desc)} (${esc(x.head)}, line ${x.line})`))}
+            <div class="actions"><button id="cfGo">Fill ${fills.toLocaleString('en-IN')} entries</button></div>`;
+          $('#cfGo').onclick = async () => {
+            if (!$('#cfGo').dataset.sure) { $('#cfGo').dataset.sure = 1; $('#cfGo').textContent = `Click again to fill ${fills.toLocaleString('en-IN')} entries`; return; }
+            $('#cfGo').disabled = true; $('#cfGo').textContent = 'Filling…';
+            try { const r = await api('/api/import', { action: 'aspire-cashflow-commit', projectId: proj }); toast(`Filled ${r.paymentHeads} payment heads, ${r.payees} payees, ${r.receiptHeads} receipt heads.`); $('#cfGo').textContent = 'Done'; } catch (e) { alert(e.message); $('#cfGo').disabled = false; }
+          };
+        } catch (e) { alert(e.message); }
+        $('#cfRead').disabled = false; $('#cfRead').textContent = 'Check again';
+      };
     }
     if ($('#reset')) $('#reset').onclick = async () => {
       const t = prompt('This removes all imported data for this project so it can be imported again. Type CLEAR to confirm.');

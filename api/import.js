@@ -49,6 +49,13 @@ async function readAndParse(projectId, stageDates) {
   return parse(tabs, plan, blds, clean);
 }
 
+// heads the ERP has that differ from the sheet's, counted by pair (ERP head → sheet head)
+function summarise(differ) {
+  const c = new Map();
+  for (const d of differ) { const k = `${d.side}|${d.erp}|${d.sheet}`; c.set(k, (c.get(k) || 0) + 1); }
+  return [...c].sort((a, b) => b[1] - a[1]).slice(0, 25).map(([k, n]) => { const [side, erp, sheet] = k.split('|'); return { side, erp, sheet, n }; });
+}
+
 module.exports = route({
   GET: async (req, res) => {
     const u = await auth.guard(req, res, 'users.manage'); if (!u) return;
@@ -124,6 +131,35 @@ module.exports = route({
       }
       const out = await db.tx(async (t) => { await t.q("set local statement_timeout = '120s'").catch(() => {}); return TB.commit(t, data, { book: 'signature', user: u, source: used.join(', ') }); });
       return res.json({ ok: true, files: used, bills: out.bills, filled: out.fills.length, differ: out.differ.length, unmatched: out.unmatched.length });
+    }
+    // Dream Aspire's bank entries: Cash Flow Head, payee and flat from Accounts' "Dream Aspire Cash Flow" workbook
+    // (sheets ASPIRE_EXPENSES and ASPIRE_COLLECTION), newest in the "Cash Flow, FD, Loans & Refunds" folder on Drive
+    if (b.action === 'aspire-cashflow-preview' || b.action === 'aspire-cashflow-commit') {
+      const prj = await db.one('select code from projects where id = $1', [projectId]);
+      if (prj?.code !== 'ASPIRE') throw fail(400, 'This import is for Dream Aspire only.');
+      const CF = require('../lib/aspire-cashflow');
+      let buf, name;
+      if (b.fileB64) { buf = Buffer.from(String(b.fileB64), 'base64'); name = String(b.fileName || 'uploaded workbook').slice(0, 200); }
+      else if (process.env.IMPORT_ASPIRE_CF_FIXTURE && process.env.VERCEL !== '1') { buf = require('fs').readFileSync(process.env.IMPORT_ASPIRE_CF_FIXTURE); name = 'Dream Aspire Cash Flow (fixture)'; }
+      else {
+        const drive = require('../lib/drive');
+        const folder = process.env.ASPIRE_CASHFLOW_FOLDER || '1-swghiYhZnb7vq_O9kdrnEAblQzbcFaY';
+        const files = (await drive.statementFiles([folder]).catch((e) => { throw fail(400, `Could not open the "Cash Flow, FD, Loans & Refunds" folder on Drive: ${e.message}. Share it with ${sheets.serviceEmail() || 'the ERP'}.`); }))
+          .filter((f) => /cash\s*flow/i.test(f.name));
+        if (!files.length) throw fail(400, 'No "Dream Aspire Cash Flow" workbook in the "Cash Flow, FD, Loans & Refunds" folder.');
+        buf = await drive.download(files[0]); name = `${files[0].name} (Drive, ${String(files[0].modifiedTime).slice(0, 10)})`;
+      }
+      let parsed; try { parsed = CF.parse(require('../lib/xlsx').read(buf)); } catch (e) { throw fail(400, 'The workbook could not be read: ' + e.message); }
+      if (b.action === 'aspire-cashflow-preview') {
+        const p = await CF.plan(db.q, parsed, { book: 'aspire', projectId });
+        const n = (side, k) => p.fills.filter((f) => f.side === side && f.set[k]).length;
+        return res.json({ file: name, sheet: p.sheet, matched: p.matched, paymentHeads: n('payment', 'head'), payees: n('payment', 'payee'), receiptHeads: n('receipt', 'head'), payers: n('receipt', 'payer_name'), units: n('receipt', 'unit_no'),
+          newHeads: p.newHeads, differ: p.differ.length, differTop: summarise(p.differ), notInErp: p.notInErp, erpNoHeadLeft: p.erpNoHeadLeft, issues: p.issues.slice(0, 30),
+          sample: p.fills.slice(0, 20).map((f) => ({ ref: f.ref, ...f.set })) });
+      }
+      const out = await db.tx(async (t) => { await t.q("set local statement_timeout = '120s'").catch(() => {}); return CF.commit(t, parsed, { book: 'aspire', projectId, user: u, source: name }); });
+      const { plan: _p, ...rest } = out;
+      return res.json({ ok: true, file: name, ...rest });
     }
     if (b.action === 'aspire-contacts-preview' || b.action === 'aspire-contacts-commit') {
       const prj = await db.one('select code from projects where id = $1', [projectId]);
