@@ -60,12 +60,14 @@ let n = 0; const step = async (name, fn) => { await fn(); n++; console.log('  âœ
     assert.equal((await hcrm('/api/bookings', { action: 'edit', id: b1.id, agreementValue: 9900000 })).status, 400, 'reason needed');
     const before = await db.q("select amount, pct from demands where booking_id = $1 and status = 'raised' and not opening", [b1.id]);
     const r = await hcrm('/api/bookings', { action: 'edit', id: b1.id, agreementValue: 9900000, rmName: 'Neha', reason: 'corrected after registration' });
-    assert.equal(r.ok, true, r.error); assert.ok(r.changed.includes('agreement_value'));
+    // since 5 Nov 2026 a new agreement value waits for the Chairman's or Sameer's approval; the RM name changes at once
+    assert.equal(r.ok, true, r.error); assert.ok(!r.changed.includes('agreement_value'), JSON.stringify(r.changed)); assert.equal(r.pendingApproval, 1, JSON.stringify({ c: r.changed, p: r.pendingApproval }));
+    const ch = await db.one("select id from change_requests where kind = 'booking-av' and booking_id = $1 and status = 'pending'", [b1.id]);
+    assert.equal((await admin('/api/changes', { action: 'decide', id: ch.id, approve: true })).ok, true);
     const after = await db.q("select amount, pct from demands where booking_id = $1 and status = 'raised' and not opening order by id", [b1.id]);
+    assert.equal(after.length, before.length);
     for (const d of after) assert.equal(Number(d.amount), Math.round(9900000 * Number(d.pct)) / 100);
-    assert.equal(r.demandsReworked, before.length);
-    const log = await db.one("select * from audit_log where entity = 'booking' and action = 'edit' and entity_id = $1", [String(b1.id)]);
-    assert.ok(log && /corrected/.test(log.note));
+    assert.match((await db.one('select reason from change_requests where id = $1', [ch.id])).reason, /corrected/);
     assert.equal((await hcrm('/api/bookings', { action: 'edit', id: b1.id, agreementValue: 9900000, reason: 'again' })).status, 400, 'nothing changed');
   });
   let rid;

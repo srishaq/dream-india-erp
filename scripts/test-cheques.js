@@ -26,7 +26,7 @@ let n = 0; const step = async (name, fn) => { await fn(); n++; console.log('  âœ
   assert.equal((await admin('/api/import', { action: 'commit', projectId: sig.id, stageDates: { ...pv.stageDates, 'B|On Completion of Excavation': '2026-05-15' } })).ok, true);
   const bks = (await admin(`/api/bookings?project=${sig.id}`)).rows.filter((r) => r.status === 'active');
   const [b1, b2] = bks;
-  await db.q("insert into users (username, name, role, password_hash) values ('hcrm', 'Head CRM', 'head_crm', 'x')");
+  await db.q("insert into users (username, name, role, password_hash, all_projects) values ('hcrm', 'Head CRM', 'head_crm', 'x', true)");
   const acc = (ref, unit, amount, on = day(0), st = 'Cleared') => db.one(`insert into acc_receipts (book, ref_id, txn_date, bank, description, reference, amount, unit_no, on_statement, cheque_status, source)
     values ('signature', $1, $2, 'PRIME HDFC', $3, $4, $5, $6, 'Yes', $7, 'test') returning id`, ['BS' + Math.floor(Math.random() * 1e5), on, `CHQ DEP ${ref || ''} ${unit || ''}`, ref, amount, unit, st]);
   let r1, r2, line1;

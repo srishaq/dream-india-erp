@@ -104,7 +104,7 @@
     else if (l.status === 'lost') right = `<span class="chip">Lost</span>`;
     else if (l.visit_date && day(l.visit_date) >= S.d.today) right = `<span class="chip good">Visit ${nice(day(l.visit_date))}</span>`;
     else if (l.next_date) right = `<span class="chip ${day(l.next_date) < S.d.today ? 'warn' : ''}">Call ${day(l.next_date) === S.d.today ? 'today' : nice(day(l.next_date))}</span>`;
-    const RS = { visit: 'site visit', info: 'more info', costsheet: 'cost sheet', walkin: 'walk-in' };
+    const RS = { visit: 'site visit', info: 'more info', costsheet: 'cost sheet', walkin: 'walk-in' }; // costsheet: older transfers
     const who = (S.d.me.all && l.handed_name ? `<div>with ${e(l.handed_name)}</div>` : '') + (S.main === 'sales' && l.handover_reason ? `<div><span class="chip ${l.handover_reason === 'walkin' ? 'good' : ''}">${RS[l.handover_reason] || ''}</span></div>` : '')
       + (S.main === 'presales' && l.sent_back_at && !l.handed_to ? '<div><span class="chip warn">sent back by sales</span></div>' : '');
     return `<div class="row" data-id="${l.id}"><div class="who"><b>${e(l.name || l.phone || l.email)}</b><div class="s">${l.name && l.phone ? e(l.phone) + ' · ' : ''}${e(what)}</div><div class="s">${e(src)} · came in ${when(l.created_at)}${l.calls ? ` · ${l.calls} call${l.calls > 1 ? 's' : ''}` : ''}${l.is_buyer ? ' · <b style="color:var(--good)">Buyer in CRM ✓</b>' : ''}</div>${l.last_note ? `<div class="s">“${e(l.last_note)}”</div>` : ''}</div><div class="right">${right}${who}</div></div>`;
@@ -164,7 +164,7 @@
         <div><label>Site visit on</label><input type="date" id="hvisit" min="${S.d.today}" value="${day(l.visit_date)}"></div></div>
         <div class="f"><label>Anything sales should know</label><textarea id="hnote" rows="2"></textarea></div>
         <button class="btn pri" id="hand" style="margin-top:8px;width:100%">Transfer to Sales</button><div class="err" id="herr"></div></div>` : ''}
-      ${(me.sells || me.all) && l.status !== 'lost' ? salesBox(l, j) : ''}
+      ${(me.sells || me.all) && l.status !== 'lost' ? (l.visit_at || j.offers.length ? salesBox(l, j) : `<div class="box"><h3>Sales: offer, hold and booking</h3><p style="margin:0;color:var(--mut)">The offer is made at the site. After the customer visits, choose <b>Site visit done</b> above; the offer, cost sheet, hold and booking open here then.</p></div>`) : ''}
       ${l.handed_to && (me.all || l.handed_to === me.id) && ['new', 'contacted', 'visit'].includes(l.status) && l.handover_reason !== 'walkin' ? `<details class="box"><summary style="cursor:pointer;font-weight:600;color:var(--maroon)">Send back to pre-sales</summary>
         <div class="f"><label>Why (pre-sales sees this)</label><textarea id="sbnote" rows="2" placeholder="e.g. Not reachable after 4 calls; wants to come after Diwali"></textarea></div>
         <button class="btn" id="sendback" style="margin-top:8px;width:100%">Send back</button><div class="err" id="sberr"></div></details>` : ''}

@@ -109,6 +109,11 @@ let n = 0; const step = async (name, fn) => { await fn(); n++; console.log('  âœ
     offerLead = r.id;
     await asma('/api/leads', { action: 'handover', id: offerLead, to: amaan.id });
     const unit = await db.one("select id from units where unit_no = 'A-605'");
+    // no offer on the phone: only after the site visit (Rafi Sir, 24 Nov 2026)
+    const early = await amaan('/api/leads', { action: 'offer.make', id: offerLead, unitId: unit.id, parking: 1, discount: 0 });
+    assert.equal(early.status, 400); assert.match(early.error, /site visit/);
+    assert.equal((await amaan('/api/leads', { action: 'offer.price', id: offerLead, unitId: unit.id })).status, 400);
+    assert.equal((await amaan('/api/leads', { action: 'log', id: offerLead, outcome: 'visit_done', note: 'Saw the sample flat' })).ok, true);
     const small = await amaan('/api/leads', { action: 'offer.make', id: offerLead, unitId: unit.id, parking: 1, discount: 140000 });
     assert.equal(small.ok, true, small.error); assert.equal(small.status, 'given', 'just under 1%');
     assert.equal((await amaan('/api/leads', { action: 'offer.make', id: offerLead, unitId: unit.id, parking: 1, discount: 500000 })).status, 400, 'above 1% needs what the customer asks');
@@ -140,6 +145,7 @@ let n = 0; const step = async (name, fn) => { await fn(); n++; console.log('  âœ
     assert.ok(Math.abs(new Date(u1.held_until) - Date.now() - 72 * 3600e3) < 120e3, '72 hours');
     const other = await asma('/api/leads', { action: 'add', phone: '9820055555', welcome: false });
     await asma('/api/leads', { action: 'handover', id: other.id, to: amaan.id });
+    await amaan('/api/leads', { action: 'log', id: other.id, outcome: 'visit_done' });
     assert.equal((await amaan('/api/leads', { action: 'hold', id: other.id, unitId: unit.id })).status, 409, 'held for someone else');
     assert.equal((await amaan('/api/leads', { action: 'offer.make', id: other.id, unitId: unit.id })).status, 409);
     const u2 = await db.one("select id from units where unit_no = 'A-606'");
@@ -174,13 +180,14 @@ let n = 0; const step = async (name, fn) => { await fn(); n++; console.log('  âœ
     const zoya = await mk('zoya', 'sales');
     const L = require('../lib/mkt-leads');
     const a1 = (await L.add({ phone: '98200 70001', source: 'website', projectId: sig.id, welcome: false })).id;
-    const r = await asma('/api/leads', { action: 'handover', id: a1, to: 'auto', reason: 'costsheet' });
+    const r = await asma('/api/leads', { action: 'handover', id: a1, to: 'auto', reason: 'info' });
     assert.equal(r.ok, true, r.error); assert.equal(r.to, 'zoya', 'Zoya has never been given one; Amaan has');
     const l = await db.one('select handed_to, handover_reason from mkt_leads where id = $1', [a1]);
-    assert.equal(l.handover_reason, 'costsheet');
+    assert.equal(l.handover_reason, 'info');
     const a2 = (await L.add({ phone: '98200 70002', source: 'website', welcome: false })).id;
-    const r2 = await asma('/api/leads', { action: 'handover', id: a2, to: 'auto', reason: 'info' });
+    const r2 = await asma('/api/leads', { action: 'handover', id: a2, to: 'auto', reason: 'costsheet' });
     assert.equal(r2.to, 'amaan', 'next turn: Amaan');
+    assert.equal((await db.one('select handover_reason from mkt_leads where id = $1', [a2])).handover_reason, 'visit', 'a cost sheet is not a phone reason any more');
     // the sales person sends one back with a reason; it returns to the caller who handed it
     assert.equal((await zoya('/api/leads', { action: 'sendback', id: a1 })).status, 400, 'needs why');
     assert.equal((await amaan('/api/leads', { action: 'sendback', id: a1, note: 'x' })).status, 404, 'not his');

@@ -22,7 +22,8 @@ const DATE = /^\d{4}-\d{2}-\d{2}$/;
 const canAll = (u) => has(u, 'leads.all');
 const canWork = (u) => has(u, 'leads.work') || canAll(u);
 const sourcing = (u) => has(u, 'sourcing.work') || has(u, 'sourcing.all');
-const REASONS = { visit: 'Qualified: site visit', info: 'Wants more information', costsheet: 'Wants a cost sheet' };
+// why pre-sales passes a lead on; a cost sheet is given at the site, so it is no longer a reason (old leads keep the label)
+const REASONS = { visit: 'Qualified: site visit', info: 'Wants more information before visiting' };
 // the tabs a login sees: the caller Pre-sales, the sales person Sales, the sourcing team Sourcing; managers all three
 function tabsFor(u) {
   const t = [];
@@ -239,6 +240,8 @@ module.exports = route({
 
     // ---------- offers, holds ----------
     if (a === 'offer.price' || a === 'offer.make') {
+      // Rafi Sir, 24 Nov 2026: nobody buys on a phone call; the offer is made at the site, after the visit (or a walk-in)
+      if (!l.visit_at) throw fail(400, 'The offer is made at the site: mark the site visit done first.');
       const unit = await db.one('select id, project_id, status, unit_no, held_lead_id from units where id = $1', [intOr(d.unitId)]);
       if (!unit) throw fail(404, 'That flat is not there.');
       if (!u.projects.includes(unit.project_id)) throw fail(403, 'That project is not on your login.');
