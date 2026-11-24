@@ -671,9 +671,15 @@ const handler = route({
       let to = p.canva_url && /canva\.com\/design\/[A-Za-z0-9_-]+\/edit/.test(p.canva_url) && !/canva\.com\/api\//.test(p.canva_url) ? p.canva_url : null;
       if (!to && p.canva_url && !/canva\.com\/api\//.test(p.canva_url) && /canva\.com|canva\.link/.test(p.canva_url)) to = p.canva_url; // a link someone pasted
       if (!to) {
-        const find = async (query) => ((await T.canvaDesigns({ query }).catch(() => ({ items: [] }))).items || []).find((d) => String(d.title || '').includes(`(ERP post ${p.id})`) || String(d.title || '').trim().toLowerCase() === String(p.title || '').trim().toLowerCase());
-        const d = (await find(`ERP post ${p.id}`)) || (await find(p.title || ''));
+        const d = await T.findPostDesign(p).catch(() => null);
         if (d) { to = T.designUrl(d.id); await db.q('update mkt_posts set canva_url = $2 where id = $1', [p.id, to]); }
+      }
+      // not found in Canva: say so, and open Canva's search with the post's title
+      if (!to) {
+        const e2 = (x) => String(x ?? '').replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+        const search = 'https://www.canva.com/search?q=' + encodeURIComponent(String(p.title || '').replace(/\(ERP post \d+\)/, '').slice(0, 80));
+        res.statusCode = 200; res.setHeader('Content-Type', 'text/html; charset=utf-8');
+        return res.end(`<!doctype html><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><body style="font-family:Arial,sans-serif;padding:24px;color:#10114e;max-width:560px;margin:auto"><h2>This post's design was not found in Canva</h2><p><b>${e2(p.title)}</b> was saved with an old Canva link, and no design with this title is in the team's Canva.</p><p><a href="${search}" style="display:inline-block;background:#140C59;color:#fff;padding:11px 18px;border-radius:8px;text-decoration:none">Search Canva for it</a></p><p style="color:#667085;font-size:13px">When you find it, copy its address (canva.com/design/…/edit) into the post's "Canva design link" in the ERP and save, or use "Pick from Canva". The button then opens it directly.</p></body>`);
       }
       // a design the ERP made sits with the person who connected Canva: put it in the team folder so the whole team
       // (Rupali included) can open it; moving one already there does nothing
