@@ -143,6 +143,9 @@ let n = 0; const step = async (name, fn) => { await fn(); n++; console.log('  âœ
     // a vendor's payment is closed only with the bill: total with GST and the TDS (23 Nov 2026)
     const no = await admin('/api/accounts', { action: 'save', reg: 'payments', data: { txn_date: '2026-10-28', bank: 'Yes RERA Collection 100% (0700)', amount: '5,000', head: 'RMC', payee: 'Other RMC' } });
     assert.equal(no.status, 400); assert.match(no.error, /needs the vendor's bill/);
+    // an old row (head set before the rule) still takes a remark: the window sends every column, unchanged
+    const old = await require('../lib/db').one("insert into acc_payments (book, ref_id, txn_date, bank, amount, head, payee) values ('signature', 'PO77001', '2026-10-28', 'Yes RERA Collection 100% (0700)', 700, 'RMC', 'Old RMC') returning id");
+    assert.equal((await admin('/api/accounts', { action: 'save', reg: 'payments', id: old.id, data: { head: 'RMC', payee: 'Old RMC', amount: '700', remark: 'checked', total_bill: '', tds_deducted: '' } })).ok, true); await require('../lib/db').q('delete from acc_payments where id = $1', [old.id]);
     assert.equal((await admin('/api/accounts', { action: 'save', reg: 'payments', data: { txn_date: '2026-10-28', bank: 'Yes RERA Collection 100% (0700)', amount: '5,000', head: 'RMC', payee: 'Other RMC', total_bill: '5,000', tds_deducted: '0' } })).ok, true);
     const all = await admin('/api/accounts?reg=payments&by=head');
     const rmc = all.groups.rows.find((g) => g.name === 'RMC'); assert.ok(rmc && rmc.n >= 2, JSON.stringify(all.groups));

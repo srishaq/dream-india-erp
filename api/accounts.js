@@ -213,7 +213,10 @@ module.exports = route({
         // given or changed, or the bill figures are touched, so old rows can still take a remark.
         const head = 'head' in data ? data.head : cur.head;
         const H = head ? (await acc.headMap()).payment[head] : null;
-        if (H && H.needs_bill && !b.poId && ('head' in data || !id || B.some((k) => k !== 'amount' && k in data))) { // a purchase bill paid here is checked against the approved bill instead
+        // the edit window sends every column, so "changed" means a different value from the row as it is
+        const same = (x, y) => (x == null || x === '' ? (y == null || y === '') : y != null && y !== '' && (Number.isFinite(Number(x)) && Number.isFinite(Number(y)) ? Math.abs(Number(x) - Number(y)) < 0.005 : String(x) === String(y)));
+        const changed = (k) => k in data && !same(data[k], cur[k]);
+        if (H && H.needs_bill && !b.poId && (!id || changed('head') || ['taxable_value', 'gst_on_bill', 'total_bill', 'tds_deducted'].some(changed))) { // a purchase bill paid here is checked against the approved bill instead
           const val = (k) => (k in data ? data[k] : cur[k]);
           const miss = [val('total_bill') == null || val('total_bill') === '' ? 'the bill amount with GST (Total Bill, or Taxable Value and GST on Bill)' : null,
             val('tds_deducted') == null || val('tds_deducted') === '' ? 'TDS Deducted (0 if none)' : null].filter(Boolean);
