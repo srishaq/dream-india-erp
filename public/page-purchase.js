@@ -185,6 +185,7 @@ async function act(payload, okMsg) {
     const r = await api('POST', payload);
     D.orders[r.doc.id] = r.doc;
     if (r.split) { r.split.forEach((x) => (D.orders[x.id] = x)); okMsg = `Ordered from ${r.split.length} vendors, one order each: ${r.split.map((x) => `${x.no} (${x.order.vendor})`).join(', ')}. The site confirms each delivery and Accounts pays each bill separately.`; }
+    if (r.balance) { r.balance.forEach((x) => (D.orders[x.id] = x)); okMsg = `${okMsg || 'Order and bill saved.'} The rest, ${r.balance.map((x) => `${x.no}: ${(x.items || []).map((i) => `${i.spec} ${i.qty} ${x.unit || ''}`).join(', ')}`).join('; ')}, stays approved and waiting for an order.`; }
     render(); showOrder(r.doc.id, okMsg);
   } catch (e) { if (err) err.textContent = e.message; btns.forEach((b) => (b.disabled = false)); }
 }
