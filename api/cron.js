@@ -6,6 +6,7 @@
 //   /api/cron?job=pdc   03:50 UTC = 9:20 am IST  PDC reminder emails
 //   /api/cron?job=dpr   12:30 UTC = 6:00 pm IST  the site team is emailed if today's daily progress report is not in
 //   /api/cron?job=summary 04:30 UTC = 10:00 am IST the 10 am summary to Admin and Management (lib/staff-alerts.js)
+//   (morning also copies new files from the Signature CRM's Drive folder onto their flats: lib/custdocs-import.js)
 //   /api/cron?job=evening 14:30 UTC = 8:00 pm IST  the day reports to Head CRM, Head Accounts and Management (lib/day-report.js)
 //   /api/cron?job=agents every 10 minutes          the AI marketing agent team: comment-to-DM funnels, comment notes, the Orchestrator
 //   /api/cron?job=mail  every 5 minutes           buyers' email replies into their Communication record; automatic demand letters still to email;
@@ -56,6 +57,14 @@ async function run(req, res, job) {
       out.caPack = await require('../lib/ca-pack').morning().catch((e) => ({ error: e.message }));
       out.reraPack = await require('../lib/rera').morning().catch((e) => ({ error: e.message })); // the quarter's MahaRERA figures to the CA, from the 3rd
       out.cheques = await require('../lib/cheque-match').run({ trigger: 'morning' }).catch((e) => ({ error: e.message }));
+      // new flat files the Signature CRM put in its shared Drive folder, onto their flats in Customer documents
+      out.crmDocs = await (async () => {
+        const db = require('../lib/db');
+        if (!(await require('../lib/gdrive').status()).connected) return { skipped: 'Drive not connected' };
+        const sig = await db.one("select id from projects where code = 'SIGNATURE'"); if (!sig) return { skipped: 'no Signature project' };
+        const r = await require('../lib/custdocs-import').run(sig.id, null, 60000);
+        return { imported: r.imported.length, failed: r.failed.length, left: r.left, noFlat: r.noFlat.length, noBooking: r.noBooking.length };
+      })().catch((e) => ({ error: e.message }));
       out.autoClear = await (async () => { const db = require('../lib/db'); const sys = await db.one("select * from users where role = 'admin' and not disabled order by id limit 1"); const out2 = {}; for (const p of await db.q("select id from projects where active")) out2[p.id] = (await require('../lib/auto-clear').run({ projectId: p.id, user: sys, dry: false })).closedTotal; return out2; })().catch((e) => ({ error: e.message })); // Data to verify items that need nobody
       // each project's own lists (Dream Signature and Dream Aspire apart)
       for (const p of await dt.projects()) for (const dept of ['accounts', 'crm']) {

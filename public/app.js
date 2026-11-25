@@ -3209,6 +3209,35 @@
       <p class="small muted">Open a flat to upload its papers. Each flat has its own folder in Google Drive.</p>`;
     document.querySelectorAll('[data-f]').forEach((t) => (t.onclick = () => { store.set('erp_cdf', t.dataset.f); custdocs(); }));
     $('#q').oninput = (e) => { const q = e.target.value.toLowerCase(); document.querySelectorAll('tr[data-s]').forEach((tr) => (tr.style.display = tr.dataset.s.includes(q) ? '' : 'none')); };
+    if (can('buyer.kyc') && m.connected) crmFolder(out);
+  }
+
+  // The Signature CRM's shared Drive folder of flat files: what is new there, and a button that copies it onto the flats.
+  async function crmFolder(out) {
+    const box = document.createElement('div'); box.className = 'panel'; box.innerHTML = '<p class="muted small">Checking the CRM documents folder…</p>';
+    out.prepend(box);
+    let c;
+    try { c = await api(`/api/custdocs?crmfolder=${proj}`); } catch (e) { box.innerHTML = `<p class="small bad-t">CRM documents folder: ${esc(e.message)}</p>`; return; }
+    if (!c.available) { box.remove(); return; }
+    const list = (rows, label) => rows.length ? `<details style="margin-top:8px"><summary class="small">${rows.length} ${label}</summary><ul class="small">${rows.slice(0, 200).map((r) => `<li>${esc(r.name)}${r.flat ? ' (read as ' + esc(r.flat) + ')' : ''}${r.why ? ' — ' + esc(r.why) : ''}</li>`).join('')}</ul></details>` : '';
+    box.innerHTML = `<h3 style="margin:0 0 6px">From the CRM documents folder</h3>
+      <p class="small muted" style="margin:0 0 10px">The flat files the CRM team puts in the shared <a href="${esc(c.folder)}" target="_blank" rel="noopener">Drive folder ↗</a> are copied onto each flat here. The flat is read from the file name, e.g. "DREAM SIGNATURE B 2402.pdf".</p>
+      <div class="kpis">${kpi(c.total, 'files in the folder')}${kpi(c.already, 'already on their flats')}${kpi(c.ready, 'new, ready to bring in')}${kpi(c.noFlat.length + c.noBooking.length, 'need a look')}</div>
+      ${c.ready ? `<p class="small" style="margin:10px 0 0">${Object.entries(c.kinds).map(([k, n]) => `${n} × ${esc(k)}`).join(' · ')}</p><button class="primary" id="crmGo" style="margin-top:10px">Bring in the ${c.ready} new file${c.ready > 1 ? 's' : ''}</button><span class="small muted" id="crmMsg" style="margin-left:10px"></span>` : ''}
+      ${list(c.noBooking, 'files for flats with no live booking in the ERP')}${list(c.noFlat, 'files where the flat number could not be read: rename them with the wing and flat, e.g. "B 2402"')}${list(c.skipped, 'files left out')}`;
+    if ($('#crmGo')) $('#crmGo').onclick = async (ev) => {
+      ev.target.disabled = true; let n = 0, bad = [];
+      try {
+        for (let i = 0; i < 200; i++) {
+          $('#crmMsg').textContent = `Copying… ${n} done`;
+          const r = await api('/api/custdocs', { action: 'crmfolder', projectId: proj });
+          n += r.imported; bad = r.failed;
+          if (!r.left || (!r.imported && r.failed.length)) break;
+        }
+        toast(`${n} file${n === 1 ? '' : 's'} brought in${bad.length ? `; ${bad.length} could not be copied` : ''}.`);
+        custdocs();
+      } catch (e) { $('#crmMsg').textContent = e.message; ev.target.disabled = false; }
+    };
   }
 
   // Management dashboard: the key figures of every department on one screen (Admin and Management).

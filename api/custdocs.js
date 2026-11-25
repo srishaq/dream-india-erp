@@ -9,6 +9,8 @@
 // POST {action:'start', owner, id, kind, title?, fileName, mime, size} → a new document, ready for its pieces
 // POST {action:'part', docId, index, data (base64)}                   → one piece; the last makes it ready
 // POST {action:'remove', docId, reason}  · {action:'disconnect'} (Admin)
+// GET  ?crmfolder=PROJECT  → the Signature CRM's shared Drive folder: what is new and where it would go (lib/custdocs-import.js)
+// POST {action:'crmfolder', projectId} → copy the next new files onto their flats (run again until nothing is left)
 const db = require('../lib/db');
 const auth = require('../lib/auth');
 const audit = require('../lib/audit');
@@ -40,6 +42,8 @@ async function bookingLabel(bookingId) {
   return db.one(`select b.id, u.unit_no, u.project_id, p.name as project, (select string_agg(y.name, ' & ' order by a.seq) from booking_applicants a join buyers y on y.id = a.buyer_id where a.booking_id = b.id) as buyers
     from bookings b join units u on u.id = b.unit_id join projects p on p.id = u.project_id where b.id = $1`, [bookingId]);
 }
+// the shared CRM folder holds Dream Signature's flat files only
+async function crmFolderProject(pid) { return !!(await db.one("select 1 from projects where id = $1 and code = 'SIGNATURE'", [pid])); }
 async function docFor(u, id) {
   const d = await db.one('select d.*, u2.project_id from customer_docs d left join bookings b on b.id = d.booking_id left join units u2 on u2.id = b.unit_id where d.id = $1', [id]);
   if (!d) throw fail(404, 'That document is not there.');
@@ -81,6 +85,14 @@ module.exports = route({
     if (q.status) {
       const s = await gd.status();
       return res.json({ ...s, folder: s.rootId ? gd.folderLink(s.rootId) : null, redirectUri: gd.redirectUri(req), canConnect: has(u, 'users.manage'), kinds: KINDS, check: CHECK, part: PART, max: MAX, types: TYPES });
+    }
+    if (q.crmfolder) {
+      const pid = needProject(u, intOr(q.crmfolder));
+      if (!canAdd(u, 'booking')) throw fail(403, 'Your role cannot add buyer documents.');
+      if (!(await crmFolderProject(pid))) return res.json({ available: false });
+      const p = await require('../lib/custdocs-import').plan(pid);
+      return res.json({ available: true, folder: gd.folderLink(require('../lib/custdocs-import').FOLDER()), total: p.total, already: p.already, ready: p.ready.length,
+        noFlat: p.noFlat, noBooking: p.noBooking, skipped: p.skipped, kinds: p.ready.reduce((m, f) => ((m[f.kind] = (m[f.kind] || 0) + 1), m), {}) });
     }
     if (q.file) {
       const d = await docFor(u, intOr(q.file));
@@ -182,6 +194,15 @@ module.exports = route({
       const pj = d.booking_id ? (await db.one('select u.project_id from bookings b join units u on u.id = b.unit_id where b.id = $1', [d.booking_id])).project_id : null;
       await audit.record(db.q, { user: u, action: 'upload', entity: 'customer-doc', entityId: d.id, projectId: pj, after: { label: d.label, kind: d.kind, file: d.file_name, size: Number(d.size) } });
       return res.json({ ok: true, done: true, id: d.id });
+    }
+    if (b.action === 'crmfolder') {
+      const pid = needProject(u, intOr(b.projectId));
+      if (!canAdd(u, 'booking')) throw fail(403, 'Your role cannot add buyer documents.');
+      if (!(await crmFolderProject(pid))) throw fail(400, 'The CRM documents folder is for Dream Signature.');
+      if (!(await gd.status()).connected) throw fail(400, 'Google Drive is not connected yet. Ask the Admin to connect it at the top of this page.');
+      const r = await require('../lib/custdocs-import').run(pid, u);
+      if (r.imported.length) await audit.record(db.q, { user: u, action: 'import', entity: 'customer-doc', projectId: pid, after: { from: 'crm-folder', files: r.imported.length, failed: r.failed.length } });
+      return res.json({ ok: true, imported: r.imported.length, list: r.imported, failed: r.failed, left: r.left, noFlat: r.noFlat.length, noBooking: r.noBooking.length });
     }
     if (b.action === 'remove') {
       const d = await docFor(u, intOr(b.docId));
