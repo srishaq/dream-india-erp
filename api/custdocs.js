@@ -200,7 +200,7 @@ module.exports = route({
       if (!canAdd(u, 'booking')) throw fail(403, 'Your role cannot add buyer documents.');
       if (!(await crmFolderProject(pid))) throw fail(400, 'The CRM documents folder is for Dream Signature.');
       if (!(await gd.status()).connected) throw fail(400, 'Google Drive is not connected yet. Ask the Admin to connect it at the top of this page.');
-      const r = await require('../lib/custdocs-import').run(pid, u);
+      const r = await require('../lib/custdocs-import').run(pid, u, 20000, Math.min(Math.max(intOr(b.max) || 5, 1), 20)); // a few files a call, so each answer comes back quickly
       if (r.imported.length) await audit.record(db.q, { user: u, action: 'import', entity: 'customer-doc', projectId: pid, after: { from: 'crm-folder', files: r.imported.length, failed: r.failed.length } });
       return res.json({ ok: true, imported: r.imported.length, list: r.imported, failed: r.failed, left: r.left, noFlat: r.noFlat.length, noBooking: r.noBooking.length });
     }
