@@ -70,6 +70,12 @@ process.env.SIGNATURE_DOCS_FOLDER = 'crm-root';
     assert.equal(I.kindOf('PAN card.jpg'), 'KYC: PAN, Aadhaar, photo');
     assert.equal(I.kindOf('B 2402 bank NOC.pdf'), 'Home loan sanction / bank NOC');
     assert.equal(I.kindOf('B 2402 misc.pdf'), 'Other');
+    // the names the CRM team actually used
+    for (const [name, flat] of [['Reg.Deed. B- 2601 28.03.26- 1 Parking BS.pdf', 'B2601'], ['Reg.Deed. B-1803', 'B1803'], ['Reg. Deed. B-1404 02.02.26- 0 Parking BS.pdf', 'B1404'],
+      ['DREAM B 1801.pdf', 'B1801'], ['DREAM B 4206-1.pdf', 'B4206'], ['DREAM SIGNATUE B 2801.pdf', 'B2801'], ['DREAM SIGNATUTE B 3301.pdf', 'B3301'], ['A 1704 INDEX.pdf', 'A1704']]) {
+      assert.equal(I.flatOf(name), flat, name);
+      assert.equal(I.kindOf(name), /INDEX/.test(name) ? 'Index II / registration receipt' : 'Agreement for sale (registered)', name);
+    }
   });
 
   await step('The page shows what is new and what needs a look', async () => {
@@ -85,7 +91,9 @@ process.env.SIGNATURE_DOCS_FOLDER = 'crm-root';
     assert.equal(r.ok, true, r.error); assert.equal(r.imported, 3); assert.equal(r.left, 0);
     const docs = await db.q('select booking_id, kind, file_name, title, status, size, source_id from customer_docs order by id');
     assert.equal(docs.length, 3);
-    assert.ok(docs.every((d) => d.status === 'ready' && d.title === 'From the CRM folder'));
+    assert.ok(docs.every((d) => d.status === 'ready' && d.title.startsWith('From the CRM folder: ')));
+    assert.equal(docs.find((d) => d.source_id === 'f1').file_name, `${b1.unit_no} - Registered agreement for sale.pdf`, 'one clear name in the ERP');
+    assert.equal(docs.find((d) => d.source_id === 'f6').file_name, `${b2.unit_no} - KYC.jpg`);
     assert.equal(docs.filter((d) => d.booking_id === b1.id).length, 2);
     assert.equal(docs.find((d) => d.source_id === 'f6').booking_id, b2.id, 'flat read from the sub-folder name');
     assert.equal(docs.find((d) => d.source_id === 'f6').kind, 'KYC: PAN, Aadhaar, photo');
