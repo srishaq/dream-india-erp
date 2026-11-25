@@ -164,6 +164,35 @@ module.exports = route({
       const { plan: _p, ...rest } = out;
       return res.json({ ok: true, file: name, ...rest });
     }
+    // Dream Aspire's TDS: Accounts' "TDS Working" and "TDS Challan Summary" in "01 – Accounts (Aspire)" on Drive
+    // (lib/tds-working.js): PAN, section and TDS onto the payments, and each payment's challan and deposit date
+    if (b.action === 'aspire-tds-preview' || b.action === 'aspire-tds-commit') {
+      const prj = await db.one('select code from projects where id = $1', [projectId]);
+      if (prj?.code !== 'ASPIRE') throw fail(400, 'This import is for Dream Aspire only.');
+      const T = require('../lib/tds-working');
+      const files = [];
+      if (process.env.TDS_WORKING_FIXTURE_DIR && process.env.VERCEL !== '1') {
+        const fs = require('fs'), path = require('path');
+        for (const f of fs.readdirSync(process.env.TDS_WORKING_FIXTURE_DIR)) if (/\.xlsx$/i.test(f)) files.push({ name: f, buf: fs.readFileSync(path.join(process.env.TDS_WORKING_FIXTURE_DIR, f)) });
+      } else {
+        const drive = require('../lib/drive');
+        const folder = process.env.ASPIRE_ACCOUNTS_FOLDER || '1RzBRw72hX5HyZEh37ZTNTD651P-v1nng';
+        const list = (await drive.statementFiles([folder]).catch((e) => { throw fail(400, `Could not open the "01 – Accounts (Aspire)" folder on Drive: ${e.message}. Share it with ${sheets.serviceEmail() || 'the ERP'}.`); }))
+          .filter((f) => /tds/i.test(f.name) && /\.xlsx?$/i.test(f.name)).sort((x, y) => String(y.modifiedTime).localeCompare(String(x.modifiedTime)));
+        // the newest working and the newest challan summary
+        for (const kind of [(n) => /challan/i.test(n), (n) => !/challan/i.test(n)]) { const f = list.find((x) => kind(x.name)); if (f) files.push({ name: f.name, buf: await drive.download(f) }); }
+      }
+      const data = T.parse(files);
+      if (!data.work.length) throw fail(400, 'No "TDS Working" sheet with TDS rows in "01 – Accounts (Aspire)".');
+      const used = files.map((f) => f.name).join(', ');
+      if (b.action === 'aspire-tds-preview') {
+        const p = await T.plan(db.q, data, { book: 'aspire' });
+        return res.json({ files: used, rows: p.workRows, challans: p.challans, matched: p.matched, filled: p.fills.length, pans: p.pans, tds: p.tds, challansPlaced: p.challansPlaced,
+          lateDeposits: p.lateDeposits, notDeposited: p.notDeposited, summary: p.summary, unmatched: p.unmatched.length, unmatchedTop: p.unmatched.sort((x, y) => y.tds - x.tds).slice(0, 25), sample: p.fills.slice(0, 15) });
+      }
+      const out = await db.tx(async (t) => { await t.q("set local statement_timeout = '120s'").catch(() => {}); return T.commit(t, data, { book: 'aspire', user: u, source: used }); });
+      return res.json({ ok: true, files: used, filled: out.fills.length, pans: out.pans, tds: out.tds, challansPlaced: out.challansPlaced, lateDeposits: out.lateDeposits, notDeposited: out.notDeposited, summary: out.summary });
+    }
     if (b.action === 'aspire-contacts-preview' || b.action === 'aspire-contacts-commit') {
       const prj = await db.one('select code from projects where id = $1', [projectId]);
       if (prj?.code !== 'ASPIRE') throw fail(400, 'This import is for Dream Aspire only.');

@@ -4311,6 +4311,28 @@
         } catch (e) { alert(e.message); }
         $('#ctRead').disabled = false; $('#ctRead').textContent = 'Check again';
       };
+      // TDS: PAN, section and TDS onto the payments, and each payment's challan, from Accounts' TDS working and challan summary
+      page.insertAdjacentHTML('afterbegin', `<div class="panel"><h2>TDS from the TDS working and challan summary</h2><p class="muted">Reads the newest "TDS Working" and "TDS Challan Summary" sheets in Drive (01 – Accounts (Aspire)): each TDS row goes onto the payment that paid it (PAN, section, TDS), and the challans onto the payments' TDS year by year (challan no. and deposit date). Only empty details are filled.</p>
+        <div class="actions"><button id="tdRead">Check the TDS sheets</button></div><div id="tdOut"></div></div>`);
+      $('#tdRead').onclick = async () => {
+        $('#tdRead').disabled = true; $('#tdRead').textContent = 'Reading…';
+        try {
+          const p = await api('/api/import', { action: 'aspire-tds-preview', projectId: proj });
+          const rs = (n) => '₹' + Math.round(n).toLocaleString('en-IN');
+          $('#tdOut').innerHTML = `<p class="small muted">${esc(p.files)}: ${p.rows} TDS rows, ${p.challans} challans; ${p.matched} rows found in the payments.</p>
+            <div class="kpis">${kpi(p.filled, 'payments filled')}${kpi(p.pans, 'PANs')}${kpi(p.tds, 'TDS amounts')}${kpi(p.challansPlaced, 'challans placed')}${kpi(p.lateDeposits, 'deposited late')}${kpi(p.notDeposited, 'TDS with no challan')}</div>
+            <h3>By financial year</h3><table class="tbl small"><tr><th>Year</th><th>TDS deducted</th><th>Deposited</th><th>Short (+) / over (−)</th><th>Interest</th><th>Late fee</th></tr>
+            ${p.summary.map((y) => `<tr><td>${esc(y.fy)}</td><td>${rs(y.tds)}</td><td>${rs(y.deposited)}</td><td class="${Math.abs(y.gap) > 1 ? 'bad-t' : ''}">${rs(y.gap)}</td><td>${rs(y.interest)}</td><td>${rs(y.late)}</td></tr>`).join('')}</table>
+            <h3>TDS rows not found in the payments (${p.unmatched}): largest</h3>${li(p.unmatchedTop.map((x) => `${fmtD(x.date)} ${esc(x.party)}: paid ${rs(x.paid)}, TDS ${rs(x.tds)}`))}
+            <div class="actions"><button id="tdGo">Fill ${p.filled} payments</button></div>`;
+          $('#tdGo').onclick = async () => {
+            if (!$('#tdGo').dataset.sure) { $('#tdGo').dataset.sure = 1; $('#tdGo').textContent = `Click again to fill ${p.filled} payments`; return; }
+            $('#tdGo').disabled = true; $('#tdGo').textContent = 'Filling…';
+            try { const r = await api('/api/import', { action: 'aspire-tds-commit', projectId: proj }); toast(`Filled ${r.filled} payments: ${r.pans} PANs, ${r.tds} TDS amounts, ${r.challansPlaced} challans.`); $('#tdGo').textContent = 'Done'; } catch (e) { alert(e.message); $('#tdGo').disabled = false; }
+          };
+        } catch (e) { alert(e.message); }
+        $('#tdRead').disabled = false; $('#tdRead').textContent = 'Check again';
+      };
       // the bank entries' heads, payees and flats from Accounts' cash flow workbook
       page.insertAdjacentHTML('afterbegin', `<div class="panel"><h2>Heads and payees from the Dream Aspire Cash Flow sheet</h2><p class="muted">Reads the newest "Dream Aspire Cash Flow" workbook in Drive (01 – Accounts (Aspire) / Cash Flow, FD, Loans &amp; Refunds), sheets ASPIRE_EXPENSES and ASPIRE_COLLECTION. Each line is matched to its bank entry in Payments Out or Receipts by date, amount, bank and narration. Only empty Cash Flow Heads, payees, payers and flats are filled; a head the ERP has that differs is listed, not changed.</p>
         <div class="actions"><button id="cfRead">Check the cash flow sheet</button></div><div id="cfOut"></div></div>`);
