@@ -70,6 +70,11 @@ process.env.SIGNATURE_DOCS_FOLDER = 'crm-root';
     assert.equal(I.kindOf('PAN card.jpg'), 'KYC: PAN, Aadhaar, photo');
     assert.equal(I.kindOf('B 2402 bank NOC.pdf'), 'Home loan sanction / bank NOC');
     assert.equal(I.kindOf('B 2402 misc.pdf'), 'Other');
+    // Dream Aspire has one wing: a bare flat number is enough, if it is one of the project's flats
+    const asp = new Set(['A1602', 'A403']); asp.oneWing = 'A';
+    assert.equal(I.flatOf('1602 Registered agreement.pdf', asp), 'A1602');
+    assert.equal(I.flatOf('Dream Aspire 403 Index 2026.pdf', asp), 'A403');
+    assert.equal(I.flatOf('scan 2026.pdf', asp), null, 'a year is not a flat');
     // the names the CRM team actually used
     for (const [name, flat] of [['Reg.Deed. B- 2601 28.03.26- 1 Parking BS.pdf', 'B2601'], ['Reg.Deed. B-1803', 'B1803'], ['Reg. Deed. B-1404 02.02.26- 0 Parking BS.pdf', 'B1404'],
       ['DREAM B 1801.pdf', 'B1801'], ['DREAM B 4206-1.pdf', 'B4206'], ['DREAM SIGNATUE B 2801.pdf', 'B2801'], ['DREAM SIGNATUTE B 3301.pdf', 'B3301'], ['A 1704 INDEX.pdf', 'A1704']]) {

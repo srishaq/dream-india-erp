@@ -57,13 +57,16 @@ async function run(req, res, job) {
       out.caPack = await require('../lib/ca-pack').morning().catch((e) => ({ error: e.message }));
       out.reraPack = await require('../lib/rera').morning().catch((e) => ({ error: e.message })); // the quarter's MahaRERA figures to the CA, from the 3rd
       out.cheques = await require('../lib/cheque-match').run({ trigger: 'morning' }).catch((e) => ({ error: e.message }));
-      // new flat files the Signature CRM put in its shared Drive folder, onto their flats in Customer documents
+      // new flat files each project's CRM put in its shared Drive folder (Signature, Aspire), onto their flats in Customer documents
       out.crmDocs = await (async () => {
         const db = require('../lib/db');
         if (!(await require('../lib/gdrive').status()).connected) return { skipped: 'Drive not connected' };
-        const sig = await db.one("select id from projects where code = 'SIGNATURE'"); if (!sig) return { skipped: 'no Signature project' };
-        const r = await require('../lib/custdocs-import').run(sig.id, null, 60000);
-        return { imported: r.imported.length, failed: r.failed.length, left: r.left, noFlat: r.noFlat.length, noBooking: r.noBooking.length };
+        const I = require('../lib/custdocs-import'), o = {};
+        for (const p of await db.q('select id, code from projects where active and code = any($1)', [Object.keys(I.FOLDERS())])) {
+          const r = await I.run(p.id, null, 45000);
+          o[p.code] = { imported: r.imported.length, failed: r.failed.length, left: r.left, noFlat: r.noFlat.length, noBooking: r.noBooking.length };
+        }
+        return o;
       })().catch((e) => ({ error: e.message }));
       out.autoClear = await (async () => { const db = require('../lib/db'); const sys = await db.one("select * from users where role = 'admin' and not disabled order by id limit 1"); const out2 = {}; for (const p of await db.q("select id from projects where active")) out2[p.id] = (await require('../lib/auto-clear').run({ projectId: p.id, user: sys, dry: false })).closedTotal; return out2; })().catch((e) => ({ error: e.message })); // Data to verify items that need nobody
       // each project's own lists (Dream Signature and Dream Aspire apart)

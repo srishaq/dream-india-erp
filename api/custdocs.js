@@ -43,7 +43,8 @@ async function bookingLabel(bookingId) {
     from bookings b join units u on u.id = b.unit_id join projects p on p.id = u.project_id where b.id = $1`, [bookingId]);
 }
 // the shared CRM folder holds Dream Signature's flat files only
-async function crmFolderProject(pid) { return !!(await db.one("select 1 from projects where id = $1 and code = 'SIGNATURE'", [pid])); }
+// each project with a shared CRM folder (lib/custdocs-import.js FOLDERS): its code, or null
+async function crmFolderProject(pid) { const p = await db.one('select code from projects where id = $1', [pid]); return p && require('../lib/custdocs-import').FOLDER(p.code) ? p.code : null; }
 async function docFor(u, id) {
   const d = await db.one('select d.*, u2.project_id from customer_docs d left join bookings b on b.id = d.booking_id left join units u2 on u2.id = b.unit_id where d.id = $1', [id]);
   if (!d) throw fail(404, 'That document is not there.');
@@ -89,9 +90,9 @@ module.exports = route({
     if (q.crmfolder) {
       const pid = needProject(u, intOr(q.crmfolder));
       if (!canAdd(u, 'booking')) throw fail(403, 'Your role cannot add buyer documents.');
-      if (!(await crmFolderProject(pid))) return res.json({ available: false });
+      const code = await crmFolderProject(pid); if (!code) return res.json({ available: false });
       const p = await require('../lib/custdocs-import').plan(pid);
-      return res.json({ available: true, folder: gd.folderLink(require('../lib/custdocs-import').FOLDER()), total: p.total, already: p.already, ready: p.ready.length,
+      return res.json({ available: true, folder: gd.folderLink(require('../lib/custdocs-import').FOLDER(code)), total: p.total, already: p.already, ready: p.ready.length,
         noFlat: p.noFlat, noBooking: p.noBooking, skipped: p.skipped, kinds: p.ready.reduce((m, f) => ((m[f.kind] = (m[f.kind] || 0) + 1), m), {}) });
     }
     if (q.file) {
@@ -198,7 +199,7 @@ module.exports = route({
     if (b.action === 'crmfolder') {
       const pid = needProject(u, intOr(b.projectId));
       if (!canAdd(u, 'booking')) throw fail(403, 'Your role cannot add buyer documents.');
-      if (!(await crmFolderProject(pid))) throw fail(400, 'The CRM documents folder is for Dream Signature.');
+      if (!(await crmFolderProject(pid))) throw fail(400, 'This project has no CRM documents folder.');
       if (!(await gd.status()).connected) throw fail(400, 'Google Drive is not connected yet. Ask the Admin to connect it at the top of this page.');
       const r = await require('../lib/custdocs-import').run(pid, u, 20000, Math.min(Math.max(intOr(b.max) || 5, 1), 20),
         Array.isArray(b.slice) && intOr(b.slice[1]) > 1 && intOr(b.slice[1]) <= 8 && intOr(b.slice[0]) >= 0 && intOr(b.slice[0]) < intOr(b.slice[1]) ? [intOr(b.slice[0]), intOr(b.slice[1])] : null); // a few files a call, so each answer comes back quickly
