@@ -195,6 +195,10 @@ let n = 0; const step = async (name, fn) => { await fn(); n++; console.log('  âœ
     const t = cl.rows.find((r) => r.issued_to === 'TEST TRADERS');
     assert.ok(t); assert.equal(t.cheque_status, 'Cleared'); assert.equal(String(t.cleared_on).slice(0, 10), pdc.addDays(today, 2)); assert.equal(t.state, 'Cleared');
     assert.deepEqual((await pdc.due(pdc.addDays(today, 1))).map((x) => x.row.issued_to), []);
+    // the same cheque entered a second time stays pending, marked as a likely duplicate
+    await admin('/api/accounts', { action: 'save', reg: 'pdc', data: { issued_on: today, issued_to: 'TEST TRADERS (Tally)', amount: '50000', bank: 'Yes RERA 30% (0501)', due_date: pdc.addDays(today, 2) } });
+    const d = (await admin('/api/accounts?reg=pdc&filter=pdcPending')).rows.find((r) => r.issued_to === 'TEST TRADERS (Tally)');
+    assert.equal(d.state, 'Duplicate?'); assert.match(d.cleared, /second entry/);
   });
   await step('the scheduled job runs only in its hour (or with the cron secret)', async () => {
     const h = +new Date(Date.now() + 5.5 * 3600e3).toISOString().slice(11, 13);
