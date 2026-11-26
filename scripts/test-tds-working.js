@@ -10,6 +10,8 @@ const pays = [
   { id: 3, ref_id: 'PO-3', date: '2024-01-05', payee: 'Aspect Property Consultants', amount: 12000 },            // no TDS row: gets the PAN only
   { id: 4, ref_id: 'PO-4', date: '2025-05-10', payee: 'Rudra Security', amount: 99000, vendor_pan: 'XXXXX1111X' }, // PAN already there: kept
   { id: 5, ref_id: 'PO-5', date: '2025-06-02', payee: 'Someone Else', amount: 50000 },
+  { id: 6, ref_id: 'PO-6', date: '2024-02-01', payee: 'Anarock Projects', amount: 5000 },                       // another firm with a like name: no PAN
+  { id: 7, ref_id: 'PO-7', date: '2025-07-01', payee: 'Rudra Security', amount: 9900, tds_deducted: 100 },       // after the last challan of its year
 ];
 const work = [
   { party: 'Anarock Property Consultants', key: 'anarockpropertyconsultants', pan: 'AACCJ6158P', date: '2023-10-17', sec: '194C', amt: 200000, rate: 0.02, tds: 4000 },
@@ -35,12 +37,14 @@ const q = async () => pays.map((p) => ({ ...p }));
     assert.equal(f(3).vendor_pan, 'ACDFA2885Q'); assert.equal(f(3).tds_deducted, undefined);
     assert.equal(f(4).vendor_pan, undefined, 'kept'); assert.equal(f(4).tds_deducted, 1000);
     assert.deepEqual(f(5), {});
+    assert.equal(f(6).vendor_pan, undefined, 'Anarock Projects is not Anarock Property Consultants');
   });
   await step('Challans go on the TDS of their own year; late and missing deposits are counted', async () => {
     assert.equal(f(1).tds_challan, '34214'); assert.equal(f(1).tds_deposited_on, '2024-07-22');
     assert.equal(f(2).tds_challan, '34214');
     assert.equal(f(4).tds_challan, '11111');
     assert.equal(p.lateDeposits, 2, '2023-24 paid in July 2024');
+    assert.equal(f(7).tds_challan, undefined, 'a challan paid before the TDS cannot hold it'); assert.equal(p.notDeposited, 1);
     const s = Object.fromEntries(p.summary.map((y) => [y.fy, y]));
     assert.equal(s['2023-24'].gap, 0); assert.equal(s['2023-24'].interest, 2700);
     assert.equal(s['2025-26'].gap, 1500, '2025-26: 2000 deducted, 500 deposited');
