@@ -2365,6 +2365,7 @@
     payments: [['', 'All'], ['noHead', 'No head'], ['noPayee', 'No payee'], ['needsBill', 'Needs bill details']],
     recon: [['open', 'Open'], ['', 'All']], compliance: [['pending', 'Pending'], ['', 'All']],
     cancellations: [['notRefunded', 'Not refunded yet'], ['refundedRows', 'Refunded'], ['', 'All']],
+    pdc: [['pdcPending', 'Pending'], ['pdcCleared', 'Cleared'], ['pdcBounced', 'Bounced / cancelled'], ['', 'All']],
   };
   // Split rows (Tally style): the original payment on one line as it was, its parts just below it with their bill numbers.
   // The server marks each part with _split = { base, part, n, total }; total is the whole original payment.

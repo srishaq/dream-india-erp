@@ -98,6 +98,7 @@ async function run(req, res, job) {
     if (job === 'summary') return res.json({ ok: true, ...(await require('../lib/staff-alerts').sendSummary({ trigger: 'schedule' })) });
     if (job === 'evening') return res.json({ ok: true, ...(await require('../lib/day-report').send({})) });
     if (job === 'pdc') {
+      await require('../lib/accounts').pdcSettle().catch(() => null); // a cheque already debited is cleared: no reminder for it
       const r = await pdc.send({});
       return res.json({ ok: true, due: r.due.length, sent: r.sent.length, reason: r.reason || null });
     }

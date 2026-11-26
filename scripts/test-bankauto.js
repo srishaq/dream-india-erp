@@ -184,6 +184,18 @@ let n = 0; const step = async (name, fn) => { await fn(); n++; console.log('  âœ
     assert.equal(s.sent.length, 0); assert.match(s.reason, /Email is not set up yet/);
     const v = await admin('/api/bank-auto?view=pdc'); assert.equal(v.due.length, 1); assert.equal(v.test, true);
   });
+  await step('A cheque debited in Payments Out is marked Cleared and leaves the Pending PDC list; no reminder for it', async () => {
+    const today = new Date(Date.now() + 5.5 * 3600e3).toISOString().slice(0, 10);
+    const sv = await admin('/api/accounts', { action: 'save', reg: 'payments', data: { txn_date: pdc.addDays(today, 2), bank: 'Yes RERA 30% (0501)', amount: '50000', payee: 'TEST TRADERS' } });
+    assert.ok(!sv.error, sv.error);
+    const pend = await admin('/api/accounts?reg=pdc&filter=pdcPending');
+    assert.ok(!pend.rows.some((r) => r.issued_to === 'TEST TRADERS'), 'gone from Pending');
+    assert.ok(pend.rows.some((r) => r.issued_to === 'OTHER CO'), 'the other is still pending');
+    const cl = await admin('/api/accounts?reg=pdc&filter=pdcCleared');
+    const t = cl.rows.find((r) => r.issued_to === 'TEST TRADERS');
+    assert.ok(t); assert.equal(t.cheque_status, 'Cleared'); assert.equal(String(t.cleared_on).slice(0, 10), pdc.addDays(today, 2)); assert.equal(t.state, 'Cleared');
+    assert.deepEqual((await pdc.due(pdc.addDays(today, 1))).map((x) => x.row.issued_to), []);
+  });
   await step('the scheduled job runs only in its hour (or with the cron secret)', async () => {
     const h = +new Date(Date.now() + 5.5 * 3600e3).toISOString().slice(11, 13);
     const r = await fetch(BASE + '/api/cron?job=' + (h === 15 ? 'pdc' : 'bank'));
