@@ -75,6 +75,10 @@ process.env.SIGNATURE_DOCS_FOLDER = 'crm-root';
     assert.equal(I.flatOf('1602 Registered agreement.pdf', asp), 'A1602');
     assert.equal(I.flatOf('Dream Aspire 403 Index 2026.pdf', asp), 'A403');
     assert.equal(I.flatOf('scan 2026.pdf', asp), null, 'a year is not a flat');
+    assert.equal(I.oneWingOf(new Set(['A1602', 'A403', 'ASHOP1', 'ASHOP23'])), 'A', 'shops are not a second wing');
+    assert.equal(I.oneWingOf(new Set(['A1602', 'B1602'])), undefined);
+    assert.equal(I.flatOf('All Clients Documents', asp), null);
+    assert.equal(I.flatOf('23rd Demand Letter 1602.pdf', asp), 'A1602', 'the slab number is not the flat');
     // the names the CRM team actually used
     for (const [name, flat] of [['Reg.Deed. B- 2601 28.03.26- 1 Parking BS.pdf', 'B2601'], ['Reg.Deed. B-1803', 'B1803'], ['Reg. Deed. B-1404 02.02.26- 0 Parking BS.pdf', 'B1404'],
       ['DREAM B 1801.pdf', 'B1801'], ['DREAM B 4206-1.pdf', 'B4206'], ['DREAM SIGNATUE B 2801.pdf', 'B2801'], ['DREAM SIGNATUTE B 3301.pdf', 'B3301'], ['A 1704 INDEX.pdf', 'A1704']]) {
