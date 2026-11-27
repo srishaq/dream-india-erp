@@ -321,6 +321,22 @@ module.exports = route({
       return res.json({ ok: true, key, status: await TF.status() });
     }
     // Compliance Calendar → Add this year's due dates (lib/compliance-dates.js, from Zuri)
+    // PDC Excel in the accounts team's format (lib/pdc-import.js): preview, then add
+    if (b.action === 'pdc-template') { need('accounts.enter'); return res.json({ name: 'PDC-format.xlsx', data: require('../lib/pdc-import').template().toString('base64') }); }
+    if (b.action === 'pdc-import-preview' || b.action === 'pdc-import') {
+      need('accounts.enter');
+      const buf = Buffer.from(String(b.file || ''), 'base64');
+      if (!buf.length || buf.length > 5 * 1024 * 1024) throw fail(400, 'Choose the PDC Excel file (up to 5 MB).');
+      const PI = require('../lib/pdc-import');
+      const p = await PI.plan(require('../lib/xlsx').read(buf));
+      if (b.action === 'pdc-import-preview') return res.json({ summary: p.summary, already: p.already, problems: p.problems.slice(0, 30) });
+      const n = await db.tx(async (t) => {
+        const k = await PI.run(t, u.id, p);
+        await audit.record(t.q, { user: u, action: 'import-pdc', entity: 'acc-pdc', after: { added: k, amount: p.summary.amount, already: p.already } });
+        return k;
+      });
+      return res.json({ added: n, already: p.already, problems: p.problems.slice(0, 30), summary: p.summary });
+    }
     if (b.action === 'compliance-year') {
       need('accounts.enter');
       const T = require('../lib/targets'), fy = b.fy ? intOr(b.fy, 0) : T.thisFy();

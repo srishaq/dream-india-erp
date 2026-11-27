@@ -2573,7 +2573,7 @@
     payments: [['', 'All'], ['noHead', 'No head'], ['noPayee', 'No payee'], ['needsBill', 'Needs bill details']],
     recon: [['open', 'Open'], ['', 'All']], compliance: [['pending', 'Pending'], ['', 'All']],
     cancellations: [['notRefunded', 'Not refunded yet'], ['refundedRows', 'Refunded'], ['', 'All']],
-    pdc: [['pdcPending', 'Pending'], ['pdcCleared', 'Cleared'], ['pdcBounced', 'Bounced / cancelled'], ['', 'All']],
+    pdc: [['pdcPending', 'Pending'], ['pdcNotIssued', 'Not issued yet'], ['pdcCleared', 'Cleared'], ['pdcBounced', 'Bounced / cancelled'], ['pdcPurchase', 'Purchase'], ['pdcSra', 'SRA'], ['pdcContractor', 'Contractor / other'], ['', 'All']],
   };
   // Split rows (Tally style): the original payment on one line as it was, its parts just below it with their bill numbers.
   // The server marks each part with _split = { base, part, n, total }; total is the whole original payment.
@@ -2687,7 +2687,7 @@
     }
     const R = d.reg, cols = R.cols, show = ACC_SHOW[key] ? ACC_SHOW[key].map((k) => (k === 'ref_id' ? { key: 'ref_id', label: R.idLabel, type: 'text' } : cols.find((c) => c.key === k))) : [...(R.prefix ? [{ key: 'ref_id', label: R.idLabel, type: 'text' }] : []), ...cols];
     $('#page').innerHTML = `<div class="page-head"><div><h1>${esc(R.title)}</h1><p class="muted">${esc(R.help)}</p></div>
-        ${d.can.enter ? `<div class="actions" style="margin:0">${key === 'compliance' ? '<button class="ghost" id="accYear">Add this year\'s due dates</button>' : ''}<button id="accNew">${['receipts', 'payments'].includes(key) && me.role !== 'admin' ? 'Add a cash entry' : 'Add a row'}</button></div>` : ''}</div>
+        ${d.can.enter ? `<div class="actions" style="margin:0">${key === 'compliance' ? '<button class="ghost" id="accYear">Add this year\'s due dates</button>' : ''}${key === 'pdc' ? '<button class="ghost" id="pdcTpl">PDC Excel format</button><button class="ghost" id="pdcUp">Upload PDC Excel</button><input type="file" id="pdcUpI" accept=".xlsx" hidden>' : ''}<button id="accNew">${['receipts', 'payments'].includes(key) && me.role !== 'admin' ? 'Add a cash entry' : 'Add a row'}</button></div>` : ''}</div>
       <div class="panel"><div class="row" style="align-items:end;gap:10px;grid-template-columns:2fr 1fr 1fr auto">
         <div><label>Search</label><input id="aq" value="${esc(state.q)}" placeholder="Any word, name, unit or reference"></div>
         ${R.cols.some((c) => c.type === 'date') ? `<div><label>From</label><input type="date" id="af" value="${esc(state.from)}"></div><div><label>To</label><input type="date" id="at" value="${esc(state.to)}"></div>` : '<div></div><div></div>'}
@@ -2893,6 +2893,18 @@
       };
     };
     // GST, TDS, income tax and RERA due dates for the financial year, from today on (lib/compliance-dates.js)
+    if ($('#pdcTpl')) $('#pdcTpl').onclick = async () => { try { const r = await api('/api/accounts', { action: 'pdc-template' }); const a = document.createElement('a'); a.href = URL.createObjectURL(new Blob([Uint8Array.from(atob(r.data), (c) => c.charCodeAt(0))], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' })); a.download = r.name; document.body.appendChild(a); a.click(); a.remove(); } catch (e) { alert(e.message); } };
+    if ($('#pdcUp')) { $('#pdcUp').onclick = () => $('#pdcUpI').click(); $('#pdcUpI').onchange = async (e) => {
+      const f = e.target.files[0]; e.target.value = ''; if (!f) return;
+      const file = await new Promise((ok, no) => { const fr = new FileReader(); fr.onload = () => ok(String(fr.result).split(',')[1] || ''); fr.onerror = () => no(new Error('Could not read the file')); fr.readAsDataURL(f); });
+      try {
+        const p = await api('/api/accounts', { action: 'pdc-import-preview', file }), s2 = p.summary;
+        const msg = `${s2.rows} rows to add, ${inr(s2.amount)}:\n· Purchase cheques: ${s2.purchase} (${inr(s2.purchaseAmount)})\n· SRA cheques: ${s2.sra} (${inr(s2.sraAmount)})\n· Cheque not given yet: ${s2.notIssued} (${inr(s2.notIssuedAmount)})${p.already ? `\n${p.already} rows are already in the register and are left out.` : ''}${p.problems.length ? `\n\nNot read:\n${p.problems.join('\n')}` : ''}\n\nAdd them?`;
+        if (!s2.rows) { alert(`Nothing new to add.${p.already ? ` ${p.already} rows are already in the register.` : ''}${p.problems.length ? '\n' + p.problems.join('\n') : ''}`); return; }
+        if (!confirm(msg)) return;
+        const r = await api('/api/accounts', { action: 'pdc-import', file }); toast(`${r.added} PDC rows added.`, 6000); accRegister(key, { filter: '' });
+      } catch (err) { alert(err.message); }
+    }; }
     if ($('#accYear')) $('#accYear').onclick = async (e) => {
       e.target.disabled = true;
       try {

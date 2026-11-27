@@ -174,8 +174,8 @@ let n = 0; const step = async (name, fn) => { await fn(); n++; console.log('  âœ
   });
   await step('PDC reminders: 2 days before (48-hour) and 1 day before (24-hour), each once', async () => {
     const today = pdc.addDays(new Date(Date.now() + 5.5 * 3600e3).toISOString().slice(0, 10), 0);
-    await admin('/api/accounts', { action: 'save', reg: 'pdc', data: { issued_on: today, issued_to: 'TEST TRADERS', amount: '50000', bank: 'Yes RERA 30% (0501)', due_date: pdc.addDays(today, 2) } });
-    await admin('/api/accounts', { action: 'save', reg: 'pdc', data: { issued_on: today, issued_to: 'OTHER CO', amount: '9000', due_date: pdc.addDays(today, 1), reminder24_on: today } });
+    await admin('/api/accounts', { action: 'save', reg: 'pdc', data: { pdc_type: 'Purchase', purpose: 'Other', issued_on: today, issued_to: 'TEST TRADERS', amount: '50000', bank: 'Yes RERA 30% (0501)', due_date: pdc.addDays(today, 2) } });
+    await admin('/api/accounts', { action: 'save', reg: 'pdc', data: { pdc_type: 'Purchase', purpose: 'Other', issued_on: today, issued_to: 'OTHER CO', amount: '9000', due_date: pdc.addDays(today, 1), reminder24_on: today } });
     const d = await pdc.due(today);
     assert.deepEqual(d.map((x) => `${x.kind} ${x.row.issued_to}`), ['48h TEST TRADERS']);
     assert.deepEqual((await pdc.due(pdc.addDays(today, 1))).map((x) => `${x.kind} ${x.row.issued_to}`), ['24h TEST TRADERS']);
@@ -196,7 +196,7 @@ let n = 0; const step = async (name, fn) => { await fn(); n++; console.log('  âœ
     assert.ok(t); assert.equal(t.cheque_status, 'Cleared'); assert.equal(String(t.cleared_on).slice(0, 10), pdc.addDays(today, 2)); assert.equal(t.state, 'Cleared');
     assert.deepEqual((await pdc.due(pdc.addDays(today, 1))).map((x) => x.row.issued_to), []);
     // the same cheque entered a second time stays pending, marked as a likely duplicate
-    await admin('/api/accounts', { action: 'save', reg: 'pdc', data: { issued_on: today, issued_to: 'TEST TRADERS (Tally)', amount: '50000', bank: 'Yes RERA 30% (0501)', due_date: pdc.addDays(today, 2) } });
+    await admin('/api/accounts', { action: 'save', reg: 'pdc', data: { pdc_type: 'Purchase', purpose: 'Other', issued_on: today, issued_to: 'TEST TRADERS (Tally)', amount: '50000', bank: 'Yes RERA 30% (0501)', due_date: pdc.addDays(today, 2) } });
     const d = (await admin('/api/accounts?reg=pdc&filter=pdcPending')).rows.find((r) => r.issued_to === 'TEST TRADERS (Tally)');
     assert.equal(d.state, 'Duplicate?'); assert.match(d.cleared, /second entry/);
   });
@@ -218,7 +218,7 @@ let n = 0; const step = async (name, fn) => { await fn(); n++; console.log('  âœ
     const c = await login('ca1', 'ca', 'ca-password-123');
     assert.equal((await c('/api/ca')).status, 200);
     assert.equal((await c('/api/accounts?view=todo')).status, 200);
-    assert.equal((await c('/api/accounts', { action: 'save', reg: 'pdc', data: { issued_on: '2026-10-26', issued_to: 'X', amount: '1', due_date: '2026-10-30' } })).status, 403);
+    assert.equal((await c('/api/accounts', { action: 'save', reg: 'pdc', data: { pdc_type: 'Purchase', purpose: 'Other', issued_on: '2026-10-26', issued_to: 'X', amount: '1', due_date: '2026-10-30' } })).status, 403);
     const s = client(); await s('/api/session', { action: 'login', username: 'sales1', password: 'sales-password-1' });
     assert.equal((await s('/api/ca')).status, 403);
   });
