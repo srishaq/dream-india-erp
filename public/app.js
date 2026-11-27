@@ -595,6 +595,7 @@
     'sc-calls': 'Who to call today, broken promises to pay, and buyers never called', 'sc-dues': 'Every buyer with an overdue amount; open one for the full ledger and statement',
     'sc-appr': 'New bookings, cancellations and transfers waiting for approval',
     'sc-dev': 'Flats we sold: buyers, agreement value, collections and dues', 'sc-con': 'Flats given to the contractor against construction bills: rate, value, adjusted and who holds each flat',
+    cpacc: 'Each partner firm: brokerage, bills, pass back, payments and balance',
     'sc-today': 'Today’s calls, approvals and letters, the inbox, changes waiting for approval and Dream Chat',
     'sc-flats': 'Every flat and buyer. Open one for payments, calls, letters, documents and messages',
     'sc-inv': 'Book a flat floor by floor, the price list and cost sheet, parking and sales targets',
