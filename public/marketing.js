@@ -161,7 +161,7 @@
     if (S.tab === 'setup') { /* Set-up opens from the button at the top */ } else if (!GROUPS.some((g) => g[2].some(([k]) => k === S.tab))) S.tab = 'overview';
     const G = GROUPS.find((g) => g[2].some(([k]) => k === S.tab));
     const projOpt = [...D.projects.map((p) => [String(p.id), p.name]), ['company', 'All projects (company-wide)']];
-    $('#page').innerHTML = `<div class="mk"><div class="mk-hero"><span class="mk-eyebrow">${S.scope === 'company' ? 'All projects' : 'Project'}</span><h1>Sales &amp; Marketing</h1><p>Every channel of the project in one place: ads, portals, print, website, IVR, telemarketing and channel partners, from lead to booking.</p>
+    $('#page').innerHTML = `<div class="mk"><div class="mk-hero"><span class="mk-eyebrow">${S.scope === 'company' ? 'All projects' : 'Project'}</span><h1>Campaigns &amp; leads</h1><p>Every channel of the project in one place: ads, portals, print, website, IVR and channel partners, from lead to booking.</p>
       <div class="mk-sync">${on.length ? `Live from ${on.join(', ')}${sync ? ' · ' + when(sync.at) : ''}` : 'Channels not connected yet (Set-up)'}${SO.meta.error || SO.youtube.error ? '<br><b style="color:#FECDCA">A channel needs connecting again (Set-up)</b>' : ''}</div>
       <div class="mk-pick"><label for="mkProj">Project</label><select id="mkProj">${projOpt.map(([k, l]) => `<option value="${k}" ${String(S.scope) === k ? 'selected' : ''}>${esc(l)}</option>`).join('')}${D.can.admin ? '<option value="__add">+ Add a project…</option>' : ''}</select>
         <button type="button" class="mk-gear" data-tab="setup" aria-pressed="${S.tab === 'setup'}">⚙ Set-up</button>

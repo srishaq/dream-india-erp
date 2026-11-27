@@ -8,7 +8,7 @@
   var API = (me && me.src ? new URL(me.src).origin : '') + '/api/bot';
   var PROJECT = (me && me.getAttribute('data-project')) || '';
   var FORCE = me && me.getAttribute('data-force') === '1'; // staff preview: show even while switched off
-  // the chat shows only while it is switched on in the ERP (Sales & Marketing -> Website chats)
+  // the chat shows only while it is switched on in the ERP (Marketing -> Website chats)
   if (!FORCE) {
     fetch(API + '?cfg=1&_=' + Date.now()).then(function (r) { return r.json(); }).then(function (j) { if (j && j.on) init(); }).catch(function () {});
   } else init();

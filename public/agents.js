@@ -72,7 +72,7 @@
       <a class="btn" href="/designs" style="text-decoration:none">All designs</a>
       ${d.project && d.project.rera_no ? `<button class="btn ${d.reraQr ? '' : 'pri'}" id="reraQr" title="MahaRERA requires the project's official QR code on every ad">${d.reraQr ? 'MahaRERA QR ✓' : 'Upload MahaRERA QR'}</button><input type="file" id="reraQrFile" accept="image/png,image/jpeg" hidden>` : ''}
       <a class="btn" href="/" style="text-decoration:none">⌂ ERP Home</a>
-      <a class="back" href="/#/marketing${d.project ? '/' + d.project.id : ''}">← Sales &amp; Marketing</a>
+      <a class="back" href="/#/marketing${d.project ? '/' + d.project.id : ''}">← Marketing</a>
     </header>
     ${d.killed ? `<div class="banner red">The kill switch is on: every agent in every project is stopped. ${me.own ? 'Switch it off under Knowledge layer → Kill switch.' : ''}</div>` : ''}
     ${!sc.enabled ? `<div class="banner">The agents are off for ${e(scopeName)}. ${me.own ? '<button class="btn sm" id="enableHere">Switch the agents on for this project</button>' : 'Management switches them on.'}</div>` : ''}
@@ -141,7 +141,7 @@
     <section class="lower">
       <div class="p focus" id="focus"><div class="ph"><span class="n">AGENT IN FOCUS</span><h3>${focusDept ? e(focusDept.name) : 'The whole team'}</h3>${S.focus ? '<button class="btn sm" id="unfocus" style="margin-left:auto">Show everyone</button>' : `<span class="st">Topic · ${e(d.project ? d.project.name : 'Dream India brand')}</span>`}</div>
         <p class="sub">${focusDept ? e(focusDept.tools.map((t) => t.name).join(' · ')) : 'Who briefed whom, what was drafted, what came to you. Tap a department to follow it.'}</p>
-        ${focusDept && focusDept.id === 'results' ? `<p class="sub"><a href="/#/marketing${d.project ? '/' + d.project.id : ''}">The full figures (spend, cost per lead, visits and bookings) are in Sales &amp; Marketing → Results ↗</a>. This team only watches them and tells you when something changes.</p>` : ''}
+        ${focusDept && focusDept.id === 'results' ? `<p class="sub"><a href="/#/marketing${d.project ? '/' + d.project.id : ''}">The full figures (spend, cost per lead, visits and bookings) are in Marketing → Results ↗</a>. This team only watches them and tells you when something changes.</p>` : ''}
         ${focusDept && /telecall|partner/i.test(focusDept.tools.map((t) => t.name).join(' ')) ? '<p class="sub"><a href="/#/telemarketing">Telecalling and partner uploads are run in Telemarketing ↗</a></p>' : ''}
         <div class="voice">Voice: ${e(o.voice || 'warm, confident, no hard sell')}. ${o.approvalBar === 'routine' ? 'Routine posts can ship without me.' : 'Every post comes to me first.'}</div>
         <div class="feed">${feed.length ? feed.map((x) => { const [a, c] = AG[x.agent] || ['·', '#3F4654']; return `<div class="ev ${e(x.kind)}"><div class="h"><span class="dot" style="background:${c}">${a}</span><b>${e(agName(x.agent))}</b>${x.to_agent ? '→ ' + e(agName(x.to_agent)) : ''}<time>${hm(x.at)}</time></div><p>${e(x.text)}</p></div>`; }).join('') : '<div class="empty">Nothing yet. Press “Run now”, or wait for the next run (every 30 minutes).</div>'}</div></div>
@@ -191,7 +191,7 @@
       <a class="btn" href="/designs" style="text-decoration:none">All designs</a>
       <button class="btn" id="fullView">Show the full team</button>
       <a class="btn" href="/" style="text-decoration:none">⌂ ERP Home</a>
-      <a class="back" href="/#/marketing${d.project ? '/' + d.project.id : ''}">← Sales &amp; Marketing</a>
+      <a class="back" href="/#/marketing${d.project ? '/' + d.project.id : ''}">← Marketing</a>
     </header>
     ${d.killed ? '<div class="banner red">The kill switch is on: nothing is being drafted or posted.</div>' : ''}
     ${!sc.enabled ? `<div class="banner">The team is off for ${e(d.project ? d.project.name : 'the company')}. ${me.own ? '<button class="btn sm" id="enableHere">Switch it on</button>' : 'Management switches it on.'}</div>` : ''}
@@ -325,7 +325,7 @@
       ${(p.files || []).length ? `<div style="display:flex;gap:8px;flex-wrap:wrap">${p.files.map((f) => /^image\//.test(f.mime) ? `<a href="/api/marketing?pfile=${f.id}" target="_blank" rel="noopener"><img src="/api/marketing?pfile=${f.id}" alt="" style="max-width:100%;max-height:420px;border-radius:10px;border:1px solid var(--line)"></a>` : `<a class="btn sm" href="/api/marketing?pfile=${f.id}" target="_blank" rel="noopener">Open ${/video/.test(f.mime) ? 'the video' : 'the PDF'} ↗</a>`).join('')}</div>` : '<div style="color:#B54708;font-size:12.5px">No design attached yet: it will not be posted until one is.</div>'}
       <div style="white-space:pre-wrap;background:var(--bg2);border:1px solid var(--line);border-radius:10px;padding:12px">${e(p.caption)}</div>
       <div style="white-space:pre-wrap;color:var(--mut);font-size:12.5px">${e(p.note || '')}</div>
-      <small style="color:var(--mut)">Change the words, attach the design or schedule it in <a href="/#/marketing${S.d.project ? '/' + S.d.project.id : ''}">Sales &amp; Marketing → Content calendar</a>.</small>`,
+      <small style="color:var(--mut)">Change the words, attach the design or schedule it in <a href="/#/marketing${S.d.project ? '/' + S.d.project.id : ''}">Marketing → Content calendar</a>.</small>`,
       S.d.me.own ? `<button class="btn" data-back2>Send back</button><button class="btn pri" data-ok>Approve</button>` : '');
     if (!S.d.me.own) return;
     $('[data-ok]', dl).addEventListener('click', async () => { try { await api({ action: 'post.approve', id }); toast('Approved.'); dl.close(); load(); } catch (x) { toast(x.message, true); } });
@@ -341,7 +341,7 @@
     dialog('Permissions', `<div style="display:grid;gap:8px;font-size:13.5px">
       <div><b>Management (the owner)</b>: owner input, approval bar, budget cap, approve or send back drafts, switch funnels to live, the kill switch.</div>
       <div><b>Marketing team (Rupali)</b>: knowledge files, briefs to the Content Engine, comment-to-DM funnels (test accounts), Run now.</div>
-      <div><b>Everyone with Sales &amp; Marketing</b>: sees this screen for their own projects.</div>
+      <div><b>Everyone with Marketing</b>: sees this screen for their own projects.</div>
       <div><b>The agents</b>: draft, read, score, DM people who commented a keyword, and add leads. They never publish, spend money or message anyone who did not contact us first.</div>
       <div style="color:var(--mut)">Every change here is in the ERP’s audit log.</div></div>`);
   }
@@ -378,7 +378,7 @@
     const fst = d.funnelStatus && d.funnelStatus.info;
     const dl = dialog('Comment-to-DM funnels', `
       <p style="margin:0;color:var(--mut);font-size:13px">A post says “Comment <b>WORD</b> for the details”. Everyone who comments the word gets a private DM within about 10 minutes; whoever replies with a mobile number becomes a lead, goes to sales and gets the WhatsApp welcome. Only people who asked are contacted.
-      A new funnel DMs your test accounts only, until Management switches it to live.${!d.connections.meta ? '<br><b style="color:#B26B00">Connect Facebook / Instagram in Sales &amp; Marketing → Set-up first.</b>' : ''}${fst && fst.errors && fst.errors.length ? `<br><b style="color:var(--red)">Last check: ${e(fst.errors[0])}</b>` : ''}</p>
+      A new funnel DMs your test accounts only, until Management switches it to live.${!d.connections.meta ? '<br><b style="color:#B26B00">Connect Facebook / Instagram in Marketing → Set-up first.</b>' : ''}${fst && fst.errors && fst.errors.length ? `<br><b style="color:var(--red)">Last check: ${e(fst.errors[0])}</b>` : ''}</p>
       ${fs.map((f) => `<div class="fn"><div class="t"><b>${e(f.keyword)}</b><span class="pill">${e(f.network)}</span><span class="pill${f.active ? ' on' : ''}">${f.active ? 'On' : 'Off'}</span><span class="pill${f.live ? ' live' : ''}">${f.live ? 'Live: everyone' : 'Test accounts only'}</span>
           <span style="margin-left:auto;font:12px var(--mono);color:var(--mut)">${f.hits} comments · ${f.dms} DMs · ${f.leads} leads</span></div>
         <div style="font-size:12.5px;color:#3B414C;white-space:pre-wrap">${e(f.dm_text)}</div>

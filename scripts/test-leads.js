@@ -28,7 +28,7 @@ let n = 0; const step = async (name, fn) => { await fn(); n++; console.log('  �
   const sig = (await admin('/api/masters')).projects.find((p) => p.code === 'SIGNATURE');
   const mk = async (u, role) => { const r = await db.one('insert into users (username, name, role, password_hash, all_projects) values ($1, $1, $2, $3, true) returning id', [u, role, auth.hashPassword('pass-word-123')]); const c = client(); await c('/api/session', { action: 'login', username: u, password: 'pass-word-123' }); c.id = r.id; return c; };
   const asma = await mk('asma', 'presales'), amaan = await mk('amaan', 'sales'), crm = await mk('crm1', 'crm'), sameer = await mk('sameer', 'management');
-  // new leads go to Asma (Sales & Marketing → follow-up settings)
+  // new leads go to Asma (Marketing → follow-up settings)
   await db.q("insert into settings (key, value) values ('marketing', $1) on conflict (key) do update set value = settings.value || excluded.value", [{ follow: { people: { company: [asma.id] }, welcome: false, alertHours: 2 } }]);
 
   let leadId;

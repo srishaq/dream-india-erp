@@ -352,7 +352,8 @@
   const PAGES = [
     { key: 'home', label: 'Home', show: () => true },
     { key: 'mgmt', label: 'Management dashboard', show: () => can('mgmt.view') },
-    { key: 'marketing', label: 'Sales & Marketing', show: () => can('marketing.view') },
+    { key: 'mkthub', label: 'Marketing', show: () => anyOf('marketing.view', 'tm.view', 'tm.manage', 'tm.entry'), sub: true },
+    { key: 'marketing', label: 'Marketing', show: () => can('marketing.view') },
     { key: 'telemarketing', label: 'Telemarketing', show: () => anyOf('tm.view', 'tm.manage', 'tm.entry') },
     { key: 'opportunities', label: 'New opportunities (feasibility)', show: () => anyOf('masters.edit', 'mgmt.view') },
     { key: 'feasibility', label: 'Feasibility', show: () => anyOf('masters.edit', 'mgmt.view') && !!proj, sub: true },
@@ -538,7 +539,7 @@
     if ($('#proj')) $('#proj').onchange = (e) => { proj = +e.target.value; store.set('erp_project', proj); shell(); };
     if (page === 'reg-cancellations' && arg !== 'full' && anyOf('accounts.view', 'audit.tabs')) { try { await cancelledView(); } catch (e) { pageErr(e); } return; }
     if (/^reg-/.test(page || '') && (can('accounts.view') || (can('audit.tabs') && ['reg-recon', 'reg-cancellations'].includes(page)))) { try { await accRegister(page.slice(4)); } catch (e) { pageErr(e); } return; }
-    const fn = { pdocs: (id) => projDocs(id || proj), land: (id) => window.Land.render({ api, dialog, toast, me }, id || proj, location.hash.split('?')[0].split('/')[3]), approvals: (id) => window.Approvals.render({ api, dialog, toast, me }, id || proj), targets, opportunities: (id) => (id ? window.Feasibility.render({ api, dialog, toast, me }, null, id) : window.Feasibility.sites({ api, dialog, toast, me })), feasibility: (id) => window.Feasibility.render({ api, dialog, toast, me }, id || proj), stages: () => demands(true), home, mgmt, marketing: () => window.Marketing.render({ api, dialog, toast, me }, (/^\d+$/.test(location.hash.split('/')[2] || '') ? location.hash.split('/')[2] : null) || store.get('erp_mkt_scope') || null), telemarketing: () => window.Telemarketing.render({ api, dialog, toast, me }), ca: caPage, accdash, collections, flats, custdocs, comms, team: teamPage, accteam: teamPage, sdr: sdrPage, cp: cpPage, cpportal: cpPortalPage, project: projectHome, crmtodo: () => dailyTodo('crm'), acctodo: () => dailyTodo('accounts'), training, projects, plans, users, audit, units, bookings, demands, receipts, ledgers, letters, followups, verify, prices, partners, balances: accBalances, bankauto: bankAuto, bookscrm: booksCrm, accreports: accReports, checks: accChecks, queries: openQueries, dues: duesPage, changes: changesPage, reports: reportsHub, report: () => reportView(location.hash.split('/')[2]), accsetup: accSetup, import: importPage, booking: bookingPage, statement: statementPage, run: runPage, pre: prePage, parking: parkingPage };
+    const fn = { mkthub, pdocs: (id) => projDocs(id || proj), land: (id) => window.Land.render({ api, dialog, toast, me }, id || proj, location.hash.split('?')[0].split('/')[3]), approvals: (id) => window.Approvals.render({ api, dialog, toast, me }, id || proj), targets, opportunities: (id) => (id ? window.Feasibility.render({ api, dialog, toast, me }, null, id) : window.Feasibility.sites({ api, dialog, toast, me })), feasibility: (id) => window.Feasibility.render({ api, dialog, toast, me }, id || proj), stages: () => demands(true), home, mgmt, marketing: () => window.Marketing.render({ api, dialog, toast, me }, (/^\d+$/.test(location.hash.split('/')[2] || '') ? location.hash.split('/')[2] : null) || store.get('erp_mkt_scope') || null), telemarketing: () => window.Telemarketing.render({ api, dialog, toast, me }), ca: caPage, accdash, collections, flats, custdocs, comms, team: teamPage, accteam: teamPage, sdr: sdrPage, cp: cpPage, cpportal: cpPortalPage, project: projectHome, crmtodo: () => dailyTodo('crm'), acctodo: () => dailyTodo('accounts'), training, projects, plans, users, audit, units, bookings, demands, receipts, ledgers, letters, followups, verify, prices, partners, balances: accBalances, bankauto: bankAuto, bookscrm: booksCrm, accreports: accReports, checks: accChecks, queries: openQueries, dues: duesPage, changes: changesPage, reports: reportsHub, report: () => reportView(location.hash.split('/')[2]), accsetup: accSetup, import: importPage, booking: bookingPage, statement: statementPage, run: runPage, pre: prePage, parking: parkingPage };
     const key = DETAIL[page] && arg ? page : cur.key;
     try { await fn[key](arg ? +arg : undefined); } catch (e) { pageErr(e); }
   }
@@ -673,6 +674,17 @@
     return [p.location, p.buildings.length ? `${p.buildings.length} tower${p.buildings.length > 1 ? 's' : ''}${floors ? ' of ' + floors + ' floors' : ''}` : '', n ? `${sold} of ${n} saleable flats sold` : 'no units yet'].filter(Boolean).join(' · ');
   };
 
+  // Home → Marketing: the three marketing desks together (Rafi Sir, 27 Nov 2026)
+  const marketingTiles = () => [
+    can('marketing.view') && { title: 'Campaigns & leads', sub: 'Plan and budget, ads, portals, content calendar, social posts, website and leads to bookings', icon: 'megaphone', tone: '#C2185B', href: '#/marketing' },
+    anyOf('tm.view', 'tm.manage', 'tm.entry') && { title: 'Telemarketing', sub: 'Partner sign-ups and their client lists, telecallers, call sheets and results, costs', icon: 'handshake', tone: '#0E8C9B', href: '#/telemarketing' },
+    can('marketing.view') && { title: 'AI Agent Team', sub: 'Signals, orchestrator, eight departments, post approvals and comment-to-DM leads', icon: 'megaphone', tone: '#D97706', href: '/agents' },
+  ].filter(Boolean);
+  async function mkthub() {
+    const t = marketingTiles();
+    $('#page').innerHTML = heroHtml('Department', 'Marketing', 'Everything that brings in leads, project by project. Leads then go to Pre-sales & Sales.', ['#/home', 'Home']) +
+      `<div class="hm"><section class="hgroup"><h2>Pages</h2><div class="tiles five">${t.map(tile).join('') || '<p class="muted">Your login has no marketing pages.</p>'}</div></section></div>`;
+  }
   async function home() {
     const d = await api('/api/masters');
     const total = (u) => Object.values(u || {}).reduce((a, b) => a + b, 0);
@@ -682,13 +694,12 @@
     const act = d.projects.filter((p) => p.active);
     const projTiles = act.map((p, i) => ({ title: p.name, sub: projSub(p), icon: i % 2 ? 'building' : 'tower', tone: TONES[i % TONES.length], proj: p.id, href: `#/project/${p.id}` }));
     if (!act.some((p) => /aspire/i.test(p.name))) projTiles.push({ title: 'Dream Aspire', sub: 'Lokhandwala, Andheri West · commercial · not in the ERP yet', icon: 'building', tone: '#0E8C9B', soon: true });
+    const mk = marketingTiles();
     const mgmtTiles = [
+      mk.length && { title: 'Marketing', sub: 'Campaigns, ads, social posts and website leads, Telemarketing and the AI Agent Team, project by project', icon: 'megaphone', tone: '#C2185B', href: mk.length === 1 ? mk[0].href : '#/mkthub' },
+      anyOf('leads.work', 'leads.all', 'sourcing.work', 'sourcing.all') && { title: 'Pre-sales & Sales', sub: 'Pre-sales: call and qualify every lead. Sales: walk-ins, cost sheets, site visits and booking. Sourcing: channel partner visits', icon: 'phone', tone: '#0E7C66', href: '/leads' },
+      anyOf('masters.edit', 'mgmt.view') && { title: 'New opportunities', sub: 'Feasibility of a new site before taking it on: FSI, TDR, costs, margin and the go / no-go call', icon: 'chart', tone: '#8A5F1A', href: '#/opportunities' },
       can('mgmt.view') && { title: 'Management', sub: 'Cash, collections, dues, site, purchase, approvals, compliance and taxes on one screen', icon: 'chart', tone: '#140C59', href: '#/mgmt' },
-      can('marketing.view') && { title: 'Sales & Marketing', sub: 'Project by project: plan and budget, ads, portals, website and leads to bookings', icon: 'megaphone', tone: '#C2185B', href: '#/marketing' },
-      can('marketing.view') && { title: 'AI Agent Team', sub: 'The marketing command centre: signals, orchestrator, eight departments and comment-to-DM leads, project by project', icon: 'megaphone', tone: '#D97706', href: '/agents' },
-      anyOf('masters.edit', 'mgmt.view') && { title: 'New opportunities', sub: 'Check a new site before taking it on: FSI, TDR, costs, margin and the go / no-go call', icon: 'chart', tone: '#8A5F1A', href: '#/opportunities' },
-      anyOf('leads.work', 'leads.all', 'sourcing.work', 'sourcing.all') && { title: 'Pre-sales & Sales', sub: 'Three tabs. Pre-sales: call and qualify every lead. Sales: walk-ins, cost sheets, site visits, booking. Sourcing: channel partner visits', icon: 'phone', tone: '#0E7C66', href: '/leads' },
-      anyOf('tm.view', 'tm.manage', 'tm.entry') && { title: 'Telemarketing', sub: 'Everything for telemarketing: partner sign-ups and their client lists, telecallers, call sheets and results, costs, project by project', icon: 'handshake', tone: '#0E8C9B', href: '#/telemarketing' },
       sec('hr') ? { title: 'HR & Admin', sub: 'Staff records, leave, letters and HR policies', icon: 'users', tone: '#7A5C99', href: '/hr' } : { title: 'HR & Admin', sub: 'Staff records, leave, letters and HR policies', icon: 'users', tone: '#7A5C99', soon: true },
     ].filter(Boolean);
     const sample = can('users.manage') && cur && (!total(cur.units) || cur.sample) ? `<div class="panel"><h2>Sample data for testing</h2>
@@ -697,7 +708,7 @@
     $('#page').innerHTML = heroHtml(now.toLocaleDateString('en-IN', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric', timeZone: 'Asia/Kolkata' }),
         `${h < 12 ? 'Good morning' : h < 17 ? 'Good afternoon' : 'Good evening'}${first ? ', ' + first : ''}`, 'Your projects and tools in one place. Tap a tile to open it.') + `
       <div class="hm">
-        <section class="hgroup"><h2>Management</h2><div class="tiles five">${mgmtTiles.map(tile).join('')}</div></section>
+        <section class="hgroup"><h2>Departments</h2><div class="tiles five">${mgmtTiles.map(tile).join('')}</div></section>
         <section class="hgroup"><h2>Projects</h2><div class="tiles five">${projTiles.map(tile).join('') || '<p class="muted">No projects yet.</p>'}</div></section>
         <p class="hnote">Tiles marked ↗ open in a new tab.</p>
         ${sample}

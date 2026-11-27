@@ -1,4 +1,4 @@
-// AI Meta ad plans (Sales & Marketing → Campaigns → AI ad plans). See lib/ad-plans.js.
+// AI Meta ad plans (Marketing → Campaigns → AI ad plans). See lib/ad-plans.js.
 const { route, fail, intOr, str } = require('../lib/http');
 const db = require('../lib/db');
 const auth = require('../lib/auth');

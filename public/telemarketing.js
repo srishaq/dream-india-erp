@@ -47,7 +47,7 @@
     return all;
   }
 
-  // opt (inside Sales & Marketing): { host, erp: ERP project id, tabs: [keys] } — no heading, only those tabs, that project chosen
+  // opt (inside Marketing): { host, erp: ERP project id, tabs: [keys] } — no heading, only those tabs, that project chosen
   let O = {};
   async function render(ctx, opt) {
     C = ctx; O = opt || {}; if (O.tabs && !O.tabs.includes(tab)) tab = O.tabs[0];

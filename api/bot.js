@@ -1,5 +1,5 @@
 // The website chat assistant's public door (public/bot.js on dreamindiarealty.com talks to this). No login: visitors.
-// GET ?chats=1 / ?chat=<id> are for staff (Sales & Marketing).
+// GET ?chats=1 / ?chat=<id> are for staff (Marketing).
 const { route, fail } = require('../lib/http');
 const auth = require('../lib/auth');
 const roles = require('../lib/roles');

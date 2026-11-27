@@ -1,4 +1,4 @@
-// Sales & Marketing → Campaigns → AI ad plans: the AI drafts a Meta lead campaign; staff check it and add the design;
+// Marketing → Campaigns → AI ad plans: the AI drafts a Meta lead campaign; staff check it and add the design;
 // Rafi Sir or Sameer approves; Launch builds it in Meta (paused); Go live starts it. Server: api/adplans.js.
 window.AdPlans = (() => {
   const ST = { draft: ['Draft: waiting for approval', 'warn'], approved: ['Approved: ready to build in Meta', 'warn'], launched: ['Built in Meta (paused)', 'grey'], live: ['Live', 'good'], failed: ['Could not build: see the error', 'bad'], rejected: ['Rejected', 'grey'] };
