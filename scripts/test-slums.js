@@ -91,6 +91,10 @@ let n = 0; const step = async (name, fn) => { await fn(); n++; console.log('  âœ
     assert.equal(P.tenantOf(['Good Luck - Tenant Agreement', 'Shop 169 - Test Name.pdf']), 169);
     assert.equal(P.tenantOf(['Good Luck - Tenant Agreement', 'Shop 49- Test.pdf']), 49);
     assert.equal(P.tenantOf(['Legal Documents', 'Shop 1 - lease.pdf']), null);
+    assert.equal(P.tenantKind('Shop 169 - Test Name.pdf'), 'Agreement (signed)');
+    assert.equal(P.tenantKind('Shop 12 - KYC.pdf'), 'KYC: PAN, Aadhaar, photo');
+    assert.equal(P.tenantKind('Shop 12 - Annexure II extract.pdf'), 'Eligibility / annexure papers');
+    assert.equal(P.tenantKind('Shop 12 - Consent.pdf'), 'Other');
     assert.equal(P.sectionOf(['Legal Documents', 'Demo - LOI - 13-03-2025.pdf']), 'Approvals (IOD, CC, RERA, NOCs)');
     assert.equal(P.sectionOf(['Legal Documents', 'Demo - Partnership Deed.pdf']), 'Legal & agreements');
     assert.equal(P.sectionOf(['BMC Plan', '3 - Basement Floor Plan.pdf']), 'Drawings & consultants');
