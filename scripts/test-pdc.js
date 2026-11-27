@@ -30,8 +30,26 @@ const day = (k) => new Date(Date.now() + 5.5 * 3600e3 + k * 864e5).toISOString()
     const base = { issued_to: 'Test Steel Co', amount: 1000, due_date: day(10) };
     assert.match((await api('/api/accounts', { action: 'save', reg: 'pdc', data: base })).error, /Type is required/);
     assert.match((await api('/api/accounts', { action: 'save', reg: 'pdc', data: { ...base, pdc_type: 'Purchase', purpose: 'Snacks' } })).error, /not on the list/);
-    const r = await api('/api/accounts', { action: 'save', reg: 'pdc', data: { ...base, pdc_type: 'Purchase', purpose: 'Steel / TMT bars', invoice_no: 'T-1', tds_section: '194Q (0.1%)' } });
+    const r = await api('/api/accounts', { action: 'save', reg: 'pdc', data: { ...base, pdc_type: 'Purchase', purpose: 'Steel / TMT bars', invoice_no: 'T-1', tds_section: '194Q 0.1% (goods: RMC, steel)' } });
     assert.equal(r.status, 200, r.error);
+  });
+
+  await step('GST, TDS and the cheque fill themselves from the bill amount; a cheque that does not add up is flagged', async () => {
+    const r = await api('/api/accounts', { action: 'save', reg: 'pdc', data: { pdc_type: 'Purchase', purpose: 'RMC (ready-mix concrete)', issued_to: 'Test Mix LLP', invoice_no: 'M-60', invoice_amount: '50862.50',
+      gst_rate: '18%', gst_type: 'CGST + SGST (Maharashtra)', tds_section: '194Q 0.1% (goods: RMC, steel)', due_date: day(40) } });
+    assert.equal(r.status, 200, r.error);
+    const x = await db.one("select * from acc_pdc where invoice_no = 'M-60'");
+    assert.equal(Number(x.cgst), 4577.63); assert.equal(Number(x.sgst), 4577.63); assert.equal(Number(x.tds_amount), 50.86); assert.ok(Math.abs(Number(x.amount) - 59966.89) <= 0.02);
+    const pump = await api('/api/accounts', { action: 'save', reg: 'pdc', data: { pdc_type: 'Purchase', purpose: 'Pumping charges', issued_to: 'Test Mix LLP', invoice_no: 'P-1', invoice_amount: '96700', gst_rate: '18%',
+      tds_section: '194C 2% (contract: company / firm)', amount: '112000', due_date: day(40) } });
+    assert.equal(pump.status, 200, pump.error);
+    const l = await api('/api/accounts?reg=pdc&filter=&q=Test Mix');
+    const m60 = l.rows.find((y) => y.invoice_no === 'M-60'), p1 = l.rows.find((y) => y.invoice_no === 'P-1');
+    assert.equal(m60.amount_check, 'OK'); assert.ok(Math.abs(Number(m60.invoice_total) - 60017.76) <= 0.02);
+    assert.match(p1.amount_check, /cheque should be ₹1,12,172\.00/i);
+    const M = require('../public/pdc-math.js');
+    assert.match(M.check({ invoice_amount: 1000, gst_rate: '18%', cgst: 90, sgst: 90, tds_section: '194C 1% (contract: individual / HUF)', tds_amount: 20, amount: 1160 }), /TDS should be ₹10\.00/);
+    assert.equal(M.calc({ invoice_amount: 1000, gst_rate: '18%', gst_type: 'IGST (other state)', tds_section: 'No TDS' }).cheque, 1180);
   });
 
   await step('one cheque for three invoices: cleared together by its total, one reminder email', async () => {
@@ -64,7 +82,7 @@ const day = (k) => new Date(Date.now() + 5.5 * 3600e3 + k * 864e5).toISOString()
     const rows = await db.q("select * from acc_pdc where imported order by id");
     const sra = rows.filter((x) => x.pdc_type === 'SRA'); assert.deepEqual(sra.map((x) => x.bank), ['Test Bank 8650', 'Other Bank 1111']);
     assert.equal(sra[1].cheque_no, '065863');
-    const pump = rows.find((x) => x.invoice_no === 'TC/2'); assert.equal(pump.purpose, 'Pumping charges'); assert.equal(pump.tds_section, '194C (1% / 2%)'); assert.equal(pump.cheque_no, '817906');
+    const pump = rows.find((x) => x.invoice_no === 'TC/2'); assert.equal(pump.purpose, 'Pumping charges'); assert.equal(pump.tds_section, '194C 2% (contract: company / firm)'); assert.equal(pump.gst_rate, '18%'); assert.equal(pump.gst_type, 'CGST + SGST (Maharashtra)'); assert.equal(pump.cheque_no, '817906');
     assert.equal(rows.find((x) => x.invoice_no === 'TC/1').purpose, 'RMC (ready-mix concrete)');
     const up = rows.find((x) => x.invoice_no === 'TS/9'); assert.equal(up.cheque_status, 'Not issued yet'); assert.equal(up.purpose, 'Steel / TMT bars');
     const again = await api('/api/accounts', { action: 'pdc-import-preview', file: buf }); assert.equal(again.summary.rows, 0); assert.equal(again.already, 5);

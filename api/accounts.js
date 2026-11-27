@@ -187,6 +187,7 @@ module.exports = route({
       const reg = REGISTERS[b.reg]; if (!reg) throw fail(400, 'Unknown register.');
       if (reg.readOnly) throw fail(400, `${reg.title} change only through Tally (Sync with Tally).`);
       const id = intOr(b.id);
+      if (b.reg === 'pdc' && b.data) require('../lib/pdc-math').fill(b.data); // GST, TDS and the cheque from the bill amount, where left empty
       const data = await acc.cleanRow(b.reg, b.data || {}, { partial: !!id });
       // Receipts and Payments Out come from the bank statements (Mrunali, 21 Nov 2026): a new row by hand only for cash,
       // which is on no statement. Admin can still add one when a statement line is truly missing (it is logged).

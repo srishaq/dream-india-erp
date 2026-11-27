@@ -2819,6 +2819,32 @@
       form.poId = null;
       if (key === 'payments' && d.can.enter) payHelp(dl, row);
       if (key === 'receipts' && d.can.enter) recHelp(dl, row);
+      if (key === 'pdc' && d.can.enter) pdcHelp(dl);
+    };
+    // PDC: type the bill amount, GST rate and TDS section; the GST, TDS and cheque amount fill themselves (public/pdc-math.js).
+    // A figure typed by hand is kept; the line under the form says whether it all adds up.
+    const pdcHelp = (dl) => {
+      const f = $('form', dl), I = (k) => f.elements[k], M = window.PdcMath;
+      if (!M || !I('invoice_amount')) return;
+      const box = document.createElement('div'); box.className = 'wide small'; box.style.margin = '4px 0';
+      I('amount').closest('div').after(box);
+      const hand = new Set(['cgst', 'sgst', 'igst', 'tds_amount', 'amount'].filter((k) => I(k) && I(k).value !== ''));
+      ['cgst', 'sgst', 'igst', 'tds_amount', 'amount'].forEach((k) => I(k) && I(k).addEventListener('input', () => hand.add(k)));
+      const val = (k) => (I(k) ? I(k).value : '');
+      const run = (e) => {
+        if (e && ['invoice_amount', 'gst_rate', 'gst_type', 'tds_section'].includes(e.target.name)) ['cgst', 'sgst', 'igst', 'tds_amount', 'amount'].forEach((k) => hand.delete(k));
+        const r = Object.fromEntries(['invoice_amount', 'gst_rate', 'gst_type', 'tds_section', 'cgst', 'sgst', 'igst', 'tds_amount', 'amount'].map((k) => [k, val(k)]));
+        const c = M.calc({ ...r, cgst: hand.has('cgst') ? r.cgst : '', sgst: hand.has('sgst') ? r.sgst : '', igst: hand.has('igst') ? r.igst : '', tds_amount: hand.has('tds_amount') ? r.tds_amount : '' });
+        if (!c) { box.textContent = 'Type the bill amount (before GST), the GST rate and the TDS section: the GST, TDS and cheque amount fill themselves.'; return; }
+        const put = (k, v) => { if (I(k) && !hand.has(k) && v != null) I(k).value = v ? String(v) : ''; };
+        if (c.cgst != null) { put('cgst', c.cgst); put('sgst', c.sgst); put('igst', c.igst); }
+        put('tds_amount', c.tds);
+        const now = Object.fromEntries(['invoice_amount', 'gst_rate', 'gst_type', 'tds_section', 'cgst', 'sgst', 'igst', 'tds_amount', 'amount'].map((k) => [k, val(k)]));
+        put('amount', M.calc(now).cheque);
+        const fin = Object.fromEntries(Object.keys(now).map((k) => [k, val(k)])), cc = M.calc(fin), ok = M.check(fin);
+        box.innerHTML = `Bill ${inr(cc.base, 2)} + GST ${inr(cc.total - cc.base, 2)} = invoice ${inr(cc.total, 2)} − TDS ${inr(+String(fin.tds_amount).replace(/[,₹\s]/g, '') || 0, 2)} = <b>cheque ${inr(cc.cheque, 2)}</b> ${ok === 'OK' ? '<span class="ok">✓ adds up</span>' : `<span class="bad-t">${esc(ok)}</span>`}`;
+      };
+      f.addEventListener('input', run); f.addEventListener('change', run); run();
     };
     // Receipts (bank): type the flat and the rest fills itself (24 Nov 2026, accounts: "map the unit and customer
     // directly in the ERP"): the buyer's name, Current buyer / earlier buyer, the head, and AV or GST by the bank.
