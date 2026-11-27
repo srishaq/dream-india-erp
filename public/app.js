@@ -359,7 +359,7 @@
     { key: 'feasibility', label: 'Feasibility', show: () => anyOf('masters.edit', 'mgmt.view') && !!proj, sub: true },
     { key: 'pdocs', label: 'Project documents', show: () => anyOf('mgmt.view', 'accounts.view', 'masters.edit') && !!proj, sub: true },
     { key: 'land', label: 'Land & title', show: () => anyOf('mgmt.view', 'accounts.view', 'masters.edit') && !!proj, sub: true },
-    { key: 'approvals', label: 'Approvals', show: () => anyOf('mgmt.view', 'accounts.view', 'masters.edit') && !!proj, sub: true },
+    { key: 'approvals', label: 'Approvals', show: () => anyOf('mgmt.view', 'accounts.view', 'masters.edit', 'approvals.work') && !!proj, sub: true },
     { key: 'slums', label: 'Slum register', show: () => anyOf('mgmt.view', 'accounts.view', 'masters.edit') && !!proj, sub: true },
     { key: 'targets', label: 'Sales targets', show: () => anyOf('reports.view', 'leads.all', 'inventory.view') && !!proj },
     { key: 'training', label: 'Training videos', show: () => true },
@@ -3362,6 +3362,11 @@
     if (w) w.document.write('<p style="font:15px system-ui;padding:24px">Opening ' + esc(name || 'the document') + '…</p>');
     try {
       const info = await api(`/api/custdocs?file=${id}&info=1`);
+      if (info.size <= 4000000 && /^(application\/pdf|image\/)/.test(info.mime)) { // straight from the server, so it opens in every browser
+        const direct = `/api/custdocs?file=${id}&inline=1`;
+        if (w) w.location.href = direct; else location.href = direct;
+        return;
+      }
       const parts = [];
       for (let i = 0; i < info.parts; i++) {
         const r = await fetch(`/api/custdocs?file=${id}&part=${i}`, { credentials: 'same-origin' });
@@ -3370,7 +3375,7 @@
         if (w && info.parts > 1) w.document.body.innerHTML = `<p style="font:15px system-ui;padding:24px">Opening ${esc(info.name)}… ${Math.round(((i + 1) / info.parts) * 100)}%</p>`;
       }
       const url = URL.createObjectURL(new Blob(parts, { type: info.mime }));
-      if (w && /^(application\/pdf|image\/)/.test(info.mime)) w.location.href = url;
+      if (w && /^(application\/pdf|image\/)/.test(info.mime)) { w.location.href = url; setTimeout(() => { try { if (w.document && w.document.body && /Opening/.test(w.document.body.textContent || '')) w.document.body.innerHTML = `<p style="font:15px system-ui;padding:24px">If it did not open, <a href="${url}" download="${esc(info.name)}">download ${esc(info.name)}</a>.</p>`; } catch { /* the PDF opened */ } }, 2500); }
       else { if (w) w.close(); const a = document.createElement('a'); a.href = url; a.download = info.name; a.click(); }
       setTimeout(() => URL.revokeObjectURL(url), 120000);
     } catch (e) { if (w) w.close(); alert(e.message); }

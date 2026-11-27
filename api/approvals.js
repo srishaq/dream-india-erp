@@ -6,6 +6,10 @@
 // POST { project, action: 'save', approval: { key?, title?, status, authority, ref_no, applied_on, received_on, valid_till, remark } }
 // POST { project, action: 'docs.link', key, docIds: [customer_docs ids of this project's documents] }
 // GET  ?project=ID&docs=1                 → { docs } the project's documents, to link to an approval
+// POST { project, action: 'flow.start', flow: 'open'|'sra' }   the step-by-step journey (lib/approval-flow.js)
+// POST { project, action: 'item.save', item: { id?, step, title, who, status, owner_id, due_on, sent_on, note, docIds } } · { action: 'item.remove', id }
+// POST { project, action: 'step.save', step, owner_id, due_on, note } · { action: 'money.save', money: { id?, step, item, expected, paid, paid_on, ref } } · { action: 'money.remove', id }
+// POST { project, action: 'handover', from, to, all? }
 // POST { project, action: 'remove', key }  an approval added by hand (not one of the standard list)
 // POST { project, action: 'file.add', key, file: { name, data } } · { project, action: 'file.remove', id }
 // POST { project, action: 'import', file: { name, data } }   the Excel back
@@ -17,7 +21,9 @@ const A = require('../lib/approvals');
 const { parseFile } = require('../lib/sheetfile');
 
 // Dream India ERP (from Zuri, 27 Nov 2026): Management, the Admin and Accounts see it; Management and the Admin change it
-const PERM = { 'project.view': ['mgmt.view', 'masters.edit', 'accounts.view'], 'project.edit': ['mgmt.view', 'masters.edit'] };
+// the Approvals & documentation role (approvals.work) sees and updates the steps, documents and approvals, not the money
+const PERM = { 'project.view': ['mgmt.view', 'masters.edit', 'accounts.view', 'approvals.work'], 'project.edit': ['mgmt.view', 'masters.edit', 'approvals.work'], money: ['mgmt.view', 'masters.edit', 'accounts.view'], setup: ['mgmt.view', 'masters.edit'] };
+const F = require('../lib/approval-flow');
 const allowed = (u, perm) => (PERM[perm] || [perm]).some((x) => auth.has(u, x));
 async function load(req, res, perm, projectId) {
   const u = await auth.guard(req, res, null); if (!u) return {};
@@ -25,7 +31,10 @@ async function load(req, res, perm, projectId) {
   if (!auth.inProject(u, projectId)) throw fail(403, 'Your login does not include this project.');
   return { u, p: await A.project(projectId) };
 }
-const out = async (res, u, p, extra = {}) => res.json({ ...(await A.view(p)), canEdit: allowed(u, 'project.edit'), ...extra });
+const out = async (res, u, p, extra = {}) => {
+  const v = await A.view(p), money = allowed(u, 'money');
+  return res.json({ ...v, flow: p.approval_flow ? await F.view(p, v.list, { money }) : null, flows: Object.keys(F.FLOWS), canEdit: allowed(u, 'project.edit'), canMoney: money, canSetup: allowed(u, 'setup'), me: u.id, ...extra });
+};
 const slug = (s) => String(s || 'project').replace(/[^A-Za-z0-9]+/g, '-').replace(/^-|-$/g, '').slice(0, 30) || 'project';
 
 module.exports = route({
@@ -61,6 +70,22 @@ module.exports = route({
         const { before, after } = await A.linkDocs(t, u, p, b.key, b.docIds);
         await rec(t, { action: 'update', entityId: after.id, before: { doc_ids: before.doc_ids }, after: { doc_ids: after.doc_ids }, note: `${after.title}: documents linked` });
       });
+    } else if (b.action === 'flow.start') {
+      if (!allowed(u, 'setup')) throw fail(403, 'Management sets up the approval journey.');
+      await db.tx(async (t) => { const n = await F.start(t, p, String(b.flow || ''), u.id); p.approval_flow = String(b.flow); await rec(t, { action: 'update', entityId: p.id, after: { approval_flow: b.flow, checklist: n }, note: `Approval journey: ${b.flow} (${n} documents)` }); });
+    } else if (b.action === 'item.save') {
+      await db.tx(async (t) => { const { before, after } = await F.saveItem(t, u, p, b.item && typeof b.item === 'object' ? b.item : {}); await audit.record(t.q, { user: u, entity: 'approval-doc', projectId: p.id, action: before ? 'update' : 'create', entityId: after.id, before, after, note: `${after.title}: ${F.STATUS[after.status]}` }); });
+    } else if (b.action === 'item.remove') {
+      await db.tx(async (t) => { const r = await F.removeItem(t, p, b.id); await audit.record(t.q, { user: u, entity: 'approval-doc', projectId: p.id, action: 'delete', entityId: r.id, before: r, note: `${r.title} removed` }); });
+    } else if (b.action === 'step.save') {
+      await db.tx(async (t) => { const r = await F.saveStep(t, p, b); await audit.record(t.q, { user: u, entity: 'approval-step', projectId: p.id, action: 'update', after: r, note: `Step ${r.step_key}: owner and due date` }); });
+    } else if (b.action === 'money.save' || b.action === 'money.remove') {
+      if (!allowed(u, 'money')) throw fail(403, 'Your role does not allow this.');
+      await db.tx(async (t) => { const r = b.action === 'money.save' ? await F.saveMoney(t, u, p, b.money || {}) : await F.removeMoney(t, p, b.id); await audit.record(t.q, { user: u, entity: 'approval-money', projectId: p.id, action: b.action === 'money.save' ? 'update' : 'delete', after: r, note: `${r.item}: fee` }); });
+    } else if (b.action === 'handover') {
+      if (!allowed(u, 'setup')) throw fail(403, 'Management hands over approval work.');
+      let r; await db.tx(async (t) => { r = await F.handOver(t, b.from, b.to, b.all ? null : p.id); await audit.record(t.q, { user: u, entity: 'approval-step', projectId: p.id, action: 'handover', after: { from: b.from, to: b.to, ...r }, note: `Approval work handed over: ${r.documents} documents, ${r.steps} steps` }); });
+      return out(res, u, p, { handedOver: r });
     } else if (b.action === 'remove') {
       await db.tx(async (t) => {
         const before = await t.one('delete from project_approvals where project_id = $1 and key = $2 and custom returning *', [p.id, String(b.key || '')]);

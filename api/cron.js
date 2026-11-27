@@ -89,6 +89,7 @@ async function run(req, res, job) {
       out.botSite = await require('../lib/web-bot').siteKnowledge({ refresh: true }).then((p) => ({ pages: Object.keys(p).length })).catch((e) => ({ error: e.message })); // the website's text for the chat assistant
       out.mktAlerts = await require('../lib/mkt-money').alerts({}).catch((e) => ({ error: e.message })); // over budget, cost per lead up, tiring ads
       out.mktDigest = await require('../lib/mkt-money').digest({}).catch((e) => ({ error: e.message })); // Mondays: last week in Marketing
+      out.approvals = await require('../lib/approval-flow').monday({}).catch((e) => ({ error: e.message })); // Mondays: approval work pending with each owner, and the summary
       return res.json({ ok: true, ...out });
     }
     if (job === 'agents') { // every 10 minutes: flats held by sales whose 72 hours ran out are free again; then the AI marketing agent team

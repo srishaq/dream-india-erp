@@ -103,6 +103,15 @@ module.exports = route({
       if (d.status !== 'ready') throw fail(409, 'This document is not ready to open.');
       const parts = Math.ceil(Number(d.size) / PART);
       if (q.info) return res.json({ id: d.id, name: d.file_name, mime: d.mime, size: Number(d.size), parts, part: PART });
+      // a PDF or picture up to 4 MB opens straight in the browser tab (a page made from pieces does not open in every
+      // browser, e.g. the Claude app's own browser): the whole file in one answer, shown inline
+      if (q.inline && Number(d.size) <= 4000000 && /^(application\/pdf|image\/)/.test(d.mime)) {
+        const buf = await gd.getPart(d.drive_file_id, 0, Number(d.size) - 1);
+        await audit.record(db.q, { user: u, action: 'view', entity: 'customer-doc', entityId: d.id, projectId: d.project_id || null, after: { label: d.label, kind: d.kind } });
+        res.setHeader('Content-Type', d.mime); res.setHeader('Content-Length', buf.length); res.setHeader('Cache-Control', 'private, no-store');
+        res.setHeader('Content-Disposition', `inline; filename="${String(d.file_name || 'document').replace(/[^\w.\- ]+/g, '_')}"`);
+        return res.end(buf);
+      }
       const i = intOr(q.part, 0); if (i < 0 || i >= parts) throw fail(400, 'No such piece.');
       const start = i * PART, end = Math.min(Number(d.size), start + PART) - 1;
       const buf = await gd.getPart(d.drive_file_id, start, end);
