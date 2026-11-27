@@ -353,6 +353,8 @@
     { key: 'mgmt', label: 'Management dashboard', show: () => can('mgmt.view') },
     { key: 'marketing', label: 'Sales & Marketing', show: () => can('marketing.view') },
     { key: 'telemarketing', label: 'Telemarketing', show: () => anyOf('tm.view', 'tm.manage', 'tm.entry') },
+    { key: 'opportunities', label: 'New opportunities (feasibility)', show: () => anyOf('masters.edit', 'mgmt.view') },
+    { key: 'feasibility', label: 'Feasibility', show: () => false },
     { key: 'targets', label: 'Sales targets', show: () => anyOf('reports.view', 'leads.all', 'inventory.view') && !!proj },
     { key: 'training', label: 'Training videos', show: () => true },
     { group: 'CRM' },
@@ -426,7 +428,7 @@
     { key: 'users', label: 'Logins', show: () => can('users.manage') },
     { key: 'audit', label: 'Audit log', show: () => can('audit.view') },
   ];
-  const DETAIL = { report: 'reports', booking: 'flats', statement: 'flats', run: 'demands', pre: 'demands', bankauto: 'bankauto', project: 'home', team: 'team', accteam: 'accteam', cp: 'partners' };
+  const DETAIL = { opportunities: 'opportunities', feasibility: 'opportunities', report: 'reports', booking: 'flats', statement: 'flats', run: 'demands', pre: 'demands', bankauto: 'bankauto', project: 'home', team: 'team', accteam: 'accteam', cp: 'partners' };
   let projectList = null, proj = null;
   // projects with contractor's flats (Dream Aspire) get the Developer's / Contractor's bookings tiles; others stay as they were
   const ctrProject = (id = proj) => !!((projectList || []).find((p) => p.id === id)?.contractor_flats > 0);
@@ -524,7 +526,7 @@
     if ($('#proj')) $('#proj').onchange = (e) => { proj = +e.target.value; store.set('erp_project', proj); shell(); };
     if (page === 'reg-cancellations' && arg !== 'full' && anyOf('accounts.view', 'audit.tabs')) { try { await cancelledView(); } catch (e) { pageErr(e); } return; }
     if (/^reg-/.test(page || '') && (can('accounts.view') || (can('audit.tabs') && ['reg-recon', 'reg-cancellations'].includes(page)))) { try { await accRegister(page.slice(4)); } catch (e) { pageErr(e); } return; }
-    const fn = { targets, stages: () => demands(true), home, mgmt, marketing: () => window.Marketing.render({ api, dialog, toast, me }, (/^\d+$/.test(location.hash.split('/')[2] || '') ? location.hash.split('/')[2] : null) || store.get('erp_mkt_scope') || null), telemarketing: () => window.Telemarketing.render({ api, dialog, toast, me }), ca: caPage, accdash, collections, flats, custdocs, comms, team: teamPage, accteam: teamPage, sdr: sdrPage, cp: cpPage, cpportal: cpPortalPage, project: projectHome, crmtodo: () => dailyTodo('crm'), acctodo: () => dailyTodo('accounts'), training, projects, plans, users, audit, units, bookings, demands, receipts, ledgers, letters, followups, verify, prices, partners, balances: accBalances, bankauto: bankAuto, bookscrm: booksCrm, accreports: accReports, checks: accChecks, queries: openQueries, dues: duesPage, changes: changesPage, reports: reportsHub, report: () => reportView(location.hash.split('/')[2]), accsetup: accSetup, import: importPage, booking: bookingPage, statement: statementPage, run: runPage, pre: prePage, parking: parkingPage };
+    const fn = { targets, opportunities: (id) => (id ? window.Feasibility.render({ api, dialog, toast, me }, null, id) : window.Feasibility.sites({ api, dialog, toast, me })), feasibility: (id) => window.Feasibility.render({ api, dialog, toast, me }, id || proj), stages: () => demands(true), home, mgmt, marketing: () => window.Marketing.render({ api, dialog, toast, me }, (/^\d+$/.test(location.hash.split('/')[2] || '') ? location.hash.split('/')[2] : null) || store.get('erp_mkt_scope') || null), telemarketing: () => window.Telemarketing.render({ api, dialog, toast, me }), ca: caPage, accdash, collections, flats, custdocs, comms, team: teamPage, accteam: teamPage, sdr: sdrPage, cp: cpPage, cpportal: cpPortalPage, project: projectHome, crmtodo: () => dailyTodo('crm'), acctodo: () => dailyTodo('accounts'), training, projects, plans, users, audit, units, bookings, demands, receipts, ledgers, letters, followups, verify, prices, partners, balances: accBalances, bankauto: bankAuto, bookscrm: booksCrm, accreports: accReports, checks: accChecks, queries: openQueries, dues: duesPage, changes: changesPage, reports: reportsHub, report: () => reportView(location.hash.split('/')[2]), accsetup: accSetup, import: importPage, booking: bookingPage, statement: statementPage, run: runPage, pre: prePage, parking: parkingPage };
     const key = DETAIL[page] && arg ? page : cur.key;
     try { await fn[key](arg ? +arg : undefined); } catch (e) { pageErr(e); }
   }
@@ -650,6 +652,7 @@
       can('mgmt.view') && { title: 'Management', sub: 'Cash, collections, dues, site, purchase, approvals, compliance and taxes on one screen', icon: 'chart', tone: '#140C59', href: '#/mgmt' },
       can('marketing.view') && { title: 'Sales & Marketing', sub: 'Project by project: plan and budget, ads, portals, website and leads to bookings', icon: 'megaphone', tone: '#C2185B', href: '#/marketing' },
       can('marketing.view') && { title: 'AI Agent Team', sub: 'The marketing command centre: signals, orchestrator, eight departments and comment-to-DM leads, project by project', icon: 'megaphone', tone: '#D97706', href: '/agents' },
+      anyOf('masters.edit', 'mgmt.view') && { title: 'New opportunities', sub: 'Check a new site before taking it on: FSI, TDR, costs, margin and the go / no-go call', icon: 'chart', tone: '#8A5F1A', href: '#/opportunities' },
       anyOf('leads.work', 'leads.all', 'sourcing.work', 'sourcing.all') && { title: 'Pre-sales & Sales', sub: 'Three tabs. Pre-sales: call and qualify every lead. Sales: walk-ins, cost sheets, site visits, booking. Sourcing: channel partner visits', icon: 'phone', tone: '#0E7C66', href: '/leads' },
       anyOf('tm.view', 'tm.manage', 'tm.entry') && { title: 'Telemarketing', sub: 'Everything for telemarketing: partner sign-ups and their client lists, telecallers, call sheets and results, costs, project by project', icon: 'handshake', tone: '#0E8C9B', href: '#/telemarketing' },
       sec('hr') ? { title: 'HR & Admin', sub: 'Staff records, leave, letters and HR policies', icon: 'users', tone: '#7A5C99', href: '/hr' } : { title: 'HR & Admin', sub: 'Staff records, leave, letters and HR policies', icon: 'users', tone: '#7A5C99', soon: true },
