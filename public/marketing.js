@@ -386,9 +386,9 @@
       <label>Canva design link</label><div style="display:flex;gap:8px"><input name="canvaUrl" value="${esc(/canva\.com\/api\//.test(pr.canva_url || '') && p && p.id ? '/api/marketing?canvaopen=' + p.id : pr.canva_url)}" placeholder="https://www.canva.com/design/…" style="flex:1">${pr.canva_url ? `<a class="button ghost" href="${p && p.id ? '/api/marketing?canvaopen=' + p.id : esc(pr.canva_url)}" target="_blank" rel="noopener">Open in Canva ↗</a>` : '<a class="button ghost" href="https://www.canva.com/" target="_blank" rel="noopener">Canva ↗</a>'}</div>
       <div class="row"><div><label>File or video link (Drive)</label><input name="assetUrl" value="${esc(pr.asset_url)}" placeholder="https://drive.google.com/…"></div><div><label>Link to the published post</label><input name="postUrl" value="${esc(pr.post_url)}" placeholder="https://www.instagram.com/p/…"></div></div>
       <div class="row"><div><label>Campaign</label><select name="campaignId"><option value="">—</option>${D.campaigns.map((c) => `<option value="${c.id}" ${pr.campaign_id === c.id ? 'selected' : ''}>${esc(c.name)}</option>`).join('')}</select></div><div><label>Note</label><input name="note" value="${esc(pr.note)}"></div></div>
-      <div class="mk-design"><label>Design for approval <span class="muted small" style="font-weight:400">· from Canva: Share → Download (PNG, JPG, PDF or MP4, up to 3 MB each)</span></label>
+      <div class="mk-design"><label>Design for approval <span class="muted small" style="font-weight:400">· from Canva: Share → Download (PNG, JPG, PDF, or an MP4 / MOV video up to 300 MB)</span></label>
         <div class="mk-files">${(pr.files || []).map((f) => `<div class="mk-file">${/^image\//.test(f.mime) ? `<a href="/slides?ids=${(pr.files || []).filter((y) => /^image\//.test(y.mime)).map((y) => y.id).join(',')}&i=${(pr.files || []).filter((y) => /^image\//.test(y.mime)).indexOf(f)}"><img src="/api/marketing?pfile=${f.id}" alt=""></a>` : /^video\//.test(f.mime) ? `<video src="/api/marketing?pfile=${f.id}" controls preload="metadata"></video>` : `<a class="pdf" href="/api/marketing?pfile=${f.id}" target="_blank" rel="noopener">PDF<small>${esc(f.name)}</small></a>`}${D.can.edit ? `<button type="button" class="ghost small" data-rmf="${f.id}">Remove</button>` : ''}</div>`).join('') || (ro ? '<p class="small muted" style="margin:0">No design attached.</p>' : '')}</div>
-        ${ro ? '' : `<div class="mk-actions" style="margin:6px 0"><button type="button" class="ghost small" id="pickCanva">Pick from Canva</button><span id="canvaPicked" class="small muted">${D.settings.canva && D.settings.canva.connected ? '' : 'Connect Canva in Set-up to pick designs here.'}</span></div><input type="hidden" name="canvaPick" value=""><input type="file" id="pfIn" multiple accept="image/png,image/jpeg,image/webp,image/gif,application/pdf,video/mp4">`}</div>
+        ${ro ? '' : `<div class="mk-actions" style="margin:6px 0"><button type="button" class="ghost small" id="pickCanva">Pick from Canva</button><span id="canvaPicked" class="small muted">${D.settings.canva && D.settings.canva.connected ? '' : 'Connect Canva in Set-up to pick designs here.'}</span></div><input type="hidden" name="canvaPick" value=""><input type="file" id="pfIn" multiple accept="image/png,image/jpeg,image/webp,image/gif,application/pdf,video/mp4,video/quicktime">`}</div>
       ${pr.review_note ? `<p class="mk-back"><b>Sent back:</b> ${esc(pr.review_note)}</p>` : ''}
       ${pr.publish_log && Object.keys(pr.publish_log).filter((k) => k !== '_done').length ? `<div class="mk-plog"><b>Posting</b>${Object.entries(pr.publish_log).filter(([k]) => k !== '_done').map(([n, x]) => `<div>${esc((NET[n] || {}).n || n)}: ${x.id ? `posted ✓ ${x.url ? `<a href="${esc(x.url)}" target="_blank" rel="noopener">open ↗</a>` : ''}` : x.pending ? 'Instagram is preparing the video…' : x.manual ? 'post by hand (the design is above)' : `<span style="color:#B42318">not posted: ${esc(x.error)}${x.tries >= 3 ? ' (stopped after 3 tries)' : ' (will try again)'}</span>`}</div>`).join('')}</div>` : ''}
       <input type="hidden" name="send" value="">
@@ -402,10 +402,26 @@
       const r = await C.api('/api/marketing', { action: 'post.save', data: { id: p && p.id, ...x, reraOnDesign: !!$('[name=reraOnDesign]', dl).checked, channels: $$('.mk-dl [name=ch]:checked').map((i) => i.value), publishAt: x.publishAt ? new Date(x.publishAt).toISOString() : null } });
       if (pick) { C.toast('Getting the design from Canva…'); const im = await C.api('/api/marketing', { action: 'canva.import', data: { postId: r.id, designId: pick.id, type: pick.type, editUrl: pick.edit } }); if (im.skipped) alert(`${im.skipped} page(s) were over 3 MB and were left out.`); }
       const files = $('#pfIn', dl) ? [...$('#pfIn', dl).files] : [];
+      const b64 = (blob) => new Promise((ok, no) => { const fr = new FileReader(); fr.onload = () => ok(String(fr.result).split(',')[1] || ''); fr.onerror = () => no(new Error('Could not read the file')); fr.readAsDataURL(blob); });
+      let video = false;
       for (const f of files) {
-        if (f.size > 3 * 1024 * 1024) { alert(`${f.name} is larger than 3 MB. Put a long video's Google Drive link in "File or video link" instead.`); continue; }
-        const data = await new Promise((ok, no) => { const fr = new FileReader(); fr.onload = () => ok(String(fr.result).split(',')[1] || ''); fr.onerror = () => no(new Error('Could not read ' + f.name)); fr.readAsDataURL(f); });
-        await C.api('/api/marketing', { action: 'post.file', data: { postId: r.id, name: f.name, mime: f.type, data } });
+        const mime = f.type || (/\.mov$/i.test(f.name) ? 'video/quicktime' : /\.mp4$/i.test(f.name) ? 'video/mp4' : '');
+        if (/^video\//.test(mime)) video = true;
+        if (f.size <= 3 * 1024 * 1024 && mime !== 'video/quicktime') { await C.api('/api/marketing', { action: 'post.file', data: { postId: r.id, name: f.name, mime, data: await b64(f) } }); continue; }
+        // a big video or design: in pieces of 2.5 MB, straight into the ERP's Google Drive
+        const st = await C.api('/api/marketing', { action: 'post.upload.start', data: { postId: r.id, name: f.name, mime, size: f.size } });
+        for (let i = 0; i < st.parts; i++) {
+          C.toast(`Uploading ${f.name}: ${Math.round((i / st.parts) * 100)}%`, 4000);
+          const piece = f.slice(i * st.part, Math.min(f.size, (i + 1) * st.part));
+          let ok = false; for (let t = 0; t < 3 && !ok; t++) { try { await C.api('/api/marketing', { action: 'post.upload.part', data: { uploadId: st.uploadId, index: i, data: await b64(piece) } }); ok = true; } catch (e) { if (t === 2) throw e; await new Promise((w) => setTimeout(w, 1500)); } }
+        }
+        C.toast(`${f.name} uploaded.`);
+      }
+      // a video given as a Google Drive link: copied into the post now, so it can be approved and posted
+      if (!video && /drive\.google\.com|docs\.google\.com/.test(x.assetUrl || '') && (!p || (x.assetUrl || '') !== (p.asset_url || '') || !(p.files || []).some((f) => /^video\//.test(f.mime)))) {
+        C.toast('Bringing the video in from Google Drive…', 20000);
+        try { const g = await C.api('/api/marketing', { action: 'post.fromlink', data: { postId: r.id, url: x.assetUrl } }); C.toast(g.already ? 'The Drive video is already with the post.' : `${g.name} copied in from Drive.`); }
+        catch (e) { alert(`The Drive link: ${e.message}`); }
       }
       if (send) { const s2 = await C.api('/api/marketing', { action: 'post.send', data: { id: r.id } }); C.toast(s2.mail && s2.mail.to ? 'Sent for approval. Management has been emailed.' : 'Sent for approval.'); }
       else if (r.status === 'review' && x.status !== 'review') C.toast('Saved. It goes out once Management approves it.'); else C.toast('Saved.');

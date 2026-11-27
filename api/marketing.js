@@ -648,8 +648,9 @@ const handler = route({
       return res.end(buf);
     }
     if (q.pfile) {
-      const f = await db.one('select name, mime, data from mkt_post_files where id = $1', [intOr(q.pfile)]);
+      const f = await db.one('select name, mime, data, size, drive_file_id from mkt_post_files where id = $1', [intOr(q.pfile)]);
       if (!f) return res.status(404).json({ error: 'That file is not there any more.' });
+      if (f.drive_file_id) return require('../lib/post-media').serve(req, res, f, { disposition: `${q.dl ? 'attachment' : 'inline'}; filename="${String(f.name).replace(/[^\w.\- ]+/g, '_')}"` });
       res.setHeader('Content-Type', f.mime); res.setHeader('Cache-Control', 'private, max-age=86400');
       res.setHeader('Content-Disposition', `${q.dl ? 'attachment' : 'inline'}; filename="${String(f.name).replace(/[^\w.\- ]+/g, '_')}"`);
       return res.end(Buffer.isBuffer(f.data) ? f.data : Buffer.from(f.data));
@@ -786,6 +787,24 @@ const handler = route({
       const r = await db.one('insert into mkt_post_files (post_id, name, mime, size, data, created_by) values ($1, $2, $3, $4, $5, $6) returning id', [post.id, str(d.name, 120) || 'design', mime, buf.length, buf, u.id]);
       await log('attach', 'mkt-post', post.id, { file: str(d.name, 120) });
       return res.json({ ok: true, id: r.id });
+    }
+    // a big video or design: in pieces of 2.5 MB straight into the ERP's Google Drive (lib/post-media.js)
+    if (a === 'post.upload.start') { editOnly(); return res.json(await require('../lib/post-media').start(u, intOr(d.postId), { name: str(d.name, 120), mime: String(d.mime || ''), size: d.size })); }
+    if (a === 'post.upload.part') {
+      editOnly();
+      const r = await require('../lib/post-media').part(u, { uploadId: d.uploadId, index: d.index, data: d.data });
+      if (r.done) await log('attach', 'mkt-post', r.postId, { file: r.name });
+      return res.json(r);
+    }
+    // the video behind the post's Google Drive link, copied in so it can be approved and posted
+    if (a === 'post.fromlink') {
+      editOnly();
+      const post = await db.one('select id, asset_url from mkt_posts where id = $1', [intOr(d.postId)]); if (!post) throw fail(404, 'Save the post first.');
+      const url = str(d.url, 600) || post.asset_url;
+      if (!require('../lib/post-media').driveId(url)) throw fail(400, 'That is not a Google Drive file link.');
+      const r = await require('../lib/post-media').fromLink(post.id, url, u.id);
+      if (r && !r.already) await log('attach', 'mkt-post', post.id, { file: r.name, from: 'drive-link' });
+      return res.json({ ok: true, ...r });
     }
     if (a === 'post.file.delete') { editOnly(); await db.q('delete from mkt_post_files where id = $1', [intOr(d.id)]); return res.json({ ok: true }); }
     // Rupali sends a post for approval: Management is emailed with the design
@@ -1052,8 +1071,9 @@ const handler = route({
 // published posts). The approval email's pictures carry a preview link that also shows a post in review, for 14 days.
 async function publicFile(req, res) {
   const t = await require('../lib/mkt-flow').verify((req.query || {}).pub);
-  const f = t && t.f ? await db.one("select f.mime, f.data from mkt_post_files f join mkt_posts p on p.id = f.post_id where f.id = $1 and (p.status in ('approved', 'scheduled', 'published') or ($2 and p.status = 'review'))", [t.f, !!(t.v && t.e)]) : null;
+  const f = t && t.f ? await db.one("select f.mime, f.data, f.size, f.drive_file_id from mkt_post_files f join mkt_posts p on p.id = f.post_id where f.id = $1 and (p.status in ('approved', 'scheduled', 'published') or ($2 and p.status = 'review'))", [t.f, !!(t.v && t.e)]) : null;
   if (!f) { res.statusCode = 404; return res.end('Not found'); }
+  if (f.drive_file_id) return require('../lib/post-media').serve(req, res, f, { cache: 'public, max-age=3600' });
   res.setHeader('Content-Type', f.mime); res.setHeader('Cache-Control', 'public, max-age=3600');
   return res.end(Buffer.isBuffer(f.data) ? f.data : Buffer.from(f.data));
 }
