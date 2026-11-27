@@ -7,7 +7,8 @@
   let me = null;
 
   // the accounts books follow the project on the picker: Dream Aspire is Dream India Builders' own books
-  const bookOf = () => { try { const p = (projectList || []).find((x) => x.id === proj); return p && p.code === 'ASPIRE' ? 'aspire' : 'signature'; } catch { return 'signature'; } };
+  const BOOK_OF = { ASPIRE: 'aspire', LEGACY: 'legacy' }; // each project's own accounts books (lib/book.js)
+  const bookOf = () => { try { const p = (projectList || []).find((x) => x.id === proj); return (p && BOOK_OF[p.code]) || 'signature'; } catch { return 'signature'; } };
   // the picked project also goes in two cookies, so every request carries it (pages with their own scripts, downloads)
   const keepProject = () => { try { if (/^\d+$/.test(String(proj ?? ''))) { document.cookie = `erp_proj=${proj}; Path=/; SameSite=Lax; Max-Age=31536000${location.protocol === 'https:' ? '; Secure' : ''}`; document.cookie = `erp_book=${bookOf()}; Path=/; SameSite=Lax; Max-Age=31536000${location.protocol === 'https:' ? '; Secure' : ''}`; } } catch { /* not ready */ } };
   async function api(path, body) {
@@ -443,7 +444,7 @@
   let projectList = null, proj = null;
   // projects with contractor's flats (Dream Aspire) get the Developer's / Contractor's bookings tiles; others stay as they were
   const ctrProject = (id = proj) => !!((projectList || []).find((p) => p.id === id)?.contractor_flats > 0);
-  const accKey = (reg) => 'erp_acc_' + (bookOf() === 'aspire' ? 'aspire_' : '') + reg; // filters remembered per project's books
+  const accKey = (reg) => 'erp_acc_' + (bookOf() === 'signature' ? '' : bookOf() + '_') + reg; // filters remembered per project's books
   const store = { get: (k) => { try { return localStorage.getItem(k); } catch { return null; } }, set: (k, v) => { try { localStorage.setItem(k, v); } catch {} } };
 
   // Sidebar: one heading per department (CRM, Accounts, Set-up). Tapping a heading opens its pages and folds the others;
@@ -710,7 +711,8 @@
   // ---------- a project before its launch (stage 'pre'): land, registration, feasibility, approvals and its papers ----------
   async function preProject(p) {
     const safe = (u) => api(u).catch(() => null);
-    const [F, A, L, D] = await Promise.all([safe(`/api/feasibility?project=${p.id}`), safe(`/api/approvals?project=${p.id}`), safe(`/api/land?project=${p.id}`), safe(`/api/custdocs?projdocs=${p.id}`)]);
+    const [F, A, L, D, P] = await Promise.all([safe(`/api/feasibility?project=${p.id}`), safe(`/api/approvals?project=${p.id}`), safe(`/api/land?project=${p.id}`), safe(`/api/custdocs?projdocs=${p.id}`),
+      can('accounts.view') ? safe('/api/accounts?reg=payments&limit=5') : null]);
     const lsum = L && L.summary, asum = A && A.summary;
     const registered = lsum && lsum.parcels && lsum.registered === lsum.parcels;
     const got = (k) => A && A.list.some((x) => x.key === k && x.status === 'received');
@@ -729,6 +731,8 @@
         ${card('Feasibility', F && F.list.length ? F.list.map((o) => `<p style="margin:0 0 8px"><b>${esc(o.name)}</b><br><span class="small"><span class="${o.status === 'GO' ? 'good-t' : o.status === 'NO-GO' ? 'bad-t' : ''}">${esc(o.verdict || o.status)}</span> · revenue ${cr(o.revenue)} · cost ${cr(o.total)} · profit <b>${cr(o.profit)}</b> · margin ${o.margin == null ? '—' : (o.margin * 100).toFixed(1) + '%'}</span></p>`).join('') : '<p class="muted">No options yet.</p>', `#/feasibility/${p.id}`, 'Feasibility')}
         ${card('Approval process', asum ? `<p style="margin:0"><b>${asum.received} of ${asum.total}</b> received${asum.applied ? ` · ${asum.applied} applied` : ''}${asum.query ? ` · <span class="bad-t">${asum.query} with a query</span>` : ''}</p>
           ${pend.length ? `<p class="small" style="margin:6px 0 0">Next: ${pend.slice(0, 4).map((x) => esc(x.title)).join(' · ')}${pend.length > 4 ? ' …' : ''}</p>` : ''}` : '<p class="muted">Not set up yet.</p>', `#/approvals/${p.id}`, 'Approvals')}
+        ${P ? card('Accounts', `<p style="margin:0"><b>${P.total}</b> payment${P.total === 1 ? '' : 's'} recorded · <b>${cr(P.amount || 0)}</b> paid out</p>
+          ${P.rows.length ? `<p class="small muted" style="margin:6px 0 0">Latest: ${P.rows.slice(0, 3).map((r) => `${esc(fmtD(r.txn_date))} ${esc(r.payee || r.head || '')} ${cr(r.amount)}`).join(' · ')}</p>` : '<p class="small muted" style="margin:6px 0 0">The project\u2019s own books: every payment (land, stamp duty, legal, approvals, consultants) goes in Payments Out.</p>'}`, '#/reg-payments', 'Payments Out') : ''}
         ${card('Documents', D ? `<p style="margin:0"><b>${D.rows.length}</b> document${D.rows.length === 1 ? '' : 's'}</p>${sec ? `<p class="small muted" style="margin:6px 0 0">${sec}</p>` : ''}` : '<p class="muted">—</p>', `#/pdocs/${p.id}`, 'Documents')}
       </div></section>
       <section class="hgroup"><h2>Pages</h2><div class="tiles five">${[
@@ -736,6 +740,7 @@
         { title: 'Documents', sub: 'Every paper of the project, by section: land, DP remarks, feasibility, approvals, legal, drawings', icon: 'book', href: `#/pdocs/${p.id}` },
         { title: 'Approval process', sub: 'IOD, CC, RERA, OC and the NOCs, with status, dates and letters', icon: 'check', href: `#/approvals/${p.id}` },
         { title: 'Land & title', sub: 'The parcel, the deal, payments to the owners and the title papers', icon: 'grid', href: `#/land/${p.id}` },
+        ...(can('accounts.view') ? [{ title: 'Accounts', sub: 'This project\u2019s own books: payments out, receipts, bank, TDS and GST', icon: 'book', href: `#/project/${p.id}/accounts` }] : []),
       ].map((t) => tile({ ...t, tone: '#8A5F14' })).join('')}</div></section></div>`;
   }
   // ---------- a project's own papers (lib/project-docs.js) ----------

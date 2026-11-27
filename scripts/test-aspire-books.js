@@ -40,6 +40,21 @@ let n = 0; const step = async (name, fn) => { await fn(); n++; console.log('  âœ
       assert.equal((await db.one("select book from acc_payments where id = $1", [r.id])).book, 'aspire');
       assert.ok(!(await admin('/api/accounts?reg=payments&limit=50')).rows.some((x) => x.id === r.id));
     });
+    await step('Dream Legacy Goregaon has its own books, started with Dream India Builders\' banks and heads plus the land heads', async () => {
+      await db.q("insert into projects (code, name, company_id, stage) select 'LEGACY', 'Dream Legacy Goregaon', company_id, 'pre' from projects where code = 'SIGNATURE' on conflict do nothing");
+      // the start (migration 113) as it ran on the live books, once Dream Aspire's were there
+      const M = require('../lib/migrations').MIGRATIONS || require('../lib/migrations');
+      const m = (Array.isArray(M) ? M : M.list || []).find((x) => x.id === '113_legacy_books'); if (m) await db.script(m.sql);
+      const L = await admin('/api/accounts?view=lists', null, 'legacy');
+      assert.equal(L.status, 200, JSON.stringify(L).slice(0, 300)); assert.equal(L.book.book, 'legacy');
+      assert.ok(L.banks.some((b) => b.name === 'Aspire HDFC 30% (7044)'));
+      assert.ok(L.heads.some((h) => h.name === 'Land cost'));
+      const r = await admin('/api/accounts', { action: 'save', reg: 'payments', data: { txn_date: '2026-11-25', bank: 'Aspire HDFC 30% (7044)', amount: '10000000', head: 'Land cost', payee: 'Land seller' } }, 'legacy');
+      assert.equal(r.ok, true, JSON.stringify(r));
+      assert.equal((await db.one('select book from acc_payments where id = $1', [r.id])).book, 'legacy');
+      assert.ok(!(await admin('/api/accounts?reg=payments&limit=50', null, 'aspire')).rows.some((x) => x.id === r.id));
+      assert.equal((await admin('/api/accounts?reg=payments&limit=50', null, 'legacy')).rows.length, 1);
+    });
     await step('only people on Dream Aspire open its books; Tally stays with Signature', async () => {
       const h = await admin('/api/users', { action: 'create', name: 'Sig Accounts', username: 'sacc', role: 'head_accounts', projects: [S.id] });
       const m = client(); await m('/api/session', { action: 'login', username: 'sacc', password: h.tempPassword }); await m('/api/session', { action: 'password', current: h.tempPassword, next: 'sig-accounts-pw-12' });
