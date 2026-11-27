@@ -360,6 +360,7 @@
     { key: 'pdocs', label: 'Project documents', show: () => anyOf('mgmt.view', 'accounts.view', 'masters.edit') && !!proj, sub: true },
     { key: 'land', label: 'Land & title', show: () => anyOf('mgmt.view', 'accounts.view', 'masters.edit') && !!proj, sub: true },
     { key: 'approvals', label: 'Approvals', show: () => anyOf('mgmt.view', 'accounts.view', 'masters.edit', 'approvals.work') && !!proj, sub: true },
+    { key: 'pdrawings', label: 'Drawings', show: () => !!proj && (anyOf('mgmt.view', 'masters.edit', 'accounts.view', 'approvals.work')), sub: true },
     { key: 'slums', label: 'Slum register', show: () => anyOf('mgmt.view', 'accounts.view', 'masters.edit') && !!proj, sub: true },
     { key: 'targets', label: 'Sales targets', show: () => anyOf('reports.view', 'leads.all', 'inventory.view') && !!proj },
     { key: 'training', label: 'Training videos', show: () => true },
@@ -442,7 +443,7 @@
     { key: 'users', label: 'Logins', show: () => can('users.manage') },
     { key: 'audit', label: 'Audit log', show: () => can('audit.view') },
   ];
-  const DETAIL = { slums: 'slums', pdocs: 'pdocs', land: 'land', approvals: 'approvals', opportunities: 'opportunities', feasibility: 'opportunities', report: 'reports', booking: 'flats', statement: 'flats', run: 'demands', pre: 'demands', bankauto: 'bankauto', project: 'home', team: 'team', accteam: 'accteam', cp: 'partners' };
+  const DETAIL = { pdrawings: 'pdrawings', slums: 'slums', pdocs: 'pdocs', land: 'land', approvals: 'approvals', opportunities: 'opportunities', feasibility: 'opportunities', report: 'reports', booking: 'flats', statement: 'flats', run: 'demands', pre: 'demands', bankauto: 'bankauto', project: 'home', team: 'team', accteam: 'accteam', cp: 'partners' };
   let projectList = null, proj = null;
   // projects with contractor's flats (Dream Aspire) get the Developer's / Contractor's bookings tiles; others stay as they were
   const ctrProject = (id = proj) => !!((projectList || []).find((p) => p.id === id)?.contractor_flats > 0);
@@ -540,7 +541,7 @@
     if ($('#proj')) $('#proj').onchange = (e) => { proj = +e.target.value; store.set('erp_project', proj); shell(); };
     if (page === 'reg-cancellations' && arg !== 'full' && anyOf('accounts.view', 'audit.tabs')) { try { await cancelledView(); } catch (e) { pageErr(e); } return; }
     if (/^reg-/.test(page || '') && (can('accounts.view') || (can('audit.tabs') && ['reg-recon', 'reg-cancellations'].includes(page)))) { try { await accRegister(page.slice(4)); } catch (e) { pageErr(e); } return; }
-    const fn = { mkthub, slums: (id) => window.Slums.render({ api, dialog, toast, me }, +(id || proj), location.hash.split('?')[0].split('/')[3]), pdocs: (id) => projDocs(id || proj), land: (id) => window.Land.render({ api, dialog, toast, me }, id || proj, location.hash.split('?')[0].split('/')[3]), approvals: (id) => window.Approvals.render({ api, dialog, toast, me }, id || proj), targets, opportunities: (id) => (id ? window.Feasibility.render({ api, dialog, toast, me }, null, id) : window.Feasibility.sites({ api, dialog, toast, me })), feasibility: (id) => window.Feasibility.render({ api, dialog, toast, me }, id || proj), stages: () => demands(true), home, mgmt, marketing: () => window.Marketing.render({ api, dialog, toast, me }, (/^\d+$/.test(location.hash.split('/')[2] || '') ? location.hash.split('/')[2] : null) || store.get('erp_mkt_scope') || null), telemarketing: () => window.Telemarketing.render({ api, dialog, toast, me }), ca: caPage, accdash, collections, flats, custdocs, comms, team: teamPage, accteam: teamPage, sdr: sdrPage, cp: cpPage, cpportal: cpPortalPage, project: projectHome, crmtodo: () => dailyTodo('crm'), acctodo: () => dailyTodo('accounts'), training, projects, plans, users, audit, units, bookings, demands, receipts, ledgers, letters, followups, verify, prices, partners, balances: accBalances, bankauto: bankAuto, bookscrm: booksCrm, accreports: accReports, checks: accChecks, queries: openQueries, dues: duesPage, changes: changesPage, reports: reportsHub, report: () => reportView(location.hash.split('/')[2]), accsetup: accSetup, import: importPage, booking: bookingPage, statement: statementPage, run: runPage, pre: prePage, parking: parkingPage };
+    const fn = { mkthub, pdrawings: (id) => projDrawings(+(id || proj)), slums: (id) => window.Slums.render({ api, dialog, toast, me }, +(id || proj), location.hash.split('?')[0].split('/')[3]), pdocs: (id) => projDocs(id || proj), land: (id) => window.Land.render({ api, dialog, toast, me }, id || proj, location.hash.split('?')[0].split('/')[3]), approvals: (id) => window.Approvals.render({ api, dialog, toast, me }, id || proj), targets, opportunities: (id) => (id ? window.Feasibility.render({ api, dialog, toast, me }, null, id) : window.Feasibility.sites({ api, dialog, toast, me })), feasibility: (id) => window.Feasibility.render({ api, dialog, toast, me }, id || proj), stages: () => demands(true), home, mgmt, marketing: () => window.Marketing.render({ api, dialog, toast, me }, (/^\d+$/.test(location.hash.split('/')[2] || '') ? location.hash.split('/')[2] : null) || store.get('erp_mkt_scope') || null), telemarketing: () => window.Telemarketing.render({ api, dialog, toast, me }), ca: caPage, accdash, collections, flats, custdocs, comms, team: teamPage, accteam: teamPage, sdr: sdrPage, cp: cpPage, cpportal: cpPortalPage, project: projectHome, crmtodo: () => dailyTodo('crm'), acctodo: () => dailyTodo('accounts'), training, projects, plans, users, audit, units, bookings, demands, receipts, ledgers, letters, followups, verify, prices, partners, balances: accBalances, bankauto: bankAuto, bookscrm: booksCrm, accreports: accReports, checks: accChecks, queries: openQueries, dues: duesPage, changes: changesPage, reports: reportsHub, report: () => reportView(location.hash.split('/')[2]), accsetup: accSetup, import: importPage, booking: bookingPage, statement: statementPage, run: runPage, pre: prePage, parking: parkingPage };
     const key = DETAIL[page] && arg ? page : cur.key;
     try { await fn[key](arg ? +arg : undefined); } catch (e) { pageErr(e); }
   }
@@ -750,7 +751,8 @@
       <section class="hgroup"><h2>Pages</h2><div class="tiles five">${[
         ...(anyOf('masters.edit', 'mgmt.view') ? [{ title: 'Feasibility', sub: 'The consultant’s and our own options: FSI, costs, margin and the go / no-go call', icon: 'chart', href: `#/feasibility/${p.id}` }] : []),
         { title: 'Documents', sub: 'Every paper of the project, by section: land, DP remarks, feasibility, approvals, legal, drawings', icon: 'book', href: `#/pdocs/${p.id}` },
-        { title: 'Approval process', sub: 'IOD, CC, RERA, OC and the NOCs, with status, dates and letters', icon: 'check', href: `#/approvals/${p.id}` },
+        { title: 'Approval process', sub: 'Step by step from land and title to OC: approvals, documents to give, owners and dates', icon: 'check', href: `#/approvals/${p.id}` },
+        { title: 'Drawings', sub: 'The architect\u2019s and consultants\u2019 drawings, every version (V1, V2 ... final) from their Drive folder', icon: 'grid', href: `#/pdrawings/${p.id}` },
         { title: 'Land & title', sub: 'The parcel, the deal, payments to the owners and the title papers', icon: 'grid', href: `#/land/${p.id}` },
         ...(can('accounts.view') ? [{ title: 'Accounts', sub: 'This project\u2019s own books: payments out, receipts, bank, TDS and GST', icon: 'book', href: `#/project/${p.id}/accounts` }] : []),
       ].map((t) => tile({ ...t, tone: '#8A5F14' })).join('')}</div></section></div>`;
@@ -788,6 +790,31 @@
         catch (x) { alert(x.message); e.target.disabled = false; } };
     };
     paint();
+  }
+  // A project's drawings, every version (Rafi Sir, 28 Nov 2026: the architect uploads V1, V2 ... and the final into his
+  // folder under "06 Drawings & consultants" in the project's Drive folder; the ERP copies each file in once, so every
+  // version stays even if a file is later replaced or deleted in Drive)
+  async function projDrawings(pid) {
+    const [d, pl] = await Promise.all([api(`/api/custdocs?projdocs=${pid}`), api('/api/masters')]);
+    const p = pl.projects.find((x) => x.id === pid) || { name: 'Project' };
+    const rows = d.rows.filter((r) => r.kind === 'Drawings & consultants');
+    // "From the project folder: 06 Drawings & consultants / Architect – Abuzar Plasterwala (drawings) / V1 / plan.pdf"
+    const parts = (r) => { const t = String(r.title || '').replace(/^From the (project|Drive) folder:\s*/i, '').split(' / ').map((x) => x.trim()); if (/^06\b/.test(t[0] || '')) t.shift(); t.pop(); return t; };
+    const groups = new Map();
+    for (const r of rows) { const t = parts(r), who = t.length > 1 ? t[0] : t[0] && !/^(v\d+|final|draft|rev)/i.test(t[0]) ? t[0] : 'Drawings', ver = t.length > 1 ? t.slice(1).join(' / ') : t[0] && /^(v\d+|final|draft|rev)/i.test(t[0]) ? t[0] : 'Loose files';
+      if (!groups.has(who)) groups.set(who, new Map()); const g = groups.get(who); if (!g.has(ver)) g.set(ver, []); g.get(ver).push(r); }
+    const order = (a) => (/final/i.test(a) ? 999 : (+(/(\d+)/.exec(a) || [])[1] || 0));
+    $('#page').innerHTML = `<div class="page-head"><div><a class="muted small" href="#/project/${pid}">← ${esc(p.name)}</a><h1>Drawings</h1>
+      <p class="muted">Every version the architect and the consultants upload to their folders under “06 Drawings &amp; consultants” in the project’s Drive folder. The ERP keeps a copy of each file, so V1, V2 and the final all stay here.</p></div>
+      <div class="actions" style="margin:0">${d.canAdd ? '<button id="drGo">Check for new drawings</button>' : ''}</div></div>
+      ${[...groups.entries()].map(([who, vers]) => `<div class="panel" style="margin:0 0 12px"><h2 style="margin-top:0">${esc(who)}</h2>${[...vers.entries()].sort((a, b) => order(b[0]) - order(a[0])).map(([ver, list]) => `
+        <h3 style="margin:12px 0 6px">${esc(ver)} <span class="muted small" style="font-weight:400">${list.length} file${list.length === 1 ? '' : 's'} · latest ${fmtDate(list.map((r) => r.ready_at || r.created_at).sort().pop())}</span></h3>
+        <div class="table-wrap"><table><tr><th>File</th><th>Added</th><th></th></tr>${list.map((r) => `<tr><td><b>${esc(r.file_name)}</b></td><td class="small">${fmtDate(r.ready_at || r.created_at)}</td><td><button class="ghost small" data-open="${r.id}" data-n="${esc(r.file_name)}">Open</button></td></tr>`).join('')}</table></div>`).join('')}</div>`).join('')
+      || '<div class="panel"><p class="muted" style="margin:0">No drawings yet. When the architect uploads into his folder (V1, V2, Final), they come in here the next morning, or straight away with Check for new drawings.</p></div>'}`;
+    document.querySelectorAll('[data-open]').forEach((x) => (x.onclick = () => openDoc(+x.dataset.open, x.dataset.n)));
+    if ($('#drGo')) $('#drGo').onclick = async (e) => { e.target.disabled = true; e.target.textContent = 'Checking…';
+      try { let r; do { r = await api('/api/custdocs', { action: 'projfolder', projectId: pid }); } while (r.left > 0 && r.imported.length); toast(r.imported && r.imported.length ? 'New drawings brought in.' : 'Nothing new.'); projDrawings(pid); }
+      catch (x) { alert(x.message); e.target.disabled = false; e.target.textContent = 'Check for new drawings'; } };
   }
   async function projectHome(id) {
     const d = await api('/api/masters');
