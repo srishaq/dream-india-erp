@@ -749,7 +749,7 @@
       ${m.connected ? '' : '<p class="small bad-t">Google Drive is not connected yet, so documents cannot be added.</p>'}
       <div class="panel" id="pdFolder" style="margin:0 0 14px"></div>
       ${d.sections.map((k) => { const rows = d.rows.filter((r) => r.kind === k); return `<div class="panel" style="margin:0 0 12px"><h2 style="margin-top:0">${esc(k)} <span class="muted small" style="font-weight:400">${rows.length || ''}</span></h2>
-        ${rows.length ? `<div class="table-wrap"><table><tr><th>File</th><th>Note</th><th>Added</th><th></th></tr>${rows.map((r) => `<tr><td><b>${esc(r.file_name)}</b><br><span class="small muted">${esc(m.types[r.mime] || '')} · ${kb(+r.size)}</span></td><td class="small">${esc(r.title || '')}</td>
+        ${rows.length ? `<div class="table-wrap"><table><tr><th>File</th><th>Note</th><th>Added</th><th></th></tr>${rows.map((r) => `<tr><td><b>${esc(r.file_name)}</b><br><span class="small muted">${esc(m.types[r.mime] || '')} · ${kb(+r.size)}</span></td><td class="small">${/^From the project folder/.test(r.title || '') ? '<span class="muted">From the Drive folder</span>' : esc(r.title || '')}</td>
           <td class="small">${fmtDate(r.ready_at || r.created_at)}<br><span class="muted">${esc(r.by_name || '')}</span></td>
           <td style="white-space:nowrap"><button class="ghost small" data-open="${r.id}" data-n="${esc(r.file_name)}">Open</button>${d.canRemove ? ` <button class="link small" data-rm="${r.id}">Remove</button>` : ''}</td></tr>`).join('')}</table></div>` : '<p class="small muted" style="margin:0">Nothing yet.</p>'}</div>`; }).join('')}`;
     document.querySelectorAll('[data-open]').forEach((x) => (x.onclick = () => openDoc(+x.dataset.open, x.dataset.n)));
