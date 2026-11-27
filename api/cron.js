@@ -54,6 +54,8 @@ async function run(req, res, job) {
     if (job === 'morning') {
       const out = {};
       out.reminders = await require('../lib/letters').reminders().catch((e) => ({ error: e.message }));
+      // each project's shared documents folder: new files brought in by section (lib/project-docs.js)
+      try { const PD = require('../lib/project-docs'); const f = (await require('../lib/db').one("select value from settings where key = 'project_docs_folders'")) || { value: {} }; out.projectDocs = {}; for (const pid of Object.keys(f.value || {})) out.projectDocs[pid] = await PD.run(+pid, null, 30000).then((r) => ({ imported: (r.imported || []).length, failed: (r.failed || []).length })).catch((e) => ({ error: e.message })); } catch (e) { out.projectDocs = { error: e.message }; }
       out.caPack = await require('../lib/ca-pack').morning().catch((e) => ({ error: e.message }));
       out.reraPack = await require('../lib/rera').morning().catch((e) => ({ error: e.message })); // the quarter's MahaRERA figures to the CA, from the 3rd
       out.cheques = await require('../lib/cheque-match').run({ trigger: 'morning' }).catch((e) => ({ error: e.message }));
