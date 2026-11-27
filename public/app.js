@@ -690,7 +690,6 @@
       anyOf('leads.work', 'leads.all', 'sourcing.work', 'sourcing.all') && { title: 'Pre-sales & Sales', sub: 'Three tabs. Pre-sales: call and qualify every lead. Sales: walk-ins, cost sheets, site visits, booking. Sourcing: channel partner visits', icon: 'phone', tone: '#0E7C66', href: '/leads' },
       anyOf('tm.view', 'tm.manage', 'tm.entry') && { title: 'Telemarketing', sub: 'Everything for telemarketing: partner sign-ups and their client lists, telecallers, call sheets and results, costs, project by project', icon: 'handshake', tone: '#0E8C9B', href: '#/telemarketing' },
       sec('hr') ? { title: 'HR & Admin', sub: 'Staff records, leave, letters and HR policies', icon: 'users', tone: '#7A5C99', href: '/hr' } : { title: 'HR & Admin', sub: 'Staff records, leave, letters and HR policies', icon: 'users', tone: '#7A5C99', soon: true },
-      { title: 'Project feasibility', sub: 'SRA Feasibility Desk · analyse Reg. 33(10) sites and keep the register', icon: 'grid', tone: '#2B5C8A', href: 'https://claude.ai/artifact/EnCX84ZBXUSRTzQ52qf4D6', ext: true },
     ].filter(Boolean);
     const sample = can('users.manage') && cur && (!total(cur.units) || cur.sample) ? `<div class="panel"><h2>Sample data for testing</h2>
       <p class="muted">Loads Dream Signature A and B Wing (floors 10 to 45, 8 units a floor) with made-up "Sample Buyer" bookings, demands up to the stages the real project has reached, and receipts. It never touches real data and can be removed in one click.</p>
