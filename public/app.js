@@ -358,6 +358,11 @@
     { key: 'targets', label: 'Sales targets', show: () => anyOf('reports.view', 'leads.all', 'inventory.view') && !!proj },
     { key: 'training', label: 'Training videos', show: () => true },
     { group: 'CRM' },
+    // one tile per job (from Zuri, 27 Nov 2026): each opens its first page, with the others as tabs on top (HUBS below)
+    { key: 'sc-today', label: 'Today', sub: true, show: () => hubOn('sc-today'), href: () => hubHref('sc-today') },
+    { key: 'sc-flats', label: 'Flats & buyers', sub: true, show: () => hubOn('sc-flats'), href: () => hubHref('sc-flats') },
+    { key: 'sc-inv', label: 'Inventory & pricing', sub: true, show: () => hubOn('sc-inv'), href: () => hubHref('sc-inv') },
+    { key: 'sc-coll', label: 'Collections', sub: true, show: () => hubOn('sc-coll'), href: () => hubHref('sc-coll') },
     { key: 'crmtodo', label: 'Today', show: () => anyOf('demand.raise', 'booking.create', 'booking.approve', 'ledger.view') },
     { key: 'flats', label: 'Flats & buyers', show: () => anyOf('inventory.view', 'ledger.view') },
     { key: 'units', label: 'Book a flat (inventory)', show: () => can('inventory.view') },
@@ -386,6 +391,9 @@
     { key: 'followups', label: 'Follow-ups', show: () => false },
     { group: 'Accounts' },
     { key: 'acctodo', label: 'Today', show: () => can('accounts.view') },
+    { key: 'acc-today', label: 'Today', sub: true, show: () => hubOn('acc-today'), href: () => hubHref('acc-today') },
+    { key: 'acc-refunds', label: 'Refunds & tenants', sub: true, show: () => hubOn('acc-refunds'), href: () => hubHref('acc-refunds') },
+    { key: 'acc-books', label: 'Reports, checks & set-up', sub: true, show: () => hubOn('acc-books'), href: () => hubHref('acc-books') },
     { key: 'acc-bank', label: 'Bank', show: () => can('accounts.view'), href: () => '#/balances' },
     { key: 'acc-money', label: 'Receipts & payments', show: () => can('accounts.view'), href: () => '#/reg-receipts' },
     { key: 'accteam', label: 'Dream Chat', show: () => can('accounts.view') },
@@ -587,6 +595,13 @@
     'sc-calls': 'Who to call today, broken promises to pay, and buyers never called', 'sc-dues': 'Every buyer with an overdue amount; open one for the full ledger and statement',
     'sc-appr': 'New bookings, cancellations and transfers waiting for approval',
     'sc-dev': 'Flats we sold: buyers, agreement value, collections and dues', 'sc-con': 'Flats given to the contractor against construction bills: rate, value, adjusted and who holds each flat',
+    'sc-today': 'Today’s calls, approvals and letters, the inbox, changes waiting for approval and Dream Chat',
+    'sc-flats': 'Every flat and buyer. Open one for payments, calls, letters, documents and messages',
+    'sc-inv': 'Book a flat floor by floor, the price list and cost sheet, parking and sales targets',
+    'sc-coll': 'What came in and what is due, receipts, stages and demands, and demand letters',
+    'acc-today': 'What the 9 am Accounts audit found, your tasks, the Accounts dashboard and Dream Chat',
+    'acc-refunds': 'Cancelled flats and refunds, SRA tenants and their rent links',
+    'acc-books': 'Reports and Tally, checks, open queries, Tally vs CRM, and banks, heads and imports',
     'acc-bank': 'Daily bank balance, the 2 pm and 7 pm statement checks and reconciling items', 'acc-money': 'Receipts into the bank, payments out and post-dated cheques',
     'acc-tax': 'TDS challans, SDR challans and the compliance calendar', 'acc-sra': 'SRA tenants, their rent and the rent payment links', acctodo: 'What the 9 am Accounts audit found, plus your own tasks',
     training: 'Short videos on how to use each part of the ERP',
@@ -598,14 +613,13 @@
     accreports: 'Reports and the Tally import', checks: 'Daily checks on the registers', dues: 'Balance due by follow-up status, flat by flat, with search and Excel', queries: 'Every correction still to make in the CRM and Accounts, with who fixes it', bookscrm: 'Tally receipts flat by flat against the CRM',
     ca: 'GST, TDS payable, RERA quarterly and cash flow, for the CA', accsetup: 'Bank accounts, heads, statement folders and imports', audit: 'Who changed what, and when',
   };
-  const PICON = { 'sc-dev': 'users', 'sc-con': 'tower', parking: 'grid', 'acc-bank': 'rupee', 'acc-money': 'book', 'acc-tax': 'check', 'acc-sra': 'users', collections: 'chart', flats: 'users', 'sc-calls': 'phone', 'sc-dues': 'book', 'sc-appr': 'check', comms: 'mail', team: 'users', accteam: 'users', sdr: 'rupee', custdocs: 'book', site: 'tower', crmtodo: 'check', acctodo: 'check', training: 'book', dashboard: 'chart', units: 'grid', bookings: 'book', demands: 'tower', receipts: 'rupee', ledgers: 'book', letters: 'mail', followups: 'phone', verify: 'check', prices: 'rupee', partners: 'users',
+  const PICON = { 'sc-today': 'check', 'sc-flats': 'users', 'sc-inv': 'grid', 'sc-coll': 'rupee', 'acc-today': 'check', 'acc-refunds': 'users', 'acc-books': 'chart', 'sc-dev': 'users', 'sc-con': 'tower', parking: 'grid', 'acc-bank': 'rupee', 'acc-money': 'book', 'acc-tax': 'check', 'acc-sra': 'users', collections: 'chart', flats: 'users', 'sc-calls': 'phone', 'sc-dues': 'book', 'sc-appr': 'check', comms: 'mail', team: 'users', accteam: 'users', sdr: 'rupee', custdocs: 'book', site: 'tower', crmtodo: 'check', acctodo: 'check', training: 'book', dashboard: 'chart', units: 'grid', bookings: 'book', demands: 'tower', receipts: 'rupee', ledgers: 'book', letters: 'mail', followups: 'phone', verify: 'check', prices: 'rupee', partners: 'users',
     accdash: 'chart', balances: 'rupee', bankauto: 'check', 'reg-cancellations': 'users', bookscrm: 'check', checks: 'check', queries: 'check', dues: 'rupee', audit: 'book', ca: 'chart', accsetup: 'grid' };
   const DEPTS = [
     { key: 'crm', title: 'Sales & CRM', sub: 'Today’s work, every flat and buyer in one place, receipts, collections and the inbox', icon: 'chart', tone: '#2B5C8A', group: 'CRM', more: 'CRM tools',
-      sections: [['Every day', ['crmtodo', 'flats', 'receipts', 'comms']], ['Sales', ['units', 'parking', 'sc-appr', 'prices', 'partners']],
-        ['Collections', ['dues', 'collections', 'demands', 'letters']], ['Records and checks', ['custdocs', 'verify']]] },
+      sections: [['Every day', ['sc-today', 'sc-flats', 'sc-appr']], ['Sell and collect', ['sc-inv', 'sc-coll', 'partners']]] },
     { key: 'accounts', title: 'Accounts', sub: 'Bank, receipts, payments, PDC, TDS, SRA rent, GST, SDR and Tally', icon: 'book', tone: '#117A65', group: 'Accounts', skip: ['ca', 'bookscrm', 'checks'],
-      sections: [['Every day', ['acctodo', 'acc-bank', 'acc-money', 'accteam']], ['Taxes & compliance', ['acc-tax']], ['Refunds, partners & tenants', ['reg-cancellations', 'cpacc', 'acc-sra']], ['Reports & set-up', ['accdash', 'accreports', 'accsetup']]] },
+      sections: [['Every day', ['acc-today', 'acc-bank', 'acc-money']], ['Tax, refunds and the books', ['acc-tax', 'acc-refunds', 'acc-books', 'cpacc']]] },
     { key: 'audit', title: 'CRM/Accounts Audit', sub: 'Tally against the CRM, checks, reconciling items and cancelled flats', icon: 'check', tone: '#0E8C9B', pages: ['queries', 'bookscrm', 'checks', 'reg-recon', 'reg-cancellations', 'verify', 'audit'] },
     { key: 'reportsd', title: 'Reports', sub: 'Every report from the CRM and Accounts in one place, with search and Excel', icon: 'chart', tone: '#2B5C8A', direct: 'reports' },
     { key: 'cpdept', title: 'Channel Partners', sub: 'Every partner firm: brokerage earned, bills, pass back, payments and what is still owed', icon: 'users', tone: '#0E8C9B', direct: 'partners' },
@@ -615,15 +629,27 @@
     { key: 'drawings', title: 'Drawings', sub: 'Architect, structural and MEP drawings from the Site Plans folder', icon: 'grid', tone: '#2B5C8A', direct: 'drawings' },
     { key: 'training', title: 'Training videos', sub: 'Short videos on how to use each part of the ERP', icon: 'book', tone: '#B7791F', direct: 'training' },
   ];
+  // One tile per job, its pages as tabs on top. Every old address (#/receipts, #/dues, #/custdocs …) still opens its page,
+  // now with its tabs.
   const HUBS = {
+    'sc-today': ['Today', [['crmtodo', 'Today'], ['comms', 'Inbox'], ['changes', 'Change approvals'], ['team', 'Dream Chat']]],
+    'sc-flats': ['Flats & buyers', [['flats', 'Flats & buyers'], ['custdocs', 'Customer documents'], ['verify', 'Data to verify']]],
+    'sc-inv': ['Inventory & pricing', [['units', 'Book a flat'], ['prices', 'Price list & cost sheet'], ['parking', 'Parking'], ['targets', 'Sales targets']]],
+    'sc-coll': ['Collections', [['collections', 'Collections'], ['dues', 'Dues & actions'], ['receipts', 'Receipts'], ['demands', 'Stages & demands'], ['letters', 'Demand letters']]],
+    'acc-today': ['Today', [['acctodo', 'Today'], ['accdash', 'Dashboard'], ['accteam', 'Dream Chat']]],
+    'acc-refunds': ['Refunds & tenants', [['reg-cancellations', 'Cancelled flats & refunds'], ['reg-tenants', 'SRA tenants'], ['reg-rentLinks', 'Rent links']]],
+    'acc-books': ['Reports, checks & set-up', [['accreports', 'Reports & Tally'], ['checks', 'Checks'], ['queries', 'Open queries'], ['bookscrm', 'Tally vs CRM'], ['accsetup', 'Banks, heads & import']]],
     'acc-bank': ['Bank', [['balances', 'Daily Bank Balance'], ['bankauto', 'Bank Auto Check'], ['reg-recon', 'Reconciling Items']]],
     'acc-money': ['Receipts & payments', [['reg-receipts', 'Receipts (bank)'], ['reg-payments', 'Payments Out'], ['reg-journals', 'Journals (Tally)'], ['reg-notes', 'Debit / Credit notes'], ['reg-pdc', 'PDC']]],
     'acc-tax': ['Tax & compliance', [['reg-tds', 'TDS Tracker'], ['sdr', 'SDR challans'], ['reg-compliance', 'Compliance Calendar']]],
-    'acc-sra': ['SRA tenants', [['reg-tenants', 'Tenants'], ['reg-rentLinks', 'Rent links']]],
   };
+  // a tab the login may open; a tile shows when any of its tabs does, and opens the first of them
+  const tabOk = (k) => { const p = PAGES.find((x) => x.key === k && !x.group && !HUBS[x.key]); return !!(p && p.show()); };
+  const hubOn = (h) => HUBS[h][1].some(([k]) => tabOk(k));
+  const hubHref = (h) => { const t = HUBS[h][1].find(([k]) => tabOk(k)); const p = t && PAGES.find((x) => x.key === t[0] && !x.group); return p ? hrefOf(p) : '#/home'; };
   const hubOf = (key) => Object.keys(HUBS).find((h) => HUBS[h][1].some(([k]) => k === key));
   const hubTabs = (key) => { const h = hubOf(key); if (!h) return '';
-    return `<nav class="ff-tabs hubtabs no-print" role="tablist" aria-label="${esc(HUBS[h][0])}">${HUBS[h][1].map(([k, l]) => `<button type="button" role="tab" aria-selected="${k === key}" data-hub="${k}">${esc(l)}</button>`).join('')}</nav>`; };
+    return `<nav class="ff-tabs hubtabs no-print" role="tablist" aria-label="${esc(HUBS[h][0])}">${HUBS[h][1].filter(([k]) => k === key || tabOk(k)).map(([k, l]) => `<button type="button" role="tab" aria-selected="${k === key}" data-hub="${k}">${esc(l)}</button>`).join('')}</nav>`; };
   const pagesOf = (d) => {
     let keys = d.pages;
     if (d.group) { keys = []; let g = null; for (const p of PAGES) { if (p.group) g = p.group; else if (g === d.group && !p.sub && !(d.skip || []).includes(p.key)) keys.push(p.key); } }
@@ -686,7 +712,7 @@
       if (dept.sections) {
         const pg = (k) => PAGES.find((x) => x.key === k && !x.group && x.show());
         // a project with contractor's flats (Dream Aspire): Developer's and Contractor's bookings in the top row instead of Flats & buyers and Dream Chat
-        const sections = dept.key === 'crm' && p.contractor_flats > 0 ? dept.sections.map(([h, keys]) => [h, h === 'Every day' ? ['crmtodo', 'sc-dev', 'sc-con', 'receipts', 'comms'] : keys]) : dept.sections;
+        const sections = dept.key === 'crm' && p.contractor_flats > 0 ? dept.sections.map(([h, keys]) => [h, h === 'Every day' ? ['sc-today', 'sc-dev', 'sc-con', 'sc-appr'] : keys]) : dept.sections;
         const secs = sections.map(([h, keys]) => [h, keys.map(pg).filter(Boolean).map((x) => ({ title: x.label, sub: SUB[x.key] || '', icon: PICON[x.key] || dept.icon, tone: dept.tone, href: hrefOf(x) }))]).filter(([, t]) => t.length);
         $('#page').innerHTML = heroHtml(p.name, dept.title, dept.sub, [`#/project/${p.id}`, p.name]) + `<div class="hm">${secs.map(([h, t]) => `<section class="hgroup"><h2>${esc(h)}</h2><div class="tiles five">${t.map(tile).join('')}</div></section>`).join('') || '<p class="muted">Your login has no pages in this section.</p>'}</div>`;
         return;
