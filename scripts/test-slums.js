@@ -102,6 +102,25 @@ let n = 0; const step = async (name, fn) => { await fn(); n++; console.log('  �
     assert.equal(P.sectionOf(['Legal Documents', 'Demo PR Card.pdf']), 'Land & title');
   });
 
+  await step('a file in the drop box waits a day to be sorted, then comes in by its own name', async () => {
+    const P = require('../lib/project-docs'), CI = require('../lib/custdocs-import'), sh = require('../lib/sheets');
+    const realList = CI.listFiles, realTok = sh.accessToken;
+    await P.linkFolder(990, 'folder-test-dropbox');
+    const old = new Date(Date.now() - 30 * 3600 * 1000).toISOString(), fresh = new Date().toISOString();
+    CI.listFiles = async () => [
+      { id: 'dbx-fresh', name: 'Demo LOI.pdf', mimeType: 'application/pdf', size: 10, modifiedTime: fresh, path: ['00 Drop box – new documents'] },
+      { id: 'dbx-old', name: 'Demo IOD letter.pdf', mimeType: 'application/pdf', size: 10, modifiedTime: old, path: ['00 Drop box – new documents'] },
+      { id: 'sorted', name: 'Demo survey.pdf', mimeType: 'application/pdf', size: 10, modifiedTime: fresh, path: ['02 DP remarks & survey'] },
+    ];
+    sh.accessToken = async () => 'token';
+    try {
+      const p = await P.plan(990);
+      assert.deepEqual(p.ready.map((x) => x.id).sort(), ['dbx-old', 'sorted']);
+      assert.match(p.skipped[0].why, /drop box/);
+      assert.equal(p.ready.find((x) => x.id === 'dbx-old').section, 'Approvals (IOD, CC, RERA, NOCs)');
+    } finally { CI.listFiles = realList; sh.accessToken = realTok; await P.linkFolder(990, null); }
+  });
+
   console.log(`Slum register: ${n} checks passed.`);
   server.close(); process.exit(0);
 })().catch((e) => { console.error(e); process.exit(1); });
