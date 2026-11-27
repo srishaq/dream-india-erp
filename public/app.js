@@ -352,9 +352,9 @@
   const PAGES = [
     { key: 'home', label: 'Home', show: () => true },
     { key: 'mgmt', label: 'Management dashboard', show: () => can('mgmt.view') },
-    { key: 'mkthub', label: 'Marketing', show: () => anyOf('marketing.view', 'tm.view', 'tm.manage', 'tm.entry'), sub: true },
-    { key: 'marketing', label: 'Marketing', show: () => can('marketing.view') },
-    { key: 'telemarketing', label: 'Telemarketing', show: () => anyOf('tm.view', 'tm.manage', 'tm.entry') },
+    { key: 'mkthub', label: 'Marketing', show: () => anyOf('marketing.view', 'tm.view', 'tm.manage', 'tm.entry') },
+    { key: 'marketing', label: 'Campaigns & leads', show: () => can('marketing.view'), sub: true },
+    { key: 'telemarketing', label: 'Telemarketing', show: () => anyOf('tm.view', 'tm.manage', 'tm.entry'), sub: true },
     { key: 'opportunities', label: 'New opportunities (feasibility)', show: () => anyOf('masters.edit', 'mgmt.view') },
     { key: 'feasibility', label: 'Feasibility', show: () => anyOf('masters.edit', 'mgmt.view') && !!proj, sub: true },
     { key: 'pdocs', label: 'Project documents', show: () => anyOf('mgmt.view', 'accounts.view', 'masters.edit') && !!proj, sub: true },
@@ -682,7 +682,7 @@
   ].filter(Boolean);
   async function mkthub() {
     const t = marketingTiles();
-    $('#page').innerHTML = heroHtml('Department', 'Marketing', 'Everything that brings in leads, project by project. Leads then go to Pre-sales & Sales.', ['#/home', 'Home']) +
+    $('#page').innerHTML = heroHtml('Department', 'Marketing', 'Everything that brings in leads, project by project. Leads then go to Pre-sales & Sales.') +
       `<div class="hm"><section class="hgroup"><h2>Pages</h2><div class="tiles five">${t.map(tile).join('') || '<p class="muted">Your login has no marketing pages.</p>'}</div></section></div>`;
   }
   async function home() {
@@ -710,7 +710,6 @@
       <div class="hm">
         <section class="hgroup"><h2>Departments</h2><div class="tiles five">${mgmtTiles.map(tile).join('')}</div></section>
         <section class="hgroup"><h2>Projects</h2><div class="tiles five">${projTiles.map(tile).join('') || '<p class="muted">No projects yet.</p>'}</div></section>
-        <p class="hnote">Tiles marked ↗ open in a new tab.</p>
         ${sample}
       </div>`;
     if ($('#loadSample')) $('#loadSample').onclick = async (e) => { e.target.disabled = true; e.target.textContent = 'Loading… (about 20 seconds)'; try { const r = await api('/api/sample', { action: 'load', projectId: proj }); toast(`Loaded ${r.units} units, ${r.bookings} bookings, ${r.demands} demands and ${r.receipts} receipts.`); home(); } catch (x) { e.target.disabled = false; e.target.textContent = 'Load sample data'; alert(x.message); } };
