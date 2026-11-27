@@ -228,6 +228,14 @@
       "destination": "/chat"
     },
     {
+      "source": "/go/:n/:p",
+      "destination": "/api/go?n=:n&p=:p"
+    },
+    {
+      "source": "/go/:n",
+      "destination": "/api/go?n=:n"
+    },
+    {
       "source": "/oauth/google",
       "destination": "/api/custdocs?oauth=callback"
     },

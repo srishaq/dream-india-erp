@@ -154,7 +154,7 @@ async function overview(u, scope, req) {
      from mkt_media where posted_at > now() - interval '30 days' order by coalesce(likes, 0) + coalesce(comments, 0) + coalesce(shares, 0) + coalesce(saves, 0) desc, views desc nulls last limit 8`);
   const per = await periods(projectId, channels.filter((c) => !c.wa && !c.ivr).map((c) => c.network));
   return { periods: per, top, scope: projectId || 'company', projects, partners, team, channels, posts, campaigns, leads, tasks,
-    settings: { channels: set.channels, drive: set.drive, needApproval: !!set.needApproval, portalForwarders: set.portalForwarders || [], share: (() => { try { return require('../lib/sheets').serviceEmail(); } catch { return null; } })(), leadUrl: canEdit(u) ? `/api/marketing?lead=${set.webKey}` : null, webKey: canEdit(u) ? set.webKey : null,
+    settings: { channels: set.channels, drive: set.drive, needApproval: !!set.needApproval, igTag: set.igTag === undefined ? 'rafidreamindia' : set.igTag, portalForwarders: set.portalForwarders || [], share: (() => { try { return require('../lib/sheets').serviceEmail(); } catch { return null; } })(), leadUrl: canEdit(u) ? `/api/marketing?lead=${set.webKey}` : null, webKey: canEdit(u) ? set.webKey : null,
       ivrUrl: u.role === 'admin' ? `/api/marketing?ivr=${set.ivrKey}` : null, oldKey: u.role === 'admin' ? !!set.leadKey : null, exotel: await require('../lib/exotel').status(),
       follow: require('../lib/mkt-leads').follow(set), competitors: (set.competitors || []).map((c) => ({ ...c, ads: require('../lib/mkt-tools').adLibrary(c.name) })),
       canva: await require('../lib/mkt-tools').canvaStatus(), gads: await require('../lib/gads').status(), capi: await require('../lib/mkt-leads').capiStatus(), ai: require('../lib/mkt-tools').aiOn(),
@@ -320,6 +320,11 @@ async function mdrill(key, scope, period) {
     const rows = await db.q(`select (at + interval '330 minutes')::date as day, count(distinct visitor) filter (where kind = 'view')::int as visitors, count(distinct session) filter (where kind = 'view')::int as visits, count(*) filter (where kind = 'view')::int as views,
         count(*) filter (where kind = 'call')::int as calls, count(*) filter (where kind = 'whatsapp')::int as whatsapp, count(*) filter (where kind = 'enquiry')::int as enquiries from mkt_web_hits where at > now() - interval '30 days' group by 1 order by 1 desc`);
     return { title: 'Website, day by day (last 30 days)', columns: [['day', 'Date', 'date'], ['visitors', 'Visitors', 'n'], ['visits', 'Visits', 'n'], ['views', 'Pages seen', 'n'], ['calls', 'Call clicks', 'n'], ['whatsapp', 'WhatsApp clicks', 'n'], ['enquiries', 'Enquiry forms', 'n']], rows };
+  }
+  // each social post's tracked link: taps, website visits, call / WhatsApp clicks, enquiries and leads (lib/post-links.js)
+  if (key === 'socialposts') {
+    const rows = (await require('../lib/post-links').report(90, projectId)).map((r) => ({ ...r, link: require('../lib/post-links').link(r.network, r.postId) }));
+    return { title: 'Social posts: taps on the tracked links, website visits and leads (last 90 days)', columns: [['networkName', 'Network'], ['post', 'Post'], ['day', 'Posted', 'date'], ['clicks', 'Taps on the link', 'n'], ['visits', 'Website visits', 'n'], ['taps', 'Call / WhatsApp clicks', 'n'], ['enquiries', 'Enquiry forms', 'n'], ['leads', 'Leads', 'n'], ['siteVisits', 'Site visits', 'n'], ['booked', 'Booked', 'n'], ['link', 'Tracked link']], rows };
   }
   if (key === 'websources') {
     const rows = await db.q(`select channel, count(distinct visitor) filter (where kind = 'view')::int as visitors, count(distinct session) filter (where kind = 'view')::int as visits, count(*) filter (where kind = 'view')::int as views,
@@ -911,6 +916,8 @@ const handler = route({
       if (Array.isArray(d.channels)) v.channels = d.channels.slice(0, 20).map((c) => ({ network: NETWORKS.includes(c.network) ? c.network : 'website', handle: str(c.handle, 80), url: url(c.url), projectId: pid(c.projectId) })).filter((c) => c.handle || c.url);
       if (d.drive && typeof d.drive === 'object') { v.drive = {}; for (const [k, f] of Object.entries(d.drive)) { const m = String(f || '').match(/(?:folders\/|id=)?([A-Za-z0-9_-]{20,80})/); if (m && (k === 'company' || intOr(k))) v.drive[k] = m[1]; } }
       if (d.needApproval != null) v.needApproval = !!d.needApproval;
+      // the Instagram account tagged and invited as a Collab on every automatic Instagram post (empty: none)
+      if (d.igTag != null) { const t = String(d.igTag).trim().replace(/^@/, '').toLowerCase(); if (t && !/^[a-z0-9._]{1,30}$/.test(t)) throw fail(400, 'An Instagram username has only letters, numbers, dots and underscores.'); v.igTag = t; }
       // addresses that forward portal lead emails to the ERP mailbox (besides the portals' own)
       if (d.portalForwarders != null) v.portalForwarders = String(Array.isArray(d.portalForwarders) ? d.portalForwarders.join(' ') : d.portalForwarders).toLowerCase().split(/[\s,;]+/).filter((x) => /^[^@\s]+@[^@\s]+\.[a-z]{2,}$/.test(x)).slice(0, 10);
       // the Admin makes a new key (the old link stops at once) or retires the old single key

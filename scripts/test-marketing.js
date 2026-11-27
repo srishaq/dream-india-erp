@@ -73,7 +73,8 @@ const fake = http.createServer(async (req, res) => {
   if (g === '/c1' && req.method === 'POST') { global.metaChange = (global.metaChange || []).concat([Object.fromEntries([...q].filter(([k]) => ['status', 'daily_budget'].includes(k)))]); return J({ success: true }); }
   if (g === '/c1') return J({ id: 'c1', daily_budget: '200000' });
   if (req.method === 'POST' && g === '/p1/photos') { global.posted = (global.posted || []).concat([{ fb: q.get('url'), caption: q.get('caption') }]); return J({ id: 'ph1', post_id: 'p1_99' }); }
-  if (req.method === 'POST' && g === '/ig1/media') { global.posted = (global.posted || []).concat([{ ig: q.get('image_url') }]); return J({ id: 'cont1' }); }
+  if (req.method === 'POST' && g === '/ig1/media') { if (global.igRefuseCollab && q.get('collaborators')) return J({ error: { message: 'collaborators not allowed' } }, 400); global.posted = (global.posted || []).concat([{ ig: q.get('image_url'), caption: q.get('caption'), collab: q.get('collaborators'), tags: q.get('user_tags') }]); return J({ id: 'cont1' }); }
+  if (g === '/cont1' && global.igNotReady) return J({ status_code: 'IN_PROGRESS' });
   if (req.method === 'POST' && g === '/ig1/media_publish') return J({ id: 'igm9' });
   if (g === '/igm9') return J({ permalink: 'https://www.instagram.com/p/igm9/' });
   if (g === '/me/accounts' && global.noIg && /instagram_business_account/.test(q.get('fields'))) return J({ error: { message: '(#100) Tried accessing nonexisting field (instagram_business_account)', code: 100 } }, 400);
@@ -704,6 +705,44 @@ let n = 0; const step = async (name, fn) => { await fn(); n++; console.log('  âœ
     assert.equal((await M(rupali, 'post.save', { id: p.id, title: 'Re-approve', channels: ['instagram'], status: 'scheduled', caption: 'First words', publishAt: new Date(Date.now() + 864e5).toISOString() })).status, 'scheduled', 'same words: stays approved');
     const w = await M(rupali, 'post.save', { id: p.id, title: 'Re-approve', channels: ['instagram'], status: 'scheduled', caption: 'Other words', publishAt: new Date(Date.now() + 864e5).toISOString() });
     assert.equal(w.status, 'review'); r = await db.one('select approved_at, review_note from mkt_posts where id = $1', [p.id]); assert.equal(r.approved_at, null); assert.match(r.review_note, /wording changed/);
+  });
+
+  await step('Social posts (from Zuri): tracked links count taps; Facebook gets the link; Instagram tags and invites the Collab and waits until the picture is ready', async () => {
+    const F = require('../lib/mkt-flow'), png = Buffer.from('89504e470d0a1a0a0000000d49484452', 'hex').toString('base64');
+    const p = await M(rupali, 'post.save', { title: 'Tracked', channels: ['instagram', 'facebook'], status: 'draft', caption: 'Book a visit at dreamindiarealty.com today', publishAt: new Date(Date.now() - 60000).toISOString() });
+    await M(rupali, 'post.file', { postId: p.id, name: 't.png', mime: 'image/png', data: png });
+    await M(rupali, 'post.send', { id: p.id }); assert.equal((await M(sameer, 'post.status', { id: p.id, status: 'approved' })).ok, true);
+    await db.q("update mkt_posts set status = 'scheduled' where id = $1", [p.id]);
+    // Instagram still preparing the picture: Facebook goes, Instagram waits for the next run with the same upload
+    global.posted = []; global.igNotReady = true;
+    await F.publishDue();
+    const fb = global.posted.find((x) => x.fb), ig = global.posted.find((x) => x.ig);
+    assert.match(fb.caption, new RegExp(`/go/fb/${p.id}`)); assert.doesNotMatch(fb.caption, /dreamindiarealty\.com today/);
+    assert.equal(ig.collab, '["rafidreamindia"]'); assert.match(ig.tags, /rafidreamindia/); assert.match(ig.caption, /@rafidreamindia$/); assert.match(ig.caption, /dreamindiarealty\.com today/, 'Instagram keeps the words');
+    let row = await db.one('select status, publish_log from mkt_posts where id = $1', [p.id]);
+    assert.equal(row.status, 'scheduled'); assert.equal(row.publish_log.instagram.pending, 'cont1');
+    global.igNotReady = false; global.posted = [];
+    await F.publishDue();
+    row = await db.one('select status, publish_log from mkt_posts where id = $1', [p.id]);
+    assert.equal(row.status, 'published'); assert.equal(global.posted.length, 0, 'the same upload is published, nothing uploaded again');
+    // the tracked link: a person's tap is counted and sent on to the website with the post's tags; a link preview is not
+    const tap = (ua) => fetch(BASE + `/api/go?n=fb&p=${p.id}`, { redirect: 'manual', headers: { 'User-Agent': ua } });
+    const r = await tap('Mozilla/5.0 (iPhone)'); assert.equal(r.status, 302);
+    assert.equal(r.headers.get('location'), `https://dreamindiarealty.com/?utm_source=facebook&utm_medium=social&utm_campaign=post-${p.id}`);
+    await tap('facebookexternalhit/1.1');
+    assert.equal((await db.one('select sum(clicks)::int as n from mkt_post_clicks where post_id = $1', [p.id])).n, 1);
+    // the visit and the enquiry it brought, on the post's row
+    await db.q('delete from mkt_rate');
+    const key = (await db.one("select value from settings where key = 'marketing'")).value.webKey;
+    await fetch(BASE + '/api/marketing?hit=' + key, { method: 'POST', headers: { 'Content-Type': 'text/plain;charset=UTF-8' }, body: JSON.stringify({ k: 'view', v: 'VS', s: 'SS', p: '/', utm_source: 'facebook', utm_medium: 'social', utm_campaign: 'post-' + p.id }) });
+    await fetch(BASE + '/api/marketing?lead=' + key, { method: 'POST', headers: { 'Content-Type': 'application/x-www-form-urlencoded' }, body: new URLSearchParams({ name: 'From the post', phone: '9700000099', vid: 'VS' }).toString() });
+    const rep = await rupali('/api/marketing?mdrill=socialposts&scope=company');
+    const x = rep.rows.find((y) => y.postId === p.id && y.network === 'facebook');
+    assert.ok(x, JSON.stringify(rep.rows)); assert.equal(x.clicks, 1); assert.equal(x.visits, 1); assert.equal(x.leads, 1); assert.equal(x.post, 'Tracked');
+    // Set-up: another account, or none
+    assert.equal((await M(rupali, 'settings', { igTag: 'bad name!' })).status, 400);
+    assert.equal((await M(rupali, 'settings', { igTag: '' })).ok, true);
+    assert.equal((await rupali('/api/marketing?scope=company')).settings.igTag, '');
   });
 
   await step('Posts: approval cannot be skipped through the status; only approved posts go out, once, even when two runs meet; design links only for approved posts', async () => {
