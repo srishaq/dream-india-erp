@@ -360,6 +360,7 @@
     { key: 'pdocs', label: 'Project documents', show: () => anyOf('mgmt.view', 'accounts.view', 'masters.edit') && !!proj, sub: true },
     { key: 'land', label: 'Land & title', show: () => anyOf('mgmt.view', 'accounts.view', 'masters.edit') && !!proj, sub: true },
     { key: 'approvals', label: 'Approvals', show: () => anyOf('mgmt.view', 'accounts.view', 'masters.edit') && !!proj, sub: true },
+    { key: 'slums', label: 'Slum register', show: () => anyOf('mgmt.view', 'accounts.view', 'masters.edit') && !!proj, sub: true },
     { key: 'targets', label: 'Sales targets', show: () => anyOf('reports.view', 'leads.all', 'inventory.view') && !!proj },
     { key: 'training', label: 'Training videos', show: () => true },
     { group: 'CRM' },
@@ -441,7 +442,7 @@
     { key: 'users', label: 'Logins', show: () => can('users.manage') },
     { key: 'audit', label: 'Audit log', show: () => can('audit.view') },
   ];
-  const DETAIL = { pdocs: 'pdocs', land: 'land', approvals: 'approvals', opportunities: 'opportunities', feasibility: 'opportunities', report: 'reports', booking: 'flats', statement: 'flats', run: 'demands', pre: 'demands', bankauto: 'bankauto', project: 'home', team: 'team', accteam: 'accteam', cp: 'partners' };
+  const DETAIL = { slums: 'slums', pdocs: 'pdocs', land: 'land', approvals: 'approvals', opportunities: 'opportunities', feasibility: 'opportunities', report: 'reports', booking: 'flats', statement: 'flats', run: 'demands', pre: 'demands', bankauto: 'bankauto', project: 'home', team: 'team', accteam: 'accteam', cp: 'partners' };
   let projectList = null, proj = null;
   // projects with contractor's flats (Dream Aspire) get the Developer's / Contractor's bookings tiles; others stay as they were
   const ctrProject = (id = proj) => !!((projectList || []).find((p) => p.id === id)?.contractor_flats > 0);
@@ -539,7 +540,7 @@
     if ($('#proj')) $('#proj').onchange = (e) => { proj = +e.target.value; store.set('erp_project', proj); shell(); };
     if (page === 'reg-cancellations' && arg !== 'full' && anyOf('accounts.view', 'audit.tabs')) { try { await cancelledView(); } catch (e) { pageErr(e); } return; }
     if (/^reg-/.test(page || '') && (can('accounts.view') || (can('audit.tabs') && ['reg-recon', 'reg-cancellations'].includes(page)))) { try { await accRegister(page.slice(4)); } catch (e) { pageErr(e); } return; }
-    const fn = { mkthub, pdocs: (id) => projDocs(id || proj), land: (id) => window.Land.render({ api, dialog, toast, me }, id || proj, location.hash.split('?')[0].split('/')[3]), approvals: (id) => window.Approvals.render({ api, dialog, toast, me }, id || proj), targets, opportunities: (id) => (id ? window.Feasibility.render({ api, dialog, toast, me }, null, id) : window.Feasibility.sites({ api, dialog, toast, me })), feasibility: (id) => window.Feasibility.render({ api, dialog, toast, me }, id || proj), stages: () => demands(true), home, mgmt, marketing: () => window.Marketing.render({ api, dialog, toast, me }, (/^\d+$/.test(location.hash.split('/')[2] || '') ? location.hash.split('/')[2] : null) || store.get('erp_mkt_scope') || null), telemarketing: () => window.Telemarketing.render({ api, dialog, toast, me }), ca: caPage, accdash, collections, flats, custdocs, comms, team: teamPage, accteam: teamPage, sdr: sdrPage, cp: cpPage, cpportal: cpPortalPage, project: projectHome, crmtodo: () => dailyTodo('crm'), acctodo: () => dailyTodo('accounts'), training, projects, plans, users, audit, units, bookings, demands, receipts, ledgers, letters, followups, verify, prices, partners, balances: accBalances, bankauto: bankAuto, bookscrm: booksCrm, accreports: accReports, checks: accChecks, queries: openQueries, dues: duesPage, changes: changesPage, reports: reportsHub, report: () => reportView(location.hash.split('/')[2]), accsetup: accSetup, import: importPage, booking: bookingPage, statement: statementPage, run: runPage, pre: prePage, parking: parkingPage };
+    const fn = { mkthub, slums: (id) => window.Slums.render({ api, dialog, toast, me }, +(id || proj), location.hash.split('?')[0].split('/')[3]), pdocs: (id) => projDocs(id || proj), land: (id) => window.Land.render({ api, dialog, toast, me }, id || proj, location.hash.split('?')[0].split('/')[3]), approvals: (id) => window.Approvals.render({ api, dialog, toast, me }, id || proj), targets, opportunities: (id) => (id ? window.Feasibility.render({ api, dialog, toast, me }, null, id) : window.Feasibility.sites({ api, dialog, toast, me })), feasibility: (id) => window.Feasibility.render({ api, dialog, toast, me }, id || proj), stages: () => demands(true), home, mgmt, marketing: () => window.Marketing.render({ api, dialog, toast, me }, (/^\d+$/.test(location.hash.split('/')[2] || '') ? location.hash.split('/')[2] : null) || store.get('erp_mkt_scope') || null), telemarketing: () => window.Telemarketing.render({ api, dialog, toast, me }), ca: caPage, accdash, collections, flats, custdocs, comms, team: teamPage, accteam: teamPage, sdr: sdrPage, cp: cpPage, cpportal: cpPortalPage, project: projectHome, crmtodo: () => dailyTodo('crm'), acctodo: () => dailyTodo('accounts'), training, projects, plans, users, audit, units, bookings, demands, receipts, ledgers, letters, followups, verify, prices, partners, balances: accBalances, bankauto: bankAuto, bookscrm: booksCrm, accreports: accReports, checks: accChecks, queries: openQueries, dues: duesPage, changes: changesPage, reports: reportsHub, report: () => reportView(location.hash.split('/')[2]), accsetup: accSetup, import: importPage, booking: bookingPage, statement: statementPage, run: runPage, pre: prePage, parking: parkingPage };
     const key = DETAIL[page] && arg ? page : cur.key;
     try { await fn[key](arg ? +arg : undefined); } catch (e) { pageErr(e); }
   }
@@ -628,7 +629,9 @@
       sections: [['Every day', ['acc-today', 'acc-bank', 'acc-money']], ['Tax, refunds and the books', ['acc-tax', 'acc-refunds', 'acc-books', 'cpacc']]] },
     { key: 'audit', title: 'CRM/Accounts Audit', sub: 'Tally against the CRM, checks, reconciling items and cancelled flats', icon: 'check', tone: '#0E8C9B', pages: ['queries', 'bookscrm', 'checks', 'reg-recon', 'reg-cancellations', 'verify', 'audit'] },
     { key: 'landd', title: 'Land & title', sub: 'Each land parcel: the deal, cost, payments to the owners and the title papers', icon: 'grid', tone: '#8A5F14', direct: 'land' },
-    { key: 'approvalsd', title: 'Approvals', sub: 'Every permission the project needs (IOD, CC, RERA, OC, NOCs) with its status, dates and letters', icon: 'check', tone: '#8A5F14', direct: 'approvals' },
+    { key: 'approvalsd', title: 'Approvals', sraTitle: 'SRA approvals', sub: 'Every permission the project needs (IOD, CC, RERA, OC, NOCs) with its status, dates and letters', sraSub: 'Annexure II, LOI, IOA, CC, RERA and the NOCs: status, dates, numbers and the letters', icon: 'check', tone: '#8A5F14', direct: 'approvals' },
+    { key: 'slumsd', title: 'Slum register', sub: 'Every Annexure II tenement: holder, papers, agreement, rent and the rehab unit allotted', icon: 'users', tone: '#8A5F14', direct: 'slums', kinds: ['sra'] },
+    { key: 'pdocsd', title: 'Project documents', sub: 'Title, LOI, approvals, NOCs, plans and agreements, from the project\'s Drive folder', icon: 'book', tone: '#8A5F14', direct: 'pdocs' },
     { key: 'feasd', title: 'Feasibility', sub: 'FSI, TDR, costs, margin and the go / no-go call for this project', icon: 'chart', tone: '#8A5F14', direct: 'feasibility' },
     { key: 'reportsd', title: 'Reports', sub: 'Every report from the CRM and Accounts in one place, with search and Excel', icon: 'chart', tone: '#2B5C8A', direct: 'reports' },
     { key: 'cpdept', title: 'Channel Partners', sub: 'Every partner firm: brokerage earned, bills, pass back, payments and what is still owed', icon: 'users', tone: '#0E8C9B', direct: 'partners' },
@@ -812,7 +815,9 @@
     }
     const tiles = DEPTS.map((x) => {
       if (x.soon) return { ...x };
-      if (x.direct) { const pg = PAGES.find((q) => q.key === x.direct); return pg && pg.show() ? { ...x, href: x.direct === 'marketing' || ['land', 'approvals', 'feasibility'].includes(x.direct) ? `#/${x.direct}/${p.id}` : hrefOf(pg) } : null; }
+      if (x.kinds && !x.kinds.includes(p.kind)) return null;
+      const sra = p.kind === 'sra' && x.sraTitle ? { title: x.sraTitle, sub: x.sraSub || x.sub } : {};
+      if (x.direct) { const pg = PAGES.find((q) => q.key === x.direct); return pg && pg.show() ? { ...x, ...sra, href: x.direct === 'marketing' || ['land', 'approvals', 'feasibility', 'slums', 'pdocs'].includes(x.direct) ? `#/${x.direct}/${p.id}` : hrefOf(pg) } : null; }
       const pgs = pagesOf(x).concat(x.more ? pagesOf({ group: x.more }) : []);
       if (!pgs.length) return x.later ? { ...x, soon: true } : null;
       return { ...x, href: `#/project/${p.id}/${x.key}` };
@@ -3312,6 +3317,8 @@
   let DOCS = null;
   const docsMeta = async () => (DOCS ||= await api('/api/custdocs?status=1'));
   const kb = (n) => (n >= 1048576 ? (n / 1048576).toFixed(1) + ' MB' : Math.max(1, Math.round(n / 1024)) + ' KB');
+  window.ErpOpenDoc = (id, name) => openDoc(id, name);
+  window.ErpUploadDoc = (owner, id, label, after) => uploadDoc(owner, id, label, after);
   async function openDoc(id, name) {
     const w = window.open('', '_blank');
     if (w) w.document.write('<p style="font:15px system-ui;padding:24px">Opening ' + esc(name || 'the document') + '…</p>');

@@ -4,6 +4,8 @@
 // GET  ?project=ID&file=ID                 → { name, type, data } one approval letter
 // GET  ?all=1                              → every project the login sees, with its summary (for the dashboards)
 // POST { project, action: 'save', approval: { key?, title?, status, authority, ref_no, applied_on, received_on, valid_till, remark } }
+// POST { project, action: 'docs.link', key, docIds: [customer_docs ids of this project's documents] }
+// GET  ?project=ID&docs=1                 → { docs } the project's documents, to link to an approval
 // POST { project, action: 'remove', key }  an approval added by hand (not one of the standard list)
 // POST { project, action: 'file.add', key, file: { name, data } } · { project, action: 'file.remove', id }
 // POST { project, action: 'import', file: { name, data } }   the Excel back
@@ -37,6 +39,7 @@ module.exports = route({
     }
     const { u, p } = await load(req, res, 'project.view', req.query.project); if (!u) return;
     if (req.query.excel) return res.json({ name: `${slug(p.code || p.name)}-approvals.xlsx`, data: (await A.sheet(p)).toString('base64') });
+    if (req.query.docs) return res.json({ docs: await A.projectDocs(p) });
     if (req.query.file) {
       const f = await db.one('select f.name, f.type, f.data from project_approval_files f join project_approvals a on a.id = f.approval_id where f.id = $1 and a.project_id = $2', [+req.query.file || 0, p.id]);
       if (!f) throw fail(404, 'That file is not in this project.');
@@ -52,6 +55,11 @@ module.exports = route({
       await db.tx(async (t) => {
         const { before, after } = await A.save(t, u, p, x);
         await rec(t, { action: before ? 'update' : 'create', entityId: after.id, before, after, note: `${after.title}: ${A.STATUS[after.status]}` });
+      });
+    } else if (b.action === 'docs.link') {
+      await db.tx(async (t) => {
+        const { before, after } = await A.linkDocs(t, u, p, b.key, b.docIds);
+        await rec(t, { action: 'update', entityId: after.id, before: { doc_ids: before.doc_ids }, after: { doc_ids: after.doc_ids }, note: `${after.title}: documents linked` });
       });
     } else if (b.action === 'remove') {
       await db.tx(async (t) => {

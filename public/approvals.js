@@ -36,7 +36,7 @@
     return `<tr data-k="${esc(x.key)}"><td class="${x.status === 'not_needed' ? 'nn' : ''}"><b>${esc(x.title)}</b>${x.authority ? `<span class="sm">${esc(x.authority)}</span>` : ''}</td>
       <td><span class="pill ${TONE[x.status]}">${esc(D.labels[x.status])}</span></td><td>${esc(when)}</td><td>${esc(x.ref_no)}</td>
       <td>${x.valid_till ? dd(x.valid_till) : ''}${x.alert === 'expired' ? '<span class="warnline">Expired</span>' : x.alert === 'expiring' ? '<span class="warnline">Renew soon</span>' : ''}</td>
-      <td>${x.files.length ? `📎 ${x.files.length}` : ''}</td></tr>`;
+      <td>${x.files.length + x.docs.length ? `📎 ${x.files.length + x.docs.length}` : ''}</td></tr>`;
   }
   function paint() {
     const p = D.project, s = D.summary, pct = s.total ? Math.round((s.received / s.total) * 100) : 0;
@@ -76,6 +76,8 @@
       <label>Reference / outward number</label><input name="ref_no" value="${esc(x?.ref_no)}" maxlength="80">
       <label>Remark (conditions, query raised, next step)</label><input name="remark" value="${esc(x?.remark)}" maxlength="500">
       ${x ? `<h3 style="margin:14px 0 4px">Letters and drawings</h3><div class="apv-files">${x.files.map((f) => `<div><button type="button" class="ghost small" data-open="${f.id}">${esc(f.name)}</button><span class="small muted">${kb(f.size)}</span>${ed ? `<button type="button" class="ghost small danger" data-rm="${f.id}">Remove</button>` : ''}</div>`).join('') || '<span class="small muted">No file yet.</span>'}</div>
+        ${x.docs.length ? `<div class="apv-files">${x.docs.map((f) => `<div><button type="button" class="ghost small" data-doc="${f.id}" data-n="${esc(f.name)}">📄 ${esc(f.name)}</button><span class="small muted">${kb(f.size)} · in Project documents</span></div>`).join('')}</div>` : ''}
+        ${ed ? '<button type="button" class="ghost small" id="apvLink">Link from Project documents</button>' : ''}
         ${ed ? '<button type="button" class="ghost small" id="apvFile">Add a file (PDF, JPG or PNG, up to 3 MB)</button><input type="file" id="apvFileI" accept="application/pdf,image/jpeg,image/png" hidden>' : ''}` : ''}
       ${x && x.custom && ed ? '<p class="small" style="margin-top:12px"><button type="button" class="ghost danger" id="apvDel">Remove this approval</button></p>' : ''}`,
     async (v) => {
@@ -92,6 +94,21 @@
       if (!(await zConfirm('Remove this file?'))) return;
       try { await post({ action: 'file.remove', id: +b.dataset.rm }); dl.close(); dl.remove(); paint(); form(D.list.find((y) => y.key === x.key)); } catch (e) { C.toast(e.message); }
     }));
+    $$('[data-doc]', dl).forEach((b) => (b.onclick = () => (window.ErpOpenDoc ? window.ErpOpenDoc(+b.dataset.doc, b.dataset.n) : C.toast('Open it from Project documents.'))));
+    const lk = $('#apvLink', dl);
+    if (lk) lk.onclick = async () => {
+      let r; try { r = await C.api(`/api/approvals?project=${P}&docs=1`); } catch (e) { C.toast(e.message); return; }
+      if (!r.docs.length) { C.toast('There are no project documents yet. Upload the letter in Project documents first.'); return; }
+      const on = new Set(x.docs.map((d) => d.id));
+      const pk = C.dialog(`<h2>Link letters · ${esc(x.title)}</h2><p class="small muted">Tick the letters for this approval. They stay in Project documents; nothing is copied.</p>
+        <input id="apvQ" placeholder="Search" style="margin-bottom:8px"><div id="apvL" style="max-height:52vh;overflow:auto">${r.docs.map((d) => `<label class="small" style="display:flex;gap:8px;align-items:flex-start;margin:4px 0" data-s="${esc((d.file_name + ' ' + d.kind).toLowerCase())}"><input type="checkbox" value="${d.id}" ${on.has(d.id) ? 'checked' : ''} style="width:auto;margin-top:3px"><span>${esc(d.file_name)} <span class="muted">· ${esc(d.kind)}</span></span></label>`).join('')}</div>`,
+      async () => {
+        const ids = $$('#apvL input:checked', pk).map((i) => +i.value);
+        await post({ action: 'docs.link', key: x.key, docIds: ids });
+        C.toast('Linked.'); dl.close(); dl.remove(); paint(); form(D.list.find((y) => y.key === x.key));
+      });
+      $('#apvQ', pk).oninput = (e) => { const q = e.target.value.toLowerCase(); $$('#apvL label', pk).forEach((l) => (l.hidden = q && !l.dataset.s.includes(q))); };
+    };
     const af = $('#apvFile', dl), ai = $('#apvFileI', dl);
     if (af) af.onclick = () => { ai.value = ''; ai.click(); };
     if (ai) ai.onchange = async () => {
