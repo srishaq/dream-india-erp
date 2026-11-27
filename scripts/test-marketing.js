@@ -693,6 +693,19 @@ let n = 0; const step = async (name, fn) => { await fn(); n++; console.log('  âœ
     if (buyer) assert.equal(await L.portalLead({ from: 'leads@99acres.com', subject: 'New response on 99acres', text: `Name: Buyer\nMobile: ${buyer.p}`, id: '<f5>' }), null);
   });
 
+  await step('After approval, a new design or new wording goes back for approval (as in Zuri)', async () => {
+    const png = Buffer.from('89504e470d0a1a0a0000000d49484452', 'hex').toString('base64');
+    const p = await M(rupali, 'post.save', { title: 'Re-approve', channels: ['instagram'], status: 'draft', caption: 'First words', publishAt: new Date(Date.now() + 864e5).toISOString() });
+    await M(rupali, 'post.send', { id: p.id }); assert.equal((await M(sameer, 'post.status', { id: p.id, status: 'approved' })).ok, true);
+    await M(rupali, 'post.file', { postId: p.id, name: 'new.png', mime: 'image/png', data: png });
+    let r = await db.one('select status, approved_at, approval_sent_at, review_note from mkt_posts where id = $1', [p.id]);
+    assert.equal(r.status, 'review'); assert.equal(r.approved_at, null); assert.equal(r.approval_sent_at, null); assert.match(r.review_note, /new design/);
+    assert.equal((await M(sameer, 'post.status', { id: p.id, status: 'approved' })).ok, true);
+    assert.equal((await M(rupali, 'post.save', { id: p.id, title: 'Re-approve', channels: ['instagram'], status: 'scheduled', caption: 'First words', publishAt: new Date(Date.now() + 864e5).toISOString() })).status, 'scheduled', 'same words: stays approved');
+    const w = await M(rupali, 'post.save', { id: p.id, title: 'Re-approve', channels: ['instagram'], status: 'scheduled', caption: 'Other words', publishAt: new Date(Date.now() + 864e5).toISOString() });
+    assert.equal(w.status, 'review'); r = await db.one('select approved_at, review_note from mkt_posts where id = $1', [p.id]); assert.equal(r.approved_at, null); assert.match(r.review_note, /wording changed/);
+  });
+
   await step('Posts: approval cannot be skipped through the status; only approved posts go out, once, even when two runs meet; design links only for approved posts', async () => {
     const F = require('../lib/mkt-flow'), png = Buffer.from('89504e470d0a1a0a0000000d49484452', 'hex').toString('base64');
     const p = await M(rupali, 'post.save', { title: 'Sneaky', channels: ['instagram', 'facebook'], status: 'draft', caption: 'MahaRERA No. P51800012345', publishAt: new Date(Date.now() - 60000).toISOString() });

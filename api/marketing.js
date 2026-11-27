@@ -734,15 +734,19 @@ const handler = route({
       const when = d.publishAt ? new Date(d.publishAt) : null; if (when && isNaN(when)) throw fail(400, 'The date looks wrong.');
       let status = STATUSES.includes(d.status) ? d.status : 'draft';
       const set = await settings();
+      let reword = false;
       if (set.needApproval && ['approved', 'scheduled', 'published'].includes(status) && !canApprove(u)) {
-        const cur = d.id ? await db.one('select approved_at from mkt_posts where id = $1', [intOr(d.id)]) : null;
+        const cur = d.id ? await db.one('select approved_at, caption, campaign_id from mkt_posts where id = $1', [intOr(d.id)]) : null;
         if (!cur || !cur.approved_at) status = 'review';
+        // new wording after approval goes back for approval: what is posted is word for word what was approved
+        else if (status !== 'published' && !cur.campaign_id && (cur.caption || '') !== (str(d.caption, 5000) || '')) { status = 'review'; reword = true; }
       }
       const v = [await projectOf(d.projectId), title, KINDS.includes(d.kind) ? d.kind : 'post', channels, when, status, str(d.caption, 5000) || null, /^\/api\/marketing\?canvaopen=/.test(String(d.canvaUrl || '')) && d.id ? ((await db.one('select canva_url from mkt_posts where id = $1', [intOr(d.id)])) || {}).canva_url || null : url(d.canvaUrl), url(d.assetUrl), url(d.postUrl), str(d.note, 1000) || null, intOr(d.campaignId) || null, u.id];
       let id;
       if (d.id) { id = intOr(d.id); const r = await db.one('update mkt_posts set project_id=$1, title=$2, kind=$3, channels=$4, publish_at=$5, status=$6, caption=$7, canva_url=$8, asset_url=$9, post_url=$10, note=$11, campaign_id=$12, updated_by=$13, updated_at=now() where id=$14 returning id', [...v, id]); if (!r) throw fail(404, 'That post is not there any more.'); }
       else id = (await db.one('insert into mkt_posts (project_id, title, kind, channels, publish_at, status, caption, canva_url, asset_url, post_url, note, campaign_id, created_by) values ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13) returning id', v)).id;
       if (d.reraOnDesign != null) await db.q('update mkt_posts set rera_on_design = $2 where id = $1', [id, !!d.reraOnDesign]);
+      if (reword) await db.q("update mkt_posts set approved_by = null, approved_at = null, approval_sent_at = null, review_note = 'The wording changed after approval: approve the new wording.' where id = $1", [id]);
       await log(d.id ? 'update' : 'create', 'mkt-post', id, { title, status });
       return res.json({ ok: true, id, status });
     }

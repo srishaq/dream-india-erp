@@ -15,7 +15,21 @@
     const ctx = { 'X-Book': bookOf() };
     try { if (/^\d+$/.test(String(proj ?? ''))) ctx['X-Project'] = String(proj); } catch { /* the picker is not set up yet */ }
     const opt = body ? { method: 'POST', headers: { 'Content-Type': 'application/json', ...ctx }, body: JSON.stringify(body) } : { headers: ctx };
-    const r = await fetch(path, { credentials: 'same-origin', ...opt });
+    // the browser could not reach the server (a dropped connection, the moment a new release goes live): a read is
+    // tried again; a read that hangs is given up after a while and tried once more, so a screen never sits on
+    // "Loading…" for ever; then a plain message with Try again instead of the browser's "Failed to fetch" (from Zuri)
+    const wait = /crmfolder=|[?&]view=(todo|checks)|\/api\/(mgmt|books-crm|ca|acc-dashboard)\b/.test(path) ? 45000 : 20000;
+    let r;
+    for (let i = 0; ; i++) {
+      const ac = !body && typeof AbortController === 'function' ? new AbortController() : null;
+      const tm = ac ? setTimeout(() => ac.abort(), wait) : null;
+      try { r = await fetch(path, { credentials: 'same-origin', ...opt, ...(ac ? { signal: ac.signal } : {}) }); clearTimeout(tm); break; }
+      catch (e) {
+        clearTimeout(tm);
+        if (!body && i < (ac && ac.signal.aborted ? 1 : 2)) { await new Promise((ok) => setTimeout(ok, 800 * (i + 1))); continue; }
+        throw Object.assign(new Error(navigator.onLine === false ? 'You are offline. Check the internet connection and try again.' : 'The ERP could not reach the server just now. Please try again in a moment.'), { network: true });
+      }
+    }
     let j = {};
     try { j = await r.json(); } catch {}
     if (r.status === 401) { me = null; start(); throw new Error(j.error || 'Please sign in.'); }
@@ -27,6 +41,11 @@
     }
     if (!r.ok) throw Object.assign(new Error(j.error || 'Something went wrong.'), { data: j });
     return j;
+  }
+  // a screen that could not load: the reason, and Try again when the server could not be reached
+  function pageErr(e) {
+    $('#page').innerHTML = `<div class="err">${esc(e.message)}${e.network ? ' <button type="button" class="small" id="pageRetry">Try again</button>' : ''}</div>`;
+    if ($('#pageRetry')) $('#pageRetry').onclick = () => shell();
   }
   const can = (p) => !!me && me.perms.includes(p);
   // small contact icons (call, WhatsApp chat, email), drawn inline
@@ -502,11 +521,11 @@
     wireInstall();
     $('#cpw').onclick = () => changePassword(false);
     if ($('#proj')) $('#proj').onchange = (e) => { proj = +e.target.value; store.set('erp_project', proj); shell(); };
-    if (page === 'reg-cancellations' && arg !== 'full' && anyOf('accounts.view', 'audit.tabs')) { try { await cancelledView(); } catch (e) { $('#page').innerHTML = `<div class="err">${esc(e.message)}</div>`; } return; }
-    if (/^reg-/.test(page || '') && (can('accounts.view') || (can('audit.tabs') && ['reg-recon', 'reg-cancellations'].includes(page)))) { try { await accRegister(page.slice(4)); } catch (e) { $('#page').innerHTML = `<div class="err">${esc(e.message)}</div>`; } return; }
+    if (page === 'reg-cancellations' && arg !== 'full' && anyOf('accounts.view', 'audit.tabs')) { try { await cancelledView(); } catch (e) { pageErr(e); } return; }
+    if (/^reg-/.test(page || '') && (can('accounts.view') || (can('audit.tabs') && ['reg-recon', 'reg-cancellations'].includes(page)))) { try { await accRegister(page.slice(4)); } catch (e) { pageErr(e); } return; }
     const fn = { stages: () => demands(true), home, mgmt, marketing: () => window.Marketing.render({ api, dialog, toast, me }, (/^\d+$/.test(location.hash.split('/')[2] || '') ? location.hash.split('/')[2] : null) || store.get('erp_mkt_scope') || null), telemarketing: () => window.Telemarketing.render({ api, dialog, toast, me }), ca: caPage, accdash, collections, flats, custdocs, comms, team: teamPage, accteam: teamPage, sdr: sdrPage, cp: cpPage, cpportal: cpPortalPage, project: projectHome, crmtodo: () => dailyTodo('crm'), acctodo: () => dailyTodo('accounts'), training, projects, plans, users, audit, units, bookings, demands, receipts, ledgers, letters, followups, verify, prices, partners, balances: accBalances, bankauto: bankAuto, bookscrm: booksCrm, accreports: accReports, checks: accChecks, queries: openQueries, dues: duesPage, changes: changesPage, reports: reportsHub, report: () => reportView(location.hash.split('/')[2]), accsetup: accSetup, import: importPage, booking: bookingPage, statement: statementPage, run: runPage, pre: prePage, parking: parkingPage };
     const key = DETAIL[page] && arg ? page : cur.key;
-    try { await fn[key](arg ? +arg : undefined); } catch (e) { $('#page').innerHTML = `<div class="err">${esc(e.message)}</div>`; }
+    try { await fn[key](arg ? +arg : undefined); } catch (e) { pageErr(e); }
   }
   // DreamComm, the company chat: the button shows how many messages are not read yet (checked every minute)
   let dcommT = null;
