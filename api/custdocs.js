@@ -29,13 +29,16 @@ const KINDS = {
     'Stamp duty and registration challans', 'Home loan sanction / bank NOC', 'Payment proof', 'Cancellation or transfer papers', 'Letter to or from the buyer', 'Other'],
   tenant: ['Agreement (signed)', 'KYC: PAN, Aadhaar, photo', 'Rent receipt', 'Eligibility / annexure papers', 'Other'],
   cp: ['CP bill / invoice', 'Agreement with the partner', 'PAN / GST / RERA certificate', 'Payment advice', 'Other'],
+  project: require('../lib/project-docs').SECTIONS, // a project's own papers (lib/project-docs.js)
 };
 // The papers every flat should have; the checklist shows which are missing.
 const CHECK = ['Booking form (signed)', 'Allotment letter (signed)', 'KYC: PAN, Aadhaar, photo', 'Agreement for sale (registered)', 'Index II / registration receipt'];
 
-const canSee = (u, kind) => (kind === 'tenant' ? has(u, 'accounts.view') : kind === 'cp' ? has(u, 'ledger.view') || has(u, 'accounts.view') : has(u, 'buyer.kyc'));
-const canAdd = (u, kind) => (kind === 'tenant' ? has(u, 'accounts.enter') : kind === 'cp' ? has(u, 'brokerage.bill') || has(u, 'accounts.enter') : has(u, 'buyer.kyc'));
-const canRemove = (u, kind) => has(u, 'users.manage') || (kind === 'tenant' || kind === 'cp' ? has(u, 'accounts.manage') : has(u, 'booking.approve'));
+// a project's own papers: Management, the Admin and Accounts see them; Management, the Admin and Head Accounts add them
+const PROJ = { see: (u) => has(u, 'mgmt.view') || has(u, 'masters.edit') || has(u, 'accounts.view'), add: (u) => has(u, 'mgmt.view') || has(u, 'masters.edit') || has(u, 'accounts.manage') };
+const canSee = (u, kind) => (kind === 'project' ? PROJ.see(u) : kind === 'tenant' ? has(u, 'accounts.view') : kind === 'cp' ? has(u, 'ledger.view') || has(u, 'accounts.view') : has(u, 'buyer.kyc'));
+const canAdd = (u, kind) => (kind === 'project' ? PROJ.add(u) : kind === 'tenant' ? has(u, 'accounts.enter') : kind === 'cp' ? has(u, 'brokerage.bill') || has(u, 'accounts.enter') : has(u, 'buyer.kyc'));
+const canRemove = (u, kind) => has(u, 'users.manage') || (kind === 'project' && has(u, 'mgmt.view')) || (kind === 'tenant' || kind === 'cp' ? has(u, 'accounts.manage') : has(u, 'booking.approve'));
 const cols = 'd.id, d.owner_kind, d.booking_id, d.tenant_id, d.cp_id, d.label, d.kind, d.title, d.file_name, d.mime, d.size, d.status, d.created_at, d.ready_at, x.name as by_name';
 
 async function bookingLabel(bookingId) {
@@ -46,10 +49,10 @@ async function bookingLabel(bookingId) {
 // each project with a shared CRM folder (lib/custdocs-import.js FOLDERS): its code, or null
 async function crmFolderProject(pid) { const p = await db.one('select code from projects where id = $1', [pid]); return p && require('../lib/custdocs-import').FOLDER(p.code) ? p.code : null; }
 async function docFor(u, id) {
-  const d = await db.one('select d.*, u2.project_id from customer_docs d left join bookings b on b.id = d.booking_id left join units u2 on u2.id = b.unit_id where d.id = $1', [id]);
+  const d = await db.one('select d.*, coalesce(d.project_id, u2.project_id) as project_id from customer_docs d left join bookings b on b.id = d.booking_id left join units u2 on u2.id = b.unit_id where d.id = $1', [id]);
   if (!d) throw fail(404, 'That document is not there.');
   if (!canSee(u, d.owner_kind)) throw fail(403, 'Your role does not see these documents.');
-  if (d.owner_kind === 'booking') needProject(u, d.project_id);
+  if (d.owner_kind === 'booking' || d.owner_kind === 'project') needProject(u, d.project_id);
   return d;
 }
 
@@ -107,6 +110,18 @@ module.exports = route({
       res.setHeader('Content-Type', 'application/octet-stream'); res.setHeader('Content-Length', buf.length);
       return res.end(buf);
     }
+    if (q.projdocs) {
+      if (!PROJ.see(u)) throw fail(403, 'Your role does not see project documents.');
+      const pid = needProject(u, intOr(q.projdocs)), PD = require('../lib/project-docs');
+      const f = await PD.folderOf(pid);
+      return res.json({ ...(await PD.list(pid)), canAdd: PROJ.add(u), canRemove: canRemove(u, 'project'), folder: f ? gd.folderLink(f) : null, canLink: has(u, 'users.manage') || has(u, 'mgmt.view') });
+    }
+    if (q.projfolder) {
+      if (!PROJ.add(u)) throw fail(403, 'Your role cannot add project documents.');
+      const p = await require('../lib/project-docs').plan(needProject(u, intOr(q.projfolder)));
+      return res.json(p.available ? { available: true, folder: gd.folderLink(p.folder), total: p.total, already: p.already, ready: p.ready.length, skipped: p.skipped,
+        sections: p.ready.reduce((m, f) => ((m[f.section] = (m[f.section] || 0) + 1), m), {}) } : p);
+    }
     if (q.booking) {
       if (!has(u, 'buyer.kyc')) throw fail(403, 'Your role does not see buyer documents.');
       await bookingFor(u, intOr(q.booking));
@@ -151,14 +166,18 @@ module.exports = route({
       return res.json({ ok: true });
     }
     if (b.action === 'start') {
-      const owner = b.owner === 'tenant' ? 'tenant' : b.owner === 'cp' ? 'cp' : 'booking';
+      const owner = b.owner === 'tenant' ? 'tenant' : b.owner === 'cp' ? 'cp' : b.owner === 'project' ? 'project' : 'booking';
       if (!canAdd(u, owner)) throw fail(403, 'Your role cannot add these documents.');
       const kind = KINDS[owner].includes(b.kind) ? b.kind : null; if (!kind) throw fail(400, 'Choose what the document is.');
       const mime = TYPES[b.mime] ? b.mime : null; if (!mime) throw fail(400, 'Upload a PDF, a photo (JPG, PNG) or a Word or Excel file.');
       const size = intOr(b.size); if (!(size > 0)) throw fail(400, 'That file is empty.'); if (size > MAX) throw fail(400, 'That file is over 40 MB. Scan it at a lower resolution, or in black and white.');
       const fileName = str(b.fileName, 160).replace(/[\\/:*?"<>|]+/g, '-') || 'document';
       let label, parent, bookingId = null, tenantId = null, cpId = null, projectId = null;
-      if (owner === 'cp') {
+      if (owner === 'project') {
+        const pj = await db.one('select id, name from projects where id = $1', [needProject(u, intOr(b.id))]); if (!pj) throw fail(404, 'Project not found.');
+        projectId = pj.id; label = pj.name;
+        parent = await gd.folder(`projectdocs:${pj.id}`, `${pj.name} - Project documents`, `project:${pj.id}`, pj.name);
+      } else if (owner === 'cp') {
         const f = await db.one('select id, name from channel_partners where id = $1', [intOr(b.id)]); if (!f) throw fail(404, 'Partner firm not found.');
         cpId = f.id; label = f.name;
         parent = await gd.folder(`cp:${f.id}`, f.name, 'channel-partners', 'Channel Partners');
@@ -174,8 +193,8 @@ module.exports = route({
       const title = str(b.title, 160) || null;
       const driveName = `${kind.replace(/[:/]/g, ' -')}${title ? ' - ' + title : ''} - ${fileName}`.slice(0, 200);
       const url = await gd.startUpload({ name: driveName, mime, size, parent });
-      const r = await db.one(`insert into customer_docs (owner_kind, booking_id, tenant_id, cp_id, label, kind, title, file_name, mime, size, upload_url, uploaded_by)
-        values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12) returning id`, [owner, bookingId, tenantId, cpId, label, kind, title, fileName, mime, size, url, u.id]);
+      const r = await db.one(`insert into customer_docs (owner_kind, booking_id, tenant_id, cp_id, label, kind, title, file_name, mime, size, upload_url, uploaded_by, project_id)
+        values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13) returning id`, [owner, bookingId, tenantId, cpId, label, kind, title, fileName, mime, size, url, u.id, owner === 'project' ? projectId : null]);
       return res.json({ docId: r.id, part: PART, parts: Math.ceil(size / PART), projectId });
     }
     if (b.action === 'part') {
@@ -192,7 +211,7 @@ module.exports = route({
       catch (e) { await db.q("update customer_docs set status = 'failed' where id = $1", [d.id]); throw e; }
       if (!r.done) { await db.q('update customer_docs set received = $2 where id = $1', [d.id, start + buf.length]); return res.json({ ok: true, done: false }); }
       await db.q("update customer_docs set status = 'ready', received = size, drive_file_id = $2, upload_url = null, ready_at = now() where id = $1", [d.id, r.id]);
-      const pj = d.booking_id ? (await db.one('select u.project_id from bookings b join units u on u.id = b.unit_id where b.id = $1', [d.booking_id])).project_id : null;
+      const pj = d.booking_id ? (await db.one('select u.project_id from bookings b join units u on u.id = b.unit_id where b.id = $1', [d.booking_id])).project_id : d.project_id || null;
       await audit.record(db.q, { user: u, action: 'upload', entity: 'customer-doc', entityId: d.id, projectId: pj, after: { label: d.label, kind: d.kind, file: d.file_name, size: Number(d.size) } });
       return res.json({ ok: true, done: true, id: d.id });
     }
@@ -205,6 +224,22 @@ module.exports = route({
         Array.isArray(b.slice) && intOr(b.slice[1]) > 1 && intOr(b.slice[1]) <= 8 && intOr(b.slice[0]) >= 0 && intOr(b.slice[0]) < intOr(b.slice[1]) ? [intOr(b.slice[0]), intOr(b.slice[1])] : null); // a few files a call, so each answer comes back quickly
       if (r.imported.length) await audit.record(db.q, { user: u, action: 'import', entity: 'customer-doc', projectId: pid, after: { from: 'crm-folder', files: r.imported.length, failed: r.failed.length } });
       return res.json({ ok: true, imported: r.imported.length, list: r.imported, failed: r.failed, left: r.left, noFlat: r.noFlat.length, noBooking: r.noBooking.length });
+    }
+    // a project's shared Drive folder: link it (Admin / Management), and copy its new files in (run again until nothing is left)
+    if (b.action === 'projfolder.link') {
+      if (!(has(u, 'users.manage') || has(u, 'mgmt.view'))) throw fail(403, 'Only the Admin or Management links a project folder.');
+      const pid = needProject(u, intOr(b.projectId));
+      const m = String(b.folder || '').match(/(?:folders\/|id=)?([A-Za-z0-9_-]{20,80})/);
+      await require('../lib/project-docs').linkFolder(pid, m ? m[1] : null);
+      await audit.record(db.q, { user: u, action: 'link-folder', entity: 'project-docs', entityId: pid, projectId: pid, after: { folder: m ? m[1] : null } });
+      return res.json({ ok: true });
+    }
+    if (b.action === 'projfolder') {
+      if (!PROJ.add(u)) throw fail(403, 'Your role cannot add project documents.');
+      const pid = needProject(u, intOr(b.projectId));
+      const r = await require('../lib/project-docs').run(pid, u, 40000);
+      if (r.imported && r.imported.length) await audit.record(db.q, { user: u, action: 'import', entity: 'project-docs', entityId: pid, projectId: pid, after: { files: r.imported.length } });
+      return res.json({ ok: true, ...r });
     }
     if (b.action === 'remove') {
       const d = await docFor(u, intOr(b.docId));

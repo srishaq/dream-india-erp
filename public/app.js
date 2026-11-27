@@ -355,6 +355,7 @@
     { key: 'telemarketing', label: 'Telemarketing', show: () => anyOf('tm.view', 'tm.manage', 'tm.entry') },
     { key: 'opportunities', label: 'New opportunities (feasibility)', show: () => anyOf('masters.edit', 'mgmt.view') },
     { key: 'feasibility', label: 'Feasibility', show: () => anyOf('masters.edit', 'mgmt.view') && !!proj, sub: true },
+    { key: 'pdocs', label: 'Project documents', show: () => anyOf('mgmt.view', 'accounts.view', 'masters.edit') && !!proj, sub: true },
     { key: 'land', label: 'Land & title', show: () => anyOf('mgmt.view', 'accounts.view', 'masters.edit') && !!proj, sub: true },
     { key: 'approvals', label: 'Approvals', show: () => anyOf('mgmt.view', 'accounts.view', 'masters.edit') && !!proj, sub: true },
     { key: 'targets', label: 'Sales targets', show: () => anyOf('reports.view', 'leads.all', 'inventory.view') && !!proj },
@@ -438,7 +439,7 @@
     { key: 'users', label: 'Logins', show: () => can('users.manage') },
     { key: 'audit', label: 'Audit log', show: () => can('audit.view') },
   ];
-  const DETAIL = { land: 'land', approvals: 'approvals', opportunities: 'opportunities', feasibility: 'opportunities', report: 'reports', booking: 'flats', statement: 'flats', run: 'demands', pre: 'demands', bankauto: 'bankauto', project: 'home', team: 'team', accteam: 'accteam', cp: 'partners' };
+  const DETAIL = { pdocs: 'pdocs', land: 'land', approvals: 'approvals', opportunities: 'opportunities', feasibility: 'opportunities', report: 'reports', booking: 'flats', statement: 'flats', run: 'demands', pre: 'demands', bankauto: 'bankauto', project: 'home', team: 'team', accteam: 'accteam', cp: 'partners' };
   let projectList = null, proj = null;
   // projects with contractor's flats (Dream Aspire) get the Developer's / Contractor's bookings tiles; others stay as they were
   const ctrProject = (id = proj) => !!((projectList || []).find((p) => p.id === id)?.contractor_flats > 0);
@@ -536,7 +537,7 @@
     if ($('#proj')) $('#proj').onchange = (e) => { proj = +e.target.value; store.set('erp_project', proj); shell(); };
     if (page === 'reg-cancellations' && arg !== 'full' && anyOf('accounts.view', 'audit.tabs')) { try { await cancelledView(); } catch (e) { pageErr(e); } return; }
     if (/^reg-/.test(page || '') && (can('accounts.view') || (can('audit.tabs') && ['reg-recon', 'reg-cancellations'].includes(page)))) { try { await accRegister(page.slice(4)); } catch (e) { pageErr(e); } return; }
-    const fn = { land: (id) => window.Land.render({ api, dialog, toast, me }, id || proj, location.hash.split('?')[0].split('/')[3]), approvals: (id) => window.Approvals.render({ api, dialog, toast, me }, id || proj), targets, opportunities: (id) => (id ? window.Feasibility.render({ api, dialog, toast, me }, null, id) : window.Feasibility.sites({ api, dialog, toast, me })), feasibility: (id) => window.Feasibility.render({ api, dialog, toast, me }, id || proj), stages: () => demands(true), home, mgmt, marketing: () => window.Marketing.render({ api, dialog, toast, me }, (/^\d+$/.test(location.hash.split('/')[2] || '') ? location.hash.split('/')[2] : null) || store.get('erp_mkt_scope') || null), telemarketing: () => window.Telemarketing.render({ api, dialog, toast, me }), ca: caPage, accdash, collections, flats, custdocs, comms, team: teamPage, accteam: teamPage, sdr: sdrPage, cp: cpPage, cpportal: cpPortalPage, project: projectHome, crmtodo: () => dailyTodo('crm'), acctodo: () => dailyTodo('accounts'), training, projects, plans, users, audit, units, bookings, demands, receipts, ledgers, letters, followups, verify, prices, partners, balances: accBalances, bankauto: bankAuto, bookscrm: booksCrm, accreports: accReports, checks: accChecks, queries: openQueries, dues: duesPage, changes: changesPage, reports: reportsHub, report: () => reportView(location.hash.split('/')[2]), accsetup: accSetup, import: importPage, booking: bookingPage, statement: statementPage, run: runPage, pre: prePage, parking: parkingPage };
+    const fn = { pdocs: (id) => projDocs(id || proj), land: (id) => window.Land.render({ api, dialog, toast, me }, id || proj, location.hash.split('?')[0].split('/')[3]), approvals: (id) => window.Approvals.render({ api, dialog, toast, me }, id || proj), targets, opportunities: (id) => (id ? window.Feasibility.render({ api, dialog, toast, me }, null, id) : window.Feasibility.sites({ api, dialog, toast, me })), feasibility: (id) => window.Feasibility.render({ api, dialog, toast, me }, id || proj), stages: () => demands(true), home, mgmt, marketing: () => window.Marketing.render({ api, dialog, toast, me }, (/^\d+$/.test(location.hash.split('/')[2] || '') ? location.hash.split('/')[2] : null) || store.get('erp_mkt_scope') || null), telemarketing: () => window.Telemarketing.render({ api, dialog, toast, me }), ca: caPage, accdash, collections, flats, custdocs, comms, team: teamPage, accteam: teamPage, sdr: sdrPage, cp: cpPage, cpportal: cpPortalPage, project: projectHome, crmtodo: () => dailyTodo('crm'), acctodo: () => dailyTodo('accounts'), training, projects, plans, users, audit, units, bookings, demands, receipts, ledgers, letters, followups, verify, prices, partners, balances: accBalances, bankauto: bankAuto, bookscrm: booksCrm, accreports: accReports, checks: accChecks, queries: openQueries, dues: duesPage, changes: changesPage, reports: reportsHub, report: () => reportView(location.hash.split('/')[2]), accsetup: accSetup, import: importPage, booking: bookingPage, statement: statementPage, run: runPage, pre: prePage, parking: parkingPage };
     const key = DETAIL[page] && arg ? page : cur.key;
     try { await fn[key](arg ? +arg : undefined); } catch (e) { pageErr(e); }
   }
@@ -706,12 +707,79 @@
   }
 
   // #/project/<id> shows the departments; #/project/<id>/<dept> shows that department's pages.
+  // ---------- a project before its launch (stage 'pre'): land, registration, feasibility, approvals and its papers ----------
+  async function preProject(p) {
+    const safe = (u) => api(u).catch(() => null);
+    const [F, A, L, D] = await Promise.all([safe(`/api/feasibility?project=${p.id}`), safe(`/api/approvals?project=${p.id}`), safe(`/api/land?project=${p.id}`), safe(`/api/custdocs?projdocs=${p.id}`)]);
+    const lsum = L && L.summary, asum = A && A.summary;
+    const registered = lsum && lsum.parcels && lsum.registered === lsum.parcels;
+    const got = (k) => A && A.list.some((x) => x.key === k && x.status === 'received');
+    const steps = [['Land bought', true], ['Registration', registered], ['Approvals (IOD, CC)', got('iod') && (got('cc_plinth') || got('cc_full'))], ['RERA and launch', got('rera')], ['Sales', false]];
+    const now = steps.findIndex(([, done]) => !done);
+    const pend = A ? A.list.filter((x) => !['received', 'not_needed'].includes(x.status)) : [];
+    const sec = D ? D.sections.filter((k) => D.counts[k]).map((k) => `${esc(k)} ${D.counts[k]}`).join(' · ') : '';
+    const card = (title, body, href, link) => `<div class="panel" style="margin:0"><h2 style="margin-top:0">${title}</h2>${body}${href ? `<p style="margin:10px 0 0"><a href="${href}">${link} →</a></p>` : ''}</div>`;
+    $('#page').innerHTML = heroHtml('Project · before the launch', p.name, [p.location, p.company].filter(Boolean).join(' · '), ['#/home', 'Home']) + `<div class="hm">
+      <section class="hgroup"><h2>Where the project stands</h2><div class="panel" style="margin:0"><div style="display:flex;flex-wrap:wrap;gap:8px">${steps.map(([l, done], i) => `<span class="pill ${done ? 'good' : i === now ? 'warn' : ''}" style="padding:8px 12px">${done ? '✓ ' : i === now ? 'Next: ' : ''}${esc(l)}</span>`).join('<span class="muted" style="align-self:center">→</span>')}</div>
+        <p class="small muted" style="margin:10px 0 0">No sales or CRM until the launch. When the project is ready to sell, the Admin turns on sales for it in Companies & projects.</p></div></section>
+      <section class="hgroup"><h2>At a glance</h2><div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:12px">
+        ${card('Land and registration', lsum ? `<p style="margin:0"><b>${esc(String(lsum.sqm.toLocaleString('en-IN')))} sq m</b> (${lsum.acres} acres) · land cost <b>${cr(lsum.cost)}</b></p>
+          <p class="small" style="margin:6px 0 0">${registered ? '<span class="good-t">Deed registered</span>' : '<span class="bad-t">Registration still to be done</span>'} · paid to owners ${cr(lsum.paid)}${lsum.balance ? ` · <span class="bad-t">${cr(lsum.balance)} still to record</span>` : ''}</p>
+          ${L.parcels && L.parcels[0] && L.parcels[0].title_note ? `<p class="small muted" style="margin:6px 0 0">${esc(L.parcels[0].title_note)}</p>` : ''}` : '<p class="muted">Not entered yet.</p>', `#/land/${p.id}`, 'Land & title')}
+        ${card('Feasibility', F && F.list.length ? `<div class="table-wrap"><table><tr><th>Option</th><th>Call</th><th class="num">Profit</th><th class="num">Margin</th></tr>${F.list.map((o) => `<tr><td class="small">${esc(o.name)}</td><td class="small"><span class="${o.status === 'GO' ? 'good-t' : o.status === 'NO-GO' ? 'bad-t' : ''}">${esc(o.verdict || o.status)}</span></td><td class="num small">${cr(o.profit)}</td><td class="num small">${o.margin == null ? '—' : (o.margin * 100).toFixed(1) + '%'}</td></tr>`).join('')}</table></div>` : '<p class="muted">No options yet.</p>', `#/feasibility/${p.id}`, 'Feasibility')}
+        ${card('Approval process', asum ? `<p style="margin:0"><b>${asum.received} of ${asum.total}</b> received${asum.applied ? ` · ${asum.applied} applied` : ''}${asum.query ? ` · <span class="bad-t">${asum.query} with a query</span>` : ''}</p>
+          ${pend.length ? `<p class="small" style="margin:6px 0 0">Next: ${pend.slice(0, 4).map((x) => esc(x.title)).join(' · ')}${pend.length > 4 ? ' …' : ''}</p>` : ''}` : '<p class="muted">Not set up yet.</p>', `#/approvals/${p.id}`, 'Approvals')}
+        ${card('Documents', D ? `<p style="margin:0"><b>${D.rows.length}</b> document${D.rows.length === 1 ? '' : 's'}</p>${sec ? `<p class="small muted" style="margin:6px 0 0">${sec}</p>` : ''}` : '<p class="muted">—</p>', `#/pdocs/${p.id}`, 'Documents')}
+      </div></section>
+      <section class="hgroup"><h2>Pages</h2><div class="tiles five">${[
+        { title: 'Feasibility', sub: 'The consultant’s and our own options: FSI, costs, margin and the go / no-go call', icon: 'chart', href: `#/feasibility/${p.id}` },
+        { title: 'Documents', sub: 'Every paper of the project, by section: land, DP remarks, feasibility, approvals, legal, drawings', icon: 'book', href: `#/pdocs/${p.id}` },
+        { title: 'Approval process', sub: 'IOD, CC, RERA, OC and the NOCs, with status, dates and letters', icon: 'check', href: `#/approvals/${p.id}` },
+        { title: 'Land & title', sub: 'The parcel, the deal, payments to the owners and the title papers', icon: 'grid', href: `#/land/${p.id}` },
+      ].map((t) => tile({ ...t, tone: '#8A5F14' })).join('')}</div></section></div>`;
+  }
+  // ---------- a project's own papers (lib/project-docs.js) ----------
+  async function projDocs(pid) {
+    const [m, d, pl] = await Promise.all([docsMeta(), api(`/api/custdocs?projdocs=${pid}`), api('/api/masters')]);
+    const p = pl.projects.find((x) => x.id === pid) || { name: 'Project' };
+    const again = () => projDocs(pid);
+    $('#page').innerHTML = `<div class="page-head"><div><a class="muted small" href="#/project/${pid}">← ${esc(p.name)}</a><h1>Documents</h1>
+      <p class="muted">Every paper of the project, kept in Google Drive and listed here by section. ${d.canAdd ? 'Add a document, or put files in the project’s shared Drive folder and bring them in.' : ''}</p></div>
+      ${d.canAdd ? '<div class="actions" style="margin:0"><button id="pdUp">Add a document</button></div>' : ''}</div>
+      ${m.connected ? '' : '<p class="small bad-t">Google Drive is not connected yet, so documents cannot be added.</p>'}
+      <div class="panel" id="pdFolder" style="margin:0 0 14px"></div>
+      ${d.sections.map((k) => { const rows = d.rows.filter((r) => r.kind === k); return `<div class="panel" style="margin:0 0 12px"><h2 style="margin-top:0">${esc(k)} <span class="muted small" style="font-weight:400">${rows.length || ''}</span></h2>
+        ${rows.length ? `<div class="table-wrap"><table><tr><th>File</th><th>Note</th><th>Added</th><th></th></tr>${rows.map((r) => `<tr><td><b>${esc(r.file_name)}</b><br><span class="small muted">${esc(m.types[r.mime] || '')} · ${kb(+r.size)}</span></td><td class="small">${esc(r.title || '')}</td>
+          <td class="small">${fmtDate(r.ready_at || r.created_at)}<br><span class="muted">${esc(r.by_name || '')}</span></td>
+          <td style="white-space:nowrap"><button class="ghost small" data-open="${r.id}" data-n="${esc(r.file_name)}">Open</button>${d.canRemove ? ` <button class="link small" data-rm="${r.id}">Remove</button>` : ''}</td></tr>`).join('')}</table></div>` : '<p class="small muted" style="margin:0">Nothing yet.</p>'}</div>`; }).join('')}`;
+    document.querySelectorAll('[data-open]').forEach((x) => (x.onclick = () => openDoc(+x.dataset.open, x.dataset.n)));
+    document.querySelectorAll('[data-rm]').forEach((x) => (x.onclick = () => dialog('<h2>Remove this document?</h2><p class="muted small">It is hidden from the list but stays in Google Drive, and the audit log keeps who removed it and why.</p><label>Why?</label><input name="reason" required maxlength="300">',
+      async (v) => { await api('/api/custdocs', { action: 'remove', docId: +x.dataset.rm, reason: v.reason }); toast('Removed.'); again(); })));
+    if ($('#pdUp')) $('#pdUp').onclick = () => uploadDoc('project', pid, p.name, again);
+    // the shared Drive folder: what is new, and bring it in
+    const box = $('#pdFolder');
+    const paint = async () => {
+      if (!d.folder) { box.innerHTML = `<h2 style="margin-top:0">Shared Drive folder</h2><p class="small muted">${d.canLink ? 'Link a Google Drive folder (shared with the ERP as Viewer) and its files can be brought in by section.' : 'No folder linked.'}</p>${d.canLink ? '<div class="row"><div><input id="pdF" placeholder="Drive folder link"></div><div><button class="ghost" id="pdL">Link the folder</button></div></div>' : ''}`;
+        if ($('#pdL')) $('#pdL').onclick = async () => { try { await api('/api/custdocs', { action: 'projfolder.link', projectId: pid, folder: $('#pdF').value }); toast('Folder linked.'); again(); } catch (e) { alert(e.message); } };
+        return; }
+      box.innerHTML = '<p class="small muted">Checking the shared Drive folder…</p>';
+      let c; try { c = await api(`/api/custdocs?projfolder=${pid}`); } catch (e) { box.innerHTML = `<h2 style="margin-top:0">Shared Drive folder</h2><p class="small bad-t">${esc(e.message)}</p>`; return; }
+      box.innerHTML = `<h2 style="margin-top:0">Shared Drive folder</h2><p class="small">${c.total} file${c.total === 1 ? '' : 's'} in <a href="${esc(c.folder)}" target="_blank" rel="noopener">the folder</a> · ${c.already} already here${c.ready ? ` · <b>${c.ready} new</b> (${Object.entries(c.sections).map(([k, n]) => `${esc(k)} ${n}`).join(', ')})` : ''}${c.skipped.length ? ` · ${c.skipped.length} skipped` : ''}</p>
+        ${c.ready && d.canAdd ? '<button id="pdGo">Bring in the new files</button>' : ''}`;
+      if ($('#pdGo')) $('#pdGo').onclick = async (e) => { e.target.disabled = true; e.target.textContent = 'Bringing them in…';
+        try { let r; do { r = await api('/api/custdocs', { action: 'projfolder', projectId: pid }); } while (r.left > 0 && r.imported.length); toast(`${r.already} file${r.already === 1 ? '' : 's'} in the documents.${r.failed.length ? ` ${r.failed.length} could not be copied.` : ''}`); again(); }
+        catch (x) { alert(x.message); e.target.disabled = false; } };
+    };
+    paint();
+  }
   async function projectHome(id) {
     const d = await api('/api/masters');
     const p = d.projects.find((x) => x.id === id && x.active);
     if (!p) { $('#page').innerHTML = '<div class="err">This project is not in the ERP.</div>'; return; }
     if (proj !== p.id) { proj = p.id; store.set('erp_project', proj); return shell(); } // the menu is redrawn for this project
     const dept = DEPTS.find((x) => x.key === location.hash.split('/')[3]);
+    // before the launch (land, feasibility, approvals): its own dashboard, no sales or CRM yet
+    if (p.stage === 'pre' && !dept) return preProject(p);
     if (dept && !dept.soon && !dept.direct) {
       const tiles = pagesOf(dept).map((pg) => ({ title: pg.label, sub: SUB[pg.key] || '', icon: PICON[pg.key] || dept.icon, tone: dept.tone, href: hrefOf(pg) }))
         .concat((dept.later || []).map((t) => ({ title: t, sub: '', icon: dept.icon, tone: dept.tone, soon: true })));
@@ -3255,7 +3323,7 @@
       <label>What is it?</label><select name="kind">${m.kinds[owner].map((k) => `<option>${esc(k)}</option>`).join('')}</select>
       <label>Note (optional)</label><input name="title" maxlength="160" placeholder="e.g. Registered on 12 Oct, Sub-registrar Andheri 4">
       <label>File (PDF, photo, Word or Excel, up to 40 MB)</label><input type="file" name="file" required accept=".pdf,.jpg,.jpeg,.png,.webp,.heic,.doc,.docx,.xls,.xlsx,application/pdf,image/*">
-      <p class="small muted" id="upP">The file goes into Google Drive, in this ${owner === 'tenant' ? 'tenant' : owner === 'cp' ? 'partner' : 'flat'}'s folder.</p>`,
+      <p class="small muted" id="upP">The file goes into Google Drive, in this ${owner === 'tenant' ? 'tenant' : owner === 'cp' ? 'partner' : owner === 'project' ? 'project' : 'flat'}'s folder.</p>`,
     async (x, f) => {
       const file = f.querySelector('[name=file]').files[0];
       if (!file) throw new Error('Choose the file.');

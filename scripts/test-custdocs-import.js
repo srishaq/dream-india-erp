@@ -32,10 +32,13 @@ global.fetch = async (url, opts) => {
   const u = String(url);
   if (!u.startsWith('https://www.googleapis.com/drive/v3/files')) return realFetch(url, opts);
   const json = (o) => new Response(JSON.stringify(o), { status: 200, headers: { 'Content-Type': 'application/json' } });
+  if (u.includes('/export?mimeType=application%2Fpdf')) return new Response(Buffer.from('PDF-export'));
   if (u.includes('alt=media')) { const id = decodeURIComponent(u.split('/files/')[1].split('?')[0]); if (id === 'broken') return new Response('{"error":{"message":"gone"}}', { status: 500 }); return new Response(Buffer.from('PDF-' + id)); }
   const q = new URL(u).searchParams.get('q');
   if (q.includes("'crm-root'")) return json({ files: FILES.root });
   if (q.includes("'sub-b'")) return json({ files: FILES.sub });
+  if (q.includes("'proj-root'")) return json({ files: [{ id: 'pd-sub', name: '02 DP remarks & survey', mimeType: 'application/vnd.google-apps.folder' }, { id: 'pd-syn', name: '00 Project synopsis', mimeType: 'application/vnd.google-apps.document' }] });
+  if (q.includes("'pd-sub'")) return json({ files: [{ id: 'pd-dp', name: 'DP 2034 remarks.pdf', mimeType: 'application/pdf', size: '9' }] });
   return json({ files: [] });
 };
 process.env.SIGNATURE_DOCS_FOLDER = 'crm-root';
@@ -120,6 +123,26 @@ process.env.SIGNATURE_DOCS_FOLDER = 'crm-root';
     assert.equal(r.imported, 0); assert.equal(r.failed.length, 1);
     await db.q("update customer_docs set status = 'removed' where source_id = 'f2'");
     assert.equal((await admin(`/api/custdocs?crmfolder=${sig.id}`)).ready, 1, 'only the broken one is still new');
+  });
+
+  await step('A project\'s own papers: added by section, brought in from its shared folder (a Google Doc as a PDF), once', async () => {
+    const pid = sig.id;
+    const st = await admin('/api/custdocs', { action: 'start', owner: 'project', id: pid, kind: 'Land & title', fileName: 'deed.pdf', mime: 'application/pdf', size: 4 });
+    assert.equal(st.status, 200, st.error);
+    const pt = await admin('/api/custdocs', { action: 'part', docId: st.docId, index: 0, data: Buffer.from('DEED').toString('base64') }); assert.equal(pt.done, true, pt.error);
+    let L = await admin(`/api/custdocs?projdocs=${pid}`); assert.equal(L.rows.length, 1); assert.equal(L.counts['Land & title'], 1); assert.equal(L.folder, null);
+    assert.equal((await admin('/api/custdocs', { action: 'projfolder.link', projectId: pid, folder: 'https://drive.google.com/drive/folders/proj-root-folder-1234567' })).ok, true);
+    await db.q("update settings set value = jsonb_set(value, $1, '\"proj-root\"') where key = 'project_docs_folders'", [`{${pid}}`]);
+    const c = await admin(`/api/custdocs?projfolder=${pid}`); assert.equal(c.available, true, c.error); assert.equal(c.ready, 2); assert.equal(c.sections['DP remarks & survey'], 1);
+    const r = await admin('/api/custdocs', { action: 'projfolder', projectId: pid }); assert.equal(r.imported.length, 2, JSON.stringify(r.failed));
+    L = await admin(`/api/custdocs?projdocs=${pid}`); assert.equal(L.rows.length, 3); assert.ok(L.rows.some((x) => x.file_name === '00 Project synopsis.pdf' && x.mime === 'application/pdf'));
+    assert.equal((await admin('/api/custdocs', { action: 'projfolder', projectId: pid })).imported.length, 0, 'once');
+    const one = L.rows.find((x) => x.kind === 'DP remarks & survey'); assert.ok(one);
+    const info = await admin(`/api/custdocs?file=${one.id}&info=1`); assert.equal(info.status, 200, info.error);
+    await db.q("insert into users (username, name, role, password_hash, all_projects, must_change) values ('sal1', 'S', 'sales', $1, true, false)", [require('../lib/auth').hashPassword('pass-word-123')]);
+    const s1 = client(); await s1('/api/session', { action: 'login', username: 'sal1', password: 'pass-word-123' });
+    assert.equal((await s1(`/api/custdocs?projdocs=${pid}`)).status, 403);
+    assert.equal((await s1(`/api/custdocs?file=${one.id}&info=1`)).status, 403);
   });
 
   await step('Only Dream Signature, and only logins that add buyer documents', async () => {

@@ -13,7 +13,7 @@ const KINDS = ['sale', 'rehab', 'commercial', 'other'];
 async function overview(u) {
   const all = auth.has(u, 'masters.edit');
   const companies = await db.q('select id, code, name, pan, gstin, active from companies order by name');
-  const projects = (await db.q(`select p.id, p.code, p.name, p.company_id, c.name as company, p.location, p.rera_no, p.active,
+  const projects = (await db.q(`select p.id, p.code, p.name, p.company_id, c.name as company, p.location, p.rera_no, p.active, p.stage,
                                         (select count(*)::int from bookings b join units u on u.id = b.unit_id where u.project_id = p.id and b.sale_type = 'contractor' and b.status = 'active') as contractor_flats
                                  from projects p join companies c on c.id = p.company_id order by p.name`))
     .filter((p) => all || u.projects.includes(p.id));
@@ -58,7 +58,7 @@ module.exports = route({
       return res.json({ ok: true, ...(await overview(u)) });
     }
     if (b.action === 'project.save') {
-      const v = { code: str(b.code, 20).toUpperCase(), name: str(b.name, 120), company_id: intOr(b.companyId), location: str(b.location, 160) || null, rera_no: str(b.reraNo, 40) || null, active: b.active !== false };
+      const v = { code: str(b.code, 20).toUpperCase(), name: str(b.name, 120), company_id: intOr(b.companyId), location: str(b.location, 160) || null, rera_no: str(b.reraNo, 40) || null, active: b.active !== false, stage: b.stage === 'pre' ? 'pre' : b.stage === 'sales' ? 'sales' : null };
       if (!CODE.test(v.code)) throw fail(400, 'Code: 2 to 20 capital letters or numbers, e.g. SIGNATURE.');
       if (!v.name) throw fail(400, 'Enter the project name.');
       if (!v.company_id) throw fail(400, 'Choose the company that owns the project.');
@@ -66,10 +66,10 @@ module.exports = route({
         if (id) {
           const before = await t.one('select code, name, company_id, location, rera_no, active from projects where id = $1', [id]);
           if (!before) throw fail(404, 'Project not found.');
-          await t.q('update projects set code = $2, name = $3, company_id = $4, location = $5, rera_no = $6, active = $7 where id = $1', [id, v.code, v.name, v.company_id, v.location, v.rera_no, v.active]);
+          await t.q('update projects set code = $2, name = $3, company_id = $4, location = $5, rera_no = $6, active = $7, stage = coalesce($8, stage) where id = $1', [id, v.code, v.name, v.company_id, v.location, v.rera_no, v.active, v.stage]);
           await audit.record(t.q, { user: u, action: 'update', entity: 'project', entityId: id, projectId: id, before, after: v });
         } else {
-          const row = await t.one('insert into projects (code, name, company_id, location, rera_no, active) values ($1, $2, $3, $4, $5, $6) returning id', [v.code, v.name, v.company_id, v.location, v.rera_no, v.active]);
+          const row = await t.one('insert into projects (code, name, company_id, location, rera_no, active, stage) values ($1, $2, $3, $4, $5, $6, coalesce($7, \'sales\')) returning id', [v.code, v.name, v.company_id, v.location, v.rera_no, v.active, v.stage]);
           await audit.record(t.q, { user: u, action: 'create', entity: 'project', entityId: row.id, projectId: row.id, after: v });
         }
       });
