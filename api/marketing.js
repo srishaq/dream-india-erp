@@ -655,6 +655,7 @@ const handler = route({
       let back; try { const r = await require('../lib/mkt-tools').canvaCallback(req, u.id); back = '/?social=' + encodeURIComponent(`Canva connected${r.name ? ': ' + r.name : ''}. "Pick from Canva" is in every post now.`) + '#/marketing'; } catch (e) { back = '/?social=' + encodeURIComponent(e.message) + '#/marketing'; }
       res.statusCode = 302; res.setHeader('Location', back); return res.end();
     }
+    if (q.leadsTemplate != null) return res.json({ name: 'leads-template.xlsx', data: (await require('../lib/mkt-import').template()).toString('base64') });
     if (q.results != null) return res.json(await require('../lib/mkt-results').results(q.results, String(q.period || 'fy')));
     if (q.rdrill) return res.json(await require('../lib/mkt-results').drill(String(q.rdrill), q.scope, String(q.period || 'fy')));
     if (q.ads) return res.json(await adsOf(intOr(q.ads)));
@@ -875,6 +876,14 @@ const handler = route({
       }
       await log(d.id ? 'update' : 'create', 'mkt-lead', id, { source: v[4], status: v[6] });
       return res.json({ ok: true, id });
+    }
+    // leads from Excel (lib/mkt-import.js): every row checked first, nothing saved on a problem, a known number not doubled
+    if (a === 'leads.import') {
+      if (!canEdit(u) && !has(u, 'booking.create')) throw fail(403, 'Your login cannot add leads.');
+      const f = d.file && typeof d.file === 'object' ? d.file : {};
+      const r = await require('../lib/mkt-import').importRows(u, require('../lib/sheetfile').parseFile(f.data, f.name, 6000));
+      await log('import', 'mkt-lead', null, r);
+      return res.json({ ok: true, imported: r });
     }
     if (a === 'lead.delete') { editOnly(); await db.q('delete from mkt_leads where id = $1', [intOr(d.id)]); await log('delete', 'mkt-lead', d.id); return res.json({ ok: true }); }
 

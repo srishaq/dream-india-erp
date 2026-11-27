@@ -353,6 +353,7 @@
     { key: 'mgmt', label: 'Management dashboard', show: () => can('mgmt.view') },
     { key: 'marketing', label: 'Sales & Marketing', show: () => can('marketing.view') },
     { key: 'telemarketing', label: 'Telemarketing', show: () => anyOf('tm.view', 'tm.manage', 'tm.entry') },
+    { key: 'targets', label: 'Sales targets', show: () => anyOf('reports.view', 'leads.all', 'inventory.view') && !!proj },
     { key: 'training', label: 'Training videos', show: () => true },
     { group: 'CRM' },
     { key: 'crmtodo', label: 'Today', show: () => anyOf('demand.raise', 'booking.create', 'booking.approve', 'ledger.view') },
@@ -523,7 +524,7 @@
     if ($('#proj')) $('#proj').onchange = (e) => { proj = +e.target.value; store.set('erp_project', proj); shell(); };
     if (page === 'reg-cancellations' && arg !== 'full' && anyOf('accounts.view', 'audit.tabs')) { try { await cancelledView(); } catch (e) { pageErr(e); } return; }
     if (/^reg-/.test(page || '') && (can('accounts.view') || (can('audit.tabs') && ['reg-recon', 'reg-cancellations'].includes(page)))) { try { await accRegister(page.slice(4)); } catch (e) { pageErr(e); } return; }
-    const fn = { stages: () => demands(true), home, mgmt, marketing: () => window.Marketing.render({ api, dialog, toast, me }, (/^\d+$/.test(location.hash.split('/')[2] || '') ? location.hash.split('/')[2] : null) || store.get('erp_mkt_scope') || null), telemarketing: () => window.Telemarketing.render({ api, dialog, toast, me }), ca: caPage, accdash, collections, flats, custdocs, comms, team: teamPage, accteam: teamPage, sdr: sdrPage, cp: cpPage, cpportal: cpPortalPage, project: projectHome, crmtodo: () => dailyTodo('crm'), acctodo: () => dailyTodo('accounts'), training, projects, plans, users, audit, units, bookings, demands, receipts, ledgers, letters, followups, verify, prices, partners, balances: accBalances, bankauto: bankAuto, bookscrm: booksCrm, accreports: accReports, checks: accChecks, queries: openQueries, dues: duesPage, changes: changesPage, reports: reportsHub, report: () => reportView(location.hash.split('/')[2]), accsetup: accSetup, import: importPage, booking: bookingPage, statement: statementPage, run: runPage, pre: prePage, parking: parkingPage };
+    const fn = { targets, stages: () => demands(true), home, mgmt, marketing: () => window.Marketing.render({ api, dialog, toast, me }, (/^\d+$/.test(location.hash.split('/')[2] || '') ? location.hash.split('/')[2] : null) || store.get('erp_mkt_scope') || null), telemarketing: () => window.Telemarketing.render({ api, dialog, toast, me }), ca: caPage, accdash, collections, flats, custdocs, comms, team: teamPage, accteam: teamPage, sdr: sdrPage, cp: cpPage, cpportal: cpPortalPage, project: projectHome, crmtodo: () => dailyTodo('crm'), acctodo: () => dailyTodo('accounts'), training, projects, plans, users, audit, units, bookings, demands, receipts, ledgers, letters, followups, verify, prices, partners, balances: accBalances, bankauto: bankAuto, bookscrm: booksCrm, accreports: accReports, checks: accChecks, queries: openQueries, dues: duesPage, changes: changesPage, reports: reportsHub, report: () => reportView(location.hash.split('/')[2]), accsetup: accSetup, import: importPage, booking: bookingPage, statement: statementPage, run: runPage, pre: prePage, parking: parkingPage };
     const key = DETAIL[page] && arg ? page : cur.key;
     try { await fn[key](arg ? +arg : undefined); } catch (e) { pageErr(e); }
   }
@@ -1020,6 +1021,72 @@
   const STATUS = { available: 'Available', blocked: 'Booking pending', booked: 'Booked', registered: 'Registered', held: 'Held', refuge: 'Refuge', rehab: 'Rehab', society: 'Society' };
   function toast(msg, ms) { const t = document.createElement('div'); t.className = 'toast'; t.textContent = msg; document.body.appendChild(t); setTimeout(() => t.remove(), ms || 4000); }
   const noProject = () => { $('#page').innerHTML = '<p class="muted">Choose a project at the top.</p>'; };
+
+  // ---------- Sales targets (api/targets.js): each month's target beside what was booked, project and salesperson ----------
+  let tgFy = null;
+  async function targets() {
+    if (!proj) return noProject();
+    const v = await api(`/api/targets?project=${proj}${tgFy ? '&fy=' + tgFy : ''}`);
+    tgFy = v.fy;
+    const pc = (a, t) => (t ? Math.round((a / t) * 100) : null);
+    const cell = (x, m) => {
+      const t = x.target[m].units, a = x.actual[m].units, past = !v.current || m < v.current, now = m === v.current;
+      const tone = !t ? '' : a >= t ? 'good-t' : past ? 'bad-t' : '';
+      return `<td class="num${now ? ' tg-now' : ''}"><b class="${tone}">${a}</b>${t ? `<span class="muted"> / ${t}</span>` : ''}</td>`;
+    };
+    const row = (name, x, strong) => `<tr${strong ? ' class="tg-proj"' : ''}><td>${strong ? `<b>${esc(name)}</b>` : esc(name)}</td>${v.months.map((m) => cell(x, m)).join('')}
+      <td class="num"><b>${x.totalActual.units}</b>${x.totalTarget.units ? `<span class="muted"> / ${x.totalTarget.units}</span>` : ''}</td><td class="num">${cr(x.totalActual.value)}${x.totalTarget.value ? `<span class="muted small"><br>of ${cr(x.totalTarget.value)}</span>` : ''}</td></tr>`;
+    const P = v.project, U = P.upToNow, gap = U.actual - U.target;
+    const yp = pc(P.totalActual.units, P.totalTarget.units), vp = pc(P.totalActual.value, P.totalTarget.value);
+    $('#page').innerHTML = `<style>.tg-now{background:#F2F8F6}.tg-proj td{background:#FAFBFC}.tg-k{display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:10px;margin:0 0 14px}.tg-k div{background:#fff;border:1px solid var(--line);border-radius:12px;padding:12px 14px}.tg-k b{display:block;font-size:22px}</style>
+      <div class="page-head"><div><h1>Sales targets · ${esc(v.projectName)}</h1><p class="muted">What the project means to sell each month, beside the flats actually booked (entered or approved, not cancelled), on the booking date. Each cell is <b>booked</b> / target. A booking counts for its sales person on the booking form, else for the login that entered it.</p></div></div>
+      <div class="actions" style="margin:0 0 12px;align-items:center"><button class="ghost small" id="tgPrev">←</button><b>${esc(v.label)}</b><button class="ghost small" id="tgNext">→</button>
+        ${v.canEdit ? '<button id="tgSet">Set targets</button>' : ''}<button class="ghost" id="tgXl">Download Excel</button></div>
+      <div class="tg-k">
+        <div><span class="muted small">Flats booked this year</span><b>${P.totalActual.units}${P.totalTarget.units ? ` <span class="muted" style="font-size:15px">of ${P.totalTarget.units}${yp != null ? ` · ${yp}%` : ''}</span>` : ''}</b></div>
+        <div><span class="muted small">Agreement value booked</span><b>${cr(P.totalActual.value)}${P.totalTarget.value ? ` <span class="muted" style="font-size:15px">of ${cr(P.totalTarget.value)}${vp != null ? ` · ${vp}%` : ''}</span>` : ''}</b></div>
+        ${v.current && U.target ? `<div><span class="muted small">Up to this month</span><b class="${gap >= 0 ? 'good-t' : 'bad-t'}">${gap >= 0 ? `${gap} ahead` : `${-gap} behind`}</b><span class="small muted">${U.actual} booked against ${U.target}</span></div>` : ''}
+      </div>
+      ${!P.totalTarget.units && !v.people.some((x) => x.totalTarget.units) ? `<div class="panel"><p class="muted" style="margin:0">No targets for ${esc(v.label)} yet.${v.canEdit ? ' Press <b>Set targets</b> to type in the flats (and value) for each month, for the whole project and for each sales person.' : ' The Admin, Management or Head CRM sets them.'}</p></div>` : ''}
+      <div class="table-wrap"><table><tr><th>Sales person</th>${v.monthNames.map((n, i) => `<th class="num${v.months[i] === v.current ? ' tg-now' : ''}">${esc(n)}</th>`).join('')}<th class="num">Year</th><th class="num">Value</th></tr>
+        ${row('Whole project', P, true)}${v.people.map((x) => row(x.name, x)).join('')}</table></div>
+      ${v.people.length ? '' : '<p class="small muted">No bookings in this year yet.</p>'}`;
+    $('#tgPrev').onclick = () => { tgFy = v.fy - 1; targets(); };
+    $('#tgNext').onclick = () => { tgFy = v.fy + 1; targets(); };
+    $('#tgXl').onclick = async () => { try { const r = await api(`/api/targets?project=${proj}&fy=${v.fy}&excel=1`); const a = document.createElement('a'); a.href = URL.createObjectURL(new Blob([Uint8Array.from(atob(r.data), (c) => c.charCodeAt(0))], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' })); a.download = r.name; document.body.appendChild(a); a.click(); a.remove(); } catch (e) { toast(e.message); } };
+    if (!v.canEdit) return;
+    $('#tgSet').onclick = () => {
+      const lk = (x) => (x ? Math.round((x / 1e5) * 100) / 100 : '');
+      const inp = (k, m, val, w) => `<td><input data-k="${k}" data-m="${m}" inputmode="decimal" value="${val === 0 ? '' : val}" style="width:${w}px;min-width:${w}px;padding:6px"></td>`;
+      const line = (name, x, i) => `<tr data-row="${i}"><td>${i === 'p' ? '<b>Whole project</b>' : `<input data-name value="${esc(name)}" placeholder="Sales person's name" style="width:150px;padding:6px">`}</td><td class="small muted">${i === 'p' ? 'Flats' : 'Flats'}</td>${v.months.map((m) => inp('u', m, x ? x.target[m].units : '', 54)).join('')}</tr>`
+        + (i === 'p' ? `<tr data-row="pv"><td></td><td class="small muted" style="white-space:nowrap">₹ lakh</td>${v.months.map((m) => inp('v', m, lk(P.target[m].value), 54)).join('')}</tr>` : '');
+      dialog(`<div><h2>Sales targets · ${esc(v.label)}</h2>
+        <p class="small muted">Flats to book each month for the whole project, the agreement value in ₹ lakh (1 crore = 100 lakh), and each sales person's flats. Leave a box empty for no target.</p>
+        <div class="table-wrap"><table id="tgGrid"><tr><th></th><th></th>${v.monthNames.map((n) => `<th>${esc(n)}</th>`).join('')}</tr>
+          ${line('', P, 'p')}${v.people.map((x, i) => line(x.name, x, i)).join('')}</table></div>
+        <p><button type="button" class="ghost small" id="tgAdd">Add a sales person</button> <button type="button" class="ghost small" id="tgCopy">Copy the first month to every month</button></p></div>`,
+      async () => {
+        const rows = [];
+        document.querySelectorAll('#tgGrid tr[data-row]').forEach((tr) => {
+          const r = tr.dataset.row, person = r === 'p' || r === 'pv' ? '' : ($('[data-name]', tr).value || '').trim();
+          if (r !== 'p' && r !== 'pv' && !person) return;
+          tr.querySelectorAll('input[data-m]').forEach((i) => {
+            const raw = i.value.trim(); if (!raw) return;
+            let x = rows.find((y) => y.person === person && y.month === i.dataset.m);
+            if (!x) rows.push((x = { person, month: i.dataset.m, units: 0, value: 0 }));
+            if (i.dataset.k === 'u') x.units = Number(raw); else x.value = Math.round(Number(raw) * 1e5);
+          });
+        });
+        try { await api('/api/targets', { action: 'save', projectId: proj, fy: v.fy, rows }); } catch (e) { if (e.data && e.data.problems && e.data.problems.length > 1) e.message += ' ' + e.data.problems.join(' '); throw e; }
+        toast('Targets saved.'); targets();
+      });
+      const dl = [...document.querySelectorAll('dialog')].pop(); if (dl) dl.style.width = 'min(1180px, calc(100vw - 32px))';
+      let n = v.people.length;
+      $('#tgAdd').onclick = () => { $('#tgGrid tbody').insertAdjacentHTML('beforeend', line('', null, n++)); };
+      $('#tgCopy').onclick = () => document.querySelectorAll('#tgGrid tr[data-row]').forEach((tr) => { const ins = tr.querySelectorAll('input[data-m]'); ins.forEach((i) => { if (!i.value) i.value = ins[0].value; }); });
+    };
+  }
+
 
   // ---------- units ----------
   async function units() {
@@ -2498,7 +2565,7 @@
     }
     const R = d.reg, cols = R.cols, show = ACC_SHOW[key] ? ACC_SHOW[key].map((k) => (k === 'ref_id' ? { key: 'ref_id', label: R.idLabel, type: 'text' } : cols.find((c) => c.key === k))) : [...(R.prefix ? [{ key: 'ref_id', label: R.idLabel, type: 'text' }] : []), ...cols];
     $('#page').innerHTML = `<div class="page-head"><div><h1>${esc(R.title)}</h1><p class="muted">${esc(R.help)}</p></div>
-        ${d.can.enter ? `<div class="actions" style="margin:0"><button id="accNew">${['receipts', 'payments'].includes(key) && me.role !== 'admin' ? 'Add a cash entry' : 'Add a row'}</button></div>` : ''}</div>
+        ${d.can.enter ? `<div class="actions" style="margin:0">${key === 'compliance' ? '<button class="ghost" id="accYear">Add this year\'s due dates</button>' : ''}<button id="accNew">${['receipts', 'payments'].includes(key) && me.role !== 'admin' ? 'Add a cash entry' : 'Add a row'}</button></div>` : ''}</div>
       <div class="panel"><div class="row" style="align-items:end;gap:10px;grid-template-columns:2fr 1fr 1fr auto">
         <div><label>Search</label><input id="aq" value="${esc(state.q)}" placeholder="Any word, name, unit or reference"></div>
         ${R.cols.some((c) => c.type === 'date') ? `<div><label>From</label><input type="date" id="af" value="${esc(state.from)}"></div><div><label>To</label><input type="date" id="at" value="${esc(state.to)}"></div>` : '<div></div><div></div>'}
@@ -2702,6 +2769,15 @@
         setV('description', `${b.material || 'Purchase'} · ${b.line ? b.line.replace('|', ' ') : ''}`.trim()); setV('remark', 'Against approved purchase bill ' + (b.poNo || b.id));
         const det = dl.querySelector('details'); if (det) det.open = true; work();
       };
+    };
+    // GST, TDS, income tax and RERA due dates for the financial year, from today on (lib/compliance-dates.js)
+    if ($('#accYear')) $('#accYear').onclick = async (e) => {
+      e.target.disabled = true;
+      try {
+        const r = await api('/api/accounts', { action: 'compliance-year' });
+        toast(r.added ? `${r.added} due dates added for ${r.label}${r.there ? ` (${r.there} were already in the calendar)` : ''}. Check the RERA dates against MahaRERA's rules.` : `All the due dates for ${r.label} are already in the calendar.`, 7000);
+        accRegister(key, { filter: '' });
+      } catch (err) { alert(err.message); e.target.disabled = false; }
     };
     if ($('#accNew')) $('#accNew').onclick = () => form(null);
     document.querySelectorAll('tr[data-id]').forEach((tr) => (tr.onclick = () => form(d.rows.find((r) => r.id === +tr.dataset.id))));

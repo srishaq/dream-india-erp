@@ -320,6 +320,18 @@ module.exports = route({
       if (b.newKey) { key = await TF.newKey(u); await audit.record(db.q, { user: u, action: 'tally-key', entity: 'settings', entityId: 'tally_feed', note: 'New Tally link key made; any earlier key stopped working' }); }
       return res.json({ ok: true, key, status: await TF.status() });
     }
+    // Compliance Calendar → Add this year's due dates (lib/compliance-dates.js, from Zuri)
+    if (b.action === 'compliance-year') {
+      need('accounts.enter');
+      const T = require('../lib/targets'), fy = b.fy ? intOr(b.fy, 0) : T.thisFy();
+      if (fy < 2015 || fy > 2100) throw fail(400, 'Choose a year between 2015 and 2100.');
+      let r;
+      await db.tx(async (t) => {
+        r = await require('../lib/compliance-dates').fill(t, u, fy, today());
+        await audit.record(t.q, { user: u, action: 'create', entity: 'compliance-year', entityId: String(fy), after: r, note: `Due dates for ${T.label(fy)}` });
+      });
+      return res.json({ ok: true, ...r, label: T.label(fy) });
+    }
     if (b.action === 'close-month') {
       if (!has(u, 'accounts.manage') && u.role !== 'admin') throw fail(403, 'Only Head Accounts closes the month.');
       const m = String(b.month || ''); if (!/^\d{4}-\d{2}$/.test(m)) throw fail(400, 'Choose the month.');
