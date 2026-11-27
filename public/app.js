@@ -696,10 +696,10 @@
     if (!act.some((p) => /aspire/i.test(p.name))) projTiles.push({ title: 'Dream Aspire', sub: 'Lokhandwala, Andheri West · commercial · not in the ERP yet', icon: 'building', tone: '#0E8C9B', soon: true });
     const mk = marketingTiles();
     const mgmtTiles = [
+      can('mgmt.view') && { title: 'Management', sub: 'Cash, collections, dues, site, purchase, approvals, compliance and taxes on one screen', icon: 'chart', tone: '#140C59', href: '#/mgmt' },
+      anyOf('masters.edit', 'mgmt.view') && { title: 'New opportunities', sub: 'Feasibility of a new site before taking it on: FSI, TDR, costs, margin and the go / no-go call', icon: 'chart', tone: '#8A5F1A', href: '#/opportunities' },
       mk.length && { title: 'Marketing', sub: 'Campaigns, ads, social posts and website leads, Telemarketing and the AI Agent Team, project by project', icon: 'megaphone', tone: '#C2185B', href: mk.length === 1 ? mk[0].href : '#/mkthub' },
       anyOf('leads.work', 'leads.all', 'sourcing.work', 'sourcing.all') && { title: 'Pre-sales & Sales', sub: 'Pre-sales: call and qualify every lead. Sales: walk-ins, cost sheets, site visits and booking. Sourcing: channel partner visits', icon: 'phone', tone: '#0E7C66', href: '/leads' },
-      anyOf('masters.edit', 'mgmt.view') && { title: 'New opportunities', sub: 'Feasibility of a new site before taking it on: FSI, TDR, costs, margin and the go / no-go call', icon: 'chart', tone: '#8A5F1A', href: '#/opportunities' },
-      can('mgmt.view') && { title: 'Management', sub: 'Cash, collections, dues, site, purchase, approvals, compliance and taxes on one screen', icon: 'chart', tone: '#140C59', href: '#/mgmt' },
       sec('hr') ? { title: 'HR & Admin', sub: 'Staff records, leave, letters and HR policies', icon: 'users', tone: '#7A5C99', href: '/hr' } : { title: 'HR & Admin', sub: 'Staff records, leave, letters and HR policies', icon: 'users', tone: '#7A5C99', soon: true },
     ].filter(Boolean);
     const sample = can('users.manage') && cur && (!total(cur.units) || cur.sample) ? `<div class="panel"><h2>Sample data for testing</h2>
