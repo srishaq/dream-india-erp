@@ -45,6 +45,8 @@ module.exports = route({
         const fs = require('fs'), dir = process.env.STMT_FIXTURE_DIR;
         return res.json(await ba.runFiles(fs.readdirSync(dir).filter((f) => f.endsWith('.xlsx')).map((f) => ({ name: f, buffer: fs.readFileSync(dir + '/' + f) })), { trigger: 'drive', user: u, compareFrom }));
       }
+      // a trial run on the statements in another Drive folder (Admin): nothing is added or changed
+      if (b.dryRun === true && b.folder && u.role === 'admin') return res.json(await ba.runFromDrive({ trigger: 'drive', user: u, compareFrom, apply: false, folders: [str(b.folder, 80)] }));
       return res.json(await ba.runFromDrive({ trigger: 'drive', user: u, compareFrom, apply: b.dryRun !== true }));
     }
     if (b.action === 'settings') {
