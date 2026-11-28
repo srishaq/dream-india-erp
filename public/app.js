@@ -394,7 +394,7 @@
     { key: 'custdocs', label: 'Customer documents', show: () => anyOf('buyer.kyc', 'accounts.view') || can('users.manage') },
     // the old lists, now all in Flats & buyers and the flat file; still open from old links
     { key: 'bookings', label: 'Bookings', show: () => false },
-    { key: 'ledgers', label: 'Customer ledgers', show: () => false },
+    { key: 'ledgers', label: 'Customer ledgers', sub: true, show: () => can('ledger.view') }, // opened from the Accounts tile
     { key: 'followups', label: 'Follow-ups', show: () => false },
     { group: 'Accounts' },
     { key: 'acctodo', label: 'Today', show: () => can('accounts.view') },
