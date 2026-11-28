@@ -1788,10 +1788,18 @@
       <label>How it splits <button type="button" class="ghost small" id="auto">Split as AV + GST</button></label>
       <div class="row3">${Object.entries(HEAD).map(([h, l]) => `<div><label class="sub">${l}</label><input name="s_${h}" inputmode="decimal"></div>`).join('')}</div>
       <p class="small muted" id="sumline">The parts must add up to the amount.</p>
+      <div id="jodi"></div>
       <label>Note</label><input name="note">`,
     async (x) => {
       let bookingId = booking && booking.id;
       if (!bookingId) { const c = choices.find((c) => c.label === x.pick); if (!c) throw new Error('Choose the booking from the list.'); bookingId = c.id; }
+      if (jodi && x.jodiOn) {
+        // one payment for the jodi flats: a receipt per flat, AV + GST at each flat's rate
+        const parts = jodi.flats.map((fl) => ({ bookingId: fl.bookingId, amount: x['j_' + fl.bookingId] }));
+        const out = await api('/api/receipts', { action: 'create-joint', bookingId, parts, receivedOn: x.receivedOn, amount: x.amount, mode: x.mode, bank: x.bank, instrumentNo: x.instrumentNo, accountNo: x.accountNo, note: x.note });
+        toast(`Saved as ${out.ids.length} receipts: ${out.ids.map((r) => r.unit + ' ' + inr(r.amount, 2)).join(', ')}. They count once approved (or matched on the bank statement).`);
+        after(); return;
+      }
       const splits = Object.fromEntries(Object.keys(HEAD).map((h) => [h, x['s_' + h]]));
       const body = { action: 'create', bookingId, receivedOn: x.receivedOn, amount: x.amount, mode: x.mode, bank: x.bank, instrumentNo: x.instrumentNo, accountNo: x.accountNo, note: x.note, splits };
       let made;
@@ -1805,6 +1813,26 @@
     const f = $('form', dl);
     const sum = () => { const tot = Object.keys(HEAD).reduce((a, h) => a + toNum(f['s_' + h].value), 0); const amt = toNum(f.amount.value); $('#sumline', dl).textContent = `Parts: ${inr(tot, 2)} of ${inr(amt, 2)}${Math.abs(tot - amt) < 0.005 && amt ? ' ✓' : ''}`; };
     f.addEventListener('input', sum);
+    // jodi flats: offer to split the payment across the pair (the share of each follows what it owes now)
+    let jodi = null;
+    const jodiSplit = () => {
+      if (!jodi || !f.jodiOn || !f.jodiOn.checked) return;
+      const tot = toNum(f.amount.value), fl = jodi.flats, dueSum = fl.reduce((a, x) => a + x.due, 0), avSum = fl.reduce((a, x) => a + x.av, 0);
+      let left = Math.round(tot * 100);
+      fl.forEach((x, i) => { const w = dueSum > 0 ? x.due / dueSum : avSum > 0 ? x.av / avSum : 1 / fl.length; const p = i === fl.length - 1 ? left : Math.round(tot * w * 100); left -= p; f['j_' + x.bookingId].value = (p / 100).toFixed(2); });
+    };
+    const jodiPaint = () => {
+      const box = $('#jodi', dl);
+      if (!jodi) { box.innerHTML = ''; return; }
+      box.innerHTML = `<div class="panel" style="margin:10px 0;padding:10px 12px"><label style="display:flex;gap:8px;align-items:center;margin:0"><input type="checkbox" name="jodiOn" value="1" style="width:auto"> <b>Jodi flats ${esc(jodi.flats.map((x) => x.unit).join(' + '))}</b>: one payment for both, split across the flats</label>
+        <div class="row" id="jodiParts" hidden>${jodi.flats.map((x) => `<div><label class="sub">${esc(x.unit)} · owes ${inr(x.due)}</label><input name="j_${x.bookingId}" inputmode="decimal"></div>`).join('')}</div>
+        <p class="small muted" id="jodiNote" hidden>Split by what each flat owes now (else by agreement value); change the amounts if the buyer said otherwise. Each flat gets its own receipt with the same UTR / cheque, split into AV + GST.</p></div>`;
+      f.jodiOn.onchange = () => { const on = f.jodiOn.checked; $('#jodiParts', dl).hidden = !on; $('#jodiNote', dl).hidden = !on; dl.querySelectorAll('.row3 input').forEach((i) => (i.disabled = on)); $('#sumline', dl).hidden = on; $('#auto', dl).disabled = on; jodiSplit(); };
+    };
+    const jodiLoad = async (id) => { jodi = null; if (id) { try { jodi = (await api('/api/receipts?joint=' + id)).joint; } catch { jodi = null; } } jodiPaint(); };
+    f.amount.addEventListener('input', jodiSplit);
+    if (booking && booking.id) jodiLoad(booking.id);
+    else if (f.pick) f.pick.addEventListener('change', () => { const c = choices.find((y) => y.label === f.pick.value); jodiLoad(c && c.id); });
     $('#auto', dl).onclick = () => { const amt = toNum(f.amount.value); const rate = (booking && booking.gstRate) || 5; const av = Math.round((amt / (1 + rate / 100)) * 100) / 100; f.s_av.value = av.toFixed(2); f.s_gst.value = (Math.round((amt - av) * 100) / 100).toFixed(2); sum(); };
   }
 

@@ -11,7 +11,7 @@ module.exports = route({
     if (!has(u, 'accounts.view') && !has(u, 'ledger.view')) throw fail(403, 'Your role does not allow this.');
     const q = req.query || {};
     const projectId = needProject(u, intOr(q.project));
-    if (q.unit) return res.json(await bvc.detail(projectId, str(q.unit, 20).toUpperCase()));
+    if (q.unit) return res.json(await bvc.detail(projectId, str(q.unit, 60).toUpperCase()));
     return res.json(await bvc.summary(projectId));
   },
 });

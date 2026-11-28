@@ -64,6 +64,7 @@ module.exports = route({
         where r.mode = 'cheque' and not r.opening and not b.sample and r.status in ('pending', 'approved') and r.bank_status is null and r.deposited_on is null and r.project_id = any($1)`, [u.projects]);
       return res.json(c);
     }
+    if (req.query.joint) { const bk = await bookingFor(u, intOr(req.query.joint)); return res.json({ joint: await require('../lib/joint-flats').ofBooking(bk.id) }); }
     if (req.query.banks) return res.json({ banks: await db.q("select name from acc_banks where active order by name") });
     // all the flat's receipts in one PDF, and with ?letter=1 the latest demand letter and its architect's certificate
     if (req.query.pdfAll) {
@@ -126,9 +127,9 @@ module.exports = route({
         // 20 Nov 2026: refused whatever the date (B-1502's cheque 505765 was entered on 16 and 20 Nov); a bounced cheque presented again is allowed
         if (twin) throw Object.assign(fail(409, `This receipt is already entered: ${twin.unit_no}, ${mode === 'cheque' ? 'cheque' : 'UTR'} ${instrument} for the same amount. It cannot be entered twice.`), { duplicate: twin.id, blocked: true });
         if (mode === 'cheque' && on >= ONE_CHEQUE_FROM) {
-          const other = await db.one(`select r.id, u.unit_no from receipts r join bookings bb on bb.id = r.booking_id join units u on u.id = bb.unit_id
+          const other = await db.one(`select r.id, r.booking_id, u.unit_no from receipts r join bookings bb on bb.id = r.booking_id join units u on u.id = bb.unit_id
               where r.project_id = $1 and r.booking_id <> $3 and r.mode = 'cheque' and ${norm} and r.status not in ('rejected', 'reversed', 'bounced') limit 1`, [bk.project_id, instrument, bk.id]);
-          if (other) throw Object.assign(fail(409, `Cheque ${instrument} is already entered on ${other.unit_no}. One cheque can pay only one flat: ask the buyer for a separate cheque for each flat.`), { duplicate: other.id, blocked: true });
+          if (other && !(await require('../lib/joint-flats').samePair(bk.id, other.booking_id))) throw Object.assign(fail(409, `Cheque ${instrument} is already entered on ${other.unit_no}. One cheque can pay only one flat: ask the buyer for a separate cheque for each flat.`), { duplicate: other.id, blocked: true });
         }
       }
       // the same UTR / cheque number already entered elsewhere (another flat's transfer, or the same flat on another date): ask before saving it again
@@ -155,6 +156,45 @@ module.exports = route({
       // and on WhatsApp (19 Nov 2026: as soon as the receipt is entered, not only once it is approved)
       const whatsapp = await receiptWhatsapp(id, u).catch((e) => ({ error: e.message }));
       return res.json({ ok: true, id, mail, whatsapp });
+    }
+
+    // a jodi flat's payment (lib/joint-flats.js): one transfer or cheque for both flats, entered once and saved as a receipt per
+    // flat (same UTR / cheque, AV + GST at each flat's rate); parts: [{ bookingId, amount }] adding up to the amount
+    if (b.action === 'create-joint') {
+      need('receipt.enter');
+      const JF = require('../lib/joint-flats');
+      const first = await bookingFor(u, intOr(b.bookingId));
+      const g = await JF.ofBooking(first.id); if (!g) throw fail(400, `${first.unit_no} is not set up as a jodi flat.`);
+      const amount = toPaise(b.amount); if (!(amount > 0)) throw fail(400, 'Enter the amount received.');
+      const on = /^\d{4}-\d{2}-\d{2}$/.test(b.receivedOn || '') ? b.receivedOn : null;
+      if (!on || on > today()) throw fail(400, 'Enter the date received (not in the future).');
+      const parts = (Array.isArray(b.parts) ? b.parts : []).map((p) => ({ f: g.flats.find((f) => f.bookingId === intOr(p.bookingId)), paise: toPaise(p.amount) })).filter((p) => p.paise > 0);
+      if (parts.some((p) => !p.f)) throw fail(400, 'Every part must be one of the jodi flats.');
+      const sum = parts.reduce((a, p) => a + p.paise, 0);
+      if (sum !== amount) throw fail(400, `The flats' parts add up to ₹${rupees(sum)}, but the payment is ₹${rupees(amount)}. They must match.`);
+      const mode = MODES.includes(b.mode) ? b.mode : 'bank';
+      const instrument = str(b.instrumentNo, 60) || null;
+      if (instrument) for (const p of parts) {
+        const twin = await db.one(`select r.id from receipts r where r.booking_id = $1 and upper(regexp_replace(r.instrument_no, '\\s', '', 'g')) = upper(regexp_replace($2, '\\s', '', 'g')) and r.status not in ('rejected', 'reversed', 'bounced') limit 1`, [p.f.bookingId, instrument]);
+        if (twin) throw Object.assign(fail(409, `${p.f.unit} already has a receipt with ${mode === 'cheque' ? 'cheque' : 'UTR'} ${instrument}. It cannot be entered twice.`), { duplicate: twin.id, blocked: true });
+      }
+      const units = parts.map((p) => p.f.unit).join(' + ');
+      const note = (`Jodi payment ₹${Number(rupees(amount)).toLocaleString('en-IN')} for ${units}` + (str(b.note, 200) ? `. ${str(b.note, 200)}` : '')).slice(0, 300);
+      const ids = await db.tx(async (t) => {
+        const out = [];
+        for (const p of parts) {
+          const amt = rupees(p.paise), sp = JF.avGst(amt, p.f.gstRate);
+          const row = await t.one(`insert into receipts (project_id, booking_id, received_on, amount, mode, bank, instrument_no, account_no, note, created_by)
+             values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10) returning id`, [first.project_id, p.f.bookingId, on, amt, mode, str(b.bank, 80) || null, instrument, str(b.accountNo, 30) || null, note, u.id]);
+          for (const [h, v] of Object.entries(sp)) if (v > 0) await t.q('insert into receipt_splits (receipt_id, head, amount) values ($1, $2, $3)', [row.id, h, v]);
+          await audit.record(t.q, { user: u, action: 'create', entity: 'receipt', entityId: row.id, projectId: first.project_id, after: { unit: p.f.unit, receivedOn: on, amount: amt, mode, instrument, splits: sp, jodi: units, total: rupees(amount) } });
+          out.push({ id: row.id, unit: p.f.unit, amount: amt });
+        }
+        return out;
+      });
+      if (mode === 'cheque') await require('../lib/team').system('accounts', `Cheque to deposit (jodi flats ${units}): ₹${Math.round(rupees(amount)).toLocaleString('en-IN')}${instrument ? ', cheque ' + instrument : ''}${b.bank ? ' (' + str(b.bank, 80) + ')' : ''}, received ${on}, entered by ${u.name}. One cheque, split ${ids.map((x) => x.unit + ' ₹' + Math.round(x.amount).toLocaleString('en-IN')).join(', ')}.`, { bookingId: first.id, receiptId: ids[0].id, needsAction: true });
+      for (const x of ids) { await require('../lib/receipt-mail').autoSend(x.id, 'provisional', u).catch(() => null); await receiptWhatsapp(x.id, u).catch(() => null); }
+      return res.json({ ok: true, ids, id: ids[0].id });
     }
 
     // WhatsApp the buyer about this receipt by hand (the receipt window's button)
