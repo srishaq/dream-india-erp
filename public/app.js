@@ -422,6 +422,7 @@
     { key: 'reg-tenants', label: 'SRA Tenants', show: () => can('accounts.view'), sub: true },
     { key: 'reg-rentLinks', label: 'Tenant Rent Links', show: () => can('accounts.view'), sub: true },
     { key: 'reg-cancellations', label: 'Cancelled flats & refunds', show: () => anyOf('accounts.view', 'audit.tabs') },
+    { key: 'accledgers', label: 'Customer ledgers', show: () => can('accounts.view') && can('ledger.view'), href: () => '#/ledgers' },
     { key: 'cpacc', label: 'Channel partner ledger', show: () => can('accounts.view') && can('ledger.view'), href: () => '#/partners' },
     { key: 'cpportal', label: 'Partner portal: firms & merges', show: () => anyOf('accounts.manage', 'accounts.enter', 'tm.manage'), sub: true },
     { key: 'accreports', label: 'Reports & Tally', show: () => can('accounts.view') },
@@ -594,7 +595,7 @@
   const SUB = {
     dashboard: 'Daily collections, dues, tower status, channel partners', collections: 'Today’s and this month’s collections, what is due and coming in, wing by wing', units: 'Every unit, floor by floor, both wings side by side',
     bookings: 'Bookings, applicants, cancellations and transfers', demands: 'Construction stages and the demands raised on them', stages: 'Record each construction stage as it is completed, with who certified it',
-    receipts: 'Enter receipts; the bank statement approves them', ledgers: 'Each buyer’s statement of demands and payments',
+    receipts: 'Enter receipts; the bank statement approves them', ledgers: 'Each buyer’s statement of demands and payments', accledgers: 'Each buyer’s demands, payments, TDS and balance, with overdue and advance',
     letters: 'Stage demands and reminders, by email or courier', followups: 'Calls, WhatsApps and promises to pay',
     parking: 'Total, allotted and free parking spaces', comms: 'Buyers\' email replies and WhatsApps, and messages to link to a flat', team: 'Dream Chat: CRM and Accounts, about a flat or a cheque', accteam: 'Dream Chat: CRM and Accounts, about a flat or a cheque', custdocs: 'Signed and scanned papers for every flat and SRA tenant, kept in Google Drive', verify: 'Items from the import still to check and close', prices: 'Rates, floor rise and the cost sheet', partners: 'Each partner firm: brokerage, bills, pass back, payments and balance',
     site: 'Slab cycle, daily progress reports, hindrances, materials and floor-wise works', purchase: 'Purchase requests from request to payment', drawings: 'The drawing register from Google Drive', hr: 'Staff records, leave, letters and HR policies',
@@ -621,13 +622,13 @@
     accreports: 'Reports and the Tally import', checks: 'Daily checks on the registers', dues: 'Balance due by follow-up status, flat by flat, with search and Excel', queries: 'Every correction still to make in the CRM and Accounts, with who fixes it', bookscrm: 'Tally receipts flat by flat against the CRM',
     ca: 'GST, TDS payable, RERA quarterly and cash flow, for the CA', accsetup: 'Bank accounts, heads, statement folders and imports', audit: 'Who changed what, and when',
   };
-  const PICON = { 'sc-today': 'check', 'sc-flats': 'users', 'sc-inv': 'grid', 'sc-coll': 'rupee', 'acc-today': 'check', 'acc-refunds': 'users', 'acc-books': 'chart', 'sc-dev': 'users', 'sc-con': 'tower', parking: 'grid', 'acc-bank': 'rupee', 'acc-money': 'book', 'acc-tax': 'check', 'acc-sra': 'users', collections: 'chart', flats: 'users', 'sc-calls': 'phone', 'sc-dues': 'book', 'sc-appr': 'check', comms: 'mail', team: 'users', accteam: 'users', sdr: 'rupee', custdocs: 'book', site: 'tower', crmtodo: 'check', acctodo: 'check', training: 'book', dashboard: 'chart', units: 'grid', bookings: 'book', demands: 'tower', receipts: 'rupee', ledgers: 'book', letters: 'mail', followups: 'phone', verify: 'check', prices: 'rupee', partners: 'users',
+  const PICON = { 'sc-today': 'check', 'sc-flats': 'users', 'sc-inv': 'grid', 'sc-coll': 'rupee', 'acc-today': 'check', 'acc-refunds': 'users', 'acc-books': 'chart', 'sc-dev': 'users', 'sc-con': 'tower', parking: 'grid', 'acc-bank': 'rupee', 'acc-money': 'book', 'acc-tax': 'check', 'acc-sra': 'users', collections: 'chart', flats: 'users', 'sc-calls': 'phone', 'sc-dues': 'book', 'sc-appr': 'check', comms: 'mail', team: 'users', accteam: 'users', sdr: 'rupee', custdocs: 'book', site: 'tower', crmtodo: 'check', acctodo: 'check', training: 'book', dashboard: 'chart', units: 'grid', bookings: 'book', demands: 'tower', receipts: 'rupee', ledgers: 'book', accledgers: 'book', letters: 'mail', followups: 'phone', verify: 'check', prices: 'rupee', partners: 'users',
     accdash: 'chart', balances: 'rupee', bankauto: 'check', 'reg-cancellations': 'users', bookscrm: 'check', checks: 'check', queries: 'check', dues: 'rupee', audit: 'book', ca: 'chart', accsetup: 'grid' };
   const DEPTS = [
     { key: 'crm', title: 'Sales & CRM', sub: 'Today’s work, every flat and buyer in one place, receipts, collections and the inbox', icon: 'chart', tone: '#2B5C8A', group: 'CRM', more: 'CRM tools',
       sections: [['Every day', ['sc-today', 'sc-flats', 'sc-appr']], ['Sell and collect', ['sc-inv', 'sc-coll', 'partners']]] },
     { key: 'accounts', title: 'Accounts', sub: 'Bank, receipts, payments, PDC, TDS, SRA rent, GST, SDR and Tally', icon: 'book', tone: '#117A65', group: 'Accounts', skip: ['ca', 'bookscrm', 'checks'],
-      sections: [['Every day', ['acc-today', 'acc-bank', 'acc-money']], ['Tax, refunds and the books', ['acc-tax', 'acc-refunds', 'acc-books', 'cpacc']]] },
+      sections: [['Every day', ['acc-today', 'acc-bank', 'acc-money']], ['Tax, refunds and the books', ['acc-tax', 'acc-refunds', 'acc-books', 'accledgers', 'cpacc']]] },
     { key: 'audit', title: 'CRM/Accounts Audit', sub: 'Tally against the CRM, checks, reconciling items and cancelled flats', icon: 'check', tone: '#0E8C9B', pages: ['queries', 'bookscrm', 'checks', 'reg-recon', 'reg-cancellations', 'verify', 'audit'] },
     { key: 'landd', title: 'Land & title', sub: 'Each land parcel: the deal, cost, payments to the owners and the title papers', icon: 'grid', tone: '#8A5F14', direct: 'land' },
     { key: 'approvalsd', title: 'Approvals', sraTitle: 'SRA approvals', sub: 'Every permission the project needs (IOD, CC, RERA, OC, NOCs) with its status, dates and letters', sraSub: 'Annexure II, LOI, IOA, CC, RERA and the NOCs: status, dates, numbers and the letters', icon: 'check', tone: '#8A5F14', direct: 'approvals' },
