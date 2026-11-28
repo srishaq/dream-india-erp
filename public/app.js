@@ -2738,7 +2738,7 @@
     }
     const R = d.reg, cols = R.cols, show = ACC_SHOW[key] ? ACC_SHOW[key].map((k) => (k === 'ref_id' ? { key: 'ref_id', label: R.idLabel, type: 'text' } : cols.find((c) => c.key === k))) : [...(R.prefix ? [{ key: 'ref_id', label: R.idLabel, type: 'text' }] : []), ...cols];
     $('#page').innerHTML = `<div class="page-head"><div><h1>${esc(R.title)}</h1><p class="muted">${esc(R.help)}</p></div>
-        ${d.can.enter ? `<div class="actions" style="margin:0">${key === 'compliance' ? '<button class="ghost" id="accYear">Add this year\'s due dates</button>' : ''}${key === 'pdc' ? '<button class="ghost" id="pdcTpl">PDC Excel format</button><button class="ghost" id="pdcUp">Upload PDC Excel</button><input type="file" id="pdcUpI" accept=".xlsx" hidden>' : ''}<button id="accNew">${['receipts', 'payments'].includes(key) && me.role !== 'admin' ? 'Add a cash entry' : 'Add a row'}</button></div>` : ''}</div>
+        ${d.can.enter ? `<div class="actions" style="margin:0">${key === 'compliance' ? '<button class="ghost" id="accYear">Add this year\'s due dates</button>' : ''}${['receipts', 'payments'].includes(key) ? '<button class="ghost" id="fixDl">Download corrections sheet</button><button class="ghost" id="fixUp">Upload corrections</button><input type="file" id="fixUpI" accept=".xlsx" hidden>' : ''}${key === 'pdc' ? '<button class="ghost" id="pdcTpl">PDC Excel format</button><button class="ghost" id="pdcUp">Upload PDC Excel</button><input type="file" id="pdcUpI" accept=".xlsx" hidden>' : ''}<button id="accNew">${['receipts', 'payments'].includes(key) && me.role !== 'admin' ? 'Add a cash entry' : 'Add a row'}</button></div>` : ''}</div>
       <div class="panel"><div class="row" style="align-items:end;gap:10px;grid-template-columns:2fr 1fr 1fr auto">
         <div><label>Search</label><input id="aq" value="${esc(state.q)}" placeholder="Any word, name, unit or reference"></div>
         ${R.cols.some((c) => c.type === 'date') ? `<div><label>From</label><input type="date" id="af" value="${esc(state.from)}"></div><div><label>To</label><input type="date" id="at" value="${esc(state.to)}"></div>` : '<div></div><div></div>'}
@@ -2973,6 +2973,33 @@
     };
     // GST, TDS, income tax and RERA due dates for the financial year, from today on (lib/compliance-dates.js)
     if ($('#pdcTpl')) $('#pdcTpl').onclick = async () => { try { const r = await api('/api/accounts', { action: 'pdc-template' }); const a = document.createElement('a'); a.href = URL.createObjectURL(new Blob([Uint8Array.from(atob(r.data), (c) => c.charCodeAt(0))], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' })); a.download = r.name; document.body.appendChild(a); a.click(); a.remove(); } catch (e) { alert(e.message); } };
+    // corrections in Excel: download the rows that still need a head, flat or payer; fill them in Excel; upload (shown first)
+    if ($('#fixDl')) $('#fixDl').onclick = async (e) => {
+      const bt = e.target; bt.disabled = true;
+      try { const r = await api('/api/accounts', { action: 'fix-sheet' }); const a = document.createElement('a'); a.href = URL.createObjectURL(new Blob([Uint8Array.from(atob(r.data), (c) => c.charCodeAt(0))], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' })); a.download = r.name; document.body.appendChild(a); a.click(); a.remove(); toast(`Sheet downloaded: ${r.counts.receipts} receipts and ${r.counts.payments} payments to complete, biggest first.`, 6000); }
+      catch (err) { alert(err.message); } finally { bt.disabled = false; }
+    };
+    if ($('#fixUp')) { $('#fixUp').onclick = () => $('#fixUpI').click(); $('#fixUpI').onchange = async (e) => {
+      const f = e.target.files[0]; e.target.value = ''; if (!f) return;
+      const file = await new Promise((ok, no) => { const fr = new FileReader(); fr.onload = () => ok(String(fr.result).split(',')[1] || ''); fr.onerror = () => no(new Error('Could not read the file')); fr.readAsDataURL(f); });
+      try {
+        const p = await api('/api/accounts', { action: 'fix-preview', file });
+        const lab = { head: 'Head', payment_head: 'Payment head', unit_no: 'Flat', payer_name: 'Payer', payer_type: 'Payer type', cheque_status: 'Cheque status', remark: 'Remark', payee: 'Payee', total_bill: 'Total bill', tds_deducted: 'TDS' };
+        const v = (x) => (x == null || x === '' ? '—' : esc(String(x)));
+        const dl = document.createElement('dialog'); dl.className = 'wide';
+        dl.innerHTML = `<form method="dialog"><h2>Corrections from the sheet</h2>
+          <p>${p.changes.length ? `<b>${p.changes.length}</b> rows will change.` : 'Nothing to change: every row is as in the ERP.'}${p.inClosed ? ` ${p.inClosed} of them are in a closed month (up to ${fmtD(p.closed)}) and are left out: change those one by one with a reason.` : ''}</p>
+          ${p.problemCount ? `<div class="panel" style="border-left:4px solid #c0392b"><b>${p.problemCount} rows could not be taken</b> (fix them in the sheet and upload again; the rest are saved):<ul class="small">${p.problems.map((x) => `<li>${esc(x)}</li>`).join('')}</ul></div>` : ''}
+          <div class="table-wrap acc-grid" style="max-height:50vh"><table><tr><th>ERP ID</th><th>Date</th><th class="num">Amount</th><th>Change</th></tr>
+          ${p.changes.slice(0, 400).map((c) => `<tr><td>${esc(c.ref)}</td><td>${fmtD(c.date)}</td><td class="num">${inr(c.amount)}</td><td class="small">${Object.entries(c.changes).map(([k, [a, b]]) => `${lab[k] || k}: ${v(a)} → <b>${v(b)}</b>`).join('<br>')}</td></tr>`).join('')}</table></div>
+          ${p.changes.length > 400 ? `<p class="small muted">Showing 400 of ${p.changes.length}.</p>` : ''}
+          <div class="actions">${p.changes.length ? '<button type="button" id="fixGo">Save these changes</button>' : ''}<button value="cancel" class="ghost">Close</button></div></form>`;
+        document.body.appendChild(dl); dl.addEventListener('close', () => dl.remove()); dl.showModal();
+        if ($('#fixGo', dl)) $('#fixGo', dl).onclick = async (ev) => { ev.target.disabled = true; ev.target.textContent = 'Saving…';
+          try { const r = await api('/api/accounts', { action: 'fix-apply', file }); dl.close(); toast(`${r.saved} rows corrected.${r.skippedClosed ? ` ${r.skippedClosed} in a closed month left out.` : ''}`, 6000); accRegister(key, { filter: '' }); }
+          catch (err) { alert(err.message); ev.target.disabled = false; ev.target.textContent = 'Save these changes'; } };
+      } catch (err) { alert(err.message); }
+    }; }
     if ($('#pdcUp')) { $('#pdcUp').onclick = () => $('#pdcUpI').click(); $('#pdcUpI').onchange = async (e) => {
       const f = e.target.files[0]; e.target.value = ''; if (!f) return;
       const file = await new Promise((ok, no) => { const fr = new FileReader(); fr.onload = () => ok(String(fr.result).split(',')[1] || ''); fr.onerror = () => no(new Error('Could not read the file')); fr.readAsDataURL(f); });

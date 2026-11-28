@@ -323,6 +323,23 @@ module.exports = route({
     }
     // Compliance Calendar → Add this year's due dates (lib/compliance-dates.js, from Zuri)
     // PDC Excel in the accounts team's format (lib/pdc-import.js): preview, then add
+    // corrections in Excel: the rows that still need work, filled in Excel and uploaded (lib/acc-fixes.js)
+    if (b.action === 'fix-sheet') {
+      need('accounts.enter');
+      const F = await require('../lib/acc-fixes').sheet({ all: b.all === true });
+      const day = new Date(Date.now() + 5.5 * 3600e3).toISOString().slice(0, 10);
+      return res.json({ name: `Accounts corrections ${require('../lib/book').info().label} ${day}.xlsx`, data: F.file.toString('base64'), counts: F.counts });
+    }
+    if (b.action === 'fix-preview' || b.action === 'fix-apply') {
+      need('accounts.enter');
+      const F = require('../lib/acc-fixes');
+      const p = await F.plan(Buffer.from(String(b.file || ''), 'base64'));
+      const c = await closedTo(), closed = c && c.date ? c.date : null;
+      const inClosed = closed ? p.changes.filter((x) => x.date <= closed).length : 0;
+      if (b.action === 'fix-preview') return res.json({ changes: p.changes.map((x) => ({ reg: x.reg, ref: x.ref, date: x.date, amount: x.amount, changes: x.changes })), problems: p.problems.slice(0, 60), problemCount: p.problems.length, inClosed, closed });
+      const n = await F.apply(p, u, closed);
+      return res.json({ ok: true, saved: n, skippedClosed: inClosed, problems: p.problems.length });
+    }
     if (b.action === 'pdc-template') { need('accounts.enter'); return res.json({ name: 'PDC-format.xlsx', data: require('../lib/pdc-import').template().toString('base64') }); }
     if (b.action === 'pdc-import-preview' || b.action === 'pdc-import') {
       need('accounts.enter');
