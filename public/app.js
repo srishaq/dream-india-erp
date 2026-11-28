@@ -2906,7 +2906,9 @@
       if (!I('unit_no')) return;
       const box = document.createElement('div'); box.className = 'wide small'; box.style.margin = '-4px 0 6px';
       I('unit_no').closest('div').after(box);
-      try { recBooks = recBooks || (await api('/api/bookings?project=' + encodeURIComponent($('#proj')?.value || ''))).rows || []; } catch { recBooks = []; }
+      // the project on the page (the picker may be absent: the login opened the project from Home), kept per project
+      const pj = $('#proj')?.value || proj || '';
+      try { if (!recBooks || recBooks.pj !== pj) { recBooks = (await api('/api/bookings?project=' + encodeURIComponent(pj))).rows || []; recBooks.pj = pj; } } catch { recBooks = []; recBooks.pj = null; }
       const norm = (u) => { const m = String(u || '').toUpperCase().replace(/\s+/g, '').match(/^([A-Z]+)-?(\d{2,4})$/); return m ? `${m[1]}-${m[2]}` : String(u || '').trim().toUpperCase(); };
       const of = (u) => { const L = recBooks.filter((b) => b.unit_no === u); return { cur: L.find((b) => ['active', 'pending'].includes(b.status)), old: L.filter((b) => !['active', 'pending'].includes(b.status)) }; };
       const set = (k, v, force) => { const e = I(k); if (!e || v == null) return; if (force || !e.value) { if (e.tagName === 'SELECT' && ![...e.options].some((o) => o.value === v)) e.add(new Option(v, v)); e.value = v; } };
