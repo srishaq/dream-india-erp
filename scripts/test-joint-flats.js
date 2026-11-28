@@ -59,6 +59,31 @@ let n = 0; const step = async (name, fn) => { await fn(); n++; console.log('  âœ
       assert.equal(again.status, 409); assert.match(again.error, /cannot be entered twice/);
     });
 
+    await step('one entity: entered once with no split by staff, one row in Receipts, one receipt for the buyer, approved together, one ledger', async () => {
+      const r = await admin('/api/receipts', { action: 'create-joint', bookingId: bk['A-803'], amount: '210000', receivedOn: '2026-11-21', mode: 'bank', instrumentNo: 'UTRJODI2' }, 'aspire');
+      assert.equal(r.status, 200, r.error); assert.equal(r.units, 'A-802 + A-803');
+      const parts = await db.q("select booking_id, amount, joint_key from receipts where instrument_no = 'UTRJODI2' order by id");
+      assert.equal(parts.length, 2); assert.equal(parts.reduce((a, x) => a + Number(x.amount), 0), 210000); assert.ok(parts[0].joint_key && parts[0].joint_key === parts[1].joint_key);
+      assert.deepEqual(parts.map((x) => Number(x.amount)), [70000, 140000], 'by agreement value when nothing is owed yet');
+      const L = await admin('/api/receipts?project=' + P.id, null, 'aspire');
+      const mine = L.rows.filter((x) => x.instrument_no === 'UTRJODI2'); assert.equal(mine.length, 1, 'one row'); assert.equal(mine[0].unit_no, 'A-802 + A-803'); assert.equal(mine[0].amount, 210000);
+      const F = await require('../lib/receipt-mail').receiptFigures(null, r.ids[1].id);
+      assert.equal(F.doc.unit, 'A-802 + A-803'); assert.equal(F.doc.amount, 210000); assert.equal(F.r.id, r.ids[0].id);
+      assert.equal(Math.round(F.doc.splits.reduce((a, x) => a + x[1], 0)), 210000);
+      // approved by hand (an old-dated TDS-like receipt is simplest): both parts at once
+      await db.q("update receipts set mode = 'other' where instrument_no = 'UTRJODI2'");
+      const other = client(); const h = await admin('/api/users', { action: 'create', name: 'Head Acc', username: 'hacc', role: 'head_accounts', allProjects: true });
+      await other('/api/session', { action: 'login', username: 'hacc', password: h.tempPassword }); await other('/api/session', { action: 'password', current: h.tempPassword, next: 'head-accounts-pw-12' });
+      const ap = await other('/api/receipts', { action: 'approve', id: r.ids[0].id }, 'aspire');
+      assert.equal(ap.status, 200, ap.error);
+      assert.deepEqual((await db.q("select status from receipts where instrument_no = 'UTRJODI2'")).map((x) => x.status), ['approved', 'approved']);
+      const led = await admin('/api/ledger?project=' + P.id, null, 'aspire');
+      assert.ok(led.rows.some((x) => x.unit_no === 'A-802 + A-803'), 'one ledger row'); assert.ok(!led.rows.some((x) => x.unit_no === 'A-802'));
+      const one = await admin('/api/ledger?booking=' + bk['A-802'], null, 'aspire');
+      assert.equal(one.head.unit_no, 'A-802 + A-803'); assert.equal(one.lines.filter((l) => l.kind === 'receipt').length, 1, 'the payment shows once');
+      await db.q("delete from receipt_splits where receipt_id in (select id from receipts where instrument_no = 'UTRJODI2')"); await db.q("delete from receipts where instrument_no = 'UTRJODI2'");
+    });
+
     await step('Tally vs CRM compares the pair together, one row for both flats', async () => {
       await db.q("update receipts set status = 'approved' where instrument_no = 'UTRJODI1'");
       // Tally keeps the whole payment on one flat's ledger

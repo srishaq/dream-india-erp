@@ -21,7 +21,7 @@ const fmtCut = () => new Date(ONE_CHEQUE_FROM + 'T00:00:00Z').toLocaleDateString
 
 async function list(projectId, status) {
   return db.q(
-    `select r.id, r.received_on, r.amount, r.mode, r.bank, r.instrument_no, r.status, r.note, r.reverse_reason, r.opening, r.created_by, r.booking_id,
+    `select r.id, r.joint_key, r.received_on, r.amount, r.mode, r.bank, r.instrument_no, r.status, r.note, r.reverse_reason, r.opening, r.created_by, r.booking_id,
             u.unit_no, c.name as created_by_name, a.name as approved_by_name, r.approved_at, r.approved_note, r.receipt_no, r.receipt_sent_at,
             r.handed_on, r.deposited_on, r.bank_status, r.bank_on, r.bank_ref, r.bank_match, h.name as handed_by_name, dp.name as deposited_by_name, r.acc_received_at, ar.name as acc_received_by_name, r.deposit_bank,
             (select string_agg(y.name, ' & ' order by ap.seq) from booking_applicants ap join buyers y on y.id = ap.buyer_id where ap.booking_id = r.booking_id) as buyers,
@@ -30,14 +30,36 @@ async function list(projectId, status) {
        left join users c on c.id = r.created_by left join users a on a.id = r.approved_by
        left join users h on h.id = r.handed_by left join users dp on dp.id = r.deposited_by left join users ar on ar.id = r.acc_received_by
       where r.project_id = $1 and ($2::text is null or r.status = $2)
-      order by (r.status = 'pending') desc, r.received_on desc, r.id desc limit 1000`, [projectId, status]);
+      order by (r.status = 'pending') desc, r.received_on desc, r.id desc limit 1000`, [projectId, status]).then(mergeJoint);
+}
+// a jodi payment's parts (one per flat) shown as the one payment it is: the first part's row, with the flats and figures
+// of all; whatever is done to it is done to every part
+async function mergeJoint(rows) {
+  const keys = [...new Set(rows.filter((r) => r.joint_key).map((r) => r.joint_key))];
+  if (!keys.length) return rows;
+  const all = await db.q(`select r.id, r.joint_key, r.amount, u.unit_no, coalesce((select json_object_agg(s.head, s.amount) from receipt_splits s where s.receipt_id = r.id), '{}') as splits
+      from receipts r join bookings b on b.id = r.booking_id join units u on u.id = b.unit_id where r.joint_key = any($1::text[]) order by r.id`, [keys]);
+  const out = [];
+  for (const r of rows) {
+    if (!r.joint_key) { out.push(r); continue; }
+    const parts = all.filter((x) => x.joint_key === r.joint_key);
+    if (parts[0].id !== r.id) continue; // shown once, on its first part
+    const splits = {};
+    for (const p of parts) for (const [h, v] of Object.entries(p.splits || {})) splits[h] = Math.round(((splits[h] || 0) + Number(v)) * 100) / 100;
+    out.push({ ...r, unit_no: parts.map((p) => p.unit_no).join(' + '), amount: parts.reduce((a, p) => a + Number(p.amount), 0), splits, jodi: true, part_ids: parts.map((p) => p.id) });
+  }
+  return out;
 }
 
 // The buyer's WhatsApp for a receipt (payment_received template: name, amount, flat, date), once per receipt unless
 // sent again by hand. Says why when it could not go (WhatsApp not connected, no mobile, no template).
 async function receiptWhatsapp(id, u, again = false) {
   const L = require('../lib/letters');
-  const r = await db.one('select id, booking_id, amount, received_on, opening, wa_sent_at, status from receipts where id = $1', [id]);
+  id = (await require('../lib/joint-flats').partsOf(id))[0] || id; // a jodi payment: one message, for the whole payment
+  const r = await db.one(`select id, booking_id, amount, received_on, opening, wa_sent_at, status, joint_key,
+      (select coalesce(sum(x.amount), 0) from receipts x where x.joint_key = receipts.joint_key) as joint_total,
+      (select string_agg(u.unit_no, ' + ' order by x.id) from receipts x join bookings b on b.id = x.booking_id join units u on u.id = b.unit_id where x.joint_key = receipts.joint_key) as joint_units
+    from receipts where id = $1`, [id]);
   if (!r || r.opening || !['pending', 'approved'].includes(r.status)) return { skipped: 'not a live receipt' };
   if (r.wa_sent_at && !again) return { skipped: 'already sent' };
   if (!again && (await require('../lib/receipt-mail').contractorFlat(r.id))) return { skipped: "contractor's flat: a bill adjustment, not the buyer's payment" };
@@ -50,7 +72,7 @@ async function receiptWhatsapp(id, u, again = false) {
     const f = await require('../lib/receipt-mail').receiptFigures(null, r.id);
     document = { content: require('../lib/demand-letter').buildReceipt(f.doc), url: wa.fileLink('receipt', r.id), open: `/api/receipts?pdf=${r.id}`, filename: `Receipt_${f.doc.receiptNo.replace(/[^A-Za-z0-9-]+/g, '_')}_${f.doc.unit}.pdf` };
   }
-  const w = await L.waNotice({ bookingId: r.booking_id, kind: 'received', set, userId: u ? u.id : null, params: [k.names, L.rs(r.amount), k.unit_no, L.dmy(r.received_on)], document, template: set.waReceiptPdfTemplate || null });
+  const w = await L.waNotice({ bookingId: r.booking_id, kind: 'received', set, userId: u ? u.id : null, params: [k.names, L.rs(r.joint_key ? r.joint_total : r.amount), r.joint_key ? r.joint_units : k.unit_no, L.dmy(r.received_on)], document, template: set.waReceiptPdfTemplate || null });
   if (w.sent) await db.q('update receipts set wa_sent_at = now() where id = $1', [r.id]);
   return w;
 }
@@ -168,7 +190,9 @@ module.exports = route({
       const amount = toPaise(b.amount); if (!(amount > 0)) throw fail(400, 'Enter the amount received.');
       const on = /^\d{4}-\d{2}-\d{2}$/.test(b.receivedOn || '') ? b.receivedOn : null;
       if (!on || on > today()) throw fail(400, 'Enter the date received (not in the future).');
-      const parts = (Array.isArray(b.parts) ? b.parts : []).map((p) => ({ f: g.flats.find((f) => f.bookingId === intOr(p.bookingId)), paise: toPaise(p.amount) })).filter((p) => p.paise > 0);
+      // the ERP divides it between the flats by itself (by what each owes now), unless the parts are given
+      const given = Array.isArray(b.parts) && b.parts.some((p) => toPaise(p.amount) > 0);
+      const parts = (given ? b.parts : JF.split(rupees(amount), g.flats).map((f) => ({ bookingId: f.bookingId, amount: f.amount }))).map((p) => ({ f: g.flats.find((f) => f.bookingId === intOr(p.bookingId)), paise: toPaise(p.amount) })).filter((p) => p.paise > 0);
       if (parts.some((p) => !p.f)) throw fail(400, 'Every part must be one of the jodi flats.');
       const sum = parts.reduce((a, p) => a + p.paise, 0);
       if (sum !== amount) throw fail(400, `The flats' parts add up to ₹${rupees(sum)}, but the payment is ₹${rupees(amount)}. They must match.`);
@@ -180,12 +204,13 @@ module.exports = route({
       }
       const units = parts.map((p) => p.f.unit).join(' + ');
       const note = (`Jodi payment ₹${Number(rupees(amount)).toLocaleString('en-IN')} for ${units}` + (str(b.note, 200) ? `. ${str(b.note, 200)}` : '')).slice(0, 300);
+      const jointKey = `J${g.id}-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 6)}`;
       const ids = await db.tx(async (t) => {
         const out = [];
         for (const p of parts) {
           const amt = rupees(p.paise), sp = JF.avGst(amt, p.f.gstRate);
-          const row = await t.one(`insert into receipts (project_id, booking_id, received_on, amount, mode, bank, instrument_no, account_no, note, created_by)
-             values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10) returning id`, [first.project_id, p.f.bookingId, on, amt, mode, str(b.bank, 80) || null, instrument, str(b.accountNo, 30) || null, note, u.id]);
+          const row = await t.one(`insert into receipts (project_id, booking_id, received_on, amount, mode, bank, instrument_no, account_no, note, created_by, joint_key)
+             values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11) returning id`, [first.project_id, p.f.bookingId, on, amt, mode, str(b.bank, 80) || null, instrument, str(b.accountNo, 30) || null, note, u.id, jointKey]);
           for (const [h, v] of Object.entries(sp)) if (v > 0) await t.q('insert into receipt_splits (receipt_id, head, amount) values ($1, $2, $3)', [row.id, h, v]);
           await audit.record(t.q, { user: u, action: 'create', entity: 'receipt', entityId: row.id, projectId: first.project_id, after: { unit: p.f.unit, receivedOn: on, amount: amt, mode, instrument, splits: sp, jodi: units, total: rupees(amount) } });
           out.push({ id: row.id, unit: p.f.unit, amount: amt });
@@ -193,8 +218,10 @@ module.exports = route({
         return out;
       });
       if (mode === 'cheque') await require('../lib/team').system('accounts', `Cheque to deposit (jodi flats ${units}): ₹${Math.round(rupees(amount)).toLocaleString('en-IN')}${instrument ? ', cheque ' + instrument : ''}${b.bank ? ' (' + str(b.bank, 80) + ')' : ''}, received ${on}, entered by ${u.name}. One cheque, split ${ids.map((x) => x.unit + ' ₹' + Math.round(x.amount).toLocaleString('en-IN')).join(', ')}.`, { bookingId: first.id, receiptId: ids[0].id, needsAction: true });
-      for (const x of ids) { await require('../lib/receipt-mail').autoSend(x.id, 'provisional', u).catch(() => null); await receiptWhatsapp(x.id, u).catch(() => null); }
-      return res.json({ ok: true, ids, id: ids[0].id });
+      // the buyer gets one receipt for the whole payment (both flats on it)
+      const mail = await require('../lib/receipt-mail').autoSend(ids[0].id, 'provisional', u).catch(() => null);
+      const whatsapp = await receiptWhatsapp(ids[0].id, u).catch(() => null);
+      return res.json({ ok: true, ids, id: ids[0].id, units, mail, whatsapp });
     }
 
     // WhatsApp the buyer about this receipt by hand (the receipt window's button)
@@ -218,7 +245,8 @@ module.exports = route({
     // Several cheques deposited together (one paying-in slip), into one bank account.
     if (b.action === 'deposited' && Array.isArray(b.ids)) {
       if (!(has(u, 'accounts.enter') || has(u, 'receipt.approve'))) throw fail(403, 'Only Accounts marks a cheque deposited.');
-      const ids = b.ids.map((x) => intOr(x)).filter(Boolean).slice(0, 300); if (!ids.length) throw fail(400, 'Tick the cheques deposited.');
+      let ids = b.ids.map((x) => intOr(x)).filter(Boolean).slice(0, 300); if (!ids.length) throw fail(400, 'Tick the cheques deposited.');
+      ids = (await db.q('select x.id from receipts r join receipts x on x.id = r.id or (r.joint_key is not null and x.joint_key = r.joint_key) where r.id = any($1::int[])', [ids])).map((x) => x.id);
       const on = /^\d{4}-\d{2}-\d{2}$/.test(b.on || '') ? b.on : today(); if (on > today()) throw fail(400, 'The date cannot be in the future.');
       const bank = str(b.bank, 80) || null;
       const rows = await db.q(`update receipts set deposited_on = $2, deposited_by = $3, deposit_bank = coalesce($4, deposit_bank), handed_on = coalesce(handed_on, $2),
@@ -231,10 +259,12 @@ module.exports = route({
     const r = await db.one('select * from receipts where id = $1', [intOr(b.id)]);
     if (!r) throw fail(404, 'Receipt not found.');
     needProject(u, r.project_id);
+    // a jodi payment: what is done to it is done to each flat's part
+    const all = await require('../lib/joint-flats').partsOf(r.id);
     if (b.action === 'received') {
       if (!(has(u, 'accounts.enter') || has(u, 'receipt.approve'))) throw fail(403, 'Only Accounts confirms a cheque received.');
       if (r.mode !== 'cheque' || r.acc_received_at) throw fail(409, r.acc_received_at ? 'Already marked received.' : 'This receipt is not a cheque.');
-      await db.q('update receipts set acc_received_at = now(), acc_received_by = $2, handed_on = coalesce(handed_on, $3) where id = $1', [r.id, u.id, today()]);
+      await db.q('update receipts set acc_received_at = now(), acc_received_by = $2, handed_on = coalesce(handed_on, $3) where id = any($1::int[])', [all, u.id, today()]);
       await audit.record(db.q, { user: u, action: 'received', entity: 'receipt', entityId: r.id, projectId: r.project_id });
       return res.json({ ok: true });
     }
@@ -244,10 +274,10 @@ module.exports = route({
       if (r.bank_status) throw fail(409, 'This cheque is already on the bank statement.');
       const on = /^\d{4}-\d{2}-\d{2}$/.test(b.on || '') ? b.on : today();
       if (on > today() || on < String(r.received_on instanceof Date ? r.received_on.toISOString() : r.received_on).slice(0, 10)) throw fail(400, 'The date must be between the day the cheque was received and today.');
-      if (b.action === 'handed') await db.q('update receipts set handed_on = $2, handed_by = $3 where id = $1', [r.id, on, u.id]);
+      if (b.action === 'handed') await db.q('update receipts set handed_on = $2, handed_by = $3 where id = any($1::int[])', [all, on, u.id]);
       else {
-        await db.q('update receipts set deposited_on = $2, deposited_by = $3, handed_on = coalesce(handed_on, $2), deposit_bank = coalesce($4, deposit_bank), acc_received_at = coalesce(acc_received_at, now()), acc_received_by = coalesce(acc_received_by, $3) where id = $1', [r.id, on, u.id, str(b.bank, 80) || null]);
-        await db.q("update team_messages set done_at = now(), done_by = $2 where receipt_id = $1 and kind = 'system' and done_at is null and body like 'Cheque to deposit%'", [r.id, u.id]);
+        await db.q('update receipts set deposited_on = $2, deposited_by = $3, handed_on = coalesce(handed_on, $2), deposit_bank = coalesce($4, deposit_bank), acc_received_at = coalesce(acc_received_at, now()), acc_received_by = coalesce(acc_received_by, $3) where id = any($1::int[])', [all, on, u.id, str(b.bank, 80) || null]);
+        await db.q("update team_messages set done_at = now(), done_by = $2 where receipt_id = any($1::int[]) and kind = 'system' and done_at is null and body like 'Cheque to deposit%'", [all, u.id]);
       }
       await audit.record(db.q, { user: u, action: b.action, entity: 'receipt', entityId: r.id, projectId: r.project_id, after: { on } });
       return res.json({ ok: true });
@@ -269,8 +299,8 @@ module.exports = route({
         throw fail(409, 'Cheques and transfers are approved by the bank statement (2 pm and 7 pm). This one is not on the statement yet, so it cannot be approved by hand.');
       if (status === 'approved') { const st = await db.one('select status from bookings where id = $1', [r.booking_id]); if (!st || !['active', 'pending'].includes(st.status)) throw fail(409, `This flat's booking is ${st ? st.status : 'gone'}: the receipt cannot be approved on it. Reject it, or record it against the refund in Accounts.`); }
       await db.tx(async (t) => {
-        const done = await t.one("update receipts set status = $2, approved_by = $3, approved_at = now(), reverse_reason = $4 where id = $1 and status = 'pending' returning id", [r.id, status, u.id, b.action === 'reject' ? str(b.reason, 300) || null : null]);
-        if (!done) throw fail(409, 'Someone else has just dealt with this receipt. Refresh the page.');
+        const done = await t.q("update receipts set status = $2, approved_by = $3, approved_at = now(), reverse_reason = $4 where id = any($1::int[]) and status = 'pending' returning id", [all, status, u.id, b.action === 'reject' ? str(b.reason, 300) || null : null]);
+        if (!done.length || (status === 'rejected' && done.length !== all.length)) throw fail(409, 'Someone else has just dealt with this receipt. Refresh the page.');
         await audit.record(t.q, { user: u, action: b.action, entity: 'receipt', entityId: r.id, projectId: r.project_id, before: { status: r.status }, after: { status }, note: str(b.reason, 300) || null });
       });
       // the buyer gets a WhatsApp thank-you once the payment is approved (payment_received template)
@@ -285,7 +315,7 @@ module.exports = route({
       const reason = str(b.reason, 300); if (!reason) throw fail(400, 'Give the reason.');
       const status = b.action === 'bounce' ? 'bounced' : 'reversed';
       await db.tx(async (t) => {
-        await t.q('update receipts set status = $2, reverse_reason = $3 where id = $1', [r.id, status, reason]);
+        await t.q("update receipts set status = $2, reverse_reason = $3 where id = any($1::int[]) and status = 'approved'", [all, status, reason]);
         await audit.record(t.q, { user: u, action: b.action, entity: 'receipt', entityId: r.id, projectId: r.project_id, before: { status: r.status }, after: { status }, note: reason });
       });
       return res.json({ ok: true });
@@ -296,13 +326,14 @@ module.exports = route({
       const reason = str(b.reason, 300); if (!reason) throw fail(400, 'Say why the cheque did not bounce.');
       await db.tx(async (t) => {
         // kept by hand: the bank check no longer links or bounces this receipt on its own
-        await t.q("update receipts set status = 'approved', reverse_reason = null, bank_status = 'cleared', bank_acc_id = null, bank_match = 'kept by hand' where id = $1", [r.id]);
+        await t.q("update receipts set status = 'approved', reverse_reason = null, bank_status = 'cleared', bank_acc_id = null, bank_match = 'kept by hand' where id = any($1::int[]) and status = 'bounced'", [all]);
         await audit.record(t.q, { user: u, action: 'unbounce', entity: 'receipt', entityId: r.id, projectId: r.project_id, before: { status: 'bounced', reason: r.reverse_reason }, after: { status: 'approved' }, note: reason });
       });
       return res.json({ ok: true });
     }
     // the split of an approved receipt corrected (e.g. part of it was GST): same receipt and number, old and new split kept
     if (b.action === 'resplit') {
+      if (r.joint_key) throw fail(409, 'This is a jodi flats payment: the ERP divides it between the two flats by itself. To change it, reverse it and enter it again.');
       if (r.status !== 'approved') throw fail(409, 'Only an approved receipt can be corrected this way.');
       const reason = str(b.reason, 300); if (!reason) throw fail(400, 'Give the reason for the correction.');
       const C = require('../lib/changes');

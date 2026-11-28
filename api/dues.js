@@ -22,13 +22,19 @@ async function rows(projectId) {
     av: n(r.agreement_value), demanded: n(r.demanded) + n(r.demanded_gst), received: n(r.credit_av) + n(r.received_gst), avDue: n(r.outstanding), gstDue: n(r.gst_outstanding), due: n(r.outstanding) + n(r.gst_outstanding),
     overdue: n(r.overdue), lastReceipt: iso(r.last_receipt), lastDemand: iso(r.last_demand), booked: iso(r.booking_date), registration: r.registration_status || '' }));
 }
+// a jodi pair is one line to follow up (one buyer family, one payment)
+async function rowsMerged(projectId) {
+  const R = await rows(projectId);
+  const M = await require('../lib/joint-flats').mergeRows(projectId, R, { unitKey: 'unit', sum: ['av', 'demanded', 'received', 'avDue', 'gstDue', 'due', 'overdue'], join: ['buyer'] });
+  return M.map((m) => (m.jodi ? { ...m, lastReceipt: R.filter((r) => m.jodi_units.includes(r.unit)).map((r) => r.lastReceipt).sort().pop() || '', lastDemand: R.filter((r) => m.jodi_units.includes(r.unit)).map((r) => r.lastDemand).sort().pop() || '' } : m));
+}
 
 module.exports = route({
   GET: async (req, res) => {
     const u = await auth.guard(req, res, null); if (!u) return;
     if (!has(u, 'ledger.view') && !has(u, 'accounts.view')) throw fail(403, 'Your role does not allow this.');
     const q = req.query || {};
-    const all = await rows(needProject(u, intOr(q.project)));
+    const all = await rowsMerged(needProject(u, intOr(q.project)));
     if (q.export === 'xlsx') {
       const w = str(q.q, 80).toLowerCase(), st = str(q.status, 80), wing = str(q.wing, 4);
       const list = all.filter((r) => (!st || r.status === st) && (!wing || r.wing === wing) && (q.due !== '1' || r.avDue > 0) && (!w || `${r.unit} ${r.buyer} ${r.phone} ${r.cp} ${r.status}`.toLowerCase().includes(w)));

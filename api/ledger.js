@@ -27,12 +27,20 @@ module.exports = route({
     const now = today();
     if (req.query.booking) {
       const bk = await bookingFor(u, intOr(req.query.booking));
-      const demands = await db.q("select demand_date as date, due_date, stage_name, pct, amount, gst from demands where booking_id = $1 and status = 'raised' order by demand_date, id", [bk.id]);
+      // a jodi flat: one ledger for the pair (Rafi Sir, 28 Nov 2026: "one single entity"), demands of both flats, each
+      // payment once
+      const jg = await require('../lib/joint-flats').ofBooking(bk.id);
+      const ids = jg ? jg.flats.map((f) => f.bookingId) : [bk.id];
+      const unitOf = Object.fromEntries((jg ? jg.flats : []).map((f) => [f.bookingId, f.unit]));
+      const demands = await db.q("select booking_id, demand_date as date, due_date, stage_name, pct, amount, gst from demands where booking_id = any($1::int[]) and status = 'raised' order by demand_date, id", [ids]);
       const receipts = await db.q(
-        `select r.received_on as date, r.id, r.mode, r.bank, r.instrument_no, coalesce(json_object_agg(s.head, s.amount), '{}') as splits
-           from receipts r join receipt_splits s on s.receipt_id = r.id where r.booking_id = $1 and r.status = 'approved' group by r.id order by r.received_on, r.id`, [bk.id]);
+        `select min(r.received_on) as date, min(r.id) as id, min(r.mode) as mode, min(r.bank) as bank, min(r.instrument_no) as instrument_no,
+                coalesce(json_object_agg(s.head, s.amount), '{}') as splits_raw, json_agg(json_build_object('h', s.head, 'a', s.amount)) as sp
+           from receipts r join receipt_splits s on s.receipt_id = r.id where r.booking_id = any($1::int[]) and r.status = 'approved'
+          group by coalesce(r.joint_key, r.id::text) order by 1, 2`, [ids]);
+      for (const r of receipts) { const t = {}; for (const x of r.sp) t[x.h] = rupees(toPaise(t[x.h]) + toPaise(x.a)); r.splits = t; }
       const lines = [
-        ...demands.map((d) => ({ date: d.date, kind: 'demand', text: `${d.stage_name} (${Number(d.pct)}%)`, due: d.due_date, debit: d.amount, gstDebit: d.gst })),
+        ...demands.map((d) => ({ date: d.date, kind: 'demand', text: `${jg ? unitOf[d.booking_id] + ': ' : ''}${d.stage_name} (${Number(d.pct)}%)`, due: d.due_date, debit: d.amount, gstDebit: d.gst })),
         ...receipts.map((r) => {
           const s = r.splits, credit = toPaise(s.av) + toPaise(s.tds);
           const parts = [s.av && 'AV', s.tds && 'TDS', s.gst && 'GST', (s.stamp_duty || s.registration) && 'stamp duty / registration'].filter(Boolean).join(', ');
@@ -44,13 +52,15 @@ module.exports = route({
         bal += toPaise(l.debit) - toPaise(l.credit); gbal += toPaise(l.gstDebit) - toPaise(l.gstCredit);
         l.balance = rupees(bal); l.gstBalance = rupees(gbal);
       }
-      const balance = await db.one('select * from booking_balances where booking_id = $1', [bk.id]);
+      let balance = await db.one('select * from booking_balances where booking_id = $1', [bk.id]);
+      if (jg) { const bs = await db.q('select * from booking_balances where booking_id = any($1::int[])', [ids]); balance = { ...balance }; for (const k of Object.keys(balance)) if (k !== 'booking_id' && bs.every((x) => x[k] == null || !isNaN(Number(x[k])))) balance[k] = rupees(bs.reduce((a, x) => a + toPaise(x[k]), 0)); }
       const head = await db.one(
         `select u.unit_no, u.typology, u.carpet_sqft, bl.name as building, p.name as project, c.name as company, p.rera_no,
                 (select string_agg(y.name, ' & ' order by ap.seq) from booking_applicants ap join buyers y on y.id = ap.buyer_id where ap.booking_id = $1) as buyers
            from bookings b join units u on u.id = b.unit_id join buildings bl on bl.id = u.building_id join projects p on p.id = u.project_id join companies c on c.id = p.company_id where b.id = $1`, [bk.id]);
-      const allDemands = await db.q("select due_date, stage_name, amount from demands where booking_id = $1 and status = 'raised' order by due_date, id", [bk.id]);
-      return res.json({ booking: { id: bk.id, status: bk.status, booking_date: bk.booking_date, agreement_value: bk.agreement_value, registration_date: bk.registration_date }, head, lines, balance, oldest: oldestUnpaid(allDemands, toPaise(balance.credit_av), now), asOf: now });
+      const allDemands = await db.q("select due_date, stage_name, amount from demands where booking_id = any($1::int[]) and status = 'raised' order by due_date, id", [ids]);
+      if (jg) { head.unit_no = jg.flats.map((f) => f.unit).join(' + '); head.buyers = [...new Set(jg.flats.map((f) => f.buyer).filter(Boolean))].join(' / '); }
+      return res.json({ booking: { id: bk.id, status: bk.status, booking_date: bk.booking_date, agreement_value: jg ? rupees(jg.flats.reduce((a, f) => a + toPaise(f.av), 0)) : bk.agreement_value, registration_date: bk.registration_date, jodi: jg ? jg.flats.map((f) => f.unit) : null }, head, lines, balance, oldest: oldestUnpaid(allDemands, toPaise(balance.credit_av), now), asOf: now });
     }
 
     const projectId = needProject(u, intOr(req.query.project));
@@ -78,7 +88,15 @@ module.exports = route({
       r.phone = r.phone ? '•••••' + String(r.phone).slice(-4) : null;
     }
     for (const k of Object.keys(totals)) if (k !== 'bookings') totals[k] = rupees(totals[k]);
+    // a jodi pair is one row (one buyer family, one payment): figures added up, the longest overdue kept
+    const skip = new Set(['booking_id', 'booking_date', 'unit_no', 'building', 'sample', 'buyers', 'phone', 'days_overdue', 'oldest_stage', 'bucket', 'last_demand', 'last_receipt']);
+    const sumK = rows.length ? Object.keys(rows[0]).filter((k) => !skip.has(k) && rows.every((r) => r[k] == null || (typeof r[k] !== 'boolean' && !isNaN(Number(r[k]))))) : [];
+    const pre = new Map(rows.map((r) => [r.unit_no, r]));
+    let merged = await require('../lib/joint-flats').mergeRows(projectId, rows, { sum: sumK, join: ['buyers'] });
+    merged = merged.map((m) => { if (!m.jodi) return m; const ps = m.jodi_units.map((x) => pre.get(x)).filter(Boolean); const w = ps.slice().sort((a, b) => (b.days_overdue || 0) - (a.days_overdue || 0))[0];
+      return { ...m, ...Object.fromEntries(sumK.map((k) => [k, rupees(Math.round(Number(m[k]) * 100))])), days_overdue: w.days_overdue, oldest_stage: w.oldest_stage, bucket: w.bucket }; });
+    totals.bookings = merged.length;
     for (const k of Object.keys(ageing)) ageing[k] = rupees(ageing[k]);
-    return res.json({ rows, totals, ageing, asOf: now });
+    return res.json({ rows: merged, totals, ageing, asOf: now });
   },
 });
