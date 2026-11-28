@@ -84,6 +84,17 @@ let n = 0; const step = async (name, fn) => { await fn(); n++; console.log('  âœ
       await db.q("delete from receipt_splits where receipt_id in (select id from receipts where instrument_no = 'UTRJODI2')"); await db.q("delete from receipts where instrument_no = 'UTRJODI2'");
     });
 
+    await step('one demand letter for the pair, with both flats and their figures added up', async () => {
+      const plan2 = await db.one('select plan_id from bookings where id = $1', [bk['A-802']]);
+      await db.q("insert into plan_stages (plan_id, seq, name, pct, construction_linked) values ($1, 1, 'On booking', 10, false) on conflict do nothing", [plan2.plan_id]).catch(() => {});
+      for (const no of ['A-802', 'A-803']) await db.q("insert into demands (booking_id, stage_name, pct, amount, gst, demand_date, due_date, status) select id, 'On booking', 10, agreement_value * 0.1, agreement_value * 0.005, '2026-11-01', '2026-11-15', 'raised' from bookings where id = $1", [bk[no]]);
+      const L = require('../lib/letters');
+      const d = await L.letterData(bk['A-803'], 'Demand Letter', '2026-11-25', await L.settings());
+      assert.equal(d.letter.unit, 'A-802 + A-803'); assert.equal(d.letter.av, 30000000);
+      const r = await admin('/api/letters', { action: 'prepare', projectId: P.id, letterType: 'Demand Letter', bookingIds: [bk['A-802'], bk['A-803'], bk['A-901']].slice(0, 2) }, 'aspire');
+      assert.equal(r.status, 200, r.error); assert.equal(r.letters.length, 1, 'one letter for the pair'); assert.equal(r.letters[0].unit, 'A-802 + A-803');
+    });
+
     await step('Tally vs CRM compares the pair together, one row for both flats', async () => {
       await db.q("update receipts set status = 'approved' where instrument_no = 'UTRJODI1'");
       // Tally keeps the whole payment on one flat's ledger

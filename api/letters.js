@@ -138,7 +138,10 @@ module.exports = route({
       if (!ids.length) throw fail(400, 'Tick at least one buyer.');
       const letterDate = /^\d{4}-\d{2}-\d{2}$/.test(b.letterDate || '') ? b.letterDate : today();
       const made = [];
+      const JF = require('../lib/joint-flats'), pk = await JF.pairKeys(ids), seen = new Set();
       for (const id of ids) {
+        if (seen.has(JF.once(pk, id))) continue; // jodi flats: one letter for the pair
+        seen.add(JF.once(pk, id));
         const bk = await bookingFor(u, id);
         if (bk.project_id !== projectId) throw fail(400, 'All buyers must be from the chosen project.');
         made.push(await prepareOne({ bookingId: id, type, letterDate, set, user: u, projectId }));
