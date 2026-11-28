@@ -1963,7 +1963,12 @@
       <div class="row"><div><label>Completed on</label><input type="date" name="completedOn" max="${todayIso()}" required></div><div><label>Certified by (architect / engineer)</label><input name="certifiedBy"></div></div>`,
     async (x) => { await api('/api/demands', { action: 'stage.complete', ...x }); toast('Stage recorded. CRM can now prepare the demand run.'); demands(); });
     if ($('#run')) $('#run').onclick = () => {
-      const ready = d.buildings.flatMap((b) => d.done.filter((x) => x.building_id === b.id).map((x) => ({ b, s: x.stage_name })));
+      // only stages still to be demanded: one already raised for the building is not offered again
+      const ready = d.buildings.flatMap((b) => d.done.filter((x) => x.building_id === b.id && !x.raised).map((x) => ({ b, s: x.stage_name })));
+      if (!ready.length) {
+        const next = d.buildings.map((b) => { const s = d.stages.find((st) => !d.done.some((x) => x.building_id === b.id && x.stage_name === st.name)); return s ? `${esc(b.name)}: ${esc(s.name)} (${toNum(s.pct)}%)` : null; }).filter(Boolean);
+        return dialog(`<h2>Nothing ready to demand</h2><p>Every stage site has recorded as complete has already been demanded.</p>${next.length ? `<p>Next stage in the payment plan:</p><ul>${next.map((x) => `<li>${x}</li>`).join('')}</ul>` : ''}<p class="muted">Once site (or the Admin) records that stage with its date and the architect's certificate (Record a completed stage), it shows here.</p>`, async () => {});
+      }
       dialog(`<h2>Prepare a demand run</h2><p class="muted">Only stages site has recorded as complete are listed. Buyers who already have this stage demanded are skipped.</p>
         <label>Building and stage</label><select name="pick">${ready.map((r, i) => `<option value="${i}">${esc(r.b.name)} · ${esc(r.s)}</option>`).join('')}</select>
         <label>Demand date</label><input type="date" name="demandDate" value="${todayIso()}">`,
